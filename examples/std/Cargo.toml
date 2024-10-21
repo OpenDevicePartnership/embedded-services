@@ -1,0 +1,16 @@
+[package]
+name = "std"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+embassy-sync = { git = "https://github.com/embassy-rs/embassy", version = "0.6.0", features = ["log"] }
+embassy-time-driver = { git = "https://github.com/embassy-rs/embassy", optional = true }
+embassy-time = { git = "https://github.com/embassy-rs/embassy", version = "0.3.2",  features = ["log", "std", ] }
+embassy-futures = { git = "https://github.com/embassy-rs/embassy" }
+embassy-executor = { git = "https://github.com/embassy-rs/embassy", version = "0.6.0", features = ["task-arena-size-32768", "arch-std", "executor-thread", "log", "integrated-timers"] }
+embedded-services = { path = "../../" }
+
+env_logger = "0.9.0"
+log = "0.4.14"
+static_cell = "2"

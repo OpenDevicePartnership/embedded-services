@@ -13,6 +13,7 @@
     "rust-analyzer.linkedProjects": [
         "${workspaceFolder}/Cargo.toml",
         "${workspaceFolder}/examples/rt685s-evk/Cargo.toml",
+        "${workspaceFolder}/examples/std/Cargo.toml",
     ],
     "rust-analyzer.cargo.features": [
     ]
