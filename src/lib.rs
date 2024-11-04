@@ -8,6 +8,7 @@ pub use intrusive_list::*;
 
 /// short-hand include all pre-baked services
 pub mod activity;
+pub mod buffer;
 pub mod fmt;
 pub mod hid;
 pub mod transport;
