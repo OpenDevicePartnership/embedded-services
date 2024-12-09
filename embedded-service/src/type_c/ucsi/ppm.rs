@@ -49,3 +49,5 @@ impl Into<Result<ResponseData, Error>> for ResponseData {
         Ok(self)
     }
 }
+
+pub type Response = Result<ResponseData, Error>;

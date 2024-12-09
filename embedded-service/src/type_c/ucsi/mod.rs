@@ -3,8 +3,6 @@
 
 use bitfield::bitfield;
 
-use crate::type_c::Error;
-
 pub mod lpm;
 pub mod ppm;
 
@@ -80,6 +78,6 @@ pub enum Command {
 #[derive(Copy, Clone, Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum Response {
-    PpmResponse(Result<ppm::ResponseData, Error>),
-    LpmResponse(Result<lpm::ResponseData, Error>),
+    PpmResponse(ppm::Response),
+    LpmResponse(lpm::Response),
 }

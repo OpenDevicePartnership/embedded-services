@@ -1,5 +1,6 @@
 //! Type-C service
 
+pub mod controller;
 pub mod ucsi;
 
 /// Port ID
@@ -22,6 +23,8 @@ pub enum Error {
     Bus,
     /// Invalid controller
     InvalidController,
+    /// Invalid response
+    InvalidResponse,
     /// Unrecognized command
     UnrecognizedCommand,
     /// Invalid port
