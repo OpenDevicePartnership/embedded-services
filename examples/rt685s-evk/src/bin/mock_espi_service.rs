@@ -24,10 +24,10 @@ mod espi_service {
     use embassy_sync::blocking_mutex::raw::NoopRawMutex;
     use embassy_sync::once_lock::OnceLock;
     use embassy_sync::signal::Signal;
-    use embedded_services::comms::{self, EndpointID, External, Internal};
+    use embedded_services::transport::{self, Endpoint, External, Internal};
 
     struct Service {
-        endpoint: comms::Endpoint,
+        endpoint: transport::EndpointLink,
 
         // This is can be an Embassy signal or channel or whatever Embassy async notification construct
         signal: Signal<NoopRawMutex, TxMessage>,
@@ -36,14 +36,14 @@ mod espi_service {
     impl Service {
         fn new() -> Self {
             Service {
-                endpoint: comms::Endpoint::uninit(EndpointID::External(External::Host)),
+                endpoint: transport::EndpointLink::uninit(Endpoint::External(External::Host)),
                 signal: Signal::new(),
             }
         }
     }
 
-    impl comms::MailboxDelegate for Service {
-        fn receive(&self, message: &comms::Message) {
+    impl transport::MessageDelegate for Service {
+        fn process(&self, message: &transport::Message) {
             if let Some(msg) = message.data.get::<TxMessage>() {
                 self.signal.signal(*msg);
             }
@@ -56,7 +56,7 @@ mod espi_service {
     pub async fn init() {
         let espi_service = ESPI_SERVICE.get_or_init(|| Service::new());
 
-        comms::register_endpoint(espi_service, &espi_service.endpoint)
+        transport::register_endpoint(espi_service, &espi_service.endpoint)
             .await
             .unwrap();
     }
@@ -68,7 +68,7 @@ mod espi_service {
         espi_service
             .endpoint
             .send(
-                EndpointID::Internal(Internal::Battery),
+                Endpoint::Internal(Internal::Battery),
                 &RxMessage::SetBatteryCharge(battery_charge),
             )
             .await
@@ -99,10 +99,10 @@ mod battery_service {
     use embassy_sync::blocking_mutex::raw::NoopRawMutex;
     use embassy_sync::once_lock::OnceLock;
     use embassy_sync::signal::Signal;
-    use embedded_services::comms::{self, EndpointID, External, Internal};
+    use embedded_services::transport::{self, Endpoint, External, Internal};
 
     struct Service {
-        endpoint: comms::Endpoint,
+        endpoint: transport::EndpointLink,
 
         // This is can be an Embassy signal or channel or whatever Embassy async notification construct
         signal: Signal<NoopRawMutex, RxMessage>,
@@ -111,14 +111,14 @@ mod battery_service {
     impl Service {
         fn new() -> Self {
             Service {
-                endpoint: comms::Endpoint::uninit(EndpointID::Internal(Internal::Battery)),
+                endpoint: transport::EndpointLink::uninit(Endpoint::Internal(Internal::Battery)),
                 signal: Signal::new(),
             }
         }
     }
 
-    impl comms::MailboxDelegate for Service {
-        fn receive(&self, message: &comms::Message) {
+    impl transport::MessageDelegate for Service {
+        fn process(&self, message: &transport::Message) {
             if let Some(msg) = message.data.get::<RxMessage>() {
                 self.signal.signal(*msg);
             }
@@ -131,7 +131,7 @@ mod battery_service {
     pub async fn init() {
         let battery_service = BATTERY_SERVICE.get_or_init(|| Service::new());
 
-        comms::register_endpoint(battery_service, &battery_service.endpoint)
+        transport::register_endpoint(battery_service, &battery_service.endpoint)
             .await
             .unwrap();
     }
@@ -146,7 +146,7 @@ mod battery_service {
             battery_service
                 .endpoint
                 .send(
-                    EndpointID::External(External::Host),
+                    Endpoint::External(External::Host),
                     &TxMessage::UpdateBatteryStatus(battery_status),
                 )
                 .await

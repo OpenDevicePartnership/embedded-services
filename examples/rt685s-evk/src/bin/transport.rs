@@ -10,7 +10,7 @@ mod simple_example {
     use embassy_sync::blocking_mutex::raw::NoopRawMutex;
     use embassy_sync::once_lock::OnceLock;
     use embassy_sync::signal::Signal;
-    use embedded_services::comms;
+    use embedded_services::transport;
 
     use super::*;
 
@@ -20,7 +20,7 @@ mod simple_example {
         Receiver,
     }
 
-    impl From<Key> for comms::OemKey {
+    impl From<Key> for transport::OemKey {
         fn from(value: Key) -> Self {
             match value {
                 Key::Sender => 0,
@@ -29,15 +29,15 @@ mod simple_example {
         }
     }
 
-    impl From<Key> for comms::Internal {
+    impl From<Key> for transport::Internal {
         fn from(value: Key) -> Self {
-            comms::Internal::Oem(value.into())
+            transport::Internal::Oem(value.into())
         }
     }
 
-    impl From<Key> for comms::EndpointID {
+    impl From<Key> for transport::Endpoint {
         fn from(value: Key) -> Self {
-            comms::EndpointID::Internal(value.into())
+            transport::Endpoint::Internal(value.into())
         }
     }
 
@@ -50,21 +50,21 @@ mod simple_example {
     }
 
     struct Context {
-        tp: comms::Endpoint,
+        tp: transport::EndpointLink,
         sn: Signal<NoopRawMutex, Signals>,
     }
 
     impl Context {
         fn new(key: Key) -> Self {
             Self {
-                tp: comms::Endpoint::uninit(key.into()),
+                tp: transport::EndpointLink::uninit(key.into()),
                 sn: Signal::new(),
             }
         }
     }
 
-    impl comms::MailboxDelegate for Context {
-        fn receive(&self, message: &comms::Message) {
+    impl transport::MessageDelegate for Context {
+        fn process(&self, message: &transport::Message) {
             if let Some(sig) = message.data.get::<Signals>() {
                 self.sn.signal(*sig);
             }
@@ -77,7 +77,7 @@ mod simple_example {
         let this = SENDER.get_or_init(|| Context::new(Key::Sender));
 
         // register sender transport node
-        comms::register_endpoint(this, &this.tp).await.unwrap();
+        transport::register_endpoint(this, &this.tp).await.unwrap();
 
         // wait for a second
         embassy_time::Timer::after_secs(1).await;
@@ -114,7 +114,7 @@ mod simple_example {
         static RECEIVER: OnceLock<Context> = OnceLock::new();
         let this = RECEIVER.get_or_init(|| Context::new(Key::Receiver));
 
-        comms::register_endpoint(this, &this.tp).await.unwrap();
+        transport::register_endpoint(this, &this.tp).await.unwrap();
 
         loop {
             let sig = this.sn.wait().await;

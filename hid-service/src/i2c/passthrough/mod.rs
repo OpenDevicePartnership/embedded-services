@@ -45,7 +45,7 @@ macro_rules! define_i2c_passthrough_host_task {
             define_static_buffer!(host_buffer, u8, [0; 128]);
             static HOST: OnceLock<Host<$bus>> = OnceLock::new();
             let host = HOST.get_or_init(|| Host::new(HID_ID0, bus, host_buffer::get_mut().unwrap()));
-            comms::register_endpoint(host, &host.tp).await.unwrap();
+            transport::register_endpoint(host, &host.tp).await.unwrap();
 
             loop {
                 info!("Host Processing");

@@ -6,8 +6,8 @@ use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_sync::signal::Signal;
 use embassy_time::{with_timeout, Duration};
 use embedded_services::buffer::OwnedRef;
-use embedded_services::comms::{self, Endpoint, EndpointID, External, MailboxDelegate};
 use embedded_services::hid::{self, DeviceId, Opcode};
+use embedded_services::transport::{self, Endpoint, EndpointLink, External, MessageDelegate};
 use embedded_services::{error, trace};
 
 use super::{Command as I2cCommand, I2cSlaveAsync};
@@ -24,7 +24,7 @@ pub enum Access {
 
 pub struct Host<B: I2cSlaveAsync> {
     id: DeviceId,
-    pub tp: Endpoint,
+    pub tp: EndpointLink,
     response: Signal<NoopRawMutex, Option<hid::Response<'static>>>,
     buffer: OwnedRef<'static, u8>,
     bus: RefCell<B>,
@@ -34,7 +34,7 @@ impl<B: I2cSlaveAsync> Host<B> {
     pub fn new(id: DeviceId, bus: B, buffer: OwnedRef<'static, u8>) -> Self {
         Host {
             id,
-            tp: Endpoint::uninit(EndpointID::External(External::Host)),
+            tp: EndpointLink::uninit(Endpoint::External(External::Host)),
             response: Signal::new(),
             buffer,
             bus: RefCell::new(bus),
@@ -289,9 +289,9 @@ impl<B: I2cSlaveAsync> Host<B> {
     }
 }
 
-impl<B: I2cSlaveAsync> MailboxDelegate for Host<B> {
-    fn receive(&self, message: &comms::Message) {
-        if message.to != EndpointID::External(External::Host) {
+impl<B: I2cSlaveAsync> MessageDelegate for Host<B> {
+    fn process(&self, message: &transport::Message) {
+        if message.to != Endpoint::External(External::Host) {
             return;
         }
 

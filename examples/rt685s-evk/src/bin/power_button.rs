@@ -10,7 +10,7 @@ use embassy_sync::blocking_mutex::raw::ThreadModeRawMutex;
 use embassy_sync::once_lock::OnceLock;
 use embassy_sync::signal::Signal;
 use embassy_time::Duration;
-use embedded_services::comms::{self, EndpointID, Internal};
+use embedded_services::transport::{self, Endpoint, Internal};
 use power_button_service::button::{Button, ButtonConfig};
 use power_button_service::button_interpreter::{check_button_press, Message};
 use power_button_service::debounce::{ActiveState, Debouncer};
@@ -20,28 +20,28 @@ mod sender {
     use super::*;
 
     pub struct Sender {
-        pub tp: comms::Endpoint,
+        pub tp: transport::EndpointLink,
         sn: Signal<ThreadModeRawMutex, Message>,
     }
 
     impl Sender {
         pub fn new() -> Self {
             Self {
-                tp: comms::Endpoint::uninit(EndpointID::Internal(Internal::Power)),
+                tp: transport::EndpointLink::uninit(Endpoint::Internal(Internal::Power)),
                 sn: Signal::new(),
             }
         }
 
         pub async fn send(&self, message: Message) {
             self.tp
-                .send(EndpointID::Internal(Internal::Power), &message)
+                .send(Endpoint::Internal(Internal::Power), &message)
                 .await
                 .unwrap();
         }
     }
 
-    impl<'a> comms::MailboxDelegate for Sender {
-        fn receive(&self, message: &comms::Message) {
+    impl<'a> transport::MessageDelegate for Sender {
+        fn process(&self, message: &transport::Message) {
             if let Some(sig) = message.data.get::<Message>() {
                 self.sn.signal(*sig);
             }
@@ -53,21 +53,21 @@ mod receiver {
     use super::*;
 
     pub struct Receiver {
-        pub tp: comms::Endpoint,
+        pub tp: transport::EndpointLink,
         pub sn: Signal<ThreadModeRawMutex, Message>,
     }
 
     impl Receiver {
         pub fn new() -> Self {
             Self {
-                tp: comms::Endpoint::uninit(EndpointID::Internal(Internal::Power)),
+                tp: transport::EndpointLink::uninit(Endpoint::Internal(Internal::Power)),
                 sn: Signal::new(),
             }
         }
     }
 
-    impl comms::MailboxDelegate for Receiver {
-        fn receive(&self, message: &comms::Message) {
+    impl transport::MessageDelegate for Receiver {
+        fn process(&self, message: &transport::Message) {
             if let Some(sig) = message.data.get::<Message>() {
                 self.sn.signal(*sig);
             }
@@ -127,7 +127,7 @@ async fn main(spawner: Spawner) {
     static RECEIVER: OnceLock<receiver::Receiver> = OnceLock::new();
     let receiver = RECEIVER.get_or_init(receiver::Receiver::new);
 
-    comms::register_endpoint(receiver, &receiver.tp).await.unwrap();
+    transport::register_endpoint(receiver, &receiver.tp).await.unwrap();
 
     // Create an LED instance
     let mut led_r = gpio::Output::new(

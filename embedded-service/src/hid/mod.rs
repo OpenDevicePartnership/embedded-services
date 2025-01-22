@@ -7,7 +7,7 @@ use embassy_sync::once_lock::OnceLock;
 use embassy_sync::signal::Signal;
 
 use crate::buffer::SharedRef;
-use crate::comms::{self, Endpoint, EndpointID, External, Internal, MailboxDelegate};
+use crate::transport::{self, Endpoint, EndpointLink, External, Internal, MessageDelegate};
 use crate::{error, intrusive_list, IntrusiveList, Node, NodeContainer};
 
 mod command;
@@ -156,7 +156,7 @@ impl Default for RegisterFile {
 /// HID device that responds to HID requests
 pub struct Device {
     node: Node,
-    tp: Endpoint,
+    tp: EndpointLink,
     request: Signal<NoopRawMutex, Request<'static>>,
     /// Device ID
     pub id: DeviceId,
@@ -181,7 +181,7 @@ impl Device {
     pub fn new(id: DeviceId, regs: RegisterFile) -> Self {
         Self {
             node: Node::uninit(),
-            tp: Endpoint::uninit(EndpointID::Internal(Internal::Hid)),
+            tp: EndpointLink::uninit(Endpoint::Internal(Internal::Hid)),
             request: Signal::new(),
             id,
             regs,
@@ -199,7 +199,7 @@ impl Device {
             id: self.id,
             data: MessageData::Response(response),
         };
-        self.tp.send(EndpointID::External(External::Host), &message).await
+        self.tp.send(Endpoint::External(External::Host), &message).await
     }
 }
 
@@ -209,8 +209,8 @@ impl DeviceContainer for Device {
     }
 }
 
-impl MailboxDelegate for Device {
-    fn receive(&self, message: &comms::Message) {
+impl MessageDelegate for Device {
+    fn process(&self, message: &transport::Message) {
         if let Some(message) = message.data.get::<Message>() {
             if message.id != self.id {
                 return;
@@ -304,7 +304,7 @@ pub fn init() {
 pub async fn register_device(device: &'static impl DeviceContainer) -> Result<(), intrusive_list::Error> {
     let device = device.get_hid_device();
     CONTEXT.get().await.devices.push(device)?;
-    comms::register_endpoint(device, &device.tp).await
+    transport::register_endpoint(device, &device.tp).await
 }
 
 /// Find a device by its ID
@@ -323,12 +323,12 @@ pub async fn get_device(id: DeviceId) -> Option<&'static Device> {
 }
 
 /// Convenience function to send a request to a HID device
-pub async fn send_request(tp: &Endpoint, to: DeviceId, request: Request<'static>) -> Result<(), Infallible> {
+pub async fn send_request(tp: &EndpointLink, to: DeviceId, request: Request<'static>) -> Result<(), Infallible> {
     let message = Message {
         id: to,
         data: MessageData::Request(request),
     };
-    tp.send(EndpointID::Internal(Internal::Hid), &message).await
+    tp.send(Endpoint::Internal(Internal::Hid), &message).await
 }
 
 #[cfg(test)]
