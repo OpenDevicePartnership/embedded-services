@@ -8,3 +8,18 @@ rust-version = "1.83"
 license = "MIT"
 
 [dependencies]
+embedded-services = { path = "../embedded-service" }
+embassy-time = { git = "https://github.com/embassy-rs/embassy" }
+embassy-sync = { git = "https://github.com/embassy-rs/embassy" }
+defmt = { version = "0.3", optional = true }
+log = { version = "0.4.14", optional = true }
+
+[features]
+default = ["defmt"]
+defmt = [
+    "dep:defmt",
+    "embedded-services/defmt",
+    "embassy-time/defmt",
+    "embassy-time/defmt-timestamp-uptime",
+    "embassy-sync/defmt",
+]
