@@ -1,0 +1,19 @@
+[package]
+name = "power-policy"
+version = "0.1.0"
+edition = "2021"
+description = "HID embedded service implementation"
+repository = "https://github.com/OpenDevicePartnership/embedded-services"
+rust-version = "1.83"
+license = "MIT"
+
+[dependencies]
+embedded-services = { path = "../embedded-service" }
+embassy-time = { git = "https://github.com/embassy-rs/embassy" }
+embassy-sync = { git = "https://github.com/embassy-rs/embassy" }
+defmt = { version = "0.3", optional = true }
+log = { version = "0.4.14", optional = true }
+
+[features]
+default = ["defmt"]
+defmt = ["dep:defmt", "embedded-services/defmt"]
