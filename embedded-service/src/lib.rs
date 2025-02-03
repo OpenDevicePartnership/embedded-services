@@ -19,4 +19,5 @@ pub async fn init() {
     comms::init();
     activity::init();
     hid::init();
+    power::policy::init();
 }
