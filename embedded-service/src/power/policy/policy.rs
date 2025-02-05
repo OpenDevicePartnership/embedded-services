@@ -45,6 +45,15 @@ pub enum ResponseData {
     Complete,
 }
 
+impl ResponseData {
+    /// Returns an InvalidResponse error if the response is not complete
+    pub fn complete_or_err(self) -> Result<(), Error> {
+        match self {
+            ResponseData::Complete => Ok(()),
+        }
+    }
+}
+
 /// Response from the power policy service
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]

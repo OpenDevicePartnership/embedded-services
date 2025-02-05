@@ -80,9 +80,20 @@ pub struct Request {
 }
 
 /// Data for a device response
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum ResponseData {
     /// The request was successful
     Complete,
+}
+
+impl ResponseData {
+    /// Returns an InvalidResponse error if the response is not complete
+    pub fn complete_or_err(self) -> Result<(), Error> {
+        match self {
+            ResponseData::Complete => Ok(()),
+        }
+    }
 }
 
 /// Wrapper type to make code cleaner
@@ -277,7 +288,9 @@ pub mod state_machine {
         pub async fn detach(self) -> Result<Device<'a, Detached>, Error> {
             info!("Received detach from device {}", self.device.id.0);
             self.device.set_state(State::Detached).await;
-            let _ = policy::send_request(self.device.id, policy::RequestData::NotifyDetached).await?;
+            policy::send_request(self.device.id, policy::RequestData::NotifyDetached)
+                .await?
+                .complete_or_err()?;
             Ok(Device::new(self.device))
         }
 
@@ -285,8 +298,9 @@ pub mod state_machine {
         async fn disconnect_internal(&self) -> Result<(), Error> {
             info!("Device {} disconnecting", self.device.id.0);
             self.device.set_state(State::Attached).await;
-            let _ = policy::send_request(self.device.id, policy::RequestData::NotifyDisconnect).await?;
-            Ok(())
+            policy::send_request(self.device.id, policy::RequestData::NotifyDisconnect)
+                .await?
+                .complete_or_err()
         }
     }
 
@@ -295,7 +309,9 @@ pub mod state_machine {
         pub async fn attach(self) -> Result<Device<'a, Attached>, Error> {
             info!("Received attach from device {}", self.device.id.0);
             self.device.set_state(State::Attached).await;
-            let _ = policy::send_request(self.device.id, policy::RequestData::NotifyAttached).await?;
+            policy::send_request(self.device.id, policy::RequestData::NotifyAttached)
+                .await?
+                .complete_or_err()?;
             Ok(Device::new(self.device))
         }
     }
@@ -305,16 +321,17 @@ pub mod state_machine {
         pub async fn notify_sink_power_capability(&self, capability: Option<PowerCapability>) -> Result<(), Error> {
             info!("Device {} sink capability updated {:#?}", self.device.id.0, capability);
             self.device.update_sink_capability(capability).await;
-            let _ = policy::send_request(self.device.id, policy::RequestData::NotifySinkCapability(capability)).await?;
-            Ok(())
+            policy::send_request(self.device.id, policy::RequestData::NotifySinkCapability(capability))
+                .await?
+                .complete_or_err()
         }
 
         /// Request the given power from the power policy service
         pub async fn request_source_power_capability(&self, capability: PowerCapability) -> Result<(), Error> {
             info!("Request source from device {}, {:#?}", self.device.id.0, capability);
-            let _ =
-                policy::send_request(self.device.id, policy::RequestData::RequestSourceCapability(capability)).await?;
-            Ok(())
+            policy::send_request(self.device.id, policy::RequestData::RequestSourceCapability(capability))
+                .await?
+                .complete_or_err()
         }
     }
 
@@ -351,8 +368,10 @@ pub mod state_machine {
 
         async fn disconnect_internal(&self) -> Result<(), Error> {
             info!("Device {} got disconnect request", self.device.id.0);
-            let _ = self.device.execute_device_request(RequestData::Disconnect).await?;
-            Ok(())
+            self.device
+                .execute_device_request(RequestData::Disconnect)
+                .await?
+                .complete_or_err()
         }
     }
 
@@ -364,10 +383,10 @@ pub mod state_machine {
         pub async fn connect_sink(self, capability: PowerCapability) -> Result<Policy<'a, Sink>, Error> {
             info!("Device {} connecting sink", self.device.id.0);
 
-            let _ = self
-                .device
+            self.device
                 .execute_device_request(RequestData::ConnectSink(capability))
-                .await?;
+                .await?
+                .complete_or_err()?;
 
             self.device.set_state(State::Sink(capability)).await;
             Ok(Policy::new(self.device))
@@ -377,10 +396,10 @@ pub mod state_machine {
         pub async fn connect_source(self, capability: PowerCapability) -> Result<Device<'a, Source>, Error> {
             info!("Device {} connecting source", self.device.id.0);
 
-            let _ = self
-                .device
+            self.device
                 .execute_device_request(RequestData::ConnectSource(capability))
-                .await?;
+                .await?
+                .complete_or_err()?;
 
             self.device.set_state(State::Source(capability)).await;
             Ok(Device::new(self.device))
