@@ -32,10 +32,10 @@ The device is no longer attached and cannot source or sink power.
 #### `NotifyAttach`
 The device is attached, but not sourcing or sinking power.
 
-#### `NotifySinkPowerCapability(max power)`
+#### `NotifySinkCapability(max power)`
 Informs the power policy of the device's maximum sink power, the policy may decided to start sinking from this device. `None` indicates that the device is longer capable of acting as a sink.
 
-#### `RequestSourcePowerCapability(max power)`
+#### `RequestSourceCapability(max power)`
 Requests the given power to source.
 
 #### `NotifyDisconnect`

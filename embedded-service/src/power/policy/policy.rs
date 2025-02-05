@@ -18,9 +18,9 @@ pub enum RequestData {
     /// Notify that a device has attached
     NotifyAttached,
     /// Notify that available power for sinking has changed
-    NotifySinkPowerCapability(Option<PowerCapability>),
+    NotifySinkCapability(Option<PowerCapability>),
     /// Request the given amount of power to source
-    RequestSourcePowerCapability(PowerCapability),
+    RequestSourceCapability(PowerCapability),
     /// Notify that a device cannot source or sink power anymore
     NotifyDisconnect,
     /// Notify that a device has detached

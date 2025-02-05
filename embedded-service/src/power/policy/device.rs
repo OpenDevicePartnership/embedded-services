@@ -242,7 +242,7 @@ impl PolicyInterface<'_> {
 
             state.sink_capability = capability;
         }
-        let _ = policy::send_request(self.0.id, policy::RequestData::NotifySinkPowerCapability(capability)).await?;
+        let _ = policy::send_request(self.0.id, policy::RequestData::NotifySinkCapability(capability)).await?;
         Ok(())
     }
 
@@ -258,7 +258,7 @@ impl PolicyInterface<'_> {
             }
         }
 
-        let _ = policy::send_request(self.0.id, policy::RequestData::RequestSourcePowerCapability(capability)).await?;
+        let _ = policy::send_request(self.0.id, policy::RequestData::RequestSourceCapability(capability)).await?;
         Ok(())
     }
 

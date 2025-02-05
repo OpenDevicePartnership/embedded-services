@@ -221,10 +221,10 @@ impl PowerPolicy {
         match request.data {
             policy::RequestData::NotifyAttached => self.process_notify_attach(device).await,
             policy::RequestData::NotifyDetached => self.process_notify_detach(device).await,
-            policy::RequestData::NotifySinkPowerCapability(capability) => {
+            policy::RequestData::NotifySinkCapability(capability) => {
                 self.process_notify_sink_power_capability(device, capability).await
             }
-            policy::RequestData::RequestSourcePowerCapability(capability) => {
+            policy::RequestData::RequestSourceCapability(capability) => {
                 self.process_request_source_power_capabilities(device, capability).await
             }
             policy::RequestData::NotifyDisconnect => self.process_notify_disconnect(device).await,
