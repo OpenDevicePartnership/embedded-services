@@ -2,7 +2,7 @@
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_sync::mutex::Mutex;
 use embassy_sync::once_lock::OnceLock;
-use embedded_services::power::policy::device::Device;
+use embedded_services::power::policy::device::{state_machine as sm, Device};
 use embedded_services::power::policy::{policy, *};
 use embedded_services::{comms, error, info};
 
@@ -161,62 +161,63 @@ impl PowerPolicy {
 
         info!("Best sink: {:#?}", best_sink);
         if let Some(best_sink) = best_sink {
-            // Connect our new source
+            // See if we need to disconnect the current sink
             if let Some(current_sink) = state.current_sink_state {
-                let is_sink = self
+                if let Ok(sink) = self
                     .context
                     .get_device(current_sink.device_id)
+                    .await?
+                    .try_policy_state_machine::<sm::Sink>()
                     .await
-                    .ok_or(Error::InvalidDevice)?
-                    .is_sink()
-                    .await;
-
-                if best_sink.device_id == current_sink.device_id
-                    && best_sink.power_capability == current_sink.power_capability
-                    && is_sink
                 {
-                    // If the sink is the same device, capability and is still available, we don't need to do anything
-                    info!("Best sink is the same, not switching");
-                    return Ok(());
-                }
+                    if best_sink.device_id == current_sink.device_id
+                        && best_sink.power_capability == current_sink.power_capability
+                    {
+                        // If the sink is the same device, capability and is still available, we don't need to do anything
+                        info!("Best sink is the same, not switching");
+                        return Ok(());
+                    }
 
-                if is_sink {
                     self.comms_notify(CommsMessage {
                         data: CommsData::SinkDisconnected(current_sink.device_id),
                     })
                     .await;
-                    // Disconnect the current sink if it's still in use
+                    // Disconnect the current sink
                     info!("Device {}, disconnecting current sink", current_sink.device_id.0);
-                    self.context
-                        .get_device(current_sink.device_id)
-                        .await
-                        .ok_or(Error::InvalidDevice)?
-                        .disconnect()
-                        .await?;
+                    sink.disconnect().await?;
                 }
             }
 
             info!("Device {}, connecting new sink", best_sink.device_id.0);
-            // Connect the new sink
-            self.context
+            return match self
+                .context
                 .get_device(best_sink.device_id)
+                .await?
+                .try_policy_state_machine::<sm::Attached>()
                 .await
-                .ok_or(Error::InvalidDevice)?
-                .connect_sink(best_sink.power_capability)
-                .await?;
-            state.current_sink_state = Some(best_sink);
-
-            self.comms_notify(CommsMessage {
-                data: CommsData::SinkConnected(best_sink.device_id, best_sink.power_capability),
-            })
-            .await;
+            {
+                Ok(attached) => {
+                    attached.connect_sink(best_sink.power_capability).await?;
+                    state.current_sink_state = Some(best_sink);
+                    self.comms_notify(CommsMessage {
+                        data: CommsData::SinkConnected(best_sink.device_id, best_sink.power_capability),
+                    })
+                    .await;
+                    Ok(())
+                }
+                Err(e) => {
+                    error!("Error connecting sink: {:#?}", e);
+                    Err(e)
+                }
+            };
         }
+
         Ok(())
     }
 
     pub async fn process_request(&self) -> Result<(), Error> {
         let request = self.context.wait_request().await;
-        let device = self.context.get_device(request.id).await.ok_or(Error::InvalidDevice)?;
+        let device = self.context.get_device(request.id).await?;
 
         match request.data {
             policy::RequestData::NotifyAttached => self.process_notify_attach(device).await,

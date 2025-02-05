@@ -14,8 +14,8 @@ pub enum Error {
     CannotSource(Option<PowerCapability>),
     /// The sink request was denied, contains maximum available power
     CannotSink(Option<PowerCapability>),
-    /// The device is not in the correct state
-    InvalidState,
+    /// The device is not in the correct state (expected, actual)
+    InvalidState(device::StateKind, device::StateKind),
     /// Invalid response
     InvalidResponse,
     /// Bus error

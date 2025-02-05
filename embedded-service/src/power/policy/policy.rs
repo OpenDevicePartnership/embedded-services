@@ -149,8 +149,8 @@ impl ContextToken {
     }
 
     /// Get a device by its ID
-    pub async fn get_device(&self, id: DeviceId) -> Option<&'static device::Device> {
-        get_device(id).await
+    pub async fn get_device(&self, id: DeviceId) -> Result<&'static device::Device, Error> {
+        get_device(id).await.ok_or(Error::InvalidDevice)
     }
 
     /// Provides access to the device list

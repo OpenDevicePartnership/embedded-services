@@ -50,19 +50,6 @@ impl ExampleDevice {
         self.device.send_response(Ok(device::ResponseData::Complete)).await;
         Ok(())
     }
-
-    async fn plug(&self, capability: Option<PowerCapability>) -> Result<(), policy::Error> {
-        self.device.policy().notify_attached().await?;
-        self.device.policy().notify_sink_power_capability(capability).await
-    }
-
-    async fn unplug(&self) -> Result<(), policy::Error> {
-        self.device.policy().notify_detached().await
-    }
-
-    async fn disable_sink(&self) -> Result<(), policy::Error> {
-        self.device.policy().notify_sink_power_capability(None).await
-    }
 }
 
 impl policy::device::DeviceContainer for ExampleDevice {
@@ -98,43 +85,48 @@ async fn run(spawner: Spawner) {
     let device0 = DEVICE0.get_or_init(|| ExampleDevice::new(policy::DeviceId(0)));
     policy::register_device(device0).await.unwrap();
     spawner.must_spawn(device_task0(device0));
+    let device0 = device0.device.try_device_state_machine().await.unwrap();
 
     info!("Creating device 1");
     static DEVICE1: OnceLock<ExampleDevice> = OnceLock::new();
     let device1 = DEVICE1.get_or_init(|| ExampleDevice::new(policy::DeviceId(1)));
     policy::register_device(device1).await.unwrap();
     spawner.must_spawn(device_task1(device1));
+    let device1 = device1.device.try_device_state_machine().await.unwrap();
 
     // Plug in device 0, should become current sink
     info!("Connecting device 0");
-    device0.plug(Some(LOW_POWER)).await.unwrap();
+    let device0 = device0.attach().await.unwrap();
+    device0.notify_sink_power_capability(Some(LOW_POWER)).await.unwrap();
 
     // Plug in device 1, should become current sink
     info!("Connecting device 1");
-    device1.plug(Some(HIGH_POWER)).await.unwrap();
+    let device1 = device1.attach().await.unwrap();
+    device1.notify_sink_power_capability(Some(HIGH_POWER)).await.unwrap();
 
     // Unplug device 0, device 1 should remain current sink
-    info!("Disconnecting device 0");
-    device0.unplug().await.unwrap();
+    info!("Unpluging device 0");
+    let device0 = device0.detach().await.unwrap();
 
     // Plug in device 0, device 1 should remain current sink
     info!("Connecting device 0");
-    device0.plug(Some(LOW_POWER)).await.unwrap();
+    let device0 = device0.attach().await.unwrap();
+    device0.notify_sink_power_capability(Some(LOW_POWER)).await.unwrap();
 
     // Unplug device 1, device 0 should become current sink
-    info!("Disconnecting device 1");
-    device1.unplug().await.unwrap();
+    info!("Unplugging device 1");
+    let device1 = device1.detach().await.unwrap();
 
     // Replug device 1, device 1 becomes current sink
     info!("Connecting device 1");
-    device1.plug(Some(HIGH_POWER)).await.unwrap();
+    let device1 = device1.attach().await.unwrap();
+    device1.notify_sink_power_capability(Some(HIGH_POWER)).await.unwrap();
 
-    // Plug in device 0 and disable sink, device 1 should remain current sink
+    // Disable sink device 0, device 1 should remain current sink
     // Device 0 should not be able to sink after device 1 is unplugged
     info!("Connecting device 0");
-    device0.plug(Some(LOW_POWER)).await.unwrap();
-    device0.disable_sink().await.unwrap();
-    device1.unplug().await.unwrap();
+    device0.notify_sink_power_capability(None).await.unwrap();
+    let _device1 = device1.detach().await.unwrap();
 }
 
 fn main() {
