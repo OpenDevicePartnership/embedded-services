@@ -1,0 +1,12 @@
+[package]
+name = "cfu-service"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# ODP dependencies
+embedded-cfu-protocol = { path = "../../embedded-cfu-odp/" }
+#{ git = "https://github.com/madeleyneVaca/embedded-cfu-odp", branch = "cfuProtocol" }
+
+# External dependencies
+heapless = "0.8.*"
