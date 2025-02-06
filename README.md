@@ -82,6 +82,10 @@ EC service houses the business logic that glues the EC peripheral Rust driver + 
   - library crate
 - hid-service
   - library crate
+- cfu-service
+  - library crate
+    - host traits
+    - client traits
 
 ### embedded-services
 
@@ -98,7 +102,7 @@ Protocol agnostric transport allowing dynamic number of endpoints to send and re
     erDiagram
         service_a ||..|| endpoint_a :contains
         endpoint_a ||..|| transport : send_message
-        transport ||--|{ endpoint_b : route
+        transport ||--|| endpoint_b : route
         service_b ||..|| endpoint_b :contains
         transport {
             list endpoint_a
