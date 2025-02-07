@@ -41,6 +41,8 @@ embedded-hal-nb = { version = "1.0" }
 
 document-features = "0.2.7"
 
+bitfield = "0.17.0"
+
 [dev-dependencies]
 embassy-sync = { git = "https://github.com/embassy-rs/embassy", features = [
     "std",
