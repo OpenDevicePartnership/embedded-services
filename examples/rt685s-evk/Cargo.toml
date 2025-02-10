@@ -40,6 +40,7 @@ futures = { version = "0.3.30", default-features = false, features = [
 mimxrt600-fcb = "0.1.0"
 mimxrt685s-pac = { version = "*", features = ["rt", "critical-section"] }
 
+espi-service = { path = "../../espi-service" }
 embedded-services = { path = "../../embedded-service", features = ["defmt"] }
 power-button-service = { path = "../../power-button-service", features = [
     "defmt",

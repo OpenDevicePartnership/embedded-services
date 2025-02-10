@@ -12,6 +12,7 @@
     "rust-analyzer.cargo.target": "thumbv8m.main-none-eabihf",
     "rust-analyzer.linkedProjects": [
         "${workspaceFolder}/embedded-service/Cargo.toml",
+        "${workspaceFolder}/espi-service/Cargo.toml",
         "${workspaceFolder}/hid-service/Cargo.toml",
         "${workspaceFolder}/power-button-service/Cargo.toml",
         "${workspaceFolder}/examples/rt685s-evk/Cargo.toml",
