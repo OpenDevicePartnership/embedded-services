@@ -12,6 +12,7 @@ pub mod buffer;
 pub mod comms;
 pub mod fmt;
 pub mod hid;
+pub mod power;
 pub mod type_c;
 
 /// initialize all service static interfaces as required. Ideally, this is done before subsystem initialization
@@ -19,4 +20,5 @@ pub async fn init() {
     comms::init();
     activity::init();
     hid::init();
+    power::policy::init();
 }
