@@ -6,6 +6,30 @@ edition = "2021"
 [dependencies]
 # ODP dependencies
 embedded-cfu-protocol = { git = "https://github.com/madeleyneVaca/embedded-cfu-odp", branch = "cfuProtocol" }
+embedded-services = { path = "../embedded-service" }
 
 # External dependencies
+binary_serde = "1.0.24"
+embassy-time = { git = "https://github.com/embassy-rs/embassy" }
+embassy-sync = { git = "https://github.com/embassy-rs/embassy" }
+embassy-executor = { git = "https://github.com/embassy-rs/embassy" }
+log = { version = "0.4.14", optional = true }
+defmt = { version = "0.3", optional = true }
 heapless = "0.8.*"
+
+[features]
+default = []
+defmt = [
+    "dep:defmt",
+    "embedded-services/defmt",
+    "embassy-time/defmt",
+    "embassy-sync/defmt",
+    "embassy-executor/defmt",
+]
+log = [
+    "dep:log",
+    "embedded-services/log",
+    "embassy-time/log",
+    "embassy-sync/log",
+    "embassy-executor/log",
+]
