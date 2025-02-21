@@ -18,7 +18,7 @@ jobs:
     strategy:
       matrix:
         target: [thumbv8m.main-none-eabihf]
-        workdir: [ "embedded-service", "power-button-service"]
+        workdir: [ "embedded-service", "power-button-service", "battery-service"]
     steps:
       - uses: actions/checkout@v4
         with:

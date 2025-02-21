@@ -17,6 +17,7 @@ embassy-imxrt = { git = "https://github.com/OpenDevicePartnership/embassy-imxrt"
     "defmt",
     "time-driver",
     "time",
+    "mimxrt633s",
 ] }
 
 embassy-sync = { git = "https://github.com/embassy-rs/embassy", features = [
@@ -46,3 +47,9 @@ power-button-service = { path = "../../power-button-service", features = [
 
 embedded-hal = "1.0.0"
 embedded-hal-async = "1.0.0"
+embedded-batteries-async = { git = "https://github.com/OpenDevicePartnership/embedded-batteries" }
+battery-service = { path = "../../battery-service" }
+bq25773 = { git = "https://github.com/OpenDevicePartnership/bq25773" }
+bq40z50 = { git = "https://github.com/OpenDevicePartnership/bq40z50" }
+static_cell = "2.1.0"
+embassy-embedded-hal = { git = "https://github.com/embassy-rs/embassy", default-features = false }

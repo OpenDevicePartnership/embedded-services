@@ -18,13 +18,15 @@ enum RxMessage {
 
 // Mock eSPI transport service
 mod espi_service {
-    use crate::{RxMessage, TxMessage};
     use core::convert::Infallible;
+
     use defmt::info;
     use embassy_sync::blocking_mutex::raw::NoopRawMutex;
     use embassy_sync::once_lock::OnceLock;
     use embassy_sync::signal::Signal;
     use embedded_services::comms::{self, EndpointID, External, Internal};
+
+    use crate::{RxMessage, TxMessage};
 
     struct Service {
         endpoint: comms::Endpoint,
@@ -94,12 +96,13 @@ mod espi_service {
 
 // Mock battery service
 mod battery_service {
-    use crate::{RxMessage, TxMessage};
     use defmt::info;
     use embassy_sync::blocking_mutex::raw::NoopRawMutex;
     use embassy_sync::once_lock::OnceLock;
     use embassy_sync::signal::Signal;
     use embedded_services::comms::{self, EndpointID, External, Internal};
+
+    use crate::{RxMessage, TxMessage};
 
     struct Service {
         endpoint: comms::Endpoint,

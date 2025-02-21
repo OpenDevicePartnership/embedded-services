@@ -1,0 +1,31 @@
+[package]
+name = "battery-service"
+version = "0.1.0"
+edition = "2021"
+description = "Battery fuel gauge and charger embedded service implementation"
+repository = "https://github.com/OpenDevicePartnership/embedded-services"
+rust-version = "1.83"
+license = "MIT"
+
+[dependencies]
+embedded-services = { path = "../embedded-service" }
+embassy-time = { git = "https://github.com/embassy-rs/embassy" }
+embassy-sync = { git = "https://github.com/embassy-rs/embassy" }
+embassy-futures = { git = "https://github.com/embassy-rs/embassy" }
+embedded-hal-async = { version = "1.0" }
+embedded-hal = { package = "embedded-hal", version = "1.0" }
+embassy-executor = { git = "https://github.com/embassy-rs/embassy" }
+defmt = { version = "0.3", optional = true }
+log = { version = "0.4", optional = true }
+
+embedded-batteries-async = { git = "https://github.com/OpenDevicePartnership/embedded-batteries" }
+
+[features]
+default = ["defmt"]
+defmt = [
+    "dep:defmt",
+    "embedded-services/defmt",
+    "embassy-time/defmt",
+    "embassy-time/defmt-timestamp-uptime",
+    "embassy-sync/defmt",
+]
