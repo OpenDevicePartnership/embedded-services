@@ -8,4 +8,5 @@ edition = "2021"
 embedded-cfu-protocol = { git = "https://github.com/madeleyneVaca/embedded-cfu-odp", branch = "cfuProtocol" }
 
 # External dependencies
+binary_serde = "1.0.24"
 heapless = "0.8.*"
