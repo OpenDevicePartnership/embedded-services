@@ -2,6 +2,7 @@
 use core::cell::Cell;
 use core::sync::atomic::{AtomicBool, Ordering};
 
+use bitfield::BitMut;
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_sync::channel::Channel;
 use embassy_sync::once_lock::OnceLock;
@@ -11,8 +12,8 @@ use embedded_usb_pd::{PdError, PortId as LocalPortId};
 use super::event::PortEventFlags;
 use super::ucsi::lpm;
 use super::{ControllerId, GlobalPortId};
-use crate::intrusive_list;
 use crate::power::policy;
+use crate::{intrusive_list, IntrusiveNode};
 
 /// Power contract
 #[derive(Copy, Clone, Debug)]
@@ -36,16 +37,53 @@ pub struct PortStatus {
     pub debug_connection: bool,
 }
 
+/// Port-specific command data
+#[derive(Copy, Clone, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum PortCommandData {
+    /// Get port status
+    PortStatus,
+}
+
+/// Port-specific commands
+#[derive(Copy, Clone, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct PortCommand {
+    /// Port ID
+    pub port: GlobalPortId,
+    /// Command data
+    pub data: PortCommandData,
+}
+
+/// Port-specific response data
+#[derive(Copy, Clone, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum PortResponseData {
+    /// Command completed with no error
+    Complete,
+    /// Port status
+    PortStatus(PortStatus),
+}
+
+impl PortResponseData {
+    /// Helper function to convert to a result
+    pub fn complete_or_err(self) -> Result<(), PdError> {
+        match self {
+            PortResponseData::Complete => Ok(()),
+            _ => Err(PdError::InvalidResponse),
+        }
+    }
+}
+
+/// Port-specific command response
+pub type PortResponse = Result<PortResponseData, PdError>;
+
 /// PD controller command-specific data
 #[derive(Copy, Clone, Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum InternalCommandData {
     /// Reset the PD controller
     Reset,
-    /// Acknowledge a port event
-    AckEvent,
-    /// Get port status
-    PortStatus,
 }
 
 /// PD controller command
@@ -54,6 +92,8 @@ pub enum InternalCommandData {
 pub enum Command {
     /// Controller specific command
     Controller(InternalCommandData),
+    /// Port command
+    Port(PortCommand),
     /// UCSI command passthrough
     Lpm(lpm::Command),
 }
@@ -77,6 +117,8 @@ pub enum Response {
     Controller(InternalResponse),
     /// UCSI response passthrough
     Lpm(lpm::Response),
+    /// Port response
+    Port(PortResponse),
 }
 
 /// Maximum number of controller ports
@@ -264,13 +306,8 @@ impl ContextToken {
             .map(|_| ())
     }
 
-    /// Send a command to the given port
-    pub async fn send_port_command_no_timeout(
-        &self,
-        port_id: GlobalPortId,
-        command: lpm::CommandData,
-    ) -> Result<lpm::ResponseData, PdError> {
-        let node = CONTEXT
+    async fn find_node_by_port(&self, port_id: GlobalPortId) -> Result<&IntrusiveNode, PdError> {
+        CONTEXT
             .get()
             .await
             .controllers
@@ -282,7 +319,16 @@ impl ContextToken {
                     false
                 }
             })
-            .map_or(Err(PdError::InvalidPort), Ok)?;
+            .ok_or(PdError::InvalidPort)
+    }
+
+    /// Send a command to the given port
+    pub async fn send_port_command_ucsi_no_timeout(
+        &self,
+        port_id: GlobalPortId,
+        command: lpm::CommandData,
+    ) -> Result<lpm::ResponseData, PdError> {
+        let node = self.find_node_by_port(port_id).await?;
 
         match node
             .data::<Device>()
@@ -299,13 +345,13 @@ impl ContextToken {
     }
 
     /// Send a command to the given port with a timeout
-    pub async fn send_port_command(
+    pub async fn send_port_command_ucsi(
         &self,
         port_id: GlobalPortId,
         command: lpm::CommandData,
         timeout: Duration,
     ) -> Result<lpm::ResponseData, PdError> {
-        match with_timeout(timeout, self.send_port_command_no_timeout(port_id, command)).await {
+        match with_timeout(timeout, self.send_port_command_ucsi_no_timeout(port_id, command)).await {
             Ok(response) => response,
             Err(_) => Err(PdError::Timeout),
         }
@@ -317,7 +363,68 @@ impl ContextToken {
         port_id: GlobalPortId,
         reset_type: lpm::ResetType,
     ) -> Result<lpm::ResponseData, PdError> {
-        self.send_port_command(port_id, lpm::CommandData::ConnectorReset(reset_type), DEFAULT_TIMEOUT)
+        self.send_port_command_ucsi(port_id, lpm::CommandData::ConnectorReset(reset_type), DEFAULT_TIMEOUT)
             .await
+    }
+
+    /// Send a command to the given port with no timeout
+    pub async fn send_port_command_no_timeout(
+        &self,
+        port_id: GlobalPortId,
+        command: PortCommandData,
+    ) -> Result<PortResponseData, PdError> {
+        let node = self.find_node_by_port(port_id).await?;
+
+        match node
+            .data::<Device>()
+            .ok_or(PdError::InvalidController)?
+            .send_command(Command::Port(PortCommand {
+                port: port_id,
+                data: command,
+            }))
+            .await
+        {
+            Response::Port(response) => response,
+            _ => Err(PdError::InvalidResponse),
+        }
+    }
+
+    /// Send a command to the given port with a timeout
+    pub async fn send_port_command(
+        &self,
+        port_id: GlobalPortId,
+        command: PortCommandData,
+        timeout: Duration,
+    ) -> Result<PortResponseData, PdError> {
+        match with_timeout(timeout, self.send_port_command_no_timeout(port_id, command)).await {
+            Ok(response) => response,
+            Err(_) => Err(PdError::Timeout),
+        }
+    }
+
+    /// Get the current port events
+    pub async fn get_port_events(&self) -> PortEventFlags {
+        CONTEXT.get().await.port_events.get()
+    }
+
+    /// Clear events on a given port
+    pub async fn clear_port_events(&self, port: GlobalPortId) -> Result<(), PdError> {
+        let context = CONTEXT.get().await;
+        let mut events = context.port_events.get();
+        events.set_bit(port.0.into(), false);
+        context.port_events.set(events);
+
+        Ok(())
+    }
+
+    /// Get the current port status
+    pub async fn get_port_status(&self, port: GlobalPortId) -> Result<PortStatus, PdError> {
+        match self
+            .send_port_command(port, PortCommandData::PortStatus, DEFAULT_TIMEOUT)
+            .await?
+        {
+            PortResponseData::PortStatus(status) => Ok(status),
+            _ => Err(PdError::InvalidResponse),
+        }
     }
 }

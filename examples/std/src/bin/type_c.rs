@@ -14,6 +14,8 @@ const PORT1: PortId = PortId(1);
 const POWER0: power::policy::DeviceId = power::policy::DeviceId(0);
 
 mod test_controller {
+    use embedded_services::type_c::controller::PortStatus;
+
     use super::*;
 
     pub struct Controller {
@@ -50,14 +52,10 @@ mod test_controller {
                     info!("Reset controller");
                     Ok(controller::InternalResponseData::Complete)
                 }
-                _ => {
-                    info!("Other controller command");
-                    Ok(controller::InternalResponseData::Complete)
-                }
             }
         }
 
-        async fn process_port_command(&self, command: lpm::Command) -> Result<lpm::ResponseData, Error> {
+        async fn process_ucsi_command(&self, command: lpm::Command) -> Result<lpm::ResponseData, Error> {
             match command.operation {
                 lpm::CommandData::ConnectorReset(reset_type) => {
                     info!("Reset ({:#?}) for port {:#?}", reset_type, command.port);
@@ -66,13 +64,32 @@ mod test_controller {
             }
         }
 
+        async fn process_port_command(
+            &self,
+            command: controller::PortCommand,
+        ) -> Result<controller::PortResponseData, Error> {
+            Ok(match command.data {
+                controller::PortCommandData::PortStatus => {
+                    info!("Port status for port {}", command.port.0);
+                    controller::PortResponseData::PortStatus(PortStatus {
+                        connection_present: false,
+                        contract: None,
+                        debug_connection: false,
+                    })
+                }
+            })
+        }
+
         pub async fn process(&self) {
             let response = match self.controller.wait_command().await {
                 controller::Command::Controller(command) => {
                     controller::Response::Controller(self.process_controller_command(command).await)
                 }
                 controller::Command::Lpm(command) => {
-                    controller::Response::Lpm(self.process_port_command(command).await)
+                    controller::Response::Lpm(self.process_ucsi_command(command).await)
+                }
+                controller::Command::Port(command) => {
+                    controller::Response::Port(self.process_port_command(command).await)
                 }
             };
 
@@ -114,6 +131,12 @@ async fn task(spawner: Spawner) {
     info!("Reset port 0 done");
     context.reset_port(PORT1, lpm::ResetType::Data).await.unwrap();
     info!("Reset port 1 done");
+
+    let status = context.get_port_status(PORT0).await.unwrap();
+    info!("Port 0 status: {:#?}", status);
+
+    let status = context.get_port_status(PORT1).await.unwrap();
+    info!("Port 1 status: {:#?}", status);
 }
 
 fn main() {
