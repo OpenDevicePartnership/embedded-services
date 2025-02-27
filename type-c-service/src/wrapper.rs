@@ -1,11 +1,11 @@
 //! This module contains the `Controller` trait. Any types that implement this trait can be used with the `ControllerWrapper` struct
 //! which provides a bridge between various service messages and the actual controller functions.
 use core::array::from_fn;
-use core::cell::RefCell;
+use core::cell::{Cell, RefCell};
 use core::future::Future;
 
 use bitfield::BitMut;
-use embassy_futures::select::{select, select_array, Either};
+use embassy_futures::select::{select3, select_array, Either3};
 use embedded_services::power::policy::device::{RequestData, StateKind};
 use embedded_services::power::policy::{self, action};
 use embedded_services::type_c::controller::{self, Contract, PortStatus};
@@ -43,6 +43,7 @@ pub struct ControllerWrapper<const N: usize, C: Controller> {
     /// Power policy devices to interface with power policy service
     power: [policy::device::Device; N],
     controller: RefCell<C>,
+    active_events: [Cell<PortEventKind>; N],
 }
 
 impl<const N: usize, C: Controller> ControllerWrapper<N, C> {
@@ -52,6 +53,7 @@ impl<const N: usize, C: Controller> ControllerWrapper<N, C> {
             pd_controller,
             power,
             controller: RefCell::new(controller),
+            active_events: [const { Cell::new(PortEventKind::NONE) }; N],
         }
     }
 
@@ -206,6 +208,8 @@ impl<const N: usize, C: Controller> ControllerWrapper<N, C> {
             if event.new_power_contract_as_consumer() {
                 self.process_new_consumer_contract(power, &status).await;
             }
+
+            self.active_events[port].set(event);
         }
 
         self.pd_controller.notify_ports(port_events).await;
@@ -223,7 +227,7 @@ impl<const N: usize, C: Controller> ControllerWrapper<N, C> {
     /// Process a power command
     /// Returns no error because this is a top-level function
     async fn process_power_command(&self, controller: &mut C, port: LocalPortId, command: RequestData) {
-        trace!("Processing power command: device{} {:#?}", port, command);
+        trace!("Processing power command: device{} {:#?}", port.0, command);
         let power = match self.get_power_device(port) {
             Ok(power) => power,
             Err(_) => {
@@ -255,16 +259,51 @@ impl<const N: usize, C: Controller> ControllerWrapper<N, C> {
         power.send_response(Ok(policy::device::ResponseData::Complete)).await;
     }
 
+    async fn process_port_command(&self, controller: &mut C, command: controller::PortCommand) {
+        let response = match command.data {
+            controller::PortCommandData::PortStatus => match controller.get_port_status(LocalPortId(0)).await {
+                Ok(status) => Ok(controller::PortResponseData::PortStatus(status)),
+                Err(e) => match e {
+                    Error::Bus(_) => Err(PdError::Failed),
+                    Error::Pd(e) => Err(e),
+                },
+            },
+            controller::PortCommandData::GetEvent => {
+                let event = self.active_events[0].get();
+                self.active_events[0].set(PortEventKind::NONE);
+                Ok(controller::PortResponseData::Event(event))
+            }
+        };
+
+        self.pd_controller
+            .send_response(controller::Response::Port(response))
+            .await;
+    }
+
+    async fn process_pd_command(&self, controller: &mut C, command: controller::Command) {
+        match command {
+            controller::Command::Port(command) => self.process_port_command(controller, command).await,
+            _ => {}
+        }
+    }
+
     /// Top-level processing function
     ///
     pub async fn process(&self) {
         let mut controller = self.controller.borrow_mut();
-        match select(controller.wait_port_event(), self.wait_power_command()).await {
-            Either::First(r) => match r {
+        match select3(
+            controller.wait_port_event(),
+            self.wait_power_command(),
+            self.pd_controller.wait_command(),
+        )
+        .await
+        {
+            Either3::First(r) => match r {
                 Ok(_) => self.process_event(&mut controller).await,
                 Err(_) => error!("Error waiting for port event"),
             },
-            Either::Second((command, port)) => self.process_power_command(&mut controller, port, command).await,
+            Either3::Second((command, port)) => self.process_power_command(&mut controller, port, command).await,
+            Either3::Third(command) => self.process_pd_command(&mut controller, command).await,
         }
     }
 

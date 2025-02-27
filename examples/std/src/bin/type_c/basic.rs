@@ -77,6 +77,10 @@ mod test_controller {
                         debug_connection: false,
                     })
                 }
+                _ => {
+                    info!("Port command for port {}", command.port.0);
+                    controller::PortResponseData::Complete
+                }
             })
         }
 

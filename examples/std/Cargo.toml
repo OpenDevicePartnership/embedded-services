@@ -25,6 +25,7 @@ embedded-services = { path = "../../embedded-service", features = ["log"] }
 power-policy-service = { path = "../../power-policy-service", features = [
     "log",
 ] }
+type-c-service = { path = "../../type-c-service", features = ["log"] }
 
 env_logger = "0.9.0"
 log = "0.4.14"
@@ -33,3 +34,7 @@ static_cell = "2"
 [[bin]]
 name = "type-c-basic"
 path = "src/bin/type_c/basic.rs"
+
+[[bin]]
+name = "type-c-service"
+path = "src/bin/type_c/service.rs"

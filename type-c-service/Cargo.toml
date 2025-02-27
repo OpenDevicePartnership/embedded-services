@@ -26,7 +26,6 @@ tps6699x = { git = "https://github.com/OpenDevicePartnership/tps6699x", features
 ] }
 embedded-usb-pd = { git = "https://github.com/OpenDevicePartnership/embedded-usb-pd", default-features = false }
 
-
 [features]
 default = []
 defmt = [
