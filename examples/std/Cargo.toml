@@ -19,6 +19,8 @@ embassy-executor = { git = "https://github.com/embassy-rs/embassy", features = [
     "executor-thread",
     "log",
 ] }
+
+embedded-usb-pd = { git = "https://github.com/OpenDevicePartnership/embedded-usb-pd" }
 embedded-services = { path = "../../embedded-service", features = ["log"] }
 power-policy-service = { path = "../../power-policy-service", features = [
     "log",

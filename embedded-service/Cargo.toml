@@ -38,13 +38,33 @@ embedded-hal-02 = { package = "embedded-hal", version = "0.2.6", features = [
 embedded-hal-1 = { package = "embedded-hal", version = "1.0" }
 embedded-hal-async = { version = "1.0" }
 embedded-hal-nb = { version = "1.0" }
+embedded-usb-pd = { git = "https://github.com/OpenDevicePartnership/embedded-usb-pd" }
 
 document-features = "0.2.7"
 
 bitfield = "0.17.0"
+bitflags = "2.8.0"
 
 [dev-dependencies]
 embassy-sync = { git = "https://github.com/embassy-rs/embassy", features = [
     "std",
 ] }
 embassy-futures = { git = "https://github.com/embassy-rs/embassy" }
+
+[features]
+default = []
+defmt = [
+    "dep:defmt",
+    "embassy-sync/defmt",
+    "embassy-time/defmt",
+    "embassy-executor/defmt",
+    "embassy-futures/defmt",
+    "embedded-usb-pd/defmt",
+]
+log = [
+    "dep:log",
+    "embassy-sync/log",
+    "embassy-time/log",
+    "embassy-executor/log",
+    "embassy-futures/log",
+]
