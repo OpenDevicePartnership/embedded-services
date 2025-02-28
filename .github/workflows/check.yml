@@ -59,7 +59,7 @@ jobs:
       fail-fast: false
       matrix:
         commit: ${{ fromJSON(needs.commit_list.outputs.commits) }}
-        workdir: [ "embedded-service", "hid-service", "power-button-service"]
+        workdir: [ "embedded-service", "espi-service", "hid-service", "power-button-service"]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -86,7 +86,7 @@ jobs:
         # Get early warning of new lints which are regularly introduced in beta channels.
         toolchain: [stable, beta]
         commit: ${{ fromJSON(needs.commit_list.outputs.commits) }}
-        workdir: [ "embedded-service", "hid-service", "power-button-service"]
+        workdir: [ "embedded-service", "espi-service", "hid-service", "power-button-service"]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -150,6 +150,31 @@ jobs:
           RUSTDOCFLAGS: --cfg docsrs
         working-directory: ${{ matrix.workdir }}
 
+  doc-espi-service:
+    # run docs generation on nightly rather than stable. This enables features like
+    # https://doc.rust-lang.org/beta/unstable-book/language-features/doc-cfg.html which allows an
+    # API be documented as only available in some specific platforms.
+    runs-on: ubuntu-latest
+    name: nightly / doc
+    needs: commit_list
+    strategy:
+      fail-fast: false
+      matrix:
+        commit: ${{ fromJSON(needs.commit_list.outputs.commits) }}
+        workdir: [ "espi-service" ]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+          ref: ${{ matrix.commit }}
+      - name: Install nightly
+        uses: dtolnay/rust-toolchain@nightly
+      - name: cargo doc
+        run: cargo doc --target thumbv8m.main-none-eabihf --no-deps --all-features
+        env:
+          RUSTDOCFLAGS: --cfg docsrs
+        working-directory: ${{ matrix.workdir }}
+
   hack:
     # cargo-hack checks combinations of feature flags to ensure that features are all additive
     # which is required for feature unification
@@ -176,6 +201,32 @@ jobs:
         run: cargo hack --feature-powerset --mutually-exclusive-features=log,defmt check
         working-directory: ${{ matrix.workdir }}
 
+  hack-espi-service:
+    # cargo-hack checks combinations of feature flags to ensure that features are all additive
+    # which is required for feature unification
+    runs-on: ubuntu-latest
+    name: ubuntu / stable / features
+    needs: commit_list
+    strategy:
+      fail-fast: false
+      matrix:
+        commit: ${{ fromJSON(needs.commit_list.outputs.commits) }}
+        workdir: [ "espi-service" ]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+          ref: ${{ matrix.commit }}
+      - name: Install stable
+        uses: dtolnay/rust-toolchain@stable
+      - name: cargo install cargo-hack
+        uses: taiki-e/install-action@cargo-hack
+      # intentionally no target specifier; see https://github.com/jonhoo/rust-ci-conf/pull/4
+      # --feature-powerset runs for every combination of features
+      - name: cargo hack
+        run: cargo hack --target thumbv8m.main-none-eabihf --feature-powerset --mutually-exclusive-features=log,defmt check
+        working-directory: ${{ matrix.workdir }}
+
   deny:
     # cargo-deny checks licenses, advisories, sources, and bans for
     # our dependencies.
@@ -186,7 +237,7 @@ jobs:
       fail-fast: false
       matrix:
         commit: ${{ fromJSON(needs.commit_list.outputs.commits) }}
-        workdir: [ "embedded-service", "hid-service", "power-button-service"]
+        workdir: [ "embedded-service", "espi-service", "hid-service", "power-button-service"]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -234,3 +285,36 @@ jobs:
           cargo check -F log
           cargo check -F defmt
         working-directory: ${{ matrix.workdir }}
+
+  msrv-espi-service:
+          # check that we can build using the minimal rust version that is specified by this crate
+          runs-on: ubuntu-latest
+          needs: commit_list
+          # we use a matrix here just because env can't be used in job names
+          # https://docs.github.com/en/actions/learn-github-actions/contexts#context-availability
+          strategy:
+            fail-fast: false
+            matrix:
+              commit: ${{ fromJSON(needs.commit_list.outputs.commits) }}
+              workdir: [ "espi-service"]
+              msrv: ["1.83"] # We're relying on namespaced-features, which
+                             # was released in 1.60
+                             #
+                             # We also depend on `fixed' which requires rust
+                             # 1.79
+                             # Embassy requires 1.83
+          name: ubuntu / ${{ matrix.msrv }}
+          steps:
+            - uses: actions/checkout@v4
+              with:
+                submodules: true
+                ref: ${{ matrix.commit }}
+            - name: Install ${{ matrix.msrv }}
+              uses: dtolnay/rust-toolchain@master
+              with:
+                toolchain: ${{ matrix.msrv }}
+            - name: cargo +${{ matrix.msrv }} check
+              run: |
+                cargo check -F log --target thumbv8m.main-none-eabihf
+                cargo check -F defmt --target thumbv8m.main-none-eabihf
+              working-directory: ${{ matrix.workdir }}

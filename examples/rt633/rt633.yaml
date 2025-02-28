@@ -1,0 +1,160 @@
+name: MIMXRT633S
+manufacturer:
+  id: 0x15
+  cc: 0x0
+generated_from_pack: true
+pack_file_release: 19.0.0
+variants:
+- name: MIMXRT633SFVKB
+  cores:
+  - name: cm33
+    type: armv8m
+    core_access_options: !Arm
+      ap: !v1 0
+  memory_map:
+  - !Ram
+    name: SRAM_ROM
+    range:
+      start: 0x0
+      end: 0x20000
+    cores:
+    - cm33
+  - !Ram
+    name: SRAM_SHARED
+    range:
+      start: 0x20000
+      end: 0x80000
+    cores:
+    - cm33
+  - !Ram
+    name: SRAM
+    range:
+      start: 0x80000
+      end: 0x200000
+    cores:
+    - cm33
+  - !Generic
+    name: BootROM
+    range:
+      start: 0x3000000
+      end: 0x3040000
+    cores:
+    - cm33
+    access:
+      write: false
+  - !Ram
+    name: SRAM_ROM_alias1
+    range:
+      start: 0x10000000
+      end: 0x10020000
+    cores:
+    - cm33
+  - !Ram
+    name: SRAM_SHARED_alias1
+    range:
+      start: 0x10020000
+      end: 0x10080000
+    cores:
+    - cm33
+  - !Ram
+    name: SRAM_alias1
+    range:
+      start: 0x10080000
+      end: 0x10200000
+    cores:
+    - cm33
+  - !Generic
+    name: BootROM_alias
+    range:
+      start: 0x13000000
+      end: 0x13040000
+    cores:
+    - cm33
+    access:
+      write: false
+  - !Ram
+    name: SRAM_ROM_alias2
+    range:
+      start: 0x20000000
+      end: 0x20020000
+    cores:
+    - cm33
+  - !Ram
+    name: SRAM_SHARED_alias2
+    range:
+      start: 0x20020000
+      end: 0x20080000
+    cores:
+    - cm33
+  - !Ram
+    name: SRAM_alias2
+    range:
+      start: 0x20080000
+      end: 0x20200000
+    cores:
+    - cm33
+  - !Ram
+    name: SRAM_ROM_alias3
+    range:
+      start: 0x30000000
+      end: 0x30020000
+    cores:
+    - cm33
+  - !Ram
+    name: SRAM_SHARED_alias3
+    range:
+      start: 0x30020000
+      end: 0x30080000
+    cores:
+    - cm33
+  - !Ram
+    name: SRAM_alias3
+    range:
+      start: 0x30080000
+      end: 0x30200000
+    cores:
+    - cm33
+  - !Generic
+    name: USB_RAM
+    range:
+      start: 0x40140000
+      end: 0x40144000
+    cores:
+    - cm33
+    access:
+      execute: false
+  - !Generic
+    name: USB_RAM_alias
+    range:
+      start: 0x50140000
+      end: 0x50144000
+    cores:
+    - cm33
+    access:
+      execute: false
+  flash_algorithms:
+  - rt6xx_w25q16_flexspi
+flash_algorithms:
+- name: rt6xx_w25q16_flexspi
+  description: MIMXRT6XX FLEXSPI
+  default: true
+  instructions: cLVA8gwE7/MQgHK2QPIQMcDyAATA8gABRfIMBQnrBAB5RE/0AHLE8hMFAPBR+UP2AADE8gMAACEBYEPyHADE8gMAAWABIGhiQvIwYMTyAABP9IAxAWAMIUFgT/D/MYFgwWAoaEDwAQAoYAC/VfgIDMAH+9FB8jBFxPIABQMgKGAAIELyCAZoYAMgxPIQBgDwvfhwIMTyAABP9IAxwPjQHwFgRPIwEMTyAABP9JhxAWB0IMTyAgAEIcD40B8BYE/0gFAwYMb4gAJB8nBwATgAv/zRT/SAUAAixvgAAgnrBAEAIMX4UC+96HBAAPBHuAC/ACBwR0DyDADA8gAACesAAQAgAPBNuAC/APF4QkDyDADA8gAACesAAdH4xDEAIADwT7gAvwApBL8AIHBHLenwRYGwQPIMChRGiEYGRgAlwPIACgC/CesKBwbxeEIAIDlGI0YA8Bv41/jAEQ1EDERFRQ5E79MBsL3o8IUAAE/yHADB8gMwAGgAaHBHAL9P8hwCwfIDMhJoUmgQRwC/T/IcDMHyAzzc+ADA3PgIwGBHAL9P8hwCwfIDMhJo0mgQRwC/T/IcA8HyAzMbaNtpGEcAv0/yHAzB8gM83PgAwNz4EMBgRwC/T/IcDMHyAzzc+ADA3PggwGBHAL9P8hwMwfIDPNz4AMDc+CjAYEcAv0/yHALB8gMyEmhSahBHAL9P8hwBwfIDMQloyWoIRwC/T/IcA8HyAzMbaBtrGEcAv3C1T/IcBsHyAzYzaAxG22kFRphHACgYv3C9MGghRkJoKEa96HBAEEdP8iABwfIDMQloCWgIRwC/T/IgAMHyAzAAaEBoAEcAv0/yIALB8gMyEmiSaBBHAL9P8iADwfIDMxto22gYRwC/T/IgAMHyAzAAaEBpAEcAv0/yIAPB8gMzG2ibaRhHAL9P8iADwfIDMxtoG2kYRwC/T/IAAcHyAzEJaAhHELUgOsDwC4Cx6BhQoOgYULHoGFCg6BhQIDq/9PWvX+oCfCS/segYUKDoGFBEvxjJGMC96BBAX+qCfCS/UfgEO0D4BDsIv3BH0gcovzH4AjtIvxH4ASsovyD4AjtIvwD4AStwR0ZDRkIAAAFWAAAAAAADAwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQEBAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwQYCAQkAAAAAAAAAAAAAAUEBCQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABgQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADYBBgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgQYCIAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABgBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+  pc_init: 0x1
+  pc_uninit: 0xf1
+  pc_program_page: 0x125
+  pc_erase_sector: 0x109
+  pc_erase_all: 0xf5
+  data_section_offset: 0x2c534
+  flash_properties:
+    address_range:
+      start: 0x8000000
+      end: 0x10000000
+    page_size: 0x100
+    erased_byte_value: 0xff
+    program_page_timeout: 3000
+    erase_sector_timeout: 3000
+    sectors:
+    - size: 0x1000
+      address: 0x0
+  cores:
+  - cm33
