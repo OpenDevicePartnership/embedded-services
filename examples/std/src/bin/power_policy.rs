@@ -1,6 +1,6 @@
 use embassy_executor::{Executor, Spawner};
 use embassy_sync::once_lock::OnceLock;
-use embassy_time as _;
+use embassy_time::{self as _, Timer};
 use embedded_services::power::policy::{self, device, PowerCapability};
 use log::*;
 use static_cell::StaticCell;
@@ -132,16 +132,30 @@ async fn run(spawner: Spawner) {
     // Device 0 should not be able to consumer after device 1 is unplugged
     info!("Connecting device 0");
     device0.notify_consumer_power_capability(None).await.unwrap();
+    let device1 = device1.detach().await.unwrap();
+
+    device0.request_provider_power_capability(LOW_POWER).await.unwrap();
+    Timer::after_millis(250).await;
+
+    let device1 = device1.attach().await.unwrap();
+    device1.request_provider_power_capability(LOW_POWER).await.unwrap();
+
+    Timer::after_millis(250).await;
+    let _device0 = device0.detach().await.unwrap();
+
+    Timer::after_millis(250).await;
     let _device1 = device1.detach().await.unwrap();
 }
 
 fn main() {
-    env_logger::builder().filter_level(log::LevelFilter::Info).init();
+    env_logger::builder().filter_level(log::LevelFilter::Trace).init();
 
     static EXECUTOR: StaticCell<Executor> = StaticCell::new();
     let executor = EXECUTOR.init(Executor::new());
     executor.run(|spawner| {
-        spawner.must_spawn(power_policy_service::task());
+        spawner.must_spawn(power_policy_service::task(
+            power_policy_service::config::Config::default(),
+        ));
         spawner.must_spawn(run(spawner));
     });
 }
