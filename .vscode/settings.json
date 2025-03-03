@@ -15,6 +15,7 @@
         "${workspaceFolder}/hid-service/Cargo.toml",
         "${workspaceFolder}/power-button-service/Cargo.toml",
         "${workspaceFolder}/power-policy-service/Cargo.toml",
+        "${workspaceFolder}/battery-service/Cargo.toml",
         "${workspaceFolder}/examples/rt685s-evk/Cargo.toml",
         "${workspaceFolder}/examples/std/Cargo.toml",
     ],
