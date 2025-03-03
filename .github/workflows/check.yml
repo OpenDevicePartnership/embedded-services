@@ -59,7 +59,7 @@ jobs:
       fail-fast: false
       matrix:
         commit: ${{ fromJSON(needs.commit_list.outputs.commits) }}
-        workdir: [ "embedded-service", "hid-service", "power-button-service"]
+        workdir: [ "embedded-service", "hid-service", "power-button-service", "battery-service"]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -86,7 +86,7 @@ jobs:
         # Get early warning of new lints which are regularly introduced in beta channels.
         toolchain: [stable, beta]
         commit: ${{ fromJSON(needs.commit_list.outputs.commits) }}
-        workdir: [ "embedded-service", "hid-service", "power-button-service"]
+        workdir: [ "embedded-service", "hid-service", "power-button-service", "battery-service"]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -136,7 +136,7 @@ jobs:
       fail-fast: false
       matrix:
         commit: ${{ fromJSON(needs.commit_list.outputs.commits) }}
-        workdir: [ "embedded-service", "hid-service", "power-button-service"]
+        workdir: [ "embedded-service", "hid-service", "power-button-service", "battery-service"]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -160,7 +160,7 @@ jobs:
       fail-fast: false
       matrix:
         commit: ${{ fromJSON(needs.commit_list.outputs.commits) }}
-        workdir: [ "embedded-service", "hid-service", "power-button-service"]
+        workdir: [ "embedded-service", "hid-service", "power-button-service", "battery-service"]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -186,7 +186,7 @@ jobs:
       fail-fast: false
       matrix:
         commit: ${{ fromJSON(needs.commit_list.outputs.commits) }}
-        workdir: [ "embedded-service", "hid-service", "power-button-service"]
+        workdir: [ "embedded-service", "hid-service", "power-button-service", "battery-service"]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -212,7 +212,7 @@ jobs:
       fail-fast: false
       matrix:
         commit: ${{ fromJSON(needs.commit_list.outputs.commits) }}
-        workdir: [ "embedded-service", "hid-service", "power-button-service"]
+        workdir: [ "embedded-service", "hid-service", "power-button-service", "battery-service"]
         msrv: ["1.83"] # We're relying on namespaced-features, which
                        # was released in 1.60
                        #
