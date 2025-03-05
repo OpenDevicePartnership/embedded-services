@@ -9,6 +9,7 @@ pub use intrusive_list::*;
 /// short-hand include all pre-baked services
 pub mod activity;
 pub mod buffer;
+pub mod cfu;
 pub mod comms;
 pub mod ec_type;
 pub mod fmt;
@@ -22,6 +23,7 @@ pub async fn init() {
     comms::init();
     activity::init();
     hid::init();
+    cfu::init();
     keyboard::init();
     power::policy::init();
 }
