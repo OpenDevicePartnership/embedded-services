@@ -1,7 +1,7 @@
 //! Device state machine actions
 use super::*;
-use crate::info;
 use crate::power::policy::{device, policy, Error, PowerCapability};
+use crate::{info, trace};
 
 /// Device state machine control
 pub struct Device<'a, S: Kind> {
@@ -83,6 +83,12 @@ impl<'a, S: Kind> Device<'a, S> {
 
     /// Request the given power from the power policy service
     async fn request_provider_power_capability_internal(&self, capability: PowerCapability) -> Result<(), Error> {
+        if self.device.provider_capability().await == Some(capability) {
+            // Already connected
+            trace!("Device {} already connected at {:#?}", self.device.id().0, capability);
+            return Ok(());
+        }
+
         info!("Request provide from device {}, {:#?}", self.device.id().0, capability);
         policy::send_request(
             self.device.id(),

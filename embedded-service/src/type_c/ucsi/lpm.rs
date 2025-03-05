@@ -1,4 +1,6 @@
-use crate::type_c::{Error, PortId};
+use embedded_usb_pd::PdError;
+
+use crate::type_c::GlobalPortId;
 
 /// Connector reset types
 #[derive(Copy, Clone, Debug)]
@@ -19,7 +21,7 @@ pub enum CommandData {
 #[derive(Copy, Clone, Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct Command {
-    pub port: PortId,
+    pub port: GlobalPortId,
     pub operation: CommandData,
 }
 
@@ -30,4 +32,4 @@ pub enum ResponseData {
     Complete,
 }
 
-pub type Response = Result<ResponseData, Error>;
+pub type Response = Result<ResponseData, PdError>;

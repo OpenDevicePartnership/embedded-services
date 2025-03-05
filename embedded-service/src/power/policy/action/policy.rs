@@ -51,6 +51,22 @@ impl<'a, S: Kind> Policy<'a, S> {
         self.device.set_state(device::State::Idle).await;
         Ok(())
     }
+
+    /// Connect this device as a provider
+    async fn connect_provider_internal(&self, capability: PowerCapability) -> Result<(), Error> {
+        info!("Device {} connecting provider", self.device.id().0);
+
+        self.device
+            .execute_device_request(device::RequestData::ConnectProvider(capability))
+            .await?
+            .complete_or_err()?;
+
+        self.device
+            .set_state(device::State::ConnectedProvider(capability))
+            .await;
+
+        Ok(())
+    }
 }
 
 // The policy can do nothing when no device is attached
@@ -74,16 +90,7 @@ impl<'a> Policy<'a, Idle> {
 
     /// Connect this device as a provider
     pub async fn connect_provider(self, capability: PowerCapability) -> Result<Policy<'a, ConnectedProvider>, Error> {
-        info!("Device {} connecting provider", self.device.id().0);
-
-        self.device
-            .execute_device_request(device::RequestData::ConnectProvider(capability))
-            .await?
-            .complete_or_err()?;
-
-        self.device
-            .set_state(device::State::ConnectedProvider(capability))
-            .await;
+        self.connect_provider_internal(capability).await?;
         Ok(Policy::new(self.device))
     }
 }
@@ -101,5 +108,15 @@ impl<'a> Policy<'a, ConnectedProvider> {
     pub async fn disconnect(self) -> Result<Policy<'a, Idle>, Error> {
         self.disconnect_internal().await?;
         Ok(Policy::new(self.device))
+    }
+
+    /// Connect this device as a provider
+    pub async fn connect_provider(&self, capability: PowerCapability) -> Result<(), Error> {
+        self.connect_provider_internal(capability).await
+    }
+
+    /// Get the provider power capability of this device
+    pub async fn power_capability(&self) -> PowerCapability {
+        self.device.provider_capability().await.unwrap()
     }
 }
