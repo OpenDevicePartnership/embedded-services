@@ -8,6 +8,7 @@ repository = "https://github.com/OpenDevicePartnership/embedded-services"
 rust-version = "1.83"
 
 [dependencies]
+embedded-cfu-protocol = { git = "https://github.com/madeleyneVaca/embedded-cfu-odp", branch = "cfuProtocol" }
 embassy-sync = { git = "https://github.com/embassy-rs/embassy" }
 embassy-time-driver = { git = "https://github.com/embassy-rs/embassy", optional = true }
 embassy-time = { git = "https://github.com/embassy-rs/embassy" }
@@ -28,6 +29,7 @@ embedded-storage = { version = "0.3" }
 embedded-storage-async = { version = "0.4.1" }
 rand_core = "0.6.4"
 fixed = "1.23.1"
+heapless = "0.8.*"
 
 postcard = "1.*"
 serde = { version = "1.0.*", default-features = false }
