@@ -1,6 +1,5 @@
 use bitfield::bitfield;
-
-use crate::type_c::Error;
+use embedded_usb_pd::PdError;
 
 bitfield! {
     /// PPM notifications that can be enabled, see spec for more details
@@ -44,4 +43,4 @@ pub enum ResponseData {
     Complete,
 }
 
-pub type Response = Result<ResponseData, Error>;
+pub type Response = Result<ResponseData, PdError>;
