@@ -1,32 +1,43 @@
 use embassy_executor::{Executor, Spawner};
 use embassy_sync::once_lock::OnceLock;
 use embassy_time::Timer;
+use embedded_services::power;
 use embedded_services::type_c::ucsi::lpm;
-use embedded_services::type_c::{controller, ControllerId, Error, PortId};
+use embedded_services::type_c::{controller, ControllerId, GlobalPortId as PortId};
+use embedded_usb_pd::PdError as Error;
 use log::*;
 use static_cell::StaticCell;
 
 const CONTROLLER0: ControllerId = ControllerId(0);
 const PORT0: PortId = PortId(0);
 const PORT1: PortId = PortId(1);
+const POWER0: power::policy::DeviceId = power::policy::DeviceId(0);
 
 mod test_controller {
     use super::*;
 
     pub struct Controller<'a> {
-        pub controller: controller::Controller<'a>,
+        pub controller: controller::Device<'a>,
+        pub power_policy: power::policy::device::Device,
     }
 
-    impl controller::ControllerContainer for Controller<'_> {
-        fn get_controller(&self) -> &controller::Controller {
+    impl controller::DeviceContainer for Controller<'_> {
+        fn get_pd_controller_device(&self) -> &controller::Device {
             &self.controller
         }
     }
 
+    impl power::policy::device::DeviceContainer for Controller<'_> {
+        fn get_power_policy_device(&self) -> &power::policy::device::Device {
+            &self.power_policy
+        }
+    }
+
     impl<'a> Controller<'a> {
-        pub fn new(id: ControllerId, ports: &'a [PortId]) -> Self {
+        pub fn new(id: ControllerId, power_id: power::policy::DeviceId, ports: &'a [PortId]) -> Self {
             Self {
-                controller: controller::Controller::new(id, ports),
+                controller: controller::Device::new(id, ports),
+                power_policy: power::policy::device::Device::new(power_id),
             }
         }
 
@@ -37,6 +48,10 @@ mod test_controller {
             match command {
                 controller::InternalCommandData::Reset => {
                     info!("Reset controller");
+                    Ok(controller::InternalResponseData::Complete)
+                }
+                _ => {
+                    info!("Other controller command");
                     Ok(controller::InternalResponseData::Complete)
                 }
             }
@@ -72,7 +87,7 @@ async fn controller_task() {
 
     static PORTS: [PortId; 2] = [PORT0, PORT1];
 
-    let controller = CONTROLLER.get_or_init(|| test_controller::Controller::new(CONTROLLER0, &PORTS));
+    let controller = CONTROLLER.get_or_init(|| test_controller::Controller::new(CONTROLLER0, POWER0, &PORTS));
     controller::register_controller(controller).await.unwrap();
 
     loop {
@@ -91,11 +106,13 @@ async fn task(spawner: Spawner) {
     // Wait for controller to be registered
     Timer::after_secs(1).await;
 
-    controller::reset_controller(CONTROLLER0).await.unwrap();
+    let context = controller::ContextToken::create().unwrap();
+
+    context.reset_controller(CONTROLLER0).await.unwrap();
     info!("Reset controller done");
-    controller::reset_port(PORT0, lpm::ResetType::Hard).await.unwrap();
+    context.reset_port(PORT0, lpm::ResetType::Hard).await.unwrap();
     info!("Reset port 0 done");
-    controller::reset_port(PORT1, lpm::ResetType::Data).await.unwrap();
+    context.reset_port(PORT1, lpm::ResetType::Data).await.unwrap();
     info!("Reset port 1 done");
 }
 
