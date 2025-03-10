@@ -1,0 +1,8 @@
+[package]
+name = "storage-bus-service"
+version = "0.1.1"
+edition = "2021"
+description = "Storage Bus embedded service interfaces"
+repository = "https://github.com/OpenDevicePartnership/embedded-services"
+rust-version = "1.83"
+license = "MIT"
