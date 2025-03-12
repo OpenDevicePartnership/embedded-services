@@ -160,6 +160,19 @@ impl Device {
         self.state().await.kind() == StateKind::ConnectedConsumer
     }
 
+    /// Returns current provider power capability
+    pub async fn provider_capability(&self) -> Option<PowerCapability> {
+        match self.state().await {
+            State::ConnectedProvider(capability) => Some(capability),
+            _ => None,
+        }
+    }
+
+    /// Returns true if the device is currently providing power
+    pub async fn is_provider(&self) -> bool {
+        self.state().await.kind() == StateKind::ConnectedProvider
+    }
+
     /// Sends a request to this device and returns a response
     pub(super) async fn execute_device_request(&self, request: RequestData) -> Result<ResponseData, Error> {
         self.request.send(request).await;
