@@ -62,7 +62,7 @@ impl<F: embedded_batteries_async::smart_battery::SmartBattery> FuelGauge<F> {
                             if let BatteryMsgs::Acpi(crate::BatteryMessage::State(state)) = res.unwrap() {
                                 state
                             } else {
-                                1234
+                                unreachable!();
                             }
                         )
                     }
@@ -82,7 +82,7 @@ impl<F: embedded_batteries_async::smart_battery::SmartBattery> FuelGauge<F> {
                             if let BatteryMsgs::Acpi(crate::BatteryMessage::PresentRate(current)) = res.unwrap() {
                                 current
                             } else {
-                                1234
+                                unreachable!();
                             }
                         )
                     }
@@ -107,7 +107,7 @@ impl<F: embedded_batteries_async::smart_battery::SmartBattery> FuelGauge<F> {
                             if let BatteryMsgs::Acpi(crate::BatteryMessage::RemainCap(cap)) = res.unwrap() {
                                 cap
                             } else {
-                                1234
+                                unreachable!();
                             }
                         )
                     }
@@ -127,7 +127,7 @@ impl<F: embedded_batteries_async::smart_battery::SmartBattery> FuelGauge<F> {
                             if let BatteryMsgs::Acpi(crate::BatteryMessage::PresentVolt(v)) = res.unwrap() {
                                 v
                             } else {
-                                1234
+                                unreachable!();
                             }
                         )
                     }
