@@ -1,5 +1,12 @@
 //! EC Internal Data Structures
 
+pub const EC_MEMMAP_VERSION: Version = Version {
+    major: 0,
+    minor: 1,
+    spin: 0,
+    res0: 0,
+};
+
 #[allow(missing_docs)]
 #[repr(C, packed)]
 #[derive(Clone, Copy, Debug, Default)]
@@ -23,6 +30,7 @@ pub struct Capabilities {
     pub temp_mask: u16,
     pub key_mask: u16,
     pub debug_mask: u16,
+    pub res0: u16,
 }
 
 #[allow(missing_docs)]
@@ -53,6 +61,7 @@ pub struct TimeAlarm {
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Battery {
     pub events: u32,
+    pub status: u32,
     pub last_full_charge: u32,
     pub cycle_count: u32,
     pub state: u32,
@@ -103,9 +112,18 @@ pub struct Thermal {
 #[allow(missing_docs)]
 #[repr(C, packed)]
 #[derive(Clone, Copy, Debug, Default)]
+pub struct Notifications {
+    pub service: u16,
+    pub event: u16,
+}
+
+#[allow(missing_docs)]
+#[repr(C, packed)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct ECMemory {
     pub ver: Version,
     pub caps: Capabilities,
+    pub notif: Notifications,
     pub alarm: TimeAlarm,
     pub batt: Battery,
     pub therm: Thermal,
