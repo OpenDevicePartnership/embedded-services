@@ -47,6 +47,7 @@ impl<'a, S: Kind> Device<'a, S> {
         info!("Received detach from device {}", self.device.id().0);
         self.device.set_state(device::State::Detached).await;
         self.device.update_consumer_capability(None).await;
+        self.device.exit_recovery().await;
         policy::send_request(self.device.id(), policy::RequestData::NotifyDetached)
             .await?
             .complete_or_err()?;
@@ -57,6 +58,7 @@ impl<'a, S: Kind> Device<'a, S> {
     async fn disconnect_internal(&self) -> Result<(), Error> {
         info!("Device {} disconnecting", self.device.id().0);
         self.device.set_state(device::State::Idle).await;
+        self.device.exit_recovery().await;
         policy::send_request(self.device.id(), policy::RequestData::NotifyDisconnect)
             .await?
             .complete_or_err()

@@ -56,6 +56,8 @@ struct InternalState {
     pub state: State,
     /// Current consumer capability
     pub consumer_capability: Option<PowerCapability>,
+    /// Device encountered an error and is in the process of recovering
+    pub in_recovery: bool,
 }
 
 /// Data for a device request
@@ -134,6 +136,7 @@ impl Device {
             state: Mutex::new(InternalState {
                 state: State::Detached,
                 consumer_capability: None,
+                in_recovery: false,
             }),
             request: Channel::new(),
             response: Channel::new(),
@@ -158,6 +161,34 @@ impl Device {
     /// Returns true if the device is currently consuming power
     pub async fn is_consumer(&self) -> bool {
         self.state().await.kind() == StateKind::ConnectedConsumer
+    }
+
+    /// Returns current provider power capability
+    pub async fn provider_capability(&self) -> Option<PowerCapability> {
+        match self.state().await {
+            State::ConnectedProvider(capability) => Some(capability),
+            _ => None,
+        }
+    }
+
+    /// Returns true if the device is currently providing power
+    pub async fn is_provider(&self) -> bool {
+        self.state().await.kind() == StateKind::ConnectedProvider
+    }
+
+    /// Returns true if the device is currently in recovery
+    pub async fn is_in_recovery(&self) -> bool {
+        self.state.lock().await.in_recovery
+    }
+
+    /// Enter recovery mode
+    pub(super) async fn enter_recovery(&self) {
+        self.state.lock().await.in_recovery = true;
+    }
+
+    /// Exit recovery mode
+    pub(super) async fn exit_recovery(&self) {
+        self.state.lock().await.in_recovery = false;
     }
 
     /// Sends a request to this device and returns a response
