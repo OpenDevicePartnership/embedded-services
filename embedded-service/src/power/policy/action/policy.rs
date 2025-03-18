@@ -1,7 +1,7 @@
 //! Policy state machine
 use super::*;
-use crate::info;
 use crate::power::policy::{device, Error, PowerCapability};
+use crate::{error, info};
 
 /// Policy state machine control
 pub struct Policy<'a, S: Kind> {
@@ -49,6 +49,23 @@ impl<'a, S: Kind> Policy<'a, S> {
             .await?
             .complete_or_err()?;
         self.device.set_state(device::State::Idle).await;
+        self.device.exit_recovery().await;
+        Ok(())
+    }
+
+    /// Connect this device as a provider
+    async fn connect_provider_internal(&self, capability: PowerCapability) -> Result<(), Error> {
+        info!("Device {} connecting provider", self.device.id().0);
+
+        self.device
+            .execute_device_request(device::RequestData::ConnectProvider(capability))
+            .await?
+            .complete_or_err()?;
+
+        self.device
+            .set_state(device::State::ConnectedProvider(capability))
+            .await;
+
         Ok(())
     }
 }
@@ -74,16 +91,7 @@ impl<'a> Policy<'a, Idle> {
 
     /// Connect this device as a provider
     pub async fn connect_provider(self, capability: PowerCapability) -> Result<Policy<'a, ConnectedProvider>, Error> {
-        info!("Device {} connecting provider", self.device.id().0);
-
-        self.device
-            .execute_device_request(device::RequestData::ConnectProvider(capability))
-            .await?
-            .complete_or_err()?;
-
-        self.device
-            .set_state(device::State::ConnectedProvider(capability))
-            .await;
+        self.connect_provider_internal(capability).await?;
         Ok(Policy::new(self.device))
     }
 }
@@ -99,7 +107,21 @@ impl<'a> Policy<'a, ConnectedConsumer> {
 impl<'a> Policy<'a, ConnectedProvider> {
     /// Disconnect this device
     pub async fn disconnect(self) -> Result<Policy<'a, Idle>, Error> {
-        self.disconnect_internal().await?;
+        if let Err(e) = self.disconnect_internal().await {
+            error!("Error disconnecting device {}: {:?}", self.device.id().0, e);
+            self.device.enter_recovery().await;
+            return Err(e);
+        }
         Ok(Policy::new(self.device))
+    }
+
+    /// Connect this device as a provider
+    pub async fn connect_provider(&self, capability: PowerCapability) -> Result<(), Error> {
+        self.connect_provider_internal(capability).await
+    }
+
+    /// Get the provider power capability of this device
+    pub async fn power_capability(&self) -> PowerCapability {
+        self.device.provider_capability().await.unwrap()
     }
 }
