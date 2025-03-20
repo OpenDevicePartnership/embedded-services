@@ -2,8 +2,8 @@ use embassy_executor::{Executor, Spawner};
 use embassy_sync::once_lock::OnceLock;
 use embassy_time::Timer;
 use embedded_services::{
-    hid::{self, DeviceId},
     comms::{self, EndpointID, Internal},
+    hid::{self, DeviceId},
 };
 use log::*;
 use static_cell::StaticCell;
