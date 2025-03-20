@@ -43,6 +43,17 @@ mod battery_service {
                 self.signal.signal(*msg);
             }
         }
+
+        fn receive2(&self, message: &comms::Message) -> Result<(), comms::MailboxDelegateError> {
+            let msg = message
+                .data
+                .get::<ec_type::message::BatteryMessage>()
+                .ok_or(comms::MailboxDelegateError::MessageNotFound);
+
+            self.signal.signal(*msg);
+
+            Ok(())
+        }
     }
 
     static BATTERY_SERVICE: OnceLock<Service> = OnceLock::new();
