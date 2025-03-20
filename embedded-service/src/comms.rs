@@ -152,6 +152,36 @@ pub struct Message<'a> {
 pub trait MailboxDelegate {
     /// Receive a Message (typically, push contents to queue or queue some action)
     fn receive(&self, _message: &Message) {}
+
+    /// Temporary for conversion
+    fn receive2(&self, _message: &Message) -> Result<(), MailboxDelegateError> {
+        Ok(())
+    }
+}
+
+/// Message transmission Error
+pub enum MailboxDelegateError {
+    /// Buffer is full
+    BufferFull,
+
+    /// Message not found
+    MessageNotFound,
+
+    /// Invalid source
+    InvalidSource,
+
+    /// Invalid destination
+    InvalidDestination,
+
+    /// Invalid ID
+    InvalidId,
+
+    /// Invalid data
+    InvalidData,
+
+    /// Other error. Usually related to the underlying device or
+    /// transport.
+    Other,
 }
 
 /// Primary node registration for receiving messages from the comms service
