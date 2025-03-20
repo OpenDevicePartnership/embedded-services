@@ -46,6 +46,17 @@ mod sender {
                 self.sn.signal(*sig);
             }
         }
+
+        fn receive2(&self, message: &comms::Message) -> Result<(), comms::MailboxDelegateError> {
+            let sig = message
+                .data
+                .get::<Message>()
+                .ok_or(comms::MailboxDelegateError::MessageNotFound)?;
+
+            self.sn.signal(*sig);
+
+            Ok(())
+        }
     }
 }
 
@@ -71,6 +82,17 @@ mod receiver {
             if let Some(sig) = message.data.get::<Message>() {
                 self.sn.signal(*sig);
             }
+        }
+
+        fn receive2(&self, message: &comms::Message) -> Result<(), comms::MailboxDelegateError> {
+            let sig = message
+                .data
+                .get::<Message>()
+                .ok_or(comms::MailboxDelegateError::MessageNotFound)?;
+
+            self.sn.signal(*sig);
+
+            Ok(())
         }
     }
 }
