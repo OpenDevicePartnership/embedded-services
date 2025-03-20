@@ -35,17 +35,6 @@ impl Device {
     }
 }
 impl comms::MailboxDelegate for Device {
-    fn receive(&self, message: &comms::Message) {
-        let message = message.data.get::<hid::Message>();
-        if message.is_none() {
-            return;
-        }
-        if message.unwrap().id != self.id {
-            return;
-        }
-        info!("{:?} got message", self.id);
-    }
-
     fn receive2(&self, message: &comms::Message) -> Result<(), comms::MailboxDelegateError> {
         let message = message
             .data
