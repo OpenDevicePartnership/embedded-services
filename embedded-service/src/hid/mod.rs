@@ -210,18 +210,6 @@ impl DeviceContainer for Device {
 }
 
 impl MailboxDelegate for Device {
-    fn receive(&self, message: &comms::Message) {
-        if let Some(message) = message.data.get::<Message>() {
-            if message.id != self.id {
-                return;
-            }
-
-            if let MessageData::Request(ref request) = message.data {
-                self.request.signal(request.clone());
-            }
-        }
-    }
-
     fn receive2(&self, message: &comms::Message) -> Result<(), comms::MailboxDelegateError> {
         let message = message
             .data
