@@ -43,6 +43,21 @@ mod espi_service {
                 }
             }
         }
+
+        fn receive2(&self, message: &comms::Message) -> Result<(), comms::MailboxDelegateError> {
+            let msg = message
+                .data
+                .get::<BatteryMessage>()
+                .ok_or(comms::MailboxDelegateError::MessageNotFound)?;
+
+            match msg {
+                BatteryMessage::CycleCount(cycles) => {
+                    info!("Bat cycles: {}", cycles);
+                    Ok(())
+                }
+                _ => Err(comms::MailboxDelegateError::InvalidData),
+            }
+        }
     }
 
     static ESPI_SERVICE: OnceLock<Service> = OnceLock::new();
