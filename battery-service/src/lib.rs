@@ -148,6 +148,25 @@ impl<
             }
         }
     }
+
+    fn receive2(&self, message: &comms::Message) -> Result<(), comms::MailboxDelegateError> {
+        if let Some(msg) = message.data.get::<BatteryMessage>() {
+            self.handle_transport_msg(BatteryMsgs::Acpi(*msg))
+                .map_err(|e| match e {
+                    BatteryServiceErrors::BufferFull => comms::MailboxDelegateError::BufferFull,
+                    _ => comms::MailboxDelegateError::Other,
+                })?;
+        } else if let Some(msg) = message.data.get::<OemMessage>() {
+            self.handle_transport_msg(BatteryMsgs::Oem(*msg)).map_err(|e| match e {
+                BatteryServiceErrors::BufferFull => comms::MailboxDelegateError::BufferFull,
+                _ => comms::MailboxDelegateError::Other,
+            })?;
+        } else {
+            return Err(comms::MailboxDelegateError::MessageNotFound);
+        }
+
+        Ok(())
+    }
 }
 
 /// Generates the service instance and
