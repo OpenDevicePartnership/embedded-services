@@ -129,7 +129,7 @@ impl Service<'_> {
 }
 
 impl comms::MailboxDelegate for Service<'_> {
-    fn receive(&self, message: &comms::Message) {
+    fn receive(&self, message: &comms::Message) -> Result<(), comms::MailboxDelegateError> {
         if let Some(msg) = message.data.get::<ec_type::message::CapabilitiesMessage>() {
             self.update_capabilities_section(msg);
         } else if let Some(msg) = message.data.get::<ec_type::message::BatteryMessage>() {
@@ -138,7 +138,11 @@ impl comms::MailboxDelegate for Service<'_> {
             self.update_thermal_section(msg);
         } else if let Some(msg) = message.data.get::<ec_type::message::TimeAlarmMessage>() {
             self.update_time_alarm_section(msg);
+        } else {
+            return Err(comms::MailboxDelegateError::MessageNotFound);
         }
+
+        Ok(())
     }
 }
 

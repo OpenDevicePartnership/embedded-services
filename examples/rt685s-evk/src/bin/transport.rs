@@ -64,10 +64,15 @@ mod simple_example {
     }
 
     impl comms::MailboxDelegate for Context {
-        fn receive(&self, message: &comms::Message) {
-            if let Some(sig) = message.data.get::<Signals>() {
-                self.sn.signal(*sig);
-            }
+        fn receive(&self, message: &comms::Message) -> Result<comms::MailboxDelegateError> {
+            let sig = message
+                .data
+                .get::<Signals>()
+                .ok_or(comms::MailboxDelegateError::MessageNotFound)?;
+
+            self.sn.signal(*sig);
+
+            Ok(())
         }
     }
 

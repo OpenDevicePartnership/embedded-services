@@ -2,8 +2,8 @@ use embassy_executor::{Executor, Spawner};
 use embassy_sync::once_lock::OnceLock;
 use embassy_time::Timer;
 use embedded_services::{
-    hid::{self, DeviceId},
     comms::{self, EndpointID, Internal},
+    hid::{self, DeviceId},
 };
 use log::*;
 use static_cell::StaticCell;
@@ -19,9 +19,9 @@ impl Host {
         }
     }
 }
-impl comms::MailboxDelegate for Host {
-    fn receive(&self, _message: &comms::Message) {}
-}
+
+impl comms::MailboxDelegate for Host {}
+
 struct Device {
     tp: comms::Endpoint,
     id: DeviceId,
@@ -35,15 +35,18 @@ impl Device {
     }
 }
 impl comms::MailboxDelegate for Device {
-    fn receive(&self, message: &comms::Message) {
-        let message = message.data.get::<hid::Message>();
-        if message.is_none() {
-            return;
-        }
+    fn receive(&self, message: &comms::Message) -> Result<(), comms::MailboxDelegateError> {
+        let message = message
+            .data
+            .get::<hid::Message>()
+            .ok_or(comms::MailboxDelegateError::MessageNotFound)?;
+
         if message.unwrap().id != self.id {
-            return;
+            Err(comms::MailboxDelegateError::InvalidId)
+        } else {
+            info!("{:?} got message", self.id);
+            Ok(())
         }
-        info!("{:?} got message", self.id);
     }
 }
 #[embassy_executor::task]

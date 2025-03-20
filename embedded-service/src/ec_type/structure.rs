@@ -1,5 +1,6 @@
 //! EC Internal Data Structures
 
+/// Embedded Controller Memory Map Version
 pub const EC_MEMMAP_VERSION: Version = Version {
     major: 0,
     minor: 1,

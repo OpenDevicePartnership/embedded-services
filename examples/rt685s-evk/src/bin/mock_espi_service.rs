@@ -43,10 +43,15 @@ mod espi_service {
     }
 
     impl comms::MailboxDelegate for Service {
-        fn receive(&self, message: &comms::Message) {
-            if let Some(msg) = message.data.get::<TxMessage>() {
-                self.signal.signal(*msg);
-            }
+        fn receive(&self, message: &comms::Message) -> Result<(), comms::MailboxDelegateError> {
+            let msg = message
+                .data
+                .get::<TxMessage>()
+                .ok_or(comms::MailbxDelegateError::MessageNotFound)?;
+
+            self.signal.signal(*msg);
+
+            Ok(())
         }
     }
 
@@ -118,10 +123,15 @@ mod battery_service {
     }
 
     impl comms::MailboxDelegate for Service {
-        fn receive(&self, message: &comms::Message) {
-            if let Some(msg) = message.data.get::<RxMessage>() {
-                self.signal.signal(*msg);
-            }
+        fn receive(&self, message: &comms::Message) -> Result<(), comms::MailboxDelegateError> {
+            let msg = message
+                .data
+                .get::<RxMessage>()
+                .ok_or(comms::MailboxDelegateError::MessageNotFound)?;
+
+            self.signal.signal(*msg);
+
+            Ok(())
         }
     }
 

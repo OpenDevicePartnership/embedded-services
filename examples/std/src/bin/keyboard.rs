@@ -76,18 +76,24 @@ mod host {
     }
 
     impl MailboxDelegate for Host {
-        fn receive(&self, message: &comms::Message) {
-            if let Some(message) = message.data.get::<Message>() {
-                match &message.data {
-                    MessageData::Event(Event::KeyEvent(id, events)) => {
-                        let borrow = events.borrow();
-                        let buf: &[KeyEvent] = borrow.borrow();
+        fn receive(&self, message: &comms::Message) -> Result<(), comms::MailboxDelegateError> {
+            let message = message
+                .data
+                .get::<Message>()
+                .ok_or(comms::MailboxDelegateError::MessageNotFound)?;
 
-                        for event in buf {
-                            info!("Host received event from device {}: {:?}", id.0, event);
-                        }
+            match &message.data {
+                MessageData::Event(Event::KeyEvent(id, events)) => {
+                    let borrow = events.borrow();
+                    let buf: &[KeyEvent] = borrow.borrow();
+
+                    for event in buf {
+                        info!("Host received event from device {}: {:?}", id.0, event);
                     }
+
+                    Ok(())
                 }
+                _ => Err(comms::MailboxDelegateError::InvalidData),
             }
         }
     }
