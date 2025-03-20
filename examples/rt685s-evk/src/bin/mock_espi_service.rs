@@ -48,6 +48,17 @@ mod espi_service {
                 self.signal.signal(*msg);
             }
         }
+
+        fn receive2(&self, message: &comms::Message) -> Result<(), comms::MailboxDelegateError> {
+            let msg = message
+                .data
+                .get::<TxMessage>()
+                .ok_or(comms::MailbxDelegateError::MessageNotFound)?;
+
+            self.signal.signal(*msg);
+
+            Ok(())
+        }
     }
 
     static ESPI_SERVICE: OnceLock<Service> = OnceLock::new();
@@ -122,6 +133,17 @@ mod battery_service {
             if let Some(msg) = message.data.get::<RxMessage>() {
                 self.signal.signal(*msg);
             }
+        }
+
+        fn receive2(&self, message: &comms::Message) -> Result<(), comms::MailboxDelegateError> {
+            let msg = message
+                .data
+                .get::<RxMessage>()
+                .ok_or(comms::MailboxDelegateError::MessageNotFound)?;
+
+            self.signal.signal(*msg);
+
+            Ok(())
         }
     }
 
