@@ -5,7 +5,6 @@ use embassy_futures::select::Either::{First, Second};
 use embedded_batteries_async::charger::{MilliAmps, MilliVolts};
 use embedded_services::comms::{self, External};
 use embedded_services::ec_type::message::BatteryMessage;
-use embedded_services::error;
 
 mod charger;
 mod fuel_gauge;
@@ -133,22 +132,6 @@ impl<
         SmartBattery: embedded_batteries_async::smart_battery::SmartBattery,
     > comms::MailboxDelegate for Service<SmartCharger, SmartBattery>
 {
-    fn receive(&self, message: &comms::Message) {
-        if let Some(msg) = message.data.get::<BatteryMessage>() {
-            // Todo: Handle case where buffer is full.
-            if self.handle_transport_msg(BatteryMsgs::Acpi(*msg)).is_err() {
-                error!("Buffer full");
-            }
-        }
-
-        if let Some(msg) = message.data.get::<OemMessage>() {
-            // Todo: Handle case where buffer is full.
-            if self.handle_transport_msg(BatteryMsgs::Oem(*msg)).is_err() {
-                error!("Buffer full");
-            }
-        }
-    }
-
     fn receive2(&self, message: &comms::Message) -> Result<(), comms::MailboxDelegateError> {
         if let Some(msg) = message.data.get::<BatteryMessage>() {
             self.handle_transport_msg(BatteryMsgs::Acpi(*msg))
