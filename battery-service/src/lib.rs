@@ -132,7 +132,7 @@ impl<
         SmartBattery: embedded_batteries_async::smart_battery::SmartBattery,
     > comms::MailboxDelegate for Service<SmartCharger, SmartBattery>
 {
-    fn receive2(&self, message: &comms::Message) -> Result<(), comms::MailboxDelegateError> {
+    fn receive(&self, message: &comms::Message) -> Result<(), comms::MailboxDelegateError> {
         if let Some(msg) = message.data.get::<BatteryMessage>() {
             self.handle_transport_msg(BatteryMsgs::Acpi(*msg))
                 .map_err(|e| match e {

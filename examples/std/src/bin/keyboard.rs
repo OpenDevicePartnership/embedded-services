@@ -76,7 +76,7 @@ mod host {
     }
 
     impl MailboxDelegate for Host {
-        fn receive2(&self, message: &comms::Message) -> Result<(), comms::MailboxDelegateError> {
+        fn receive(&self, message: &comms::Message) -> Result<(), comms::MailboxDelegateError> {
             let message = message
                 .data
                 .get::<Message>()

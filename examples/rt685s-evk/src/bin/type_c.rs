@@ -57,7 +57,7 @@ mod battery {
     }
 
     impl comms::MailboxDelegate for Device {
-        fn receive2(&self, message: &comms::Message) -> Result<(), comms::MailboxDelegateError> {
+        fn receive(&self, message: &comms::Message) -> Result<(), comms::MailboxDelegateError> {
             trace!("Got message");
 
             let message = message

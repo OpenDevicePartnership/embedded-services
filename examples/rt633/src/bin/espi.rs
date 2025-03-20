@@ -38,7 +38,7 @@ mod battery_service {
     }
 
     impl comms::MailboxDelegate for Service {
-        fn receive2(&self, message: &comms::Message) -> Result<(), comms::MailboxDelegateError> {
+        fn receive(&self, message: &comms::Message) -> Result<(), comms::MailboxDelegateError> {
             let msg = message
                 .data
                 .get::<ec_type::message::BatteryMessage>()

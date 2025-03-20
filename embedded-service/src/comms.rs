@@ -150,8 +150,8 @@ pub struct Message<'a> {
 
 /// Trait to receive messages
 pub trait MailboxDelegate {
-    /// Temporary for conversion
-    fn receive2(&self, _message: &Message) -> Result<(), MailboxDelegateError> {
+    /// Receive a Message (typically, push contents to queue or queue some action)
+    fn receive(&self, _message: &Message) -> Result<(), MailboxDelegateError> {
         Ok(())
     }
 }
@@ -221,7 +221,7 @@ impl Endpoint {
     fn process(&self, message: &Message) {
         if let Some(delegator) = self.delegator.get() {
             // REVISIT: Continue to propagate error
-            let _res = delegator.receive2(message);
+            let _res = delegator.receive(message);
         }
     }
 }

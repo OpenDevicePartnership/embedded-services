@@ -64,7 +64,7 @@ mod simple_example {
     }
 
     impl comms::MailboxDelegate for Context {
-        fn receive2(&self, message: &comms::Message) -> Result<comms::MailboxDelegateError> {
+        fn receive(&self, message: &comms::Message) -> Result<comms::MailboxDelegateError> {
             let sig = message
                 .data
                 .get::<Signals>()

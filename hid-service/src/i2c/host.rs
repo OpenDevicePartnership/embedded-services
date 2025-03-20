@@ -290,7 +290,7 @@ impl<B: I2cSlaveAsync> Host<B> {
 }
 
 impl<B: I2cSlaveAsync> MailboxDelegate for Host<B> {
-    fn receive2(&self, message: &comms::Message) -> Result<(), comms::MailboxDelegateError> {
+    fn receive(&self, message: &comms::Message) -> Result<(), comms::MailboxDelegateError> {
         let hid_msg = message
             .data
             .get::<hid::Message>()

@@ -63,7 +63,7 @@ mod receiver {
     }
 
     impl comms::MailboxDelegate for Receiver {
-        fn receive2(&self, message: &comms::Message) -> Result<(), comms::MailboxDelegateError> {
+        fn receive(&self, message: &comms::Message) -> Result<(), comms::MailboxDelegateError> {
             let data = message
                 .data
                 .get::<SharedRef<'_, u8>>()

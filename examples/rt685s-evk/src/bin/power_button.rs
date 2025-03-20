@@ -41,7 +41,7 @@ mod sender {
     }
 
     impl<'a> comms::MailboxDelegate for Sender {
-        fn receive2(&self, message: &comms::Message) -> Result<(), comms::MailboxDelegateError> {
+        fn receive(&self, message: &comms::Message) -> Result<(), comms::MailboxDelegateError> {
             let sig = message
                 .data
                 .get::<Message>()
@@ -72,7 +72,7 @@ mod receiver {
     }
 
     impl comms::MailboxDelegate for Receiver {
-        fn receive2(&self, message: &comms::Message) -> Result<(), comms::MailboxDelegateError> {
+        fn receive(&self, message: &comms::Message) -> Result<(), comms::MailboxDelegateError> {
             let sig = message
                 .data
                 .get::<Message>()
