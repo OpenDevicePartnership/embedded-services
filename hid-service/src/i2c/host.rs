@@ -290,22 +290,6 @@ impl<B: I2cSlaveAsync> Host<B> {
 }
 
 impl<B: I2cSlaveAsync> MailboxDelegate for Host<B> {
-    fn receive(&self, message: &comms::Message) {
-        if message.to != EndpointID::External(External::Host) {
-            return;
-        }
-
-        if let Some(message) = message.data.get::<hid::Message>() {
-            if message.id != self.id {
-                return;
-            }
-
-            if let hid::MessageData::Response(ref response) = message.data {
-                self.response.signal(response.clone());
-            }
-        }
-    }
-
     fn receive2(&self, message: &comms::Message) -> Result<(), comms::MailboxDelegateError> {
         let hid_msg = message
             .data
