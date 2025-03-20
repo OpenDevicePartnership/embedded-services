@@ -150,9 +150,6 @@ pub struct Message<'a> {
 
 /// Trait to receive messages
 pub trait MailboxDelegate {
-    /// Receive a Message (typically, push contents to queue or queue some action)
-    fn receive(&self, _message: &Message) {}
-
     /// Temporary for conversion
     fn receive2(&self, _message: &Message) -> Result<(), MailboxDelegateError> {
         Ok(())
