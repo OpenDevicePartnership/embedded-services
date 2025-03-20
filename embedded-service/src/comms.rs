@@ -223,7 +223,8 @@ impl Endpoint {
 
     fn process(&self, message: &Message) {
         if let Some(delegator) = self.delegator.get() {
-            delegator.receive(message);
+            // REVISIT: Continue to propagate error
+            let _res = delegator.receive2(message);
         }
     }
 }
