@@ -4,8 +4,8 @@ use embassy_executor::Executor;
 use embassy_sync::once_lock::OnceLock;
 use embassy_time::Timer;
 use embedded_services::buffer::*;
-use embedded_services::define_static_buffer;
 use embedded_services::comms::{self, EndpointID, External, Internal};
+use embedded_services::define_static_buffer;
 use log::*;
 use static_cell::StaticCell;
 
@@ -63,14 +63,6 @@ mod receiver {
     }
 
     impl comms::MailboxDelegate for Receiver {
-        fn receive(&self, message: &comms::Message) {
-            if let Some(data) = message.data.get::<SharedRef<'_, u8>>() {
-                let borrow = data.borrow();
-                let data: &[u8] = borrow.borrow();
-                info!("Received data: {:?}", data);
-            }
-        }
-
         fn receive2(&self, message: &comms::Message) -> Result<(), comms::MailboxDelegateError> {
             let data = message
                 .data
