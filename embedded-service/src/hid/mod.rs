@@ -221,6 +221,22 @@ impl MailboxDelegate for Device {
             }
         }
     }
+
+    fn receive2(&self, message: &comms::Message) -> Result<(), comms::MailboxDelegateError> {
+        let message = message
+            .data
+            .get::<Message>()
+            .ok_or(comms::MailboxDelegateError::MessageNotFound)?;
+
+        match message.data {
+            MessageData::Request(ref request) => {
+                self.request.signal(request.clone());
+                Ok(())
+            }
+            _ if message.id != self.id => Err(comms::MailboxDelegateError::InvalidId),
+            _ => Err(comms::MailboxDelegateError::InvalidData),
+        }
+    }
 }
 
 /// HID device ID
