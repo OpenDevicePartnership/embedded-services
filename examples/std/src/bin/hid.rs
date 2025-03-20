@@ -45,6 +45,20 @@ impl comms::MailboxDelegate for Device {
         }
         info!("{:?} got message", self.id);
     }
+
+    fn receive2(&self, message: &comms::Message) -> Result<(), comms::MailboxDelegateError> {
+        let message = message
+            .data
+            .get::<hid::Message>()
+            .ok_or(comms::MailboxDelegateError::MessageNotFound)?;
+
+        if message.unwrap().id != self.id {
+            Err(comms::MailboxDelegateError::InvalidId)
+        } else {
+            info!("{:?} got message", self.id);
+            Ok(())
+        }
+    }
 }
 #[embassy_executor::task]
 async fn host() {
