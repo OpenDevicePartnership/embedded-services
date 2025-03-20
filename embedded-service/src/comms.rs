@@ -151,7 +151,7 @@ pub struct Message<'a> {
 /// Trait to receive messages
 pub trait MailboxDelegate {
     /// Receive a Message (typically, push contents to queue or queue some action)
-    fn receive(&self, message: &Message);
+    fn receive(&self, _message: &Message) {}
 }
 
 /// Primary node registration for receiving messages from the comms service

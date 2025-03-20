@@ -44,9 +44,7 @@ mod sender {
         }
     }
 
-    impl comms::MailboxDelegate for Sender {
-        fn receive(&self, _message: &comms::Message) {}
-    }
+    impl comms::MailboxDelegate for Sender {}
 }
 
 mod receiver {

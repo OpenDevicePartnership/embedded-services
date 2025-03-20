@@ -19,9 +19,9 @@ impl Host {
         }
     }
 }
-impl comms::MailboxDelegate for Host {
-    fn receive(&self, _message: &comms::Message) {}
-}
+
+impl comms::MailboxDelegate for Host {}
+
 struct Device {
     tp: comms::Endpoint,
     id: DeviceId,
