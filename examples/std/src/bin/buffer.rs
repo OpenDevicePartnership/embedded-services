@@ -70,6 +70,19 @@ mod receiver {
                 info!("Received data: {:?}", data);
             }
         }
+
+        fn receive2(&self, message: &comms::Message) -> Result<(), comms::MailboxDelegateError> {
+            let data = message
+                .data
+                .get::<SharedRef<'_, u8>>()
+                .ok_or(comms::MailboxDelegateError::MessageNotFound)?;
+
+            let borrow = data.borrow();
+            let data: &[u8] = borrow.borrow();
+            info!("Received data: {:?}", data);
+
+            Ok(())
+        }
     }
 }
 
