@@ -69,6 +69,17 @@ mod simple_example {
                 self.sn.signal(*sig);
             }
         }
+
+        fn receive2(&self, message: &comms::Message) -> Result<comms::MailboxDelegateError> {
+            let sig = message
+                .data
+                .get::<Signals>()
+                .ok_or(comms::MailboxDelegateError::MessageNotFound)?;
+
+            self.sn.signal(*sig);
+
+            Ok(())
+        }
     }
 
     #[embassy_executor::task]
