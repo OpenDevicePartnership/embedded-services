@@ -70,6 +70,27 @@ mod battery {
                 }
             }
         }
+
+        fn receive2(&self, message: &comms::Message) -> Result<(), comms::MailboxDelegateError> {
+            trace!("Got message");
+
+            let message = message
+                .data
+                .get::<policy::CommsMessage>()
+                .ok_or(comms::MailboxDelegateError::MessageNotFound)?;
+
+            match message.data {
+                policy::CommsData::ConsumerDisconnected(id) => {
+                    info!("Consumer disconnected: {}", id.0);
+                    Ok(())
+                }
+                policy::CommsData::ConsumerConnected(id, capability) => {
+                    info!("Consumer connected: {} {:?}", id.0, capability);
+                    Ok(())
+                }
+                _ => Err(comms::MailboxDelegateError::InvalidData),
+            }
+        }
     }
 }
 
