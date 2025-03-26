@@ -73,6 +73,34 @@ mod battery {
     }
 }
 
+/// Debug accesory listener mock
+mod debug {
+    use defmt::{info, trace};
+    use embedded_services::comms;
+    use embedded_services::type_c;
+
+    pub struct Device {
+        pub tp: comms::Endpoint,
+    }
+
+    impl Device {
+        pub fn new() -> Self {
+            Self {
+                tp: comms::Endpoint::uninit(comms::EndpointID::Internal(comms::Internal::Usbc)),
+            }
+        }
+    }
+
+    impl comms::MailboxDelegate for Device {
+        fn receive(&self, message: &comms::Message) {
+            trace!("Got message");
+            if let Some(message) = message.data.get::<type_c::comms::DebugAccessoryMessage>() {
+                info!("Debug accessory message: {:?}", message);
+            }
+        }
+    }
+}
+
 #[embassy_executor::task]
 async fn pd_controller_task(controller: &'static Wrapper<'static>) {
     loop {
@@ -96,6 +124,9 @@ async fn main(spawner: Spawner) {
 
     info!("Spawining power policy task");
     spawner.must_spawn(power_policy_service::task());
+
+    info!("Spawining type-c service task");
+    spawner.must_spawn(type_c_service::task());
 
     let int_in = Input::new(p.PIO1_7, Pull::Up, Inverter::Disabled);
     static BUS: OnceLock<Mutex<NoopRawMutex, BusMaster<'static>>> = OnceLock::new();
@@ -127,4 +158,10 @@ async fn main(spawner: Spawner) {
     let battery = BATTERY.get_or_init(|| battery::Device::new());
 
     comms::register_endpoint(battery, &battery.tp).await.unwrap();
+
+    static DEBUG_ACCESSORY: OnceLock<debug::Device> = OnceLock::new();
+    let debug_accessory = DEBUG_ACCESSORY.get_or_init(|| debug::Device::new());
+    comms::register_endpoint(debug_accessory, &debug_accessory.tp)
+        .await
+        .unwrap();
 }

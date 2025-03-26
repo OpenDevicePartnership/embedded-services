@@ -1,16 +1,19 @@
 //! This module contains the `Controller` trait. Any types that implement this trait can be used with the `ControllerWrapper` struct
 //! which provides a bridge between various service messages and the actual controller functions.
 use core::array::from_fn;
-use core::cell::RefCell;
+use core::cell::{Cell, RefCell};
 
 use bitfield::BitMut;
-use embassy_futures::select::{select, select_array, Either};
-use embedded_services::power::policy::device::{RequestData, StateKind};
+use embassy_futures::select::{select3, select_array, Either3};
+use embedded_services::power::policy::device::StateKind;
 use embedded_services::power::policy::{self, action};
 use embedded_services::type_c::controller::{self, Contract, Controller, PortStatus};
 use embedded_services::type_c::event::{PortEventFlags, PortEventKind};
 use embedded_services::{error, info, intrusive_list, trace, warn};
 use embedded_usb_pd::{Error, PdError, PortId as LocalPortId};
+
+mod pd;
+mod power;
 
 /// Takes an implementation of the `Controller` trait and wraps it with logic to handle
 /// message passing and power-policy integration.
@@ -20,6 +23,7 @@ pub struct ControllerWrapper<'a, const N: usize, C: Controller> {
     /// Power policy devices to interface with power policy service
     power: [policy::device::Device; N],
     controller: RefCell<C>,
+    active_events: [Cell<PortEventKind>; N],
 }
 
 impl<'a, const N: usize, C: Controller> ControllerWrapper<'a, N, C> {
@@ -29,15 +33,8 @@ impl<'a, const N: usize, C: Controller> ControllerWrapper<'a, N, C> {
             pd_controller,
             power,
             controller: RefCell::new(controller),
+            active_events: [const { Cell::new(PortEventKind::NONE) }; N],
         }
-    }
-
-    /// Return the power device for the given port
-    fn get_power_device<'b>(&'b self, port: LocalPortId) -> Result<&'b policy::device::Device, Error<C::BusError>> {
-        if port.0 > N as u8 {
-            return PdError::InvalidPort.into();
-        }
-        Ok(&self.power[port.0 as usize])
     }
 
     /// Handle a plug event
@@ -76,59 +73,6 @@ impl<'a, const N: usize, C: Controller> ControllerWrapper<'a, N, C> {
         }
     }
 
-    /// Handle a new consumer contract
-    /// None of the event processing functions return errors to allow processing to continue for other ports on a controller
-    async fn process_new_consumer_contract(&self, power: &policy::device::Device, status: &PortStatus) {
-        info!("New consumer contract");
-
-        if let Some(contract) = status.contract {
-            if !matches!(contract, Contract::Sink(_)) {
-                error!("Not a sink contract");
-                return;
-            }
-        } else {
-            error!("No contract");
-            return;
-        }
-
-        let contract = status.contract.unwrap();
-        let current_state = power.state().await.kind();
-        // Don't update the available consumer contract if we're providing power
-        if current_state != StateKind::ConnectedProvider {
-            // Recover if we're not in the correct state
-            match power.device_action().await {
-                action::device::AnyState::Detached(state) => {
-                    if let Err(e) = state.attach().await {
-                        error!("Error attaching power device: {:?}", e);
-                        return;
-                    }
-                }
-                _ => {}
-            }
-
-            if let Ok(state) = power.try_device_action::<action::Idle>().await {
-                if let Err(e) = state
-                    .notify_consumer_power_capability(Some(policy::PowerCapability::from(contract)))
-                    .await
-                {
-                    error!("Error setting power contract: {:?}", e);
-                    return;
-                }
-            } else if let Ok(state) = power.try_device_action::<action::ConnectedConsumer>().await {
-                if let Err(e) = state
-                    .notify_consumer_power_capability(Some(policy::PowerCapability::from(contract)))
-                    .await
-                {
-                    error!("Error setting power contract: {:?}", e);
-                    return;
-                }
-            } else {
-                error!("Power device not in detached state");
-                return;
-            }
-        }
-    }
-
     /// Process port events
     /// None of the event processing functions return errors to allow processing to continue for other ports on a controller
     async fn process_event(&self, controller: &mut C) {
@@ -153,6 +97,7 @@ impl<'a, const N: usize, C: Controller> ControllerWrapper<'a, N, C> {
             };
 
             if event == PortEventKind::NONE {
+                self.active_events[port].set(PortEventKind::NONE);
                 continue;
             }
 
@@ -183,65 +128,29 @@ impl<'a, const N: usize, C: Controller> ControllerWrapper<'a, N, C> {
             if event.new_power_contract_as_consumer() {
                 self.process_new_consumer_contract(power, &status).await;
             }
+
+            self.active_events[port].set(event);
         }
 
         self.pd_controller.notify_ports(port_events).await;
     }
 
-    /// Wait for a power command
-    async fn wait_power_command(&self) -> (RequestData, LocalPortId) {
-        let futures: [_; N] = from_fn(|i| self.power[i].wait_request());
-
-        let (command, local_id) = select_array(futures).await;
-        trace!("Power command: device{} {:#?}", local_id, command);
-        (command, LocalPortId(local_id as u8))
-    }
-
-    /// Process a power command
-    /// Returns no error because this is a top-level function
-    async fn process_power_command(&self, controller: &mut C, port: LocalPortId, command: RequestData) {
-        trace!("Processing power command: device{} {:#?}", port, command);
-        let power = match self.get_power_device(port) {
-            Ok(power) => power,
-            Err(_) => {
-                error!("Port{}: Error getting power device for port", port.0);
-                return;
-            }
-        };
-
-        match command {
-            policy::device::RequestData::ConnectConsumer(capability) => {
-                info!("Port{}: Connect consumer: {:?}", port.0, capability);
-                if let Err(_) = controller.enable_sink_path(port, true).await {
-                    error!("Error enabling sink path");
-                    power.send_response(Err(policy::Error::Failed)).await;
-                    return;
-                }
-            }
-            policy::device::RequestData::Disconnect => {
-                info!("Port{}: Disconnect", port.0);
-                if let Err(_) = controller.enable_sink_path(port, false).await {
-                    error!("Error disabling sink path");
-                    power.send_response(Err(policy::Error::Failed)).await;
-                    return;
-                }
-            }
-            _ => {}
-        }
-
-        power.send_response(Ok(policy::device::ResponseData::Complete)).await;
-    }
-
     /// Top-level processing function
-    ///
     pub async fn process(&self) {
         let mut controller = self.controller.borrow_mut();
-        match select(controller.wait_port_event(), self.wait_power_command()).await {
-            Either::First(r) => match r {
+        match select3(
+            controller.wait_port_event(),
+            self.wait_power_command(),
+            self.pd_controller.wait_command(),
+        )
+        .await
+        {
+            Either3::First(r) => match r {
                 Ok(_) => self.process_event(&mut controller).await,
                 Err(_) => error!("Error waiting for port event"),
             },
-            Either::Second((command, port)) => self.process_power_command(&mut controller, port, command).await,
+            Either3::Second((command, port)) => self.process_power_command(&mut controller, port, command).await,
+            Either3::Third(command) => self.process_pd_command(&mut controller, command).await,
         }
     }
 

@@ -5,6 +5,7 @@ use embedded_usb_pd::type_c;
 
 use crate::power::policy;
 
+pub mod comms;
 pub mod controller;
 pub mod event;
 pub mod ucsi;
