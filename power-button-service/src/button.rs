@@ -1,7 +1,7 @@
 //! Button Service Definitions
 
 use embassy_time::{with_timeout, Duration, Instant, TimeoutError, Timer};
-use embedded_hal_1::digital::InputPin;
+use embedded_hal::digital::InputPin;
 use embedded_hal_async::digital::Wait;
 
 use super::debounce::Debouncer;

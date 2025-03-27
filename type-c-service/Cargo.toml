@@ -4,28 +4,23 @@ version = "0.1.0"
 edition = "2021"
 description = "HID embedded service implementation"
 repository = "https://github.com/OpenDevicePartnership/embedded-services"
-rust-version = "1.83"
+rust-version = "1.85"
 license = "MIT"
 
 [dependencies]
-embedded-services = { path = "../embedded-service" }
-embassy-time = { git = "https://github.com/embassy-rs/embassy" }
-embassy-sync = { git = "https://github.com/embassy-rs/embassy" }
-embassy-executor = { git = "https://github.com/embassy-rs/embassy" }
-embassy-futures = { git = "https://github.com/embassy-rs/embassy" }
-defmt = { version = "0.3", optional = true }
-log = { version = "0.4.14", optional = true }
-
-embedded-io-async = "0.6.1"
-embedded-hal = "1.0.0"
-embedded-hal-async = "1.0.0"
-bitfield = "0.17.0"
-
-tps6699x = { git = "https://github.com/OpenDevicePartnership/tps6699x", features = [
-    "embassy",
-] }
-embedded-usb-pd = { git = "https://github.com/OpenDevicePartnership/embedded-usb-pd", default-features = false }
-
+bitfield.workspace = true
+defmt = { workspace = true, optional = true }
+embassy-executor.workspace = true
+embassy-futures.workspace = true
+embassy-sync.workspace = true
+embassy-time.workspace = true
+embedded-hal-async.workspace = true
+embedded-hal.workspace = true
+embedded-io-async.workspace = true
+embedded-services.workspace = true
+embedded-usb-pd.workspace = true
+log = { workspace = true, optional = true }
+tps6699x = { workspace = true, features = ["embassy"] }
 
 [features]
 default = []

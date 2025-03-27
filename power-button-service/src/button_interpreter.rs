@@ -1,6 +1,6 @@
 //! Button Interpreter Module
 
-use embedded_hal_1::digital::InputPin;
+use embedded_hal::digital::InputPin;
 use embedded_hal_async::digital::Wait;
 
 use super::button::Button;

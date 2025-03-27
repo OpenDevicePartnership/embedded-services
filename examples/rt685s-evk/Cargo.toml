@@ -1,5 +1,7 @@
+[workspace]
+
 [package]
-name = "embedded-services-examples"
+name = "rt685s-evk-example"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"

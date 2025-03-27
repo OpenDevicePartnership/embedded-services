@@ -4,16 +4,16 @@ version = "0.1.1"
 edition = "2021"
 description = "Storage Bus interfaces"
 repository = "https://github.com/OpenDevicePartnership/embedded-services"
-rust-version = "1.83"
+rust-version = "1.85"
 license = "MIT"
 
 [dependencies]
-embedded-services = { path = "../embedded-service" }
-embassy-time = { git = "https://github.com/embassy-rs/embassy" }
-embassy-sync = { git = "https://github.com/embassy-rs/embassy" }
-embassy-executor = { git = "https://github.com/embassy-rs/embassy" }
-defmt = { version = "0.3", optional = true }
-log = { version = "0.4.14", optional = true }
+defmt = { workspace = true, optional = true }
+embassy-executor.workspace = true
+embassy-sync.workspace = true
+embassy-time.workspace = true
+embedded-services.workspace = true
+log = { workspace = true, optional = true }
 
 [features]
 default = []

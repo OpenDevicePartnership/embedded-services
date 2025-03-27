@@ -40,7 +40,7 @@ impl<'a, const N: usize, M: RawMutex, B: I2c> Controller for Tps6699x<'a, N, M, 
         let interrupts = self.tps6699x.wait_interrupt(false, |_, _| true).await;
 
         for (i, (interrupt, event)) in zip(interrupts.iter(), self.port_events.iter_mut()).enumerate() {
-            trace!("Interrupt {}: {:#X}", i, interrupt);
+            trace!("Interrupt {}: {:#?}", i, interrupt);
             if *interrupt == IntEventBus1::new_zero() {
                 continue;
             }

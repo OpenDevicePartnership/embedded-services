@@ -4,39 +4,47 @@ version = "0.1.0"
 edition = "2021"
 description = "eSPI embedded service implementation"
 repository = "https://github.com/OpenDevicePartnership/embedded-services"
-rust-version = "1.83"
+rust-version = "1.85"
 license = "MIT"
 
 [dependencies]
-embedded-services = { path = "../embedded-service" }
-embassy-time = { git = "https://github.com/embassy-rs/embassy" }
-embassy-sync = { git = "https://github.com/embassy-rs/embassy" }
-defmt = { version = "0.3", optional = true }
-log = { version = "0.4.14", optional = true }
-embassy-imxrt = { git = "https://github.com/OpenDevicePartnership/embassy-imxrt", features = [
-    "defmt",
+embedded-services.workspace = true
+defmt = { workspace = true, optional = true }
+log = { workspace = true, optional = true }
+embassy-time.workspace = true
+embassy-sync.workspace = true
+embassy-imxrt = { workspace = true, features = [
     "time-driver",
     "time",
     "mimxrt633s",
 ] }
-embassy-executor = { git = "https://github.com/embassy-rs/embassy", features = [
-    "arch-cortex-m",
+embassy-executor = { workspace = true, features = [
     "executor-thread",
     "executor-interrupt",
-    "defmt",
 ] }
-cortex-m = { version = "0.7.7", features = [
+
+[target.'cfg(target_os = "none")'.dependencies]
+embassy-executor = { workspace = true, features = [
+    "executor-thread",
+    "executor-interrupt",
+    "arch-cortex-m",
+] }
+cortex-m-rt.workspace = true
+cortex-m = { workspace = true, features = [
     "inline-asm",
     "critical-section-single-core",
 ] }
-cortex-m-rt = "0.7.3"
 
 [features]
-default = ["defmt"]
+default = []
 defmt = [
     "dep:defmt",
     "embedded-services/defmt",
     "embassy-time/defmt",
     "embassy-time/defmt-timestamp-uptime",
     "embassy-sync/defmt",
+    "embassy-imxrt/defmt",
+    "embassy-executor/defmt",
 ]
+
+log = ["dep:log", "embedded-services/log", "embassy-time/log"]
