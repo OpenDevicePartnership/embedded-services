@@ -35,7 +35,15 @@ impl PortEventKind {
 /// Bit vector to store which ports have unhandled events
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[repr(transparent)]
 pub struct PortEventFlags(pub u32);
+
+impl PortEventFlags {
+    /// Returns the number of bits in the event
+    pub const fn len(&self) -> usize {
+        size_of::<Self>() * 8
+    }
+}
 
 impl BitMut for PortEventFlags {
     fn set_bit(&mut self, bit: usize, value: bool) {
