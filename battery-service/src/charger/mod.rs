@@ -12,7 +12,7 @@ pub enum ChargerError {
 
 pub struct Charger<SmartCharger: embedded_batteries_async::charger::Charger> {
     device: RefCell<SmartCharger>,
-    pub(crate) rx: Channel<NoopRawMutex, crate::BatteryMsgs, 1>,
+    pub(crate) rx: Channel<NoopRawMutex, crate::BatteryMsgs, 2>,
 
     // Should size of channel be increased as a flurry of messages will need to be sent with broadcasts?
     pub(crate) tx: Channel<NoopRawMutex, Result<crate::BatteryMsgs, ChargerError>, 1>,
