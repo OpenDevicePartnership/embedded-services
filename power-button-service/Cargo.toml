@@ -5,11 +5,11 @@ edition = "2021"
 license = "MIT"
 description = "Power button service built upon embedded service"
 repository = "https://github.com/OpenDevicePartnership/embedded-services"
-rust-version = "1.83"
+rust-version = "1.85"
 
 [dependencies]
-defmt = { version = "0.3", optional = true }
-log = { version = "0.4.14", optional = true }
-embassy-time = { git = "https://github.com/embassy-rs/embassy" }
-embedded-hal-1 = { package = "embedded-hal", version = "1.0" }
-embedded-hal-async = { version = "1.0" }
+defmt = { workspace = true, optional = true }
+embassy-time.workspace = true
+embedded-hal-async.workspace = true
+embedded-hal.workspace = true
+log = { workspace = true, optional = true }

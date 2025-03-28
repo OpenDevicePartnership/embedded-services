@@ -5,17 +5,14 @@ edition = "2021"
 license = "MIT"
 
 [dependencies]
-# ODP dependencies
-embedded-cfu-protocol = { git = "https://github.com/OpenDevicePartnership/embedded-cfu" }
-embedded-services = { path = "../embedded-service" }
-
-# External dependencies
-embassy-time = { git = "https://github.com/embassy-rs/embassy" }
-embassy-sync = { git = "https://github.com/embassy-rs/embassy" }
-embassy-executor = { git = "https://github.com/embassy-rs/embassy" }
-log = { version = "0.4.14", optional = true }
-defmt = { version = "0.3", optional = true }
-heapless = "0.8.*"
+defmt = { workspace = true, optional = true }
+embassy-executor.workspace = true
+embassy-sync.workspace = true
+embassy-time.workspace = true
+embedded-cfu-protocol.workspace = true
+embedded-services.workspace = true
+heapless.workspace = true
+log = { workspace = true, optional = true }
 
 [features]
 default = []

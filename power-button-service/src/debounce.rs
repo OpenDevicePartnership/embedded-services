@@ -1,7 +1,7 @@
 //! Debounce Module
 
 use embassy_time::{Duration, Timer};
-use embedded_hal_1::digital::InputPin;
+use embedded_hal::digital::InputPin;
 use embedded_hal_async::digital::Wait;
 
 #[derive(Debug)]

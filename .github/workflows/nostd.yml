@@ -18,7 +18,6 @@ jobs:
     strategy:
       matrix:
         target: [thumbv8m.main-none-eabihf]
-        workdir: [ "embedded-service", "espi-service", "power-button-service", "storage-bus", "battery-service"]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -27,6 +26,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       - name: rustup target add ${{ matrix.target }}
         run: rustup target add ${{ matrix.target }}
+      - name: cargo install cargo-hack
+        uses: taiki-e/install-action@cargo-hack
       - name: cargo check
-        run: cargo check --target ${{ matrix.target }} --no-default-features
-        working-directory: ${{ matrix.workdir }}
+        run: cargo hack --feature-powerset --mutually-exclusive-features=log,defmt check --target ${{ matrix.target }}
