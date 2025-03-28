@@ -65,9 +65,7 @@ impl CfuClient {
     }
 }
 
-impl comms::MailboxDelegate for CfuClient {
-    fn receive(&self, _message: &comms::Message) {}
-}
+impl comms::MailboxDelegate for CfuClient {}
 
 #[embassy_executor::task]
 pub async fn task() {

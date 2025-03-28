@@ -150,9 +150,7 @@ impl PowerPolicy {
     }
 }
 
-impl comms::MailboxDelegate for PowerPolicy {
-    fn receive(&self, _message: &comms::Message) {}
-}
+impl comms::MailboxDelegate for PowerPolicy {}
 
 #[embassy_executor::task]
 pub async fn task(config: config::Config) {

@@ -58,17 +58,24 @@ mod battery {
     }
 
     impl comms::MailboxDelegate for Device {
-        fn receive(&self, message: &comms::Message) {
+        fn receive(&self, message: &comms::Message) -> Result<(), comms::MailboxDelegateError> {
             trace!("Got message");
-            if let Some(message) = message.data.get::<policy::CommsMessage>() {
-                match message.data {
-                    policy::CommsData::ConsumerDisconnected(id) => {
-                        info!("Consumer disconnected: {}", id.0);
-                    }
-                    policy::CommsData::ConsumerConnected(id, capability) => {
-                        info!("Consumer connected: {} {:?}", id.0, capability);
-                    }
+
+            let message = message
+                .data
+                .get::<policy::CommsMessage>()
+                .ok_or(comms::MailboxDelegateError::MessageNotFound)?;
+
+            match message.data {
+                policy::CommsData::ConsumerDisconnected(id) => {
+                    info!("Consumer disconnected: {}", id.0);
+                    Ok(())
                 }
+                policy::CommsData::ConsumerConnected(id, capability) => {
+                    info!("Consumer connected: {} {:?}", id.0, capability);
+                    Ok(())
+                }
+                _ => Err(comms::MailboxDelegateError::InvalidData),
             }
         }
     }
