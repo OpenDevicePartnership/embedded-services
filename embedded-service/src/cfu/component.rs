@@ -70,7 +70,7 @@ pub enum RequestData {
     /// Request for component to prepare itself for an update
     PrepareComponentForUpdate,
     /// Request for component to execute any logic needed to finalize update
-    FinalizeUpdate,
+    FinalizeUpdate(FwUpdateContentCommand),
 }
 
 /// CFU Response types and necessary data
@@ -135,15 +135,23 @@ impl CfuDevice {
             response: Channel::new(),
         }
     }
+
     /// Getter for component id
     pub fn component_id(&self) -> ComponentId {
         self.component_id
     }
+    
     /// Setter for component state
     /// Intended to be used to auto-block updates if one is in-progress
     pub async fn state(&self) -> InternalState {
         *self.state.lock().await
     }
+    
+    /// Sends a request to this device without waiting for a response
+    pub async fn send_device_request(&self, request: RequestData) {
+        self.request.send(request).await;
+    }
+    
     /// Sends a request to this device and returns a response
     pub async fn execute_device_request(&self, request: RequestData) -> Result<InternalResponseData, CfuProtocolError> {
         self.request.send(request).await;
@@ -248,25 +256,25 @@ impl<W: CfuWriter> CfuComponentDefault<W> {
                     .await
                     .map_err(|_| CfuError::ProtocolError(CfuProtocolError::BadResponse))?;
             }
-            RequestData::GiveOffer(buf) => {
+            RequestData::GiveOffer(offer) => {
                 // accept any and all offers regardless of what version it is
-                if buf.component_info.component_id == self.get_component_id() {
+                if offer.component_info.component_id == self.get_component_id() {
                     let resp = FwUpdateOfferResponse::new_accept(HostToken::Driver);
                     self.device
                         .send_response(InternalResponseData::OfferResponse(resp))
                         .await;
                 }
             }
-            RequestData::GiveContent(buf) => {
-                let offset = buf.header.firmware_address as usize;
+            RequestData::GiveContent(content) => {
+                let offset = content.header.firmware_address as usize;
                 self.writer
                     .lock()
                     .await
-                    .cfu_write(Some(offset), &buf.data)
+                    .cfu_write(Some(offset), &content.data)
                     .await
                     .map_err(|e| CfuError::ProtocolError(CfuProtocolError::WriterError(e)))?;
             }
-            RequestData::FinalizeUpdate => {}
+            RequestData::FinalizeUpdate(_content) => {}
         }
         Ok(())
     }
