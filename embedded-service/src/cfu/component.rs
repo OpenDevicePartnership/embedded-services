@@ -140,18 +140,18 @@ impl CfuDevice {
     pub fn component_id(&self) -> ComponentId {
         self.component_id
     }
-    
+
     /// Setter for component state
     /// Intended to be used to auto-block updates if one is in-progress
     pub async fn state(&self) -> InternalState {
         *self.state.lock().await
     }
-    
+
     /// Sends a request to this device without waiting for a response
     pub async fn send_device_request(&self, request: RequestData) {
         self.request.send(request).await;
     }
-    
+
     /// Sends a request to this device and returns a response
     pub async fn execute_device_request(&self, request: RequestData) -> Result<InternalResponseData, CfuProtocolError> {
         self.request.send(request).await;
