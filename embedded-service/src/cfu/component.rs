@@ -315,7 +315,7 @@ impl<W: CfuWriter> CfuWriter for CfuComponentDefault<W> {
     }
 
     async fn cfu_read(&self, mem_offset: Option<usize>, read: &mut [u8]) -> Result<(), CfuWriterError> {
-        self.writer.lock().await.cfu_write(mem_offset, read).await
+        self.writer.lock().await.cfu_read(mem_offset, read).await
     }
 }
 
