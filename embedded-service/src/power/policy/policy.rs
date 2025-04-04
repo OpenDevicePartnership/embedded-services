@@ -6,7 +6,7 @@ use embassy_sync::channel::Channel;
 use embassy_sync::once_lock::OnceLock;
 
 use super::device::{self};
-use super::{action, DeviceId, Error, PowerCapability};
+use super::{action, charger, DeviceId, Error, PowerCapability};
 use crate::{error, intrusive_list};
 
 /// Number of slots for policy requests
@@ -76,12 +76,15 @@ struct Context {
     policy_request: Channel<NoopRawMutex, Request, POLICY_CHANNEL_SIZE>,
     /// Policy response
     policy_response: Channel<NoopRawMutex, InternalResponseData, POLICY_CHANNEL_SIZE>,
+    /// Registered chargers
+    chargers: intrusive_list::IntrusiveList,
 }
 
 impl Context {
     fn new() -> Self {
         Self {
             devices: intrusive_list::IntrusiveList::new(),
+            chargers: intrusive_list::IntrusiveList::new(),
             policy_request: Channel::new(),
             policy_response: Channel::new(),
         }
@@ -105,6 +108,16 @@ pub async fn register_device(device: &'static impl device::DeviceContainer) -> R
     CONTEXT.get().await.devices.push(device)
 }
 
+/// Register a charger with the power policy service
+pub async fn register_charger(device: &'static impl charger::ChargerContainer) -> Result<(), intrusive_list::Error> {
+    let device = device.get_charger();
+    if get_charger(device.id()).await.is_some() {
+        return Err(intrusive_list::Error::NodeAlreadyInList);
+    }
+
+    CONTEXT.get().await.chargers.push(device)
+}
+
 /// Find a device by its ID
 async fn get_device(id: DeviceId) -> Option<&'static device::Device> {
     for device in &CONTEXT.get().await.devices {
@@ -114,6 +127,21 @@ async fn get_device(id: DeviceId) -> Option<&'static device::Device> {
             }
         } else {
             error!("Non-device located in devices list");
+        }
+    }
+
+    None
+}
+
+/// Find a device by its ID
+async fn get_charger(id: charger::ChargerId) -> Option<&'static charger::Device> {
+    for charger in &CONTEXT.get().await.chargers {
+        if let Some(data) = charger.data::<charger::Device>() {
+            if data.id() == id {
+                return Some(data);
+            }
+        } else {
+            error!("Non-device located in charger list");
         }
     }
 
@@ -133,6 +161,23 @@ pub(super) async fn send_request(from: DeviceId, request: RequestData) -> Result
     context.policy_response.receive().await
 }
 
+/// Initialize chargers in hardware
+pub async fn init_chargers() -> Result<ResponseData, Error> {
+    for charger in &CONTEXT.get().await.chargers {
+        if let Some(data) = charger.data::<charger::Device>() {
+            match data.execute_command(charger::PolicyEvent::InitRequest).await {
+                charger::ChargerResponse::Ack => continue,
+                charger::ChargerResponse::Nack(err) => match err {
+                    charger::ChargerError::InvalidState(_) => return Err(Error::Failed),
+                    charger::ChargerError::BusError => return Err(Error::Bus),
+                    charger::ChargerError::Timeout => return Err(Error::Failed),
+                },
+            }
+        }
+    }
+    Ok(ResponseData::Complete)
+}
+
 /// Singleton struct to give access to the power policy context
 pub struct ContextToken(());
 
@@ -146,6 +191,13 @@ impl ContextToken {
 
         INIT.store(true, Ordering::SeqCst);
         Some(ContextToken(()))
+    }
+
+    pub async fn init() -> Result<(), Error> {
+        // Initialize chargers
+        init_chargers().await?;
+
+        Ok(())
     }
 
     /// Wait for a power policy request
@@ -166,6 +218,16 @@ impl ContextToken {
     /// Provides access to the device list
     pub async fn devices(&self) -> &intrusive_list::IntrusiveList {
         &CONTEXT.get().await.devices
+    }
+
+    /// Get a charger by its ID
+    pub async fn get_charger(&self, id: charger::ChargerId) -> Result<&'static charger::Device, Error> {
+        get_charger(id).await.ok_or(Error::InvalidDevice)
+    }
+
+    /// Provides access to the charger list
+    pub async fn chargers(&self) -> &intrusive_list::IntrusiveList {
+        &CONTEXT.get().await.chargers
     }
 
     /// Try to provide access to the actions available to the policy for the given state and device

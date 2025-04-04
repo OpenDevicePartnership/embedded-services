@@ -28,6 +28,7 @@ embedded-io.workspace = true
 embedded-storage-async.workspace = true
 embedded-storage.workspace = true
 embedded-usb-pd.workspace = true
+embedded-batteries-async.workspace = true
 fixed.workspace = true
 heapless.workspace = true
 log = { workspace = true, optional = true }

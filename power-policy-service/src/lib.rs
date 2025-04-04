@@ -14,6 +14,8 @@ pub mod config;
 pub mod consumer;
 pub mod provider;
 
+pub mod charger;
+
 /// How often to attempt to recover provider devices in recovery
 const PROVIDER_RECOVERY_TICKER_DURATION: Duration = const { Duration::from_millis(1000) };
 

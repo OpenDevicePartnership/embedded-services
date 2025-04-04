@@ -1,3 +1,6 @@
+use embedded_services::power::policy::charger::Device as ChargerDevice;
+use embedded_services::power::policy::charger::PolicyEvent;
+
 use super::*;
 
 /// State of the current consumer
@@ -84,6 +87,16 @@ impl PowerPolicy {
                 consumer.disconnect().await?;
             }
 
+            for node in self.context.chargers().await {
+                let device = node.data::<ChargerDevice>().ok_or(Error::InvalidDevice)?;
+                device
+                    .execute_command(PolicyEvent::PolicyConfiguration(PowerCapability {
+                        voltage_mv: 0,
+                        current_ma: 0,
+                    }))
+                    .await;
+            }
+
             self.comms_notify(CommsMessage {
                 data: CommsData::ConsumerDisconnected(current_consumer.device_id),
             })
@@ -98,6 +111,12 @@ impl PowerPolicy {
         {
             idle.connect_consumer(new_consumer.power_capability).await?;
             state.current_consumer_state = Some(new_consumer);
+            for node in self.context.chargers().await {
+                let device = node.data::<ChargerDevice>().ok_or(Error::InvalidDevice)?;
+                device
+                    .execute_command(PolicyEvent::PolicyConfiguration(new_consumer.power_capability))
+                    .await;
+            }
             self.comms_notify(CommsMessage {
                 data: CommsData::ConsumerConnected(new_consumer.device_id, new_consumer.power_capability),
             })
