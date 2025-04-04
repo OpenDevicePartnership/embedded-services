@@ -8,7 +8,9 @@ use embassy_sync::once_lock::OnceLock;
 use embassy_sync::signal::Signal;
 use embassy_time::{with_timeout, Duration};
 use embedded_usb_pd::ucsi::lpm;
-use embedded_usb_pd::{Error, GlobalPortId, PdError, PortId as LocalPortId};
+use embedded_usb_pd::{
+    type_c::Current as TypecCurrent, Error, GlobalPortId, PdError, PortId as LocalPortId, PowerRole,
+};
 
 use super::event::{PortEventFlags, PortEventKind};
 use super::ControllerId;
@@ -16,7 +18,7 @@ use crate::power::policy;
 use crate::{intrusive_list, trace, IntrusiveNode};
 
 /// Power contract
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum Contract {
     /// Contract as sink
@@ -26,15 +28,39 @@ pub enum Contract {
 }
 
 /// Port status
-#[derive(Copy, Clone, Debug, Default)]
+#[derive(Copy, Clone, Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct PortStatus {
-    /// Current power contract
-    pub contract: Option<Contract>,
+    /// Current available source contract
+    pub available_source_contract: Option<policy::PowerCapability>,
+    /// Current available sink contract
+    pub available_sink_contract: Option<policy::PowerCapability>,
     /// Connection present
     pub connection_present: bool,
     /// Debug connection
     pub debug_connection: bool,
+    /// Port partner supports dual-power roles
+    pub dual_power: bool,
+}
+
+impl PortStatus {
+    /// Create a new blank port status
+    /// Needed because default() is not const
+    pub const fn new() -> Self {
+        Self {
+            available_source_contract: None,
+            available_sink_contract: None,
+            connection_present: false,
+            debug_connection: false,
+            dual_power: false,
+        }
+    }
+}
+
+impl Default for PortStatus {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 /// Port-specific command data
@@ -243,6 +269,25 @@ pub trait Controller {
         &mut self,
         port: LocalPortId,
         enable: bool,
+    ) -> impl Future<Output = Result<(), Error<Self::BusError>>>;
+    /// Enable or disable sourcing
+    fn set_sourcing(
+        &mut self,
+        port: LocalPortId,
+        enable: bool,
+    ) -> impl Future<Output = Result<(), Error<Self::BusError>>>;
+    /// Set source current capability
+    fn set_source_current(
+        &mut self,
+        port: LocalPortId,
+        current: TypecCurrent,
+        signal_event: bool,
+    ) -> impl Future<Output = Result<(), Error<Self::BusError>>>;
+    /// Initiate a power-role swap to the given role
+    fn request_pr_swap(
+        &mut self,
+        port: LocalPortId,
+        role: PowerRole,
     ) -> impl Future<Output = Result<(), Error<Self::BusError>>>;
 }
 

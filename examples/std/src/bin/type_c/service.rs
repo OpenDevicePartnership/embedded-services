@@ -45,6 +45,7 @@ mod test_controller {
                 contract: Some(contract),
                 connection_present: true,
                 debug_connection: false,
+                dual_power: false,
             });
 
             let mut events = PortEventKind::none();

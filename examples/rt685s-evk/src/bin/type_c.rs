@@ -12,7 +12,7 @@ use embassy_imxrt::{bind_interrupts, peripherals};
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_sync::mutex::Mutex;
 use embassy_sync::once_lock::OnceLock;
-use embassy_time as _;
+use embassy_time::{self as _, Delay};
 use embedded_services::comms;
 use embedded_services::power::policy::DeviceId as PowerId;
 use embedded_services::type_c::{self, ControllerId};
@@ -99,11 +99,13 @@ mod debug {
     }
 
     impl comms::MailboxDelegate for Device {
-        fn receive(&self, message: &comms::Message) {
+        fn receive(&self, message: &comms::Message) -> Result<(), comms::MailboxDelegateError> {
             trace!("Got message");
             if let Some(message) = message.data.get::<type_c::comms::DebugAccessoryMessage>() {
                 info!("Debug accessory message: {:?}", message);
             }
+
+            Ok(())
         }
     }
 }
@@ -145,10 +147,14 @@ async fn main(spawner: Spawner) {
 
     static CONTROLLER: StaticCell<Controller<'static>> = StaticCell::new();
     let controller = CONTROLLER.init(Controller::new_tps66994(device, ADDR0).unwrap());
-    let (tps6699x, interrupt) = controller.make_parts();
+    let (mut tps6699x, interrupt) = controller.make_parts();
 
     info!("Spawining interrupt task");
     spawner.must_spawn(interrupt_task(int_in, interrupt));
+
+    info!("Resetting PD controller");
+    let mut delay = Delay;
+    tps6699x.reset(&mut delay).await.unwrap();
 
     static PD_PORTS: [GlobalPortId; 2] = [PORT0_ID, PORT1_ID];
 

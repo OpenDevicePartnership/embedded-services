@@ -9,8 +9,8 @@ use log::*;
 use static_cell::StaticCell;
 
 const CONTROLLER0: ControllerId = ControllerId(0);
-const PORT0: PortId = GlobalPortId(0);
-const PORT1: PortId = GlobalPortId(1);
+const PORT0: GlobalPortId = GlobalPortId(0);
+const PORT1: GlobalPortId = GlobalPortId(1);
 const POWER0: power::policy::DeviceId = power::policy::DeviceId(0);
 
 mod test_controller {
@@ -75,6 +75,7 @@ mod test_controller {
                         connection_present: false,
                         contract: None,
                         debug_connection: false,
+                        dual_power: false,
                     })
                 }
                 _ => {

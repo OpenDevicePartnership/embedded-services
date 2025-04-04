@@ -123,3 +123,27 @@ impl From<source::Pdo> for Contract {
         Contract::Source(policy::PowerCapability::from(pdo))
     }
 }
+
+/// Type-C USB2 power capability 5V@500mA
+pub const POWER_CAPABILITY_USB_DEFAULT_USB2: policy::PowerCapability = policy::PowerCapability {
+    voltage_mv: 5000,
+    current_ma: 500,
+};
+
+/// Type-C USB3 power capability 5V@900mA
+pub const POWER_CAPABILITY_USB_DEFAULT_USB3: policy::PowerCapability = policy::PowerCapability {
+    voltage_mv: 5000,
+    current_ma: 900,
+};
+
+/// Type-C power capability 5V@1.5A
+pub const POWER_CAPABILITY_5V_1A5: policy::PowerCapability = policy::PowerCapability {
+    voltage_mv: 5000,
+    current_ma: 1500,
+};
+
+/// Type-C power capability 5V@3A
+pub const POWER_CAPABILITY_5V_3A0: policy::PowerCapability = policy::PowerCapability {
+    voltage_mv: 5000,
+    current_ma: 3000,
+};
