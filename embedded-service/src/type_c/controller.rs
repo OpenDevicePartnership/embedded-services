@@ -11,7 +11,7 @@ use embedded_usb_pd::ucsi::lpm;
 use embedded_usb_pd::{Error, GlobalPortId, PdError, PortId as LocalPortId};
 
 use super::event::{PortEventFlags, PortEventKind};
-use super::ControllerId;
+use super::{external, ControllerId};
 use crate::power::policy;
 use crate::{intrusive_list, trace, IntrusiveNode};
 
@@ -123,6 +123,16 @@ pub enum Response {
     Lpm(lpm::Response),
     /// Port response
     Port(PortResponse),
+}
+
+/// Controller status
+#[derive(Copy, Clone, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct ControllerStatus<'a> {
+    /// Current controller mode
+    pub mode: &'a str,
+    /// True if we did not have to boot from a backup FW bank
+    pub valid_fw_bank: bool,
 }
 
 /// PD controller
@@ -250,6 +260,10 @@ pub trait Controller {
 struct Context {
     controllers: intrusive_list::IntrusiveList,
     port_events: Signal<NoopRawMutex, PortEventFlags>,
+    /// Channel for receiving commands to the type-C service
+    external_command: Channel<NoopRawMutex, external::Command, 1>,
+    /// Channel for sending responses from the type-C service
+    external_response: Channel<NoopRawMutex, external::Response<'static>, 1>,
 }
 
 impl Context {
@@ -257,6 +271,8 @@ impl Context {
         Self {
             controllers: intrusive_list::IntrusiveList::new(),
             port_events: Signal::new(),
+            external_command: Channel::new(),
+            external_response: Channel::new(),
         }
     }
 }
@@ -277,9 +293,20 @@ pub async fn register_controller(controller: &'static impl DeviceContainer) -> R
         .push(controller.get_pd_controller_device())
 }
 
+pub(super) async fn lookup_controller(controller_id: ControllerId) -> Result<&'static Device<'static>, PdError> {
+    CONTEXT
+        .get()
+        .await
+        .controllers
+        .into_iter()
+        .filter_map(|node| node.data::<Device>())
+        .find(|controller| controller.id == controller_id)
+        .ok_or(PdError::InvalidController)
+}
+
 const DEFAULT_TIMEOUT: Duration = Duration::from_millis(250);
 
-/// Type to provide exclusive access to the PD controller context
+/// Type to provide access to the PD controller context for service implementations
 pub struct ContextToken(());
 
 impl ContextToken {
@@ -466,5 +493,43 @@ impl ContextToken {
             PortResponseData::PortStatus(status) => Ok(status),
             _ => Err(PdError::InvalidResponse),
         }
+    }
+
+    /// Wait for an external command
+    pub async fn wait_external_command(&self) -> external::Command {
+        CONTEXT.get().await.external_command.receive().await
+    }
+
+    /// Send a response to an external command
+    pub async fn send_external_response(&self, response: external::Response<'static>) {
+        CONTEXT.get().await.external_response.send(response).await;
+    }
+}
+
+/// Execute an external port command
+pub(super) async fn execute_external_port_command(
+    command: external::Command,
+) -> Result<external::PortResponseData, PdError> {
+    let context = CONTEXT.get().await;
+
+    context.external_command.send(command).await;
+    if let external::Response::Port(response) = context.external_response.receive().await {
+        response
+    } else {
+        Err(PdError::InvalidResponse)
+    }
+}
+
+/// Execute an external controller command
+pub(super) async fn execute_external_controller_command(
+    command: external::Command,
+) -> Result<external::ControllerResponseData<'static>, PdError> {
+    let context = CONTEXT.get().await;
+
+    context.external_command.send(command).await;
+    if let external::Response::Controller(response) = context.external_response.receive().await {
+        response
+    } else {
+        Err(PdError::InvalidResponse)
     }
 }

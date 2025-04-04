@@ -8,6 +8,7 @@ use crate::power::policy;
 pub mod comms;
 pub mod controller;
 pub mod event;
+pub mod external;
 
 /// Controller ID
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]

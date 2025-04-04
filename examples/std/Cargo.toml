@@ -48,3 +48,7 @@ path = "src/bin/type_c/basic.rs"
 [[bin]]
 name = "type-c-service"
 path = "src/bin/type_c/service.rs"
+
+[[bin]]
+name = "type-c-external"
+path = "src/bin/type_c/external.rs"

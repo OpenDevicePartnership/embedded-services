@@ -1,9 +1,15 @@
 use core::cell::RefCell;
+use embassy_futures::select::{select, Either};
 use embassy_sync::once_lock::OnceLock;
 use embedded_services::{
     comms::{self, EndpointID, Internal},
     debug, error, info,
-    type_c::{self, controller::PortStatus},
+    type_c::{
+        self,
+        controller::{ControllerStatus, PortStatus},
+        event::PortEventFlags,
+        external::{self, PortResponseData},
+    },
 };
 use embedded_usb_pd::GlobalPortId;
 use embedded_usb_pd::PdError as Error;
@@ -92,10 +98,8 @@ impl Service {
         Ok(())
     }
 
-    /// Main processing function
-    pub async fn process(&self) {
-        let pending = self.context.get_unhandled_events().await;
-
+    /// Process unhandled events
+    async fn process_unhandled_events(&self, pending: PortEventFlags) {
         for i in 0..pending.len() {
             let port_id = GlobalPortId(i as u8);
 
@@ -107,6 +111,56 @@ impl Service {
             if let Err(e) = self.process_port_events(port_id).await {
                 error!("Port{}: Error processing events: {:#?}", i, e);
             }
+        }
+    }
+
+    /// Process external controller commands
+    async fn process_external_controller_command(&self, command: external::ControllerCommand) {
+        debug!("Processing external controller command: {:#?}", command);
+        // TODO: flesh this out
+        self.context
+            .send_external_response(external::Response::Controller(Ok(
+                external::ControllerResponseData::ControllerStatus(ControllerStatus {
+                    mode: "Normal",
+                    valid_fw_bank: true,
+                }),
+            )))
+            .await
+    }
+
+    /// Process external port commands
+    async fn process_external_port_command(&self, command: external::PortCommand) {
+        debug!("Processing external port command: {:#?}", command);
+        // TODO: flesh this out
+        self.context
+            .send_external_response(external::Response::Port(Ok(PortResponseData::PortStatus(
+                Default::default(),
+            ))))
+            .await
+    }
+
+    /// Process external commands
+    async fn process_external_command(&self, command: external::Command) {
+        match command {
+            external::Command::Controller(command) => {
+                self.process_external_controller_command(command).await;
+            }
+            external::Command::Port(command) => {
+                self.process_external_port_command(command).await;
+            }
+        }
+    }
+
+    /// Main processing function
+    pub async fn process(&self) {
+        let message = select(
+            self.context.get_unhandled_events(),
+            self.context.wait_external_command(),
+        )
+        .await;
+        match message {
+            Either::First(pending) => self.process_unhandled_events(pending).await,
+            Either::Second(command) => self.process_external_command(command).await,
         }
     }
 }
