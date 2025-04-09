@@ -303,6 +303,10 @@ pub trait Controller {
         port: LocalPortId,
         role: PowerRole,
     ) -> impl Future<Output = Result<(), Error<Self::BusError>>>;
+    /// Get current controller status
+    fn get_controller_status(
+        &mut self,
+    ) -> impl Future<Output = Result<ControllerStatus<'static>, Error<Self::BusError>>>;
 }
 
 /// Internal context for managing PD controllers
