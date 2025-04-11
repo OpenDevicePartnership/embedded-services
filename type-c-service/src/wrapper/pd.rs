@@ -1,8 +1,10 @@
+use embedded_usb_pd::ucsi::lpm;
+
 use super::*;
 
 impl<const N: usize, C: Controller> ControllerWrapper<'_, N, C> {
     /// Handle a port command
-    pub(super) async fn process_port_command(&self, controller: &mut C, command: controller::PortCommand) {
+    async fn process_port_command(&self, controller: &mut C, command: controller::PortCommand) {
         let response = match command.data {
             controller::PortCommandData::PortStatus => match controller.get_port_status(LocalPortId(0)).await {
                 Ok(status) => Ok(controller::PortResponseData::PortStatus(status)),
@@ -23,10 +25,30 @@ impl<const N: usize, C: Controller> ControllerWrapper<'_, N, C> {
             .await;
     }
 
+    async fn process_controller_command(&self, _controller: &mut C, command: controller::InternalCommandData) {
+        let response = match command {
+            _ => controller::Response::Controller(Err(PdError::UnrecognizedCommand)),
+        };
+
+        self.pd_controller.send_response(response).await;
+    }
+
     /// Handle a PD controller command
     pub(super) async fn process_pd_command(&self, controller: &mut C, command: controller::Command) {
-        if let controller::Command::Port(command) = command {
-            self.process_port_command(controller, command).await;
+        match command {
+            controller::Command::Port(command) => {
+                self.process_port_command(controller, command).await;
+            }
+            controller::Command::Controller(command) => {
+                self.process_controller_command(controller, command).await;
+            }
+            controller::Command::Lpm(_) => {
+                self.pd_controller
+                    .send_response(controller::Response::Lpm(lpm::Response::Err(
+                        PdError::UnrecognizedCommand,
+                    )))
+                    .await;
+            }
         }
     }
 }

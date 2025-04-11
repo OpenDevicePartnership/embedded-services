@@ -1137,7 +1137,7 @@ dependencies = [
 [[package]]
 name = "tps6699x"
 version = "0.1.0"
-source = "git+https://github.com/OpenDevicePartnership/tps6699x#01c61492ec1a5afded8f98525f2a300ee07bed24"
+source = "git+https://github.com/OpenDevicePartnership/tps6699x#89ebf5f92c685d9992f1c26497f7f4c425bfaf0c"
 dependencies = [
  "bincode",
  "device-driver",

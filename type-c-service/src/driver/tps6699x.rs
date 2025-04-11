@@ -4,13 +4,13 @@ use core::iter::zip;
 
 use ::tps6699x::registers::field_sets::IntEventBus1;
 use ::tps6699x::registers::{PdCcPullUp, PlugMode};
-use ::tps6699x::{TPS66993_NUM_PORTS, TPS66994_NUM_PORTS};
+use ::tps6699x::{Mode, TPS66993_NUM_PORTS, TPS66994_NUM_PORTS};
 use embassy_futures::select::select;
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use embassy_sync::signal::Signal;
 use embedded_hal_async::i2c::I2c;
 use embedded_services::power::policy::{self, PowerCapability};
-use embedded_services::type_c::controller::{self, Controller, PortStatus};
+use embedded_services::type_c::controller::{self, Controller, ControllerStatus, PortStatus};
 use embedded_services::type_c::event::PortEventKind;
 use embedded_services::type_c::ControllerId;
 use embedded_services::{debug, info, trace, type_c};
@@ -284,6 +284,24 @@ impl<const N: usize, M: RawMutex, B: I2c> Controller for Tps6699x<'_, N, M, B> {
         }
 
         tps6699x.set_port_control(port, control).await
+    }
+
+    #[allow(clippy::await_holding_refcell_ref)]
+    async fn get_controller_status(&mut self) -> Result<ControllerStatus<'static>, Error<Self::BusError>> {
+        let mut tps6699x = self.tps6699x.borrow_mut();
+        let boot_flags = tps6699x.get_boot_flags().await?;
+
+        Ok(ControllerStatus {
+            mode: match tps6699x.get_mode().await? {
+                Mode::App0 => "APP0",
+                Mode::App1 => "APP1",
+                Mode::Boot => "BOOT",
+                Mode::F211 => "F211",
+                Mode::Wtpr => "WTPR",
+            },
+            valid_fw_bank: boot_flags.active_bank() != 0
+                && (boot_flags.bank0_valid() != 0 || boot_flags.bank1_valid() != 0),
+        })
     }
 }
 
