@@ -295,6 +295,8 @@ jobs:
     env:
       CARGO_VET_VERSION: 0.10.1
     
+    permissions: 
+      pull-requests: write 
     strategy:
       fail-fast: false
       matrix:
@@ -315,9 +317,48 @@ jobs:
       run: cargo install --root ${{ runner.tool_cache }}/cargo-vet --version ${{ env.CARGO_VET_VERSION }} cargo-vet
 
     - name: Invoke cargo-vet
+      id: cargo-vet
       run: cargo vet --locked
     
-    - name: Error message and resolution
+    - name: Generate PR comment on failure
       # This step will only run if the cargo-vet step fails
-      if: ${{ failure() }}
-      run: echo "Cargo vet failed. Please refer to https://${{ github.repository }}/supply-chain/README.md to review the unvetted dependencies."
+      if: ${{ failure() && steps.cargo-vet.outcome == 'failure' }}
+      uses: thollander/actions-comment-pull-request@v3
+      with:
+          message: |
+            # Dependencies Audit Failed
+
+            `cargo vet` has failed in this PR. Please run `cargo vet --locked` locally to check for new or updated unvetted dependencies.
+            Details about the vetting process can be found in [README.md](../blob/main/supply-chain/README.md)
+                  
+            ## If the unvetted dependencies are not needed
+            Please modify Cargo.toml file to avoid including the dependencies.
+                  
+            ## If the unvetted dependencies are needed
+            Post a new comment to the PR with your reasoning to help the auditors vet the dependencies.
+            After the auditors have vetted the dependencies, the PR will need to be rebased to pick up the new audits and pass this check.
+                  
+            ### Copy and paste the questionnaire below and provide your answers:
+            
+            **1. What crates (with version) need to be audited?**
+            
+            **2. How many of the crates are version updates vs new dependencies?**
+            
+            **3. Did you confirm none of the already existing crates serve the same purpose?**
+            
+            **4. Any extra notes to the auditors to help with their audits.**
+          
+          comment-tag: cargo-vet
+          mode: recreate
+
+    - name: Update PR comment on success
+      # This step will only run if the cargo-vet step succeeds after failing at least once
+      if: ${{ steps.cargo-vet.outcome == 'success' }}
+      uses: thollander/actions-comment-pull-request@v3
+      with:
+          message: |
+            # Dependencies Audit Passed
+            `cargo vet` has passed in this PR. No new unvetted dependencies were found.
+          comment-tag: cargo-vet
+          mode: recreate
+          create-if-not-exists: false
