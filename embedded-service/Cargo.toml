@@ -30,6 +30,7 @@ embedded-storage.workspace = true
 embedded-usb-pd.workspace = true
 embedded-batteries-async.workspace = true
 fixed.workspace = true
+frunk.workspace = true
 heapless.workspace = true
 log = { workspace = true, optional = true }
 postcard.workspace = true

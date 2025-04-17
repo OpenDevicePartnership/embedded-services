@@ -49,6 +49,7 @@ embedded-storage = "0.3"
 embedded-storage-async = "0.4.1"
 embedded-usb-pd = { git = "https://github.com/OpenDevicePartnership/embedded-usb-pd", default-features = false }
 fixed = "1.23.1"
+frunk = { version = "0.4.3", default-features = false }
 heapless = "0.8.*"
 log = "0.4"
 postcard = "1.*"
