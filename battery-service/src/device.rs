@@ -1,0 +1,186 @@
+use core::cell::Cell;
+
+use embassy_sync::blocking_mutex::raw::NoopRawMutex;
+use embassy_sync::channel::Channel;
+use embassy_time::Duration;
+use embedded_services::{Node, NodeContainer};
+
+/// Device errors.
+pub enum FuelGaugeError {
+    Timeout,
+    BusError,
+}
+
+/// Device commands.
+pub enum Command {
+    Initialize,
+    Ping,
+    UpdateStaticCache,
+    UpdateDynamicCache,
+}
+
+/// Device response.
+pub enum InternalResponse {
+    Complete,
+}
+
+/// External device response.
+pub type Response = Result<InternalResponse, FuelGaugeError>;
+
+/// Standard static battery data cache
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct StaticBatteryMsgs {
+    /// Manufacturer Name.
+    manufacturer_name: [u8; 21],
+
+    /// Device Name.
+    device_name: [u8; 21],
+
+    /// Device Chemistry.
+    device_chemistry: [u8; 5],
+
+    /// Design Capacity in mWh.
+    design_capacity_mwh: u32,
+
+    /// Design Voltage in mV.
+    design_voltage_mv: u16,
+
+    /// Device Chemistry Id.
+    device_chemistry_id: [u8; 2],
+
+    /// Device Serial Number.
+    serial_num: [u8; 4],
+}
+
+/// Standard dynamic battery data cache
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct DynamicBatteryMsgs {
+    /// Battery Max Power in mW.
+    max_power_mw: u32,
+
+    /// Battery Sustained Power in mW.
+    sus_power_mw: u32,
+
+    /// Full Charge Capacity in mWh.
+    full_charge_capacity_mwh: u32,
+
+    /// Remaining Capacity in mWh.
+    remaining_capacity_mwh: u32,
+
+    /// Rsoc in %.
+    relative_soc_pct: u16,
+
+    /// Charge/Discharge Cycle Count.
+    cycle_count: u16,
+
+    /// Battery Voltage in mV.
+    voltage_mv: u16,
+
+    /// Maximum Error in %.
+    max_error_pct: u16,
+
+    /// Battery Status (Standard Smart Battery Defined).
+    battery_status: u16,
+
+    /// Desired Charging Voltage in mV.
+    charging_voltage_mv: u16,
+
+    /// Desired Charging Current in mA.
+    charging_current_ma: u16,
+
+    /// Battery Temperature in dK.
+    battery_temp_dk: u16,
+
+    /// Battery Current in mA.
+    current_ma: i16,
+
+    /// Battery Avg Current.
+    average_current_ma: i16,
+}
+
+/// Fuel gauge ID
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct DeviceId(u8);
+
+/// Hardware agnostic device object to be registered with context.
+pub struct Device {
+    node: embedded_services::Node,
+    id: DeviceId,
+    command: Channel<NoopRawMutex, Command, 1>,
+    response: Channel<NoopRawMutex, Response, 1>,
+    dynamic_battery_cache: Cell<DynamicBatteryMsgs>,
+    static_battery_cache: Cell<StaticBatteryMsgs>,
+    timeout: Cell<Duration>,
+}
+
+impl Device {
+    // Get device ID.
+    pub fn id(&self) -> DeviceId {
+        self.id
+    }
+
+    /// Send command to the device.
+    pub async fn send_command(&self, cmd: Command) {
+        self.command.send(cmd).await
+    }
+
+    /// Wait for a response from the device.
+    pub async fn wait_response(&self) -> Response {
+        self.response.receive().await
+    }
+
+    /// Send a command and wait for a response from the device.
+    pub async fn execute_command(&self, cmd: Command) -> Response {
+        self.send_command(cmd).await;
+        self.wait_response().await
+    }
+
+    /// Receive a command.
+    pub async fn receive_command(&self) -> Command {
+        self.command.receive().await
+    }
+
+    /// Send a response.
+    pub async fn send_response(&self, response: Response) {
+        self.response.send(response).await
+    }
+
+    /// Set dynamic battery cache with updated values.
+    pub fn set_dynamic_battery_cache(&self, new_values: DynamicBatteryMsgs) {
+        self.dynamic_battery_cache.set(new_values);
+    }
+
+    /// Set static battery cache with updated values.
+    pub fn set_static_battery_cache(&self, new_values: StaticBatteryMsgs) {
+        self.static_battery_cache.set(new_values);
+    }
+
+    /// Get dynamic battery cache.
+    pub fn get_dynamic_battery_cache(&self) -> DynamicBatteryMsgs {
+        self.dynamic_battery_cache.get()
+    }
+
+    /// Get static battery cache.
+    pub fn get_static_battery_cache(&self) -> StaticBatteryMsgs {
+        self.static_battery_cache.get()
+    }
+
+    /// Set device timeout.
+    pub fn set_timeout(&self, duration: Duration) {
+        self.timeout.set(duration);
+    }
+
+    /// Get device timeout.
+    pub fn get_timeout(&self) -> Duration {
+        self.timeout.get()
+    }
+}
+
+impl NodeContainer for Device {
+    fn get_node(&self) -> &Node {
+        &self.node
+    }
+}

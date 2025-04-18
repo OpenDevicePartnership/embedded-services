@@ -1,0 +1,87 @@
+use core::cell::RefCell;
+
+use embassy_futures::select::select;
+use embedded_services::trace;
+
+use crate::{
+    controller::{Controller, ControllerEvent},
+    device::{Command, Device},
+};
+
+/// Wrapper object to bind device to fuel gauge hardware driver.
+pub struct Wrapper<C: Controller> {
+    device: Device,
+    controller: RefCell<C>,
+}
+
+impl<C: Controller> Wrapper<C> {
+    /// Create a new fuel gauge wrapper.
+    pub fn new(device: Device, controller: C) -> Self {
+        Self {
+            device,
+            controller: RefCell::new(controller),
+        }
+    }
+
+    /// Process events from hardware controller or context device.
+    #[allow(clippy::await_holding_refcell_ref)]
+    pub async fn process(&self) {
+        let mut controller = self.controller.borrow_mut();
+        loop {
+            let res = select(controller.get_device_event(), self.device.receive_command()).await;
+            match res {
+                embassy_futures::select::Either::First(event) => {
+                    trace!("New fuel gauge hardware device event.");
+                    self.process_device_event(&mut controller, &self.device, event).await;
+                }
+                embassy_futures::select::Either::Second(cmd) => {
+                    trace!("New fuel gauge state machine command.");
+                    self.process_context_command(&mut controller, &self.device, cmd).await;
+                }
+            };
+        }
+    }
+
+    async fn process_device_event(&self, _controller: &mut C, _device: &Device, event: ControllerEvent) {
+        // TODO: add events
+        match event {}
+    }
+
+    async fn process_context_command(&self, controller: &mut C, device: &Device, command: Command) {
+        match command {
+            Command::Initialize => match controller.initialize().await {
+                Ok(_) => {
+                    device
+                        .send_response(Ok(crate::device::InternalResponse::Complete))
+                        .await;
+                }
+                Err(_e) => {
+                    // TODO: Add specific error handling
+                    device.send_response(Err(crate::device::FuelGaugeError::BusError)).await;
+                }
+            },
+            Command::Ping => todo!(),
+            Command::UpdateStaticCache => match controller.get_static_data().await {
+                Ok(static_data) => {
+                    device.set_static_battery_cache(static_data);
+                }
+                Err(_e) => {
+                    // TODO: Add specific error handling
+                    device.send_response(Err(crate::device::FuelGaugeError::BusError)).await;
+                }
+            },
+            Command::UpdateDynamicCache => match controller.get_dynamic_data().await {
+                Ok(dynamic_data) => {
+                    device.set_dynamic_battery_cache(dynamic_data);
+                    device
+                        .send_response(Ok(crate::device::InternalResponse::Complete))
+                        .await;
+                }
+                Err(_e) => {
+                    // TODO: Add specific error handling
+                    device.send_response(Err(crate::device::FuelGaugeError::BusError)).await;
+                }
+            },
+        }
+    }
+}
