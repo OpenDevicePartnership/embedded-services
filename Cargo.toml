@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "battery-service",
+    "thermal-service",
     "cfu-service",
     "embedded-service",
     "espi-service",
@@ -70,3 +71,4 @@ syn = "2.0"
 tps6699x = { git = "https://github.com/OpenDevicePartnership/tps6699x" }
 tokio = { version = "1.42.0" }
 zerocopy = "0.8.26"
+uuid = { version = "1.17.0", default-features = false }
