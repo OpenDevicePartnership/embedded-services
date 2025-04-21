@@ -15,6 +15,7 @@ pub mod ec_type;
 pub mod fmt;
 pub mod hid;
 pub mod keyboard;
+pub mod oem;
 pub mod power;
 pub mod type_c;
 
