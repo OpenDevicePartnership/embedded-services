@@ -1,0 +1,23 @@
+[package]
+name = "partition-manager-generation"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[target.'cfg(not(target_os = "none"))'.dependencies]
+proc-macro2.workspace = true
+syn.workspace = true
+quote.workspace = true
+anyhow.workspace = true
+
+serde = { workspace = true, features = ["std", "derive"] }
+
+toml = { workspace = true, features = [
+    "preserve_order",
+    "parse",
+], default-features = false, optional = true }
+
+[features]
+default = ["toml"]
+toml = ["dep:toml"]
