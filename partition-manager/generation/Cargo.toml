@@ -1,0 +1,26 @@
+[package]
+name = "partition-manager-generation"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[target.'cfg(not(target_os = "none"))'.dependencies]
+proc-macro2.workspace = true
+syn.workspace = true
+quote.workspace = true
+anyhow.workspace = true
+
+serde = { workspace = true, features = ["std", "derive"] }
+
+serde_json = { workspace = true, features = [
+    "preserve_order",
+], optional = true }
+serde_yml = { workspace = true, optional = true }
+toml = { workspace = true, features = ["preserve_order"], optional = true }
+
+[features]
+default = ["json", "yaml", "toml"]
+json = ["dep:serde_json"]
+yaml = ["dep:serde_yml"]
+toml = ["dep:toml"]
