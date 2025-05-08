@@ -302,6 +302,8 @@ pub trait Controller {
     /// Type of error returned by the bus
     type BusError;
 
+    /// Ensure software state is in sync with hardware state
+    fn sync_state(&mut self) -> impl Future<Output = Result<(), Error<Self::BusError>>>;
     /// Returns ports with pending events
     fn wait_port_event(&mut self) -> impl Future<Output = Result<(), Error<Self::BusError>>>;
     /// Returns and clears current events for the given port

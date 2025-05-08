@@ -42,6 +42,13 @@ impl<'a, const N: usize, C: Controller> ControllerWrapper<'a, N, C> {
         }
     }
 
+    /// Ensure the software state is in sync with the hardware state
+    #[allow(clippy::await_holding_refcell_ref)]
+    pub async fn sync_state(&self) -> Result<(), Error<C::BusError>> {
+        let mut controller = self.controller.borrow_mut();
+        controller.sync_state().await
+    }
+
     /// Handle a plug event
     async fn process_plug_event(
         &self,

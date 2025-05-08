@@ -202,6 +202,19 @@ impl<'a, const N: usize, M: RawMutex, B: I2c> Tps6699x<'a, N, M, B> {
 impl<const N: usize, M: RawMutex, B: I2c> Controller for Tps6699x<'_, N, M, B> {
     type BusError = B::Error;
 
+    /// Controller specific initialization
+    #[allow(clippy::await_holding_refcell_ref)]
+    async fn sync_state(&mut self) -> Result<(), Error<Self::BusError>> {
+        for i in 0..N {
+            let port = LocalPortId(i as u8);
+            let mut tps6699x = self.tps6699x.borrow_mut();
+            let event = self.update_port_status(&mut tps6699x, port).await?;
+            self.port_events[i].set(event);
+        }
+
+        Ok(())
+    }
+
     /// Wait for an event on any port
     #[allow(clippy::await_holding_refcell_ref)]
     async fn wait_port_event(&mut self) -> Result<(), Error<Self::BusError>> {

@@ -96,6 +96,10 @@ mod test_controller {
     impl embedded_services::type_c::controller::Controller for Controller<'_> {
         type BusError = ();
 
+        async fn sync_state(&mut self) -> Result<(), Error<Self::BusError>> {
+            Ok(())
+        }
+
         async fn wait_port_event(&mut self) -> Result<(), Error<Self::BusError>> {
             trace!("Wait for port event");
             let events = self.state.events.wait().await;
