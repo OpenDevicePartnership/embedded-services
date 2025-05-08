@@ -575,6 +575,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "embedded-fans"
+version = "0.1.0"
+source = "git+https://github.com/OpenDevicePartnership/embedded-fans#0b79127122bbbb2c01abfad43d65b0814455dcd7"
+
+[[package]]
+name = "embedded-fans-async"
+version = "0.1.0"
+source = "git+https://github.com/OpenDevicePartnership/embedded-fans#0b79127122bbbb2c01abfad43d65b0814455dcd7"
+dependencies = [
+ "embedded-fans",
+]
+
+[[package]]
 name = "embedded-hal"
 version = "0.2.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -625,6 +638,22 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3ff09972d4073aa8c299395be75161d582e7629cd663171d62af73c8d50dba3f"
 dependencies = [
  "embedded-io",
+]
+
+[[package]]
+name = "embedded-sensors-hal"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "971cd616a2326c63f660375e485e2f4573575b0bd293d228d7817c2b07be3475"
+
+[[package]]
+name = "embedded-sensors-hal-async"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2fa0eb7de28c2ea3ed7eeeb9e2d48470fa92728910ecf5468944c754a823d799"
+dependencies = [
+ "embedded-sensors-hal",
+ "paste",
 ]
 
 [[package]]
@@ -1230,6 +1259,23 @@ name = "tap"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "55937e1799185b12863d447f42597ed69d9928686b8d88a1df17376a097d8369"
+
+[[package]]
+name = "thermal-service"
+version = "0.1.0"
+dependencies = [
+ "defmt 0.3.100",
+ "embassy-executor",
+ "embassy-futures",
+ "embassy-sync",
+ "embassy-time",
+ "embedded-fans-async",
+ "embedded-hal 1.0.0",
+ "embedded-hal-async",
+ "embedded-sensors-hal-async",
+ "embedded-services 0.1.0",
+ "log",
+]
 
 [[package]]
 name = "thiserror"
