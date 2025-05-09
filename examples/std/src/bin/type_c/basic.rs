@@ -90,7 +90,8 @@ mod test_controller {
         }
 
         pub async fn process(&self) {
-            let response = match self.controller.wait_command().await {
+            let invocation = self.controller.wait_invocation().await;
+            let response = match invocation.command {
                 controller::Command::Controller(command) => {
                     controller::Response::Controller(self.process_controller_command(command).await)
                 }
@@ -102,7 +103,7 @@ mod test_controller {
                 }
             };
 
-            self.controller.send_response(response).await
+            invocation.send_response(response);
         }
     }
 }
