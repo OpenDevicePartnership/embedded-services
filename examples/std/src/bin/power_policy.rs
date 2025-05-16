@@ -36,35 +36,35 @@ impl ExampleDevice {
     }
 
     async fn process_request(&self) -> Result<(), policy::Error> {
-        let request = self.device.wait_request().await;
+        let request = self.device.receive().await;
         if self.reject_requests.get() > 0 {
             info!("Rejecting request");
             self.reject_requests.set(self.reject_requests.get() - 1);
-            self.device.send_response(Err(policy::Error::Failed)).await;
+            request.respond(Err(policy::Error::Failed));
             return Ok(());
         }
 
-        match request {
-            device::RequestData::ConnectConsumer(capability) => {
+        match request.command {
+            device::CommandData::ConnectConsumer(capability) => {
                 info!(
                     "Device {} received connect consumer at {:#?}",
                     self.device.id().0,
                     capability
                 );
             }
-            device::RequestData::ConnectProvider(capability) => {
+            device::CommandData::ConnectProvider(capability) => {
                 info!(
                     "Device {} received connect source at {:#?}",
                     self.device.id().0,
                     capability
                 );
             }
-            device::RequestData::Disconnect => {
+            device::CommandData::Disconnect => {
                 info!("Device {} received disconnect", self.device.id().0);
             }
         }
 
-        self.device.send_response(Ok(device::ResponseData::Complete)).await;
+        request.respond(Ok(policy::device::ResponseData::Complete));
         Ok(())
     }
 }
