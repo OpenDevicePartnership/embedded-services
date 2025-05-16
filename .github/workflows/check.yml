@@ -144,7 +144,17 @@ jobs:
       - name: Install stable
         uses: dtolnay/rust-toolchain@stable
       - name: cargo test
-        run: cargo test --locked
+        run: |
+          cargo test --locked -p battery-service
+          cargo test --locked -p cfu-service
+          cargo test --locked -p embedded-services
+          cargo test --locked -p espi-service
+          cargo test --locked -p hid-service
+          cargo test --locked -p platform-service
+          cargo test --locked -p power-button-service
+          cargo test --locked -p power-policy-service
+          cargo test --locked -p storage_bus
+          cargo test --locked -p type-c-service
 
   msrv:
     # check that we can build using the minimal rust version that is specified by this crate
