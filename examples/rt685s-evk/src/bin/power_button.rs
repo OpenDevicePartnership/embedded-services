@@ -119,7 +119,7 @@ async fn main(spawner: Spawner) {
     // Create a power button instance
     let button_a = Input::new(p.PIO1_1, Pull::Up, Inverter::Disabled);
     // Create a debouncer instance
-    let debouncer = Debouncer::new(3, Duration::from_millis(10), ActiveState::ActiveLow);
+    let debouncer = Debouncer::new(3, 10, ActiveState::ActiveLow);
     // Create a custom button configuration instance
     let config_a = ButtonConfig::new(debouncer, Duration::from_millis(1000), Duration::from_millis(2000));
 
