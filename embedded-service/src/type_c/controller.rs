@@ -92,6 +92,12 @@ pub enum PortCommandData {
     PortStatus,
     /// Get and clear events
     ClearEvents,
+    /// Get retimer fw update state
+    RetimerFwUpdateGetState,
+    /// Set retimer fw update state
+    RetimerFwUpdateSetState,
+    /// Clear retimer fw update state
+    RetimerFwUpdateClearState,
 }
 
 /// Port-specific commands
@@ -114,6 +120,8 @@ pub enum PortResponseData {
     PortStatus(PortStatus),
     /// ClearEvents
     ClearEvents(PortEventKind),
+    /// Retimer Fw Update status
+    RtFwUpdateStatus(bool),
 }
 
 impl PortResponseData {
@@ -319,6 +327,18 @@ pub trait Controller {
     /// Returns the port status
     fn get_port_status(&mut self, port: LocalPortId)
         -> impl Future<Output = Result<PortStatus, Error<Self::BusError>>>;
+    /// Returns the retimer fw update state
+    fn get_rt_fw_update_status(
+        &mut self,
+        port: LocalPortId,
+    ) -> impl Future<Output = Result<bool, Error<Self::BusError>>>;
+    /// Set retimer fw update state
+    fn set_rt_fw_update_state(&mut self, port: LocalPortId) -> impl Future<Output = Result<(), Error<Self::BusError>>>;
+    /// Clear retimer fw update state
+    fn clear_rt_fw_update_state(
+        &mut self,
+        port: LocalPortId,
+    ) -> impl Future<Output = Result<(), Error<Self::BusError>>>;
     /// Enable or disable sink path
     fn enable_sink_path(
         &mut self,
@@ -585,6 +605,39 @@ impl ContextToken {
             .await?
         {
             PortResponseData::PortStatus(status) => Ok(status),
+            _ => Err(PdError::InvalidResponse),
+        }
+    }
+
+    /// Get the retimer fw update status
+    pub async fn get_rt_fw_update_status(&self, port: GlobalPortId) -> Result<bool, PdError> {
+        match self
+            .send_port_command(port, PortCommandData::RetimerFwUpdateGetState)
+            .await?
+        {
+            PortResponseData::RtFwUpdateStatus(status) => Ok(status),
+            _ => Err(PdError::InvalidResponse),
+        }
+    }
+
+    /// Set the retimer fw update state
+    pub async fn set_rt_fw_update_state(&self, port: GlobalPortId) -> Result<(), PdError> {
+        match self
+            .send_port_command(port, PortCommandData::RetimerFwUpdateSetState)
+            .await?
+        {
+            PortResponseData::Complete => Ok(()),
+            _ => Err(PdError::InvalidResponse),
+        }
+    }
+
+    /// Clear the retimer fw update state
+    pub async fn clear_rt_fw_update_state(&self, port: GlobalPortId) -> Result<(), PdError> {
+        match self
+            .send_port_command(port, PortCommandData::RetimerFwUpdateClearState)
+            .await?
+        {
+            PortResponseData::Complete => Ok(()),
             _ => Err(PdError::InvalidResponse),
         }
     }

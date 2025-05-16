@@ -44,6 +44,12 @@ pub type ControllerResponse<'a> = Result<ControllerResponseData<'a>, PdError>;
 pub enum PortCommandData {
     /// Get port status
     PortStatus,
+    /// Get retimer fw update status
+    RetimerFwUpdateGetState,
+    /// Set retimer fw update status
+    RetimerFwUpdateSetState,
+    /// Clear retimer fw update status
+    RetimerFwUpdateClearState,
 }
 
 /// Port-specific commands
@@ -60,8 +66,12 @@ pub struct PortCommand {
 #[derive(Copy, Clone, Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum PortResponseData {
+    /// Command completed with no error
+    Complete,
     /// Get port status
     PortStatus(PortStatus),
+    /// Get retimer fw update status
+    RetimerFwUpdateGetState(bool),
 }
 
 /// Port-specific command response
@@ -88,7 +98,6 @@ pub enum Response<'a> {
 }
 
 /// Get the status of the given port
-#[allow(unreachable_patterns)]
 pub async fn get_port_status(port: GlobalPortId) -> Result<PortStatus, PdError> {
     match execute_external_port_command(Command::Port(PortCommand {
         port,
@@ -132,4 +141,43 @@ pub async fn controller_port_to_global_id(
     port_id: LocalPortId,
 ) -> Result<GlobalPortId, PdError> {
     lookup_controller(controller_id).await?.lookup_global_port(port_id)
+}
+
+/// Get the retimer fw update status of the given port
+pub async fn port_get_rt_fw_update_status(port: GlobalPortId) -> Result<bool, PdError> {
+    match execute_external_port_command(Command::Port(PortCommand {
+        port,
+        data: PortCommandData::RetimerFwUpdateGetState,
+    }))
+    .await?
+    {
+        PortResponseData::RetimerFwUpdateGetState(status) => Ok(status),
+        _ => Err(PdError::InvalidResponse),
+    }
+}
+
+/// Set the retimer fw update state of the given port
+pub async fn port_set_rt_fw_update_state(port: GlobalPortId) -> Result<(), PdError> {
+    match execute_external_port_command(Command::Port(PortCommand {
+        port,
+        data: PortCommandData::RetimerFwUpdateSetState,
+    }))
+    .await?
+    {
+        PortResponseData::Complete => Ok(()),
+        _ => Err(PdError::InvalidResponse),
+    }
+}
+
+/// Clear the retimer fw update state of the given port
+pub async fn port_clear_rt_fw_update_state(port: GlobalPortId) -> Result<(), PdError> {
+    match execute_external_port_command(Command::Port(PortCommand {
+        port,
+        data: PortCommandData::RetimerFwUpdateClearState,
+    }))
+    .await?
+    {
+        PortResponseData::Complete => Ok(()),
+        _ => Err(PdError::InvalidResponse),
+    }
 }

@@ -151,11 +151,44 @@ impl Service {
             .await;
     }
 
+    /// Process get retimer fw update status commands
+    async fn process_get_rt_fw_update_status(&self, port_id: GlobalPortId) -> external::Response<'static> {
+        let status = self.context.get_rt_fw_update_status(port_id).await;
+        if let Err(e) = status {
+            error!("Error getting retimer fw update status: {:#?}", e);
+        }
+
+        external::Response::Port(status.map(external::PortResponseData::RetimerFwUpdateGetState))
+    }
+
+    /// Process set retimer fw update state commands
+    async fn process_set_rt_fw_update_state(&self, port_id: GlobalPortId) -> external::Response<'static> {
+        let status = self.context.set_rt_fw_update_state(port_id).await;
+        if let Err(e) = status {
+            error!("Error setting retimer fw update state: {:#?}", e);
+        }
+
+        external::Response::Port(status.map(|_| external::PortResponseData::Complete))
+    }
+
+    /// Process clear retimer fw update state commands
+    async fn process_clear_rt_fw_update_state(&self, port_id: GlobalPortId) -> external::Response<'static> {
+        let status = self.context.clear_rt_fw_update_state(port_id).await;
+        if let Err(e) = status {
+            error!("Error clear retimer fw update state: {:#?}", e);
+        }
+
+        external::Response::Port(status.map(|_| external::PortResponseData::Complete))
+    }
+
     /// Process external port commands
     async fn process_external_port_command(&self, command: external::PortCommand) {
         debug!("Processing external port command: {:#?}", command);
         match command.data {
             external::PortCommandData::PortStatus => self.process_external_port_status(command.port).await,
+            external::PortCommandData::RetimerFwUpdateGetState => self.process_get_rt_fw_update_status(command.port).await,
+            external::PortCommandData::RetimerFwUpdateSetState => self.process_set_rt_fw_update_state(command.port).await,
+            external::PortCommandData::RetimerFwUpdateClearState => self.process_clear_rt_fw_update_state(command.port).await,
         }
     }
 

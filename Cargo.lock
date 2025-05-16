@@ -427,6 +427,7 @@ dependencies = [
  "cortex-m",
  "critical-section",
  "defmt 0.3.100",
+ "defmt 1.0.1",
  "document-features",
  "embassy-executor-macros",
  "log",
@@ -459,7 +460,7 @@ source = "git+https://github.com/embassy-rs/embassy#443ffd8b6df67844208ceec58d54
 dependencies = [
  "cortex-m",
  "critical-section",
- "defmt 0.3.100",
+ "defmt 1.0.1",
  "num-traits",
 ]
 
@@ -498,12 +499,12 @@ dependencies = [
 
 [[package]]
 name = "embassy-sync"
-version = "0.6.2"
-source = "git+https://github.com/embassy-rs/embassy#6034b17728b3528e42c8499a2893dc35d51d5590"
+version = "0.7.0"
+source = "git+https://github.com/embassy-rs/embassy#aab043b0f3621ae5e1623e1eae2d77f47bc3ebe5"
 dependencies = [
  "cfg-if",
  "critical-section",
- "defmt 0.3.100",
+ "defmt 1.0.1",
  "embedded-io-async",
  "futures-sink",
  "futures-util",
@@ -514,11 +515,11 @@ dependencies = [
 [[package]]
 name = "embassy-time"
 version = "0.4.0"
-source = "git+https://github.com/embassy-rs/embassy#6034b17728b3528e42c8499a2893dc35d51d5590"
+source = "git+https://github.com/embassy-rs/embassy#aab043b0f3621ae5e1623e1eae2d77f47bc3ebe5"
 dependencies = [
  "cfg-if",
  "critical-section",
- "defmt 0.3.100",
+ "defmt 1.0.1",
  "document-features",
  "embassy-time-driver",
  "embedded-hal 0.2.7",
@@ -531,7 +532,7 @@ dependencies = [
 [[package]]
 name = "embassy-time-driver"
 version = "0.2.0"
-source = "git+https://github.com/embassy-rs/embassy#6034b17728b3528e42c8499a2893dc35d51d5590"
+source = "git+https://github.com/embassy-rs/embassy#aab043b0f3621ae5e1623e1eae2d77f47bc3ebe5"
 dependencies = [
  "document-features",
 ]
@@ -1254,7 +1255,7 @@ dependencies = [
 [[package]]
 name = "tps6699x"
 version = "0.1.0"
-source = "git+https://github.com/OpenDevicePartnership/tps6699x#7bd036665a51afaa9872d45890ac80d20a6f9802"
+source = "git+https://github.com/OpenDevicePartnership/tps6699x#0ce23af6b698bdfa7ad5d7a6be4fb882d3690375"
 dependencies = [
  "bincode",
  "bitfield 0.19.0",

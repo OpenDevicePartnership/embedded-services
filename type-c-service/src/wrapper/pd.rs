@@ -28,6 +28,33 @@ impl<const N: usize, C: Controller> ControllerWrapper<'_, N, C> {
                 self.active_events[0].set(PortEventKind::none());
                 Ok(controller::PortResponseData::ClearEvents(event))
             }
+            controller::PortCommandData::RetimerFwUpdateGetState => {
+                match controller.get_rt_fw_update_status(local_port).await {
+                    Ok(status) => Ok(controller::PortResponseData::RtFwUpdateStatus(status)),
+                    Err(e) => match e {
+                        Error::Bus(_) => Err(PdError::Failed),
+                        Error::Pd(e) => Err(e),
+                    },
+                }
+            }
+            controller::PortCommandData::RetimerFwUpdateSetState => {
+                match controller.set_rt_fw_update_state(local_port).await {
+                    Ok(()) => Ok(controller::PortResponseData::Complete),
+                    Err(e) => match e {
+                        Error::Bus(_) => Err(PdError::Failed),
+                        Error::Pd(e) => Err(e),
+                    },
+                }
+            }
+            controller::PortCommandData::RetimerFwUpdateClearState => {
+                match controller.clear_rt_fw_update_state(local_port).await {
+                    Ok(()) => Ok(controller::PortResponseData::Complete),
+                    Err(e) => match e {
+                        Error::Bus(_) => Err(PdError::Failed),
+                        Error::Pd(e) => Err(e),
+                    },
+                }
+            }
         };
 
         self.pd_controller
