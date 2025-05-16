@@ -97,3 +97,125 @@ impl<M: RawMutex, C, R> Request<'_, M, C, R> {
         self.channel.response.signal((response, self.request_id));
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
+    use embassy_sync::once_lock::OnceLock;
+    use tokio::time::Duration;
+
+    #[test]
+    fn test_autoincrement() {
+        let channel = Channel::<CriticalSectionRawMutex, u32, u32>::new();
+        for i in 0..100 {
+            let id = channel.get_next_request_id();
+            assert_eq!(id.0, i);
+        }
+    }
+
+    /// Mock commands
+    #[derive(Debug)]
+    enum Command {
+        A,
+        B,
+        C,
+    }
+
+    /// Mock responses
+    #[derive(Debug, PartialEq)]
+    enum Response {
+        A,
+        B,
+        C,
+    }
+
+    /// Mock command handler
+    struct Handler {
+        channel: Channel<CriticalSectionRawMutex, Command, Response>,
+    }
+
+    impl Handler {
+        /// Create a new handler
+        fn new() -> Self {
+            Self {
+                channel: Channel::new(),
+            }
+        }
+
+        /// Process a command and return a response
+        async fn process_request(&self, request: &Command) -> Response {
+            match request {
+                Command::A => Response::A,
+                Command::B => Response::B,
+                Command::C => {
+                    // Request that takes a while to finish
+                    tokio::time::sleep(Duration::from_millis(1000)).await;
+                    Response::C
+                }
+            }
+        }
+
+        /// Send command A
+        async fn send_a(&self) -> Response {
+            self.channel.execute(Command::A).await
+        }
+
+        /// Invoke command B
+        async fn send_b(&self) -> Response {
+            self.channel.execute(Command::B).await
+        }
+
+        /// Invoke command C
+        async fn send_c(&self) -> Response {
+            self.channel.execute(Command::C).await
+        }
+
+        /// Main processing task
+        async fn process(&self) {
+            loop {
+                let request = self.channel.receive().await;
+                let response = self.process_request(&request.command).await;
+                request.respond(response);
+            }
+        }
+    }
+
+    /// Task that executes command C followed by command A
+    async fn task_0(handler: &'static Handler) {
+        let response = tokio::time::timeout(Duration::from_millis(250), handler.send_c()).await;
+        // Tokio's timeout error value has a private constructor so is_err is the best we can do
+        assert!(response.is_err());
+
+        let response = handler.send_a().await;
+        assert_eq!(response, Response::A);
+    }
+
+    /// Task that executes command B
+    async fn task_1(handler: &'static Handler) {
+        let response = handler.send_b().await;
+        assert_eq!(response, Response::B);
+    }
+
+    /// Task that handles device commands
+    async fn handler_task(handler: &'static Handler) {
+        loop {
+            handler.process().await;
+        }
+    }
+
+    /// Test the command execution and response handling
+    #[tokio::test]
+    async fn test_send_receive() {
+        static DEVICE: OnceLock<Handler> = OnceLock::new();
+
+        let device = DEVICE.get_or_init(Handler::new);
+        let _handler = tokio::spawn(handler_task(device));
+        let handle_0 = tokio::spawn(task_0(device));
+        let handle_1 = tokio::spawn(task_1(device));
+
+        // Wait for invokers to finish
+        handle_0.await.unwrap();
+        handle_1.await.unwrap();
+    }
+}

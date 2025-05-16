@@ -55,3 +55,4 @@ postcard = "1.*"
 rand_core = "0.6.4"
 serde = { version = "1.0.*", default-features = false }
 tps6699x = { git = "https://github.com/OpenDevicePartnership/tps6699x" }
+tokio = { version = "1.42.0" }
