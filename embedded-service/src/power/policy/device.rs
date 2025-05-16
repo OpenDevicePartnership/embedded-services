@@ -56,8 +56,8 @@ struct InternalState {
     pub state: State,
     /// Current consumer capability
     pub consumer_capability: Option<PowerCapability>,
-    /// Device encountered an error and is in the process of recovering
-    pub in_recovery: bool,
+    /// Current requested provider capability
+    pub requested_provider_capability: Option<PowerCapability>,
 }
 
 /// Data for a device request
@@ -136,7 +136,7 @@ impl Device {
             state: Mutex::new(InternalState {
                 state: State::Detached,
                 consumer_capability: None,
-                in_recovery: false,
+                requested_provider_capability: None,
             }),
             request: Channel::new(),
             response: Channel::new(),
@@ -171,24 +171,14 @@ impl Device {
         }
     }
 
+    /// Returns the current requested provider capability
+    pub async fn requested_provider_capability(&self) -> Option<PowerCapability> {
+        self.state.lock().await.requested_provider_capability
+    }
+
     /// Returns true if the device is currently providing power
     pub async fn is_provider(&self) -> bool {
         self.state().await.kind() == StateKind::ConnectedProvider
-    }
-
-    /// Returns true if the device is currently in recovery
-    pub async fn is_in_recovery(&self) -> bool {
-        self.state.lock().await.in_recovery
-    }
-
-    /// Enter recovery mode
-    pub(super) async fn enter_recovery(&self) {
-        self.state.lock().await.in_recovery = true;
-    }
-
-    /// Exit recovery mode
-    pub(super) async fn exit_recovery(&self) {
-        self.state.lock().await.in_recovery = false;
     }
 
     /// Sends a request to this device and returns a response
@@ -219,6 +209,13 @@ impl Device {
         let mut lock = self.state.lock().await;
         let state = lock.deref_mut();
         state.consumer_capability = capability;
+    }
+
+    /// Internal function to set requested provider capability
+    pub(super) async fn update_requested_provider_capability(&self, capability: Option<PowerCapability>) {
+        let mut lock = self.state.lock().await;
+        let state = lock.deref_mut();
+        state.requested_provider_capability = capability;
     }
 
     /// Try to provide access to the device actions for the given state

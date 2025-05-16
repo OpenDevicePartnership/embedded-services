@@ -28,9 +28,6 @@ stateDiagram-v2
     Idle --> Detached : NotifyDetach
 ```
 
-#### Device recovery
-Requests to a device can fail for any number of reasons (bus communication issues, deadlock in driver code, etc). In most cases this won't result in any issues as most failed requests result in the system being in a safe state. E.g. a failed transition from `Idle` to `ConnectedConsummer` will result in the system just not drawing power. However, a failed request in the `ConnectedProvider` state can leave the system providing more power than intended. The device state isn't enough to capture this situation as the device must be assumed to still be the in the `ConnectedProvider` state. The `Device` struct contains a `recovery` member to track this situation. The specifics of the recovery process are implementation defined.
-
 ### Policy Messages
 These messages are sent from a device to the power policy.
 

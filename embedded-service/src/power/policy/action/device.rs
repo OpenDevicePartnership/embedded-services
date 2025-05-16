@@ -47,7 +47,7 @@ impl<'a, S: Kind> Device<'a, S> {
         info!("Received detach from device {}", self.device.id().0);
         self.device.set_state(device::State::Detached).await;
         self.device.update_consumer_capability(None).await;
-        self.device.exit_recovery().await;
+        self.device.update_requested_provider_capability(None).await;
         policy::send_request(self.device.id(), policy::RequestData::NotifyDetached)
             .await?
             .complete_or_err()?;
@@ -58,7 +58,6 @@ impl<'a, S: Kind> Device<'a, S> {
     async fn disconnect_internal(&self) -> Result<(), Error> {
         info!("Device {} disconnecting", self.device.id().0);
         self.device.set_state(device::State::Idle).await;
-        self.device.exit_recovery().await;
         policy::send_request(self.device.id(), policy::RequestData::NotifyDisconnect)
             .await?
             .complete_or_err()
@@ -86,18 +85,20 @@ impl<'a, S: Kind> Device<'a, S> {
     /// Request the given power from the power policy service
     async fn request_provider_power_capability_internal(&self, capability: PowerCapability) -> Result<(), Error> {
         if self.device.provider_capability().await == Some(capability) {
-            // Already requested this capability, power policy is already aware, don't need to do anything
+            // Already operating at this capability, power policy is already aware, don't need to do anything
             trace!("Device {} already requested: {:#?}", self.device.id().0, capability);
             return Ok(());
         }
 
         info!("Request provide from device {}, {:#?}", self.device.id().0, capability);
+        self.device.update_requested_provider_capability(Some(capability)).await;
         policy::send_request(
             self.device.id(),
             policy::RequestData::RequestProviderCapability(capability),
         )
         .await?
-        .complete_or_err()
+        .complete_or_err()?;
+        Ok(())
     }
 }
 
