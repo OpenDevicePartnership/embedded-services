@@ -1,0 +1,24 @@
+variants:
+  - bootloader
+  - application
+disk:
+  size: 0x4000
+  alignment: 0x0100
+partitions:
+  factory:
+    access:
+      any: ro
+    offset: 0x0000
+    size: 0x0100
+  settings:
+    offset: 0x0100
+    size: 0x0200
+  slot_a:
+    access:
+      any: ro
+      bootloader: rw
+    offset: 0x1000
+    size: 0x1000
+  slot_b:
+    offset: 0x2000
+    size: 0x1000
