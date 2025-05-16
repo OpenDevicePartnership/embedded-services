@@ -13,3 +13,7 @@ embassy-time.workspace = true
 embedded-hal-async.workspace = true
 embedded-hal.workspace = true
 log = { workspace = true, optional = true }
+
+[dev-dependencies]
+embedded-hal-mock = { version = "0.11.1", features = ["eh1", "embedded-hal-async"] }
+tokio = { version = "1.45.0", features = ["rt", "macros"] }

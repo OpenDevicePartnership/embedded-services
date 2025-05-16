@@ -1,6 +1,6 @@
 //! Button Service Definitions
 
-use embassy_time::{with_timeout, Duration, Instant, TimeoutError, Timer};
+use embassy_time::{with_timeout, Delay, Duration, Instant, TimeoutError, Timer};
 use embedded_hal::digital::InputPin;
 use embedded_hal_async::digital::Wait;
 
@@ -48,7 +48,9 @@ impl<I: InputPin + Wait> Button<I> {
 
     /// Checks button state.
     pub async fn get_button_state(&mut self) -> ButtonState {
-        match self.config.debouncer.debounce(&mut self.gpio).await {
+        let mut delay = Delay;
+
+        match self.config.debouncer.debounce(&mut self.gpio, &mut delay).await {
             true => ButtonState::ButtonPressed(Instant::now()),
             false => ButtonState::ButtonReleased(Instant::now()),
         }
