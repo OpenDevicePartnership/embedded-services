@@ -1,6 +1,7 @@
 //! Module contain power-policy related message handling
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embedded_services::{
+    debug,
     ipc::deferred,
     power::policy::{
         device::{CommandData, InternalResponseData},
@@ -11,9 +12,12 @@ use embedded_usb_pd::{GlobalPortId, PowerRole};
 
 use super::*;
 
-impl<const N: usize, C: Controller> ControllerWrapper<'_, N, C> {
+impl<const N: usize, C: Controller, V: FwOfferValidator> ControllerWrapper<'_, N, C, V> {
     /// Return the power device for the given port
-    pub(super) fn get_power_device(&self, port: LocalPortId) -> Result<&policy::device::Device, Error<C::BusError>> {
+    pub(super) fn get_power_device(
+        &self,
+        port: LocalPortId,
+    ) -> Result<&policy::device::Device, Error<<C as Controller>::BusError>> {
         if port.0 > N as u8 {
             return PdError::InvalidPort.into();
         }
@@ -27,7 +31,7 @@ impl<const N: usize, C: Controller> ControllerWrapper<'_, N, C> {
         power: &policy::device::Device,
         port: LocalPortId,
         status: &PortStatus,
-    ) -> Result<(), Error<C::BusError>> {
+    ) -> Result<(), Error<<C as Controller>::BusError>> {
         info!("New consumer contract");
 
         if let Some(capability) = status.available_sink_contract {
@@ -89,7 +93,7 @@ impl<const N: usize, C: Controller> ControllerWrapper<'_, N, C> {
         port: GlobalPortId,
         power: &policy::device::Device,
         status: &PortStatus,
-    ) -> Result<(), Error<C::BusError>> {
+    ) -> Result<(), Error<<C as Controller>::BusError>> {
         if port.0 > N as u8 {
             return PdError::InvalidPort.into();
         }
@@ -140,7 +144,7 @@ impl<const N: usize, C: Controller> ControllerWrapper<'_, N, C> {
         port: LocalPortId,
         controller: &mut C,
         power: &policy::device::Device,
-    ) -> Result<(), Error<C::BusError>> {
+    ) -> Result<(), Error<<C as Controller>::BusError>> {
         let state = power.state().await.kind();
         if state == StateKind::ConnectedConsumer {
             info!("Port{}: Disconnect consumer", port.0);
@@ -183,10 +187,16 @@ impl<const N: usize, C: Controller> ControllerWrapper<'_, N, C> {
     pub(super) async fn process_power_command(
         &self,
         controller: &mut C,
+        state: &mut InternalState,
         port: LocalPortId,
         command: &CommandData,
     ) -> InternalResponseData {
         trace!("Processing power command: device{} {:#?}", port.0, command);
+        if state.fw_update_state.in_progress() {
+            debug!("Port{}: Firmware update in progress", port.0);
+            return Err(policy::Error::Busy);
+        }
+
         let power = match self.get_power_device(port) {
             Ok(power) => power,
             Err(_) => {

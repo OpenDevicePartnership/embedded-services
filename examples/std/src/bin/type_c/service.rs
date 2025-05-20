@@ -4,6 +4,7 @@ use core::task::Poll;
 use embassy_executor::{Executor, Spawner};
 use embassy_sync::once_lock::OnceLock;
 use embassy_time::Timer;
+use embedded_cfu_protocol::protocol_definitions::{FwUpdateOfferResponse, HostToken};
 use embedded_services::comms;
 use embedded_services::power::{self, policy};
 use embedded_services::type_c::{controller, ControllerId};
@@ -186,8 +187,42 @@ mod test_controller {
             debug!("Get clear fw update status");
             Ok(())
         }
+
+        async fn get_active_fw_version(&self) -> Result<u32, Error<Self::BusError>> {
+            Ok(0)
+        }
+
+        async fn start_fw_update(&mut self) -> Result<(), Error<Self::BusError>> {
+            Ok(())
+        }
+
+        async fn abort_fw_update(&mut self) -> Result<(), Error<Self::BusError>> {
+            Ok(())
+        }
+
+        async fn finalize_fw_update(&mut self) -> Result<(), Error<Self::BusError>> {
+            Ok(())
+        }
+
+        async fn write_fw_contents(&mut self, _offset: usize, _data: &[u8]) -> Result<(), Error<Self::BusError>> {
+            Ok(())
+        }
     }
-    pub type Wrapper<'a> = type_c_service::wrapper::ControllerWrapper<'a, 1, Controller<'a>>;
+
+    pub struct Validator;
+
+    impl type_c_service::wrapper::FwOfferValidator for Validator {
+        fn validate(
+            &self,
+            _current: embedded_cfu_protocol::protocol_definitions::FwVersion,
+            _offer: &embedded_cfu_protocol::protocol_definitions::FwUpdateOffer,
+        ) -> embedded_cfu_protocol::protocol_definitions::FwUpdateOfferResponse {
+            // For this example, we always accept the new version
+            FwUpdateOfferResponse::new_accept(HostToken::Driver)
+        }
+    }
+
+    pub type Wrapper<'a> = type_c_service::wrapper::ControllerWrapper<'a, 1, Controller<'a>, Validator>;
 }
 
 mod debug {
@@ -233,7 +268,9 @@ async fn controller_task(state: &'static test_controller::ControllerState) {
         test_controller::Wrapper::new(
             embedded_services::type_c::controller::Device::new(CONTROLLER0, &[PORT0, PORT0]),
             [policy::device::Device::new(POWER0)],
+            embedded_services::cfu::component::CfuDevice::new(0x00),
             controller,
+            crate::test_controller::Validator,
         )
     });
 

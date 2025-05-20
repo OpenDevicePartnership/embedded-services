@@ -1,7 +1,7 @@
 #![no_std]
 #![no_main]
 
-use ::tps6699x::ADDR0;
+use ::tps6699x::ADDR1;
 use defmt::info;
 use embassy_embedded_hal::shared_bus::asynch::i2c::I2cDevice;
 use embassy_executor::Spawner;
@@ -12,23 +12,21 @@ use embassy_imxrt::{bind_interrupts, peripherals};
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_sync::mutex::Mutex;
 use embassy_sync::once_lock::OnceLock;
+use embassy_time::Timer;
 use embassy_time::{self as _, Delay};
-use embedded_cfu_protocol::protocol_definitions::{FwUpdateOffer, FwUpdateOfferResponse, FwVersion, HostToken};
-use embedded_services::comms;
+use embedded_cfu_protocol::protocol_definitions::*;
+use embedded_cfu_protocol::protocol_definitions::{FwUpdateOffer, FwUpdateOfferResponse, FwVersion};
+use embedded_services::cfu;
+use embedded_services::cfu::component::InternalResponseData;
+use embedded_services::cfu::component::RequestData;
 use embedded_services::power::policy::DeviceId as PowerId;
 use embedded_services::type_c::{self, ControllerId};
 use embedded_usb_pd::GlobalPortId;
 use static_cell::StaticCell;
 use tps6699x::asynchronous::embassy as tps6699x;
-use type_c_service::driver::tps6699x::{self as tps6699x_driver, Tps66994Wrapper};
+use type_c_service::driver::tps6699x::{self as tps6699x_drv};
 
 extern crate rt685s_evk_example;
-
-const CONTROLLER0_ID: ControllerId = ControllerId(0);
-const PORT0_ID: GlobalPortId = GlobalPortId(0);
-const PORT1_ID: GlobalPortId = GlobalPortId(1);
-const PORT0_PWR_ID: PowerId = PowerId(0);
-const PORT1_PWR_ID: PowerId = PowerId(1);
 
 bind_interrupts!(struct Irqs {
     FLEXCOMM2 => embassy_imxrt::i2c::InterruptHandler<peripherals::FLEXCOMM2>;
@@ -45,80 +43,16 @@ impl type_c_service::wrapper::FwOfferValidator for Validator {
 
 type BusMaster<'a> = I2cMaster<'a, Async>;
 type BusDevice<'a> = I2cDevice<'a, NoopRawMutex, BusMaster<'a>>;
-type Wrapper<'a> = Tps66994Wrapper<'a, NoopRawMutex, BusDevice<'a>, Validator>;
+type Wrapper<'a> = tps6699x_drv::Tps66994Wrapper<'a, NoopRawMutex, BusDevice<'a>, Validator>;
 type Controller<'a> = tps6699x::controller::Controller<NoopRawMutex, BusDevice<'a>>;
 type Interrupt<'a> = tps6699x::Interrupt<'a, NoopRawMutex, BusDevice<'a>>;
 
-/// Battery mock that receives messages from power policy
-mod battery {
-    use defmt::{info, trace};
-    use embedded_services::comms;
-    use embedded_services::power::policy;
-
-    pub struct Device {
-        pub tp: comms::Endpoint,
-    }
-
-    impl Device {
-        pub fn new() -> Self {
-            Self {
-                tp: comms::Endpoint::uninit(comms::EndpointID::Internal(comms::Internal::Battery)),
-            }
-        }
-    }
-
-    impl comms::MailboxDelegate for Device {
-        fn receive(&self, message: &comms::Message) -> Result<(), comms::MailboxDelegateError> {
-            trace!("Got message");
-
-            let message = message
-                .data
-                .get::<policy::CommsMessage>()
-                .ok_or(comms::MailboxDelegateError::MessageNotFound)?;
-
-            match message.data {
-                policy::CommsData::ConsumerDisconnected(id) => {
-                    info!("Consumer disconnected: {}", id.0);
-                    Ok(())
-                }
-                policy::CommsData::ConsumerConnected(id, capability) => {
-                    info!("Consumer connected: {} {:?}", id.0, capability);
-                    Ok(())
-                }
-            }
-        }
-    }
-}
-
-/// Debug accesory listener mock
-mod debug {
-    use defmt::{info, trace};
-    use embedded_services::comms;
-    use embedded_services::type_c;
-
-    pub struct Device {
-        pub tp: comms::Endpoint,
-    }
-
-    impl Device {
-        pub fn new() -> Self {
-            Self {
-                tp: comms::Endpoint::uninit(comms::EndpointID::Internal(comms::Internal::Usbc)),
-            }
-        }
-    }
-
-    impl comms::MailboxDelegate for Device {
-        fn receive(&self, message: &comms::Message) -> Result<(), comms::MailboxDelegateError> {
-            trace!("Got message");
-            if let Some(message) = message.data.get::<type_c::comms::DebugAccessoryMessage>() {
-                info!("Debug accessory message: {:?}", message);
-            }
-
-            Ok(())
-        }
-    }
-}
+const CONTROLLER0_ID: ControllerId = ControllerId(0);
+const CONTROLLER0_CFU_ID: ComponentId = 0x12;
+const PORT0_ID: GlobalPortId = GlobalPortId(0);
+const PORT1_ID: GlobalPortId = GlobalPortId(1);
+const PORT0_PWR_ID: PowerId = PowerId(0);
+const PORT1_PWR_ID: PowerId = PowerId(1);
 
 #[embassy_executor::task]
 async fn pd_controller_task(controller: &'static Wrapper<'static>) {
@@ -130,6 +64,86 @@ async fn pd_controller_task(controller: &'static Wrapper<'static>) {
 #[embassy_executor::task]
 async fn interrupt_task(mut int_in: Input<'static>, mut interrupt: Interrupt<'static>) {
     tps6699x::task::interrupt_task(&mut int_in, &mut [&mut interrupt]).await;
+}
+
+#[embassy_executor::task]
+async fn fw_update_task() {
+    Timer::after_millis(1000).await;
+    let context = cfu::ContextToken::create().unwrap();
+    let device = context.get_device(CONTROLLER0_CFU_ID).await.unwrap();
+
+    info!("Getting FW version");
+    let response = device
+        .execute_device_request(RequestData::FwVersionRequest)
+        .await
+        .unwrap();
+    let prev_version = match response {
+        InternalResponseData::FwVersionResponse(GetFwVersionResponse { component_info, .. }) => {
+            Into::<u32>::into(component_info[0].fw_version)
+        }
+        _ => panic!("Unexpected response"),
+    };
+    info!("Got version: {:#x}", prev_version);
+
+    info!("Giving offer");
+    let offer = device
+        .execute_device_request(RequestData::GiveOffer(FwUpdateOffer::new(
+            HostToken::Driver,
+            CONTROLLER0_CFU_ID,
+            FwVersion::new(0x211),
+            0,
+            0,
+        )))
+        .await
+        .unwrap();
+    info!("Got response: {:?}", offer);
+
+    let fw = &[]; //include_bytes!("../../fw.bin");
+    let num_chunks = fw.len() / DEFAULT_DATA_LENGTH;
+
+    for (i, chunk) in fw.chunks(DEFAULT_DATA_LENGTH).enumerate() {
+        let header = FwUpdateContentHeader {
+            data_length: chunk.len() as u8,
+            sequence_num: i as u16,
+            firmware_address: (i * DEFAULT_DATA_LENGTH) as u32,
+            flags: if i == 0 {
+                FW_UPDATE_FLAG_FIRST_BLOCK
+            } else if i == num_chunks - 1 {
+                FW_UPDATE_FLAG_LAST_BLOCK
+            } else {
+                0
+            },
+        };
+
+        let mut chunk_data = [0u8; DEFAULT_DATA_LENGTH];
+        chunk_data[..chunk.len()].copy_from_slice(chunk);
+        let request = FwUpdateContentCommand {
+            header,
+            data: chunk_data,
+        };
+
+        info!("Sending chunk {} of {}", i, fw.len());
+        let response = device
+            .execute_device_request(RequestData::GiveContent(request))
+            .await
+            .unwrap();
+        info!("Got response: {:?}", response);
+    }
+
+    Timer::after_millis(2000).await;
+    info!("Getting FW version");
+    let response = device
+        .execute_device_request(RequestData::FwVersionRequest)
+        .await
+        .unwrap();
+    let version = match response {
+        InternalResponseData::FwVersionResponse(GetFwVersionResponse { component_info, .. }) => {
+            Into::<u32>::into(component_info[0].fw_version)
+        }
+        _ => panic!("Unexpected response"),
+    };
+    info!("Got previous version: {:#x}", prev_version);
+    info!("Got version: {:#x}", version);
 }
 
 #[embassy_executor::main]
@@ -158,7 +172,7 @@ async fn main(spawner: Spawner) {
     let device = I2cDevice::new(bus);
 
     static CONTROLLER: StaticCell<Controller<'static>> = StaticCell::new();
-    let controller = CONTROLLER.init(Controller::new_tps66994(device, ADDR0).unwrap());
+    let controller = CONTROLLER.init(Controller::new_tps66994(device, ADDR1).unwrap());
     let (mut tps6699x, interrupt) = controller.make_parts();
 
     info!("Resetting PD controller");
@@ -186,12 +200,12 @@ async fn main(spawner: Spawner) {
     info!("Spawining PD controller task");
     static PD_CONTROLLER: OnceLock<Wrapper> = OnceLock::new();
     let pd_controller = PD_CONTROLLER.get_or_init(|| {
-        tps6699x_driver::tps66994(
+        tps6699x_drv::tps66994(
             tps6699x,
             CONTROLLER0_ID,
             &PD_PORTS,
             [PORT0_PWR_ID, PORT1_PWR_ID],
-            0x00,
+            CONTROLLER0_CFU_ID,
             Default::default(),
             Validator,
         )
@@ -201,26 +215,5 @@ async fn main(spawner: Spawner) {
     pd_controller.register().await.unwrap();
     spawner.must_spawn(pd_controller_task(pd_controller));
 
-    static BATTERY: OnceLock<battery::Device> = OnceLock::new();
-    let battery = BATTERY.get_or_init(|| battery::Device::new());
-
-    comms::register_endpoint(battery, &battery.tp).await.unwrap();
-
-    static DEBUG_ACCESSORY: OnceLock<debug::Device> = OnceLock::new();
-    let debug_accessory = DEBUG_ACCESSORY.get_or_init(|| debug::Device::new());
-    comms::register_endpoint(debug_accessory, &debug_accessory.tp)
-        .await
-        .unwrap();
-
-    embassy_time::Timer::after_secs(10).await;
-
-    let status = type_c::external::get_controller_status(CONTROLLER0_ID).await.unwrap();
-
-    info!("Controller status: {:?}", status);
-
-    let status = type_c::external::get_port_status(PORT0_ID).await.unwrap();
-    info!("Port status: {:?}", status);
-
-    let status = type_c::external::get_port_status(PORT1_ID).await.unwrap();
-    info!("Port status: {:?}", status);
+    spawner.must_spawn(fw_update_task());
 }
