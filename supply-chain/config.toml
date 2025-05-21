@@ -4,11 +4,17 @@
 [cargo-vet]
 version = "0.10"
 
+[imports.OpenDevicePartnership]
+url = "https://raw.githubusercontent.com/OpenDevicePartnership/rust-crate-audits/main/audits.toml"
+
 [imports.google]
 url = "https://raw.githubusercontent.com/google/rust-crate-audits/main/audits.toml"
 
 [imports.mozilla]
 url = "https://raw.githubusercontent.com/mozilla/supply-chain/main/audits.toml"
+
+[policy.embassy-embedded-hal]
+audit-as-crates-io = false
 
 [policy.embassy-executor]
 audit-as-crates-io = false
@@ -35,6 +41,12 @@ audit-as-crates-io = false
 audit-as-crates-io = false
 
 [policy.embassy-time-queue-utils]
+audit-as-crates-io = false
+
+[policy.embedded-batteries]
+audit-as-crates-io = false
+
+[policy.embedded-batteries-async]
 audit-as-crates-io = false
 
 [[exemptions.ahash]]

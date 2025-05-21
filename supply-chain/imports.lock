@@ -22,6 +22,8 @@ user-id = 1139
 user-login = "Manishearth"
 user-name = "Manish Goregaokar"
 
+[audits.OpenDevicePartnership.audits]
+
 [[audits.google.audits.autocfg]]
 who = "Manish Goregaokar <manishearth@google.com>"
 criteria = "safe-to-deploy"
