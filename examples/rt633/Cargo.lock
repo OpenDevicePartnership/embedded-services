@@ -65,7 +65,7 @@ dependencies = [
  "embassy-futures",
  "embassy-sync",
  "embassy-time",
- "embedded-batteries-async",
+ "embedded-batteries-async 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "embedded-hal 1.0.0",
  "embedded-hal-async",
  "embedded-services 0.1.0",
@@ -147,10 +147,10 @@ dependencies = [
 [[package]]
 name = "bq25773"
 version = "0.1.0"
-source = "git+https://github.com/OpenDevicePartnership/bq25773#d718e329c8bad32f02154cd6bd618bd97255f6d9"
+source = "git+https://github.com/OpenDevicePartnership/bq25773#025db35ca05fe870cac4bfb7e4e5413ca9326eef"
 dependencies = [
  "device-driver",
- "embedded-batteries-async",
+ "embedded-batteries-async 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "embedded-hal 1.0.0",
  "embedded-hal-async",
 ]
@@ -158,11 +158,11 @@ dependencies = [
 [[package]]
 name = "bq40z50"
 version = "0.1.0"
-source = "git+https://github.com/OpenDevicePartnership/bq40z50#24db40e1c88bc8ce5825833333f175b2c67a4a79"
+source = "git+https://github.com/OpenDevicePartnership/bq40z50#9850c086fe1e3ef2519fc5c794a06035479c225e"
 dependencies = [
  "defmt 0.3.100",
  "device-driver",
- "embedded-batteries-async",
+ "embedded-batteries-async 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "embedded-hal 1.0.0",
  "embedded-hal-async",
 ]
@@ -538,10 +538,32 @@ dependencies = [
 [[package]]
 name = "embedded-batteries"
 version = "0.1.0"
-source = "git+https://github.com/OpenDevicePartnership/embedded-batteries#410e2482d54b58c205a425c70d2ccf062e3ee3f3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4919f477b322518335c90aff8820355ffff4cd1aa567e10a8bfe5c8829a3ff15"
 dependencies = [
  "bitfield-struct",
  "defmt 0.3.100",
+ "embedded-hal 1.0.0",
+]
+
+[[package]]
+name = "embedded-batteries"
+version = "0.1.0"
+source = "git+https://github.com/OpenDevicePartnership/embedded-batteries#410e2482d54b58c205a425c70d2ccf062e3ee3f3"
+dependencies = [
+ "bitfield-struct",
+ "embedded-hal 1.0.0",
+]
+
+[[package]]
+name = "embedded-batteries-async"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "02b35cd3052eaffa4d2914d07adda1b8631f9cb14300b62ce6b082b68ef926dd"
+dependencies = [
+ "bitfield-struct",
+ "defmt 0.3.100",
+ "embedded-batteries 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "embedded-hal 1.0.0",
 ]
 
@@ -551,8 +573,7 @@ version = "0.1.0"
 source = "git+https://github.com/OpenDevicePartnership/embedded-batteries#410e2482d54b58c205a425c70d2ccf062e3ee3f3"
 dependencies = [
  "bitfield-struct",
- "defmt 0.3.100",
- "embedded-batteries",
+ "embedded-batteries 0.1.0 (git+https://github.com/OpenDevicePartnership/embedded-batteries)",
  "embedded-hal 1.0.0",
 ]
 
@@ -635,7 +656,7 @@ dependencies = [
  "embassy-futures",
  "embassy-sync",
  "embassy-time",
- "embedded-batteries-async",
+ "embedded-batteries-async 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "embedded-cfu-protocol",
  "embedded-hal-async",
  "embedded-hal-nb",
@@ -668,7 +689,7 @@ dependencies = [
  "embassy-futures",
  "embassy-sync",
  "embassy-time",
- "embedded-batteries-async",
+ "embedded-batteries-async 0.1.0 (git+https://github.com/OpenDevicePartnership/embedded-batteries)",
  "embedded-cfu-protocol",
  "embedded-hal-async",
  "embedded-hal-nb",
@@ -1127,7 +1148,7 @@ dependencies = [
  "embassy-imxrt",
  "embassy-sync",
  "embassy-time",
- "embedded-batteries-async",
+ "embedded-batteries-async 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "embedded-hal-async",
  "embedded-services 0.1.0",
  "espi-service",

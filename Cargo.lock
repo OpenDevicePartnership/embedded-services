@@ -65,7 +65,7 @@ dependencies = [
  "embassy-futures",
  "embassy-sync",
  "embassy-time",
- "embedded-batteries-async",
+ "embedded-batteries-async 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "embedded-hal 1.0.0",
  "embedded-hal-async",
  "embedded-services 0.1.0",
@@ -568,6 +568,16 @@ dependencies = [
 [[package]]
 name = "embedded-batteries"
 version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4919f477b322518335c90aff8820355ffff4cd1aa567e10a8bfe5c8829a3ff15"
+dependencies = [
+ "bitfield-struct",
+ "embedded-hal 1.0.0",
+]
+
+[[package]]
+name = "embedded-batteries"
+version = "0.1.0"
 source = "git+https://github.com/OpenDevicePartnership/embedded-batteries#410e2482d54b58c205a425c70d2ccf062e3ee3f3"
 dependencies = [
  "bitfield-struct",
@@ -577,10 +587,21 @@ dependencies = [
 [[package]]
 name = "embedded-batteries-async"
 version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "02b35cd3052eaffa4d2914d07adda1b8631f9cb14300b62ce6b082b68ef926dd"
+dependencies = [
+ "bitfield-struct",
+ "embedded-batteries 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "embedded-hal 1.0.0",
+]
+
+[[package]]
+name = "embedded-batteries-async"
+version = "0.1.0"
 source = "git+https://github.com/OpenDevicePartnership/embedded-batteries#410e2482d54b58c205a425c70d2ccf062e3ee3f3"
 dependencies = [
  "bitfield-struct",
- "embedded-batteries",
+ "embedded-batteries 0.1.0 (git+https://github.com/OpenDevicePartnership/embedded-batteries)",
  "embedded-hal 1.0.0",
 ]
 
@@ -666,7 +687,7 @@ dependencies = [
  "embassy-sync",
  "embassy-time",
  "embassy-time-driver",
- "embedded-batteries-async",
+ "embedded-batteries-async 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "embedded-cfu-protocol",
  "embedded-hal-async",
  "embedded-hal-nb",
@@ -686,7 +707,7 @@ dependencies = [
 [[package]]
 name = "embedded-services"
 version = "0.1.0"
-source = "git+https://github.com/OpenDevicePartnership/embedded-services#f63384357768f9301318bc40030b1058598f6bef"
+source = "git+https://github.com/OpenDevicePartnership/embedded-services#1ee7545bdcca3159893b85f5e1eac60d1c691bb4"
 dependencies = [
  "bitfield 0.17.0",
  "bitflags 2.9.0",
@@ -700,7 +721,7 @@ dependencies = [
  "embassy-futures",
  "embassy-sync",
  "embassy-time",
- "embedded-batteries-async",
+ "embedded-batteries-async 0.1.0 (git+https://github.com/OpenDevicePartnership/embedded-batteries)",
  "embedded-cfu-protocol",
  "embedded-hal-async",
  "embedded-hal-nb",
@@ -1230,7 +1251,7 @@ dependencies = [
 [[package]]
 name = "storage_bus"
 version = "0.1.1"
-source = "git+https://github.com/OpenDevicePartnership/embedded-services#f63384357768f9301318bc40030b1058598f6bef"
+source = "git+https://github.com/OpenDevicePartnership/embedded-services#1ee7545bdcca3159893b85f5e1eac60d1c691bb4"
 dependencies = [
  "embassy-executor",
  "embassy-sync",
