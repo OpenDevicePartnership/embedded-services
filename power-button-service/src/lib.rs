@@ -1,5 +1,5 @@
 //! Power Button Service
-#![no_std]
+#![cfg_attr(not(test), no_std)]
 
 pub mod button;
 pub mod button_interpreter;
