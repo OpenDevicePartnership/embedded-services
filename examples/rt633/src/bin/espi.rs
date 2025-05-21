@@ -8,6 +8,7 @@ use core::slice::{self};
 use defmt::info;
 use embassy_executor::Spawner;
 use embassy_imxrt::bind_interrupts;
+use embassy_imxrt::espi::BaseOrAsz;
 use embassy_imxrt::espi::{Base, Capabilities, Config, Direction, Espi, InterruptHandler, Len, Maxspd, PortConfig};
 use embassy_imxrt::peripherals::ESPI;
 use {defmt_rtt as _, panic_probe as _};
@@ -125,7 +126,7 @@ async fn main(spawner: Spawner) {
             ports_config: [
                 PortConfig::MailboxShared {
                     direction: Direction::BidirectionalUnenforced,
-                    addr: 0,
+                    base_sel: BaseOrAsz::OffsetFrom0,
                     offset: 0,
                     length: Len::Len256,
                 },

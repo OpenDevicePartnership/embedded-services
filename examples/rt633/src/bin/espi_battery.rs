@@ -7,6 +7,7 @@ use battery_service::context::BatteryEvent;
 use core::slice::{self};
 use embassy_imxrt::dma::NoDma;
 use embassy_time::{Duration, Timer};
+use embedded_batteries_async::charger::MilliAmps;
 use embedded_batteries_async::smart_battery::{
     BatteryModeFields, BatteryStatusFields, CapacityModeSignedValue, CapacityModeValue, Cycles, DeciKelvin,
     ManufactureDate, MilliAmpsSigned, MilliVolts, Minutes, Percent, SmartBattery, SpecificationInfoFields,
@@ -20,6 +21,7 @@ use bq40z50::Bq40z50;
 use embassy_embedded_hal::shared_bus::asynch::i2c::I2cDevice;
 use embassy_executor::Spawner;
 use embassy_imxrt::bind_interrupts;
+use embassy_imxrt::espi::BaseOrAsz;
 use embassy_imxrt::espi::{Base, Capabilities, Config, Direction, Espi, InterruptHandler, Len, Maxspd, PortConfig};
 use embassy_imxrt::i2c::master::I2cMaster;
 use embassy_imxrt::i2c::Async;
@@ -149,6 +151,12 @@ impl embedded_batteries_async::smart_battery::SmartBattery for Bq40z50Controller
     async fn voltage(&mut self) -> Result<MilliVolts, Self::Error> {
         self.driver.voltage().await
     }
+    async fn charging_current(&mut self) -> Result<MilliAmps, Self::Error> {
+        self.driver.charging_current().await
+    }
+    async fn charging_voltage(&mut self) -> Result<MilliVolts, Self::Error> {
+        self.driver.charging_voltage().await
+    }
 }
 
 impl Controller for Bq40z50Controller {
@@ -259,7 +267,7 @@ async fn main(spawner: Spawner) {
             ports_config: [
                 PortConfig::MailboxShared {
                     direction: Direction::BidirectionalUnenforced,
-                    addr: 0,
+                    base_sel: BaseOrAsz::OffsetFrom0,
                     offset: 0,
                     length: Len::Len512,
                 },
