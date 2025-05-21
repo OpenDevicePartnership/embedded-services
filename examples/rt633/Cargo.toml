@@ -17,7 +17,7 @@ defmt-rtt = "0.4.0"
 panic-probe = { version = "0.3.1", features = ["print-defmt"] }
 embassy-imxrt = { git = "https://github.com/OpenDevicePartnership/embassy-imxrt", features = [
     "defmt",
-    "time-driver",
+    "time-driver-os-timer",
     "time",
     "mimxrt633s",
     "unstable-pac",
