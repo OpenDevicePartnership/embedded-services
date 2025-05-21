@@ -1,6 +1,32 @@
 
 # cargo-vet audits file
 
+[[audits.embedded-batteries]]
+who = "Felipe Balbi <febalbi@microsoft.com>"
+criteria = "safe-to-deploy"
+version = "0.1.0"
+notes = "ODP crates are always trusted."
+
+[[audits.embedded-batteries]]
+who = "Felipe Balbi <febalbi@microsoft.com>"
+criteria = "safe-to-deploy"
+version = "0.1.0@git:410e2482d54b58c205a425c70d2ccf062e3ee3f3"
+importable = false
+notes = "ODP crates are always trusted."
+
+[[audits.embedded-batteries-async]]
+who = "Felipe Balbi <febalbi@microsoft.com>"
+criteria = "safe-to-deploy"
+version = "0.1.0"
+notes = "ODP crates are always trusted."
+
+[[audits.embedded-batteries-async]]
+who = "Felipe Balbi <febalbi@microsoft.com>"
+criteria = "safe-to-deploy"
+version = "0.1.0@git:410e2482d54b58c205a425c70d2ccf062e3ee3f3"
+importable = false
+notes = "ODP crates are always trusted."
+
 [[audits.half]]
 who = "Robert Zieba <robertzieba@microsoft.com>"
 criteria = "safe-to-deploy"
