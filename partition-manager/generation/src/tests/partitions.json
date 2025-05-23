@@ -1,0 +1,32 @@
+{
+    "variants": [
+        "bootloader",
+        "application"
+    ],
+    "disk": {
+        "size": 16384,
+        "alignment": 256
+    },
+    "partitions": {
+        "factory": {
+            "offset": 0,
+            "size": 256
+        },
+        "settings": {
+            "offset": 256,
+            "size": 512
+        },
+        "slot_a": {
+            "access": {
+                "any": "RO",
+                "bootloader": "RW"
+            },
+            "offset": 4096,
+            "size": 4096
+        },
+        "slot_b": {
+            "offset": 8192,
+            "size": 4096
+        }
+    }
+}
