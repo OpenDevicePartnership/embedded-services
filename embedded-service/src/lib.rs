@@ -13,6 +13,7 @@ pub mod cfu;
 pub mod comms;
 pub mod ec_type;
 pub mod fmt;
+pub mod fw_update;
 pub mod hid;
 pub mod init;
 pub mod ipc;
