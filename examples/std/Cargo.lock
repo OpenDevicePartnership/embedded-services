@@ -439,7 +439,8 @@ dependencies = [
 [[package]]
 name = "embedded-batteries"
 version = "0.1.0"
-source = "git+https://github.com/OpenDevicePartnership/embedded-batteries#1223e7093dea2c8ccdb72f8346b2b0a773eef97b"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4919f477b322518335c90aff8820355ffff4cd1aa567e10a8bfe5c8829a3ff15"
 dependencies = [
  "bitfield-struct",
  "embedded-hal 1.0.0",
@@ -448,7 +449,8 @@ dependencies = [
 [[package]]
 name = "embedded-batteries-async"
 version = "0.1.0"
-source = "git+https://github.com/OpenDevicePartnership/embedded-batteries#1223e7093dea2c8ccdb72f8346b2b0a773eef97b"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "02b35cd3052eaffa4d2914d07adda1b8631f9cb14300b62ce6b082b68ef926dd"
 dependencies = [
  "bitfield-struct",
  "embedded-batteries",

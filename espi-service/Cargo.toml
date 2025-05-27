@@ -14,7 +14,7 @@ log = { workspace = true, optional = true }
 embassy-time.workspace = true
 embassy-sync.workspace = true
 embassy-imxrt = { workspace = true, features = [
-    "time-driver",
+    "time-driver-os-timer",
     "time",
     "mimxrt633s",
 ] }

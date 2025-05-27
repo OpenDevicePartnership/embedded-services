@@ -40,6 +40,15 @@ pub enum PsuState {
     Detached,
 }
 
+impl From<bool> for PsuState {
+    fn from(value: bool) -> Self {
+        match value {
+            true => PsuState::Attached,
+            false => PsuState::Detached,
+        }
+    }
+}
+
 /// Data for a device request
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
