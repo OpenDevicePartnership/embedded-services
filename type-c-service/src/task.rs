@@ -116,21 +116,19 @@ impl Service {
     }
 
     /// Process external controller status command
-    async fn process_external_controller_status(&self, controller: ControllerId) {
+    async fn process_external_controller_status(&self, controller: ControllerId) -> external::Response<'static> {
         let status = self.context.get_controller_status(controller).await;
         if let Err(e) = status {
             error!("Error getting controller status: {:#?}", e);
         }
-
-        self.context
-            .send_external_response(external::Response::Controller(
-                status.map(external::ControllerResponseData::ControllerStatus),
-            ))
-            .await;
+        external::Response::Controller(status.map(external::ControllerResponseData::ControllerStatus))
     }
 
     /// Process external controller commands
-    async fn process_external_controller_command(&self, command: external::ControllerCommand) {
+    async fn process_external_controller_command(
+        &self,
+        command: &external::ControllerCommand,
+    ) -> external::Response<'static> {
         debug!("Processing external controller command: {:#?}", command);
         match command.data {
             ControllerCommandData::ControllerStatus => self.process_external_controller_status(command.id).await,
@@ -138,17 +136,12 @@ impl Service {
     }
 
     /// Process external port status command
-    async fn process_external_port_status(&self, port_id: GlobalPortId) {
+    async fn process_external_port_status(&self, port_id: GlobalPortId) -> external::Response<'static> {
         let status = self.context.get_port_status(port_id).await;
         if let Err(e) = status {
             error!("Error getting port status: {:#?}", e);
         }
-
-        self.context
-            .send_external_response(external::Response::Port(
-                status.map(external::PortResponseData::PortStatus),
-            ))
-            .await;
+        external::Response::Port(status.map(external::PortResponseData::PortStatus))
     }
 
     /// Process get retimer fw update status commands
@@ -182,7 +175,7 @@ impl Service {
     }
 
     /// Process external port commands
-    async fn process_external_port_command(&self, command: external::PortCommand) {
+    async fn process_external_port_command(&self, command: &external::PortCommand) -> external::Response<'static> {
         debug!("Processing external port command: {:#?}", command);
         match command.data {
             external::PortCommandData::PortStatus => self.process_external_port_status(command.port).await,
@@ -193,14 +186,10 @@ impl Service {
     }
 
     /// Process external commands
-    async fn process_external_command(&self, command: external::Command) {
+    async fn process_external_command(&self, command: &external::Command) -> external::Response<'static> {
         match command {
-            external::Command::Controller(command) => {
-                self.process_external_controller_command(command).await;
-            }
-            external::Command::Port(command) => {
-                self.process_external_port_command(command).await;
-            }
+            external::Command::Controller(command) => self.process_external_controller_command(command).await,
+            external::Command::Port(command) => self.process_external_port_command(command).await,
         }
     }
 
@@ -213,7 +202,10 @@ impl Service {
         .await;
         match message {
             Either::First(pending) => self.process_unhandled_events(pending).await,
-            Either::Second(command) => self.process_external_command(command).await,
+            Either::Second(request) => {
+                let response = self.process_external_command(&request.command).await;
+                request.respond(response);
+            }
         }
     }
 }

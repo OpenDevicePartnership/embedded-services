@@ -65,7 +65,7 @@ dependencies = [
  "embassy-futures",
  "embassy-sync",
  "embassy-time",
- "embedded-batteries-async",
+ "embedded-batteries-async 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "embedded-hal 1.0.0",
  "embedded-hal-async",
  "embedded-services 0.1.0",
@@ -387,7 +387,7 @@ dependencies = [
  "bitvec",
  "convert_case",
  "dd-manifest-tree",
- "itertools",
+ "itertools 0.14.0",
  "proc-macro2",
  "quote",
  "syn",
@@ -420,13 +420,29 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "48c757948c5ede0e46177b7add2e67155f70e33c07fea8284df6576da70b3719"
 
 [[package]]
+name = "embassy-embedded-hal"
+version = "0.3.0"
+source = "git+https://github.com/embassy-rs/embassy#9409afb02e7fd46d0c3b2257a938a8bc88244f5b"
+dependencies = [
+ "embassy-futures",
+ "embassy-hal-internal",
+ "embassy-sync",
+ "embassy-time",
+ "embedded-hal 0.2.7",
+ "embedded-hal 1.0.0",
+ "embedded-hal-async",
+ "embedded-storage",
+ "embedded-storage-async",
+ "nb 1.1.0",
+]
+
+[[package]]
 name = "embassy-executor"
 version = "0.7.0"
-source = "git+https://github.com/embassy-rs/embassy#443ffd8b6df67844208ceec58d5443e01b99a159"
+source = "git+https://github.com/embassy-rs/embassy#9409afb02e7fd46d0c3b2257a938a8bc88244f5b"
 dependencies = [
  "cortex-m",
  "critical-section",
- "defmt 0.3.100",
  "defmt 1.0.1",
  "document-features",
  "embassy-executor-macros",
@@ -436,7 +452,7 @@ dependencies = [
 [[package]]
 name = "embassy-executor-macros"
 version = "0.6.2"
-source = "git+https://github.com/embassy-rs/embassy#443ffd8b6df67844208ceec58d5443e01b99a159"
+source = "git+https://github.com/embassy-rs/embassy#9409afb02e7fd46d0c3b2257a938a8bc88244f5b"
 dependencies = [
  "darling",
  "proc-macro2",
@@ -447,16 +463,16 @@ dependencies = [
 [[package]]
 name = "embassy-futures"
 version = "0.1.1"
-source = "git+https://github.com/embassy-rs/embassy#443ffd8b6df67844208ceec58d5443e01b99a159"
+source = "git+https://github.com/embassy-rs/embassy#9409afb02e7fd46d0c3b2257a938a8bc88244f5b"
 dependencies = [
- "defmt 0.3.100",
+ "defmt 1.0.1",
  "log",
 ]
 
 [[package]]
 name = "embassy-hal-internal"
 version = "0.2.0"
-source = "git+https://github.com/embassy-rs/embassy#443ffd8b6df67844208ceec58d5443e01b99a159"
+source = "git+https://github.com/embassy-rs/embassy#9409afb02e7fd46d0c3b2257a938a8bc88244f5b"
 dependencies = [
  "cortex-m",
  "critical-section",
@@ -467,7 +483,7 @@ dependencies = [
 [[package]]
 name = "embassy-imxrt"
 version = "0.1.0"
-source = "git+https://github.com/OpenDevicePartnership/embassy-imxrt#3dfddf9c288c689b72bc143648a1a5a1adea0955"
+source = "git+https://github.com/OpenDevicePartnership/embassy-imxrt#3de660d4245062214b750d22c31b0fc0dbe82289"
 dependencies = [
  "cfg-if",
  "cortex-m",
@@ -475,6 +491,7 @@ dependencies = [
  "critical-section",
  "defmt 1.0.1",
  "document-features",
+ "embassy-embedded-hal",
  "embassy-futures",
  "embassy-hal-internal",
  "embassy-sync",
@@ -488,6 +505,7 @@ dependencies = [
  "embedded-io",
  "embedded-io-async",
  "fixed",
+ "itertools 0.11.0",
  "mimxrt600-fcb",
  "mimxrt633s-pac",
  "mimxrt685s-pac",
@@ -522,6 +540,7 @@ dependencies = [
  "defmt 1.0.1",
  "document-features",
  "embassy-time-driver",
+ "embassy-time-queue-utils",
  "embedded-hal 0.2.7",
  "embedded-hal 1.0.0",
  "embedded-hal-async",
@@ -540,7 +559,7 @@ dependencies = [
 [[package]]
 name = "embassy-time-queue-utils"
 version = "0.1.0"
-source = "git+https://github.com/embassy-rs/embassy#443ffd8b6df67844208ceec58d5443e01b99a159"
+source = "git+https://github.com/embassy-rs/embassy#9409afb02e7fd46d0c3b2257a938a8bc88244f5b"
 dependencies = [
  "embassy-executor",
  "heapless 0.8.0",
@@ -549,7 +568,17 @@ dependencies = [
 [[package]]
 name = "embedded-batteries"
 version = "0.1.0"
-source = "git+https://github.com/OpenDevicePartnership/embedded-batteries#1223e7093dea2c8ccdb72f8346b2b0a773eef97b"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4919f477b322518335c90aff8820355ffff4cd1aa567e10a8bfe5c8829a3ff15"
+dependencies = [
+ "bitfield-struct",
+ "embedded-hal 1.0.0",
+]
+
+[[package]]
+name = "embedded-batteries"
+version = "0.1.0"
+source = "git+https://github.com/OpenDevicePartnership/embedded-batteries#410e2482d54b58c205a425c70d2ccf062e3ee3f3"
 dependencies = [
  "bitfield-struct",
  "embedded-hal 1.0.0",
@@ -558,17 +587,28 @@ dependencies = [
 [[package]]
 name = "embedded-batteries-async"
 version = "0.1.0"
-source = "git+https://github.com/OpenDevicePartnership/embedded-batteries#1223e7093dea2c8ccdb72f8346b2b0a773eef97b"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "02b35cd3052eaffa4d2914d07adda1b8631f9cb14300b62ce6b082b68ef926dd"
 dependencies = [
  "bitfield-struct",
- "embedded-batteries",
+ "embedded-batteries 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "embedded-hal 1.0.0",
+]
+
+[[package]]
+name = "embedded-batteries-async"
+version = "0.1.0"
+source = "git+https://github.com/OpenDevicePartnership/embedded-batteries#410e2482d54b58c205a425c70d2ccf062e3ee3f3"
+dependencies = [
+ "bitfield-struct",
+ "embedded-batteries 0.1.0 (git+https://github.com/OpenDevicePartnership/embedded-batteries)",
  "embedded-hal 1.0.0",
 ]
 
 [[package]]
 name = "embedded-cfu-protocol"
 version = "0.1.0"
-source = "git+https://github.com/OpenDevicePartnership/embedded-cfu#2a08534a094aab2b0d4d223435e03c538d45384e"
+source = "git+https://github.com/OpenDevicePartnership/embedded-cfu#e2734a2bf953d584b11bbaa5931919345df9bf7c"
 dependencies = [
  "defmt 0.3.100",
  "embedded-io-async",
@@ -646,7 +686,8 @@ dependencies = [
  "embassy-futures",
  "embassy-sync",
  "embassy-time",
- "embedded-batteries-async",
+ "embassy-time-driver",
+ "embedded-batteries-async 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "embedded-cfu-protocol",
  "embedded-hal-async",
  "embedded-hal-nb",
@@ -666,7 +707,7 @@ dependencies = [
 [[package]]
 name = "embedded-services"
 version = "0.1.0"
-source = "git+https://github.com/OpenDevicePartnership/embedded-services#6a1f773dc4c323763ea288e6dabb38533158cf70"
+source = "git+https://github.com/OpenDevicePartnership/embedded-services#1ee7545bdcca3159893b85f5e1eac60d1c691bb4"
 dependencies = [
  "bitfield 0.17.0",
  "bitflags 2.9.0",
@@ -680,7 +721,7 @@ dependencies = [
  "embassy-futures",
  "embassy-sync",
  "embassy-time",
- "embedded-batteries-async",
+ "embedded-batteries-async 0.1.0 (git+https://github.com/OpenDevicePartnership/embedded-batteries)",
  "embedded-cfu-protocol",
  "embedded-hal-async",
  "embedded-hal-nb",
@@ -887,6 +928,15 @@ name = "ident_case"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b9e0384b61958566e926dc50660321d12159025e767c18e043daf26b70104c39"
+
+[[package]]
+name = "itertools"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b1c173a5686ce8bfa551b3563d0c2170bf24ca44da99c7ca4bfdab5418c3fe57"
+dependencies = [
+ "either",
+]
 
 [[package]]
 name = "itertools"
@@ -1201,7 +1251,7 @@ dependencies = [
 [[package]]
 name = "storage_bus"
 version = "0.1.1"
-source = "git+https://github.com/OpenDevicePartnership/embedded-services#6a1f773dc4c323763ea288e6dabb38533158cf70"
+source = "git+https://github.com/OpenDevicePartnership/embedded-services#1ee7545bdcca3159893b85f5e1eac60d1c691bb4"
 dependencies = [
  "embassy-executor",
  "embassy-sync",

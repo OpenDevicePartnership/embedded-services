@@ -1,9 +1,7 @@
-use std::cell::Cell;
-
 use embassy_executor::{Executor, Spawner};
 use embassy_sync::once_lock::OnceLock;
 use embassy_time::{self as _, Timer};
-use embedded_services::power::policy::{self, action::ConnectedProvider, device, PowerCapability};
+use embedded_services::power::policy::{self, device, PowerCapability};
 use log::*;
 use static_cell::StaticCell;
 
@@ -19,52 +17,38 @@ const HIGH_POWER: PowerCapability = PowerCapability {
 
 struct ExampleDevice {
     device: policy::device::Device,
-    /// Flag to reject the next n provider request
-    reject_requests: Cell<i32>,
 }
 
 impl ExampleDevice {
     fn new(id: policy::DeviceId) -> Self {
         Self {
             device: policy::device::Device::new(id),
-            reject_requests: Cell::new(0),
         }
-    }
-
-    fn reject_next_requests(&self, n: i32) {
-        self.reject_requests.set(n);
     }
 
     async fn process_request(&self) -> Result<(), policy::Error> {
-        let request = self.device.wait_request().await;
-        if self.reject_requests.get() > 0 {
-            info!("Rejecting request");
-            self.reject_requests.set(self.reject_requests.get() - 1);
-            self.device.send_response(Err(policy::Error::Failed)).await;
-            return Ok(());
-        }
-
-        match request {
-            device::RequestData::ConnectConsumer(capability) => {
+        let request = self.device.receive().await;
+        match request.command {
+            device::CommandData::ConnectConsumer(capability) => {
                 info!(
                     "Device {} received connect consumer at {:#?}",
                     self.device.id().0,
                     capability
                 );
             }
-            device::RequestData::ConnectProvider(capability) => {
+            device::CommandData::ConnectProvider(capability) => {
                 info!(
-                    "Device {} received connect source at {:#?}",
+                    "Device {} received connect provider at {:#?}",
                     self.device.id().0,
                     capability
                 );
             }
-            device::RequestData::Disconnect => {
+            device::CommandData::Disconnect => {
                 info!("Device {} received disconnect", self.device.id().0);
             }
         }
 
-        self.device.send_response(Ok(device::ResponseData::Complete)).await;
+        request.respond(Ok(policy::device::ResponseData::Complete));
         Ok(())
     }
 }
@@ -147,7 +131,7 @@ async fn run(spawner: Spawner) {
 
     // Disconnect consumer device 0, device 1 should remain current consumer
     // Device 0 should not be able to consume after device 1 is unplugged
-    info!("Connecting device 0");
+    info!("Disconnecting device 0");
     device0.notify_consumer_power_capability(None).await.unwrap();
     let device1 = device1.detach().await.unwrap();
 
@@ -159,61 +143,26 @@ async fn run(spawner: Spawner) {
     info!("Device 1 attach and requesting provider");
     let device1 = device1.attach().await.unwrap();
     device1.request_provider_power_capability(LOW_POWER).await.unwrap();
-
+    // Wait for the provider to be connected
     Timer::after_millis(250).await;
-    let device0 = device0.detach().await.unwrap();
 
+    // Provider upgrade should fail because device 0 is already connected
+    info!("Device 1 attempting provider upgrade");
+    device1.request_provider_power_capability(HIGH_POWER).await.unwrap();
+    // Wait for the upgrade flow to complete
     Timer::after_millis(250).await;
-    let device1 = device1.detach().await.unwrap();
 
-    // Go through provider recovery flow
-    info!("Recovery Flow");
-    let device0 = device0.attach().await.unwrap();
-    device0.request_provider_power_capability(LOW_POWER).await.unwrap();
+    // Disconnect device 0
+    info!("Device 0 disconnecting");
+    device0.detach().await.unwrap();
+    // Wait for the detach flow to complete
     Timer::after_millis(250).await;
-    // Requests we're rejecting:
-    // Connect request
-    // Disconnect request after failing connect request
-    // Request to connect at recovery limit
-    // Disconnect request after failing recovery limit
-    // First recovery disconnect from `attempt_provider_recovery`
-    // Next recovery disconnect completes
-    info!("Rejecting next 5 requests");
-    device0_mock.reject_next_requests(5);
 
-    // Attach device 1, device 0 will fail provider connect request and trigger recovery flow
-    let device1 = device1.attach().await.unwrap();
-    device1.request_provider_power_capability(LOW_POWER).await.unwrap();
-
-    // Wait for the recovery flow to start
-    while !device0_mock.device.is_in_recovery().await {
-        info!("Waiting for recovery flow to start");
-        Timer::after_millis(100).await;
-    }
-
-    // Wait for the recovery flow to complete
-    while device0_mock.device.is_in_recovery().await {
-        info!("Waiting for recovery flow to complete");
-        Timer::after_millis(100).await;
-    }
-
-    // Reconnect device 0
-    info!("Reconnecting device 0 as provider");
-    device0.request_provider_power_capability(LOW_POWER).await.unwrap();
-    // Wait for device 0 to reconnect
-    while !device0_mock.device.is_provider().await {
-        info!("Waiting for device 0 to reconnect");
-        Timer::after_millis(1000).await;
-    }
-
-    // Disconnect device 1
-    info!("Disconnecting device 1");
-    let device1 = device1_mock
-        .device
-        .try_device_action::<ConnectedProvider>()
-        .await
-        .unwrap();
-    device1.disconnect().await.unwrap();
+    // Provider upgrade should succeed now
+    info!("Device 1 attempting provider upgrade");
+    device1.request_provider_power_capability(HIGH_POWER).await.unwrap();
+    // Wait for the upgrade flow to complete
+    Timer::after_millis(250).await;
 }
 
 fn main() {

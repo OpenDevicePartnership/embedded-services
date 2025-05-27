@@ -2,11 +2,11 @@
 use core::ops::DerefMut;
 
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
-use embassy_sync::channel::Channel;
 use embassy_sync::mutex::Mutex;
 
 use super::{action, DeviceId, Error, PowerCapability};
 use crate::intrusive_list;
+use crate::ipc::deferred;
 
 /// Most basic device states
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -56,14 +56,14 @@ struct InternalState {
     pub state: State,
     /// Current consumer capability
     pub consumer_capability: Option<PowerCapability>,
-    /// Device encountered an error and is in the process of recovering
-    pub in_recovery: bool,
+    /// Current requested provider capability
+    pub requested_provider_capability: Option<PowerCapability>,
 }
 
 /// Data for a device request
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub enum RequestData {
+pub enum CommandData {
     /// Start consuming on this device
     ConnectConsumer(PowerCapability),
     /// Start providinig on this device
@@ -75,11 +75,11 @@ pub enum RequestData {
 /// Request from power policy service to a device
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct Request {
+pub struct Command {
     /// Target device
     pub id: DeviceId,
     /// Request data
-    pub data: RequestData,
+    pub data: CommandData,
 }
 
 /// Data for a device response
@@ -110,9 +110,6 @@ pub struct Response {
     pub data: ResponseData,
 }
 
-/// Channel size for device requests
-pub const DEVICE_CHANNEL_SIZE: usize = 1;
-
 /// Device struct
 pub struct Device {
     /// Intrusive list node
@@ -121,10 +118,8 @@ pub struct Device {
     id: DeviceId,
     /// Current state of the device
     state: Mutex<NoopRawMutex, InternalState>,
-    /// Channel for requests to the device
-    request: Channel<NoopRawMutex, RequestData, DEVICE_CHANNEL_SIZE>,
-    /// Channel for responses from the device
-    response: Channel<NoopRawMutex, InternalResponseData, DEVICE_CHANNEL_SIZE>,
+    /// Command channel
+    command: deferred::Channel<NoopRawMutex, CommandData, InternalResponseData>,
 }
 
 impl Device {
@@ -136,10 +131,9 @@ impl Device {
             state: Mutex::new(InternalState {
                 state: State::Detached,
                 consumer_capability: None,
-                in_recovery: false,
+                requested_provider_capability: None,
             }),
-            request: Channel::new(),
-            response: Channel::new(),
+            command: deferred::Channel::new(),
         }
     }
 
@@ -171,40 +165,24 @@ impl Device {
         }
     }
 
+    /// Returns the current requested provider capability
+    pub async fn requested_provider_capability(&self) -> Option<PowerCapability> {
+        self.state.lock().await.requested_provider_capability
+    }
+
     /// Returns true if the device is currently providing power
     pub async fn is_provider(&self) -> bool {
         self.state().await.kind() == StateKind::ConnectedProvider
     }
 
-    /// Returns true if the device is currently in recovery
-    pub async fn is_in_recovery(&self) -> bool {
-        self.state.lock().await.in_recovery
+    /// Execute a command on the device
+    pub(super) async fn execute_device_command(&self, command: CommandData) -> Result<ResponseData, Error> {
+        self.command.execute(command).await
     }
 
-    /// Enter recovery mode
-    pub(super) async fn enter_recovery(&self) {
-        self.state.lock().await.in_recovery = true;
-    }
-
-    /// Exit recovery mode
-    pub(super) async fn exit_recovery(&self) {
-        self.state.lock().await.in_recovery = false;
-    }
-
-    /// Sends a request to this device and returns a response
-    pub(super) async fn execute_device_request(&self, request: RequestData) -> Result<ResponseData, Error> {
-        self.request.send(request).await;
-        self.response.receive().await
-    }
-
-    /// Wait for a request
-    pub async fn wait_request(&self) -> RequestData {
-        self.request.receive().await
-    }
-
-    /// Send a response
-    pub async fn send_response(&self, response: InternalResponseData) {
-        self.response.send(response).await;
+    /// Create a handler for the command channel
+    pub async fn receive(&self) -> deferred::Request<'_, NoopRawMutex, CommandData, InternalResponseData> {
+        self.command.receive().await
     }
 
     /// Internal function to set device state
@@ -219,6 +197,13 @@ impl Device {
         let mut lock = self.state.lock().await;
         let state = lock.deref_mut();
         state.consumer_capability = capability;
+    }
+
+    /// Internal function to set requested provider capability
+    pub(super) async fn update_requested_provider_capability(&self, capability: Option<PowerCapability>) {
+        let mut lock = self.state.lock().await;
+        let state = lock.deref_mut();
+        state.requested_provider_capability = capability;
     }
 
     /// Try to provide access to the device actions for the given state

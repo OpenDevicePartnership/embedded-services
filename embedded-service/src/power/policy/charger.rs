@@ -18,6 +18,11 @@ pub trait ChargeController: embedded_batteries_async::charger::Charger {
     fn init_charger(&mut self) -> impl Future<Output = Result<(), Self::BusError>>;
     /// Returns if the charger hardware detects if a PSU is attached
     fn is_psu_attached(&mut self) -> impl Future<Output = Result<bool, Self::BusError>>;
+    /// Called after power policy attaches to a power port.
+    fn attach_handler(&mut self, capability: PowerCapability) -> impl Future<Output = Result<(), Self::BusError>>;
+    /// Called after power policy detaches from a power port, either to switch consumers,
+    /// or because PSU was disconnected.
+    fn detach_handler(&mut self) -> impl Future<Output = Result<(), Self::BusError>>;
 }
 
 /// Charger Device ID new type
@@ -25,27 +30,37 @@ pub trait ChargeController: embedded_batteries_async::charger::Charger {
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct ChargerId(pub u8);
 
-/// OEM-specific state IDs
+/// PSU state as determined by charger device
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct OemStateId(pub u8);
+pub enum PsuState {
+    /// Charger detected PSU attached
+    Attached,
+    /// Charger detected PSU detached
+    Detached,
+}
+
+impl From<bool> for PsuState {
+    fn from(value: bool) -> Self {
+        match value {
+            true => PsuState::Attached,
+            false => PsuState::Detached,
+        }
+    }
+}
 
 /// Data for a device request
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum ChargerEvent {
     /// Charger finished initialization sequence
-    Initialized,
-    /// PSU attached and we want to switch to it
-    PsuAttached,
-    /// PSU detached
-    PsuDetached,
+    Initialized(PsuState),
+    /// PSU state changed
+    PsuStateChange(PsuState),
     /// A timeout of some sort was detected
     Timeout,
     /// An error occured on the bus
     BusError,
-    /// OEM specific events
-    Oem(OemStateId),
 }
 
 /// Charger state errors
@@ -77,8 +92,6 @@ pub enum PolicyEvent {
     InitRequest,
     /// PSU attached and we want to switch to it
     PolicyConfiguration(PowerCapability),
-    /// OEM specific events
-    Oem(OemStateId),
 }
 
 /// Data for a device request
@@ -98,15 +111,11 @@ pub type ChargerResponse = Result<ChargerResponseData, ChargerError>;
 pub enum State {
     /// Device is initializing
     Init,
-    /// Device is waiting for an event
-    Idle,
     /// PSU is attached and device can charge if desired
     PsuAttached,
     /// PSU is detached
     PsuDetached,
     // TODO: Dead battery revival?
-    /// OEM specific state(s)
-    Oem(OemStateId),
 }
 
 /// Current state of the charger

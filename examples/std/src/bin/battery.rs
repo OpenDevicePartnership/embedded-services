@@ -6,7 +6,7 @@ use battery_service::wrapper::Wrapper;
 use embassy_executor::{Executor, Spawner};
 use embassy_sync::once_lock::OnceLock;
 use embassy_time::{Duration, Timer};
-use embedded_batteries_async::charger::MilliVolts;
+use embedded_batteries_async::charger::{MilliAmps, MilliVolts};
 use embedded_batteries_async::smart_battery::{
     self, BatteryModeFields, BatteryStatusFields, CapacityModeSignedValue, CapacityModeValue, Cycles, DeciKelvin,
     ManufactureDate, MilliAmpsSigned, Minutes, Percent, SmartBattery, SpecificationInfoFields,
@@ -158,6 +158,12 @@ impl SmartBattery for FuelGaugeController {
     }
     async fn battery_status(&mut self) -> Result<BatteryStatusFields, Self::Error> {
         self.driver.battery_status().await
+    }
+    async fn charging_current(&mut self) -> Result<MilliAmps, Self::Error> {
+        self.driver.charging_current().await
+    }
+    async fn charging_voltage(&mut self) -> Result<MilliVolts, Self::Error> {
+        self.driver.charging_voltage().await
     }
     async fn current(&mut self) -> Result<MilliAmpsSigned, Self::Error> {
         self.driver.current().await
@@ -340,7 +346,15 @@ impl<I2c: embedded_hal_async::i2c::I2c> embedded_batteries_async::smart_battery:
         Ok(0)
     }
 
-    async fn current(&mut self) -> Result<embedded_batteries_async::smart_battery::MilliAmpsSigned, Self::Error> {
+    async fn charging_voltage(&mut self) -> Result<MilliVolts, Self::Error> {
+        Ok(0)
+    }
+
+    async fn current(&mut self) -> Result<MilliAmpsSigned, Self::Error> {
+        Ok(0)
+    }
+
+    async fn charging_current(&mut self) -> Result<MilliAmps, Self::Error> {
         Ok(0)
     }
 

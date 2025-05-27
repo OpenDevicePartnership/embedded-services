@@ -1,21 +1,18 @@
-use embedded_services::type_c::controller::InternalResponseData;
+use embedded_services::type_c::controller::{InternalResponseData, Response};
 use embedded_usb_pd::ucsi::lpm;
 
 use super::*;
 
 impl<const N: usize, C: Controller> ControllerWrapper<'_, N, C> {
     /// Handle a port command
-    async fn process_port_command(&self, controller: &mut C, command: controller::PortCommand) {
+    async fn process_port_command(&self, controller: &mut C, command: &controller::PortCommand) -> Response<'static> {
         let local_port = self.pd_controller.lookup_local_port(command.port);
         if local_port.is_err() {
-            self.pd_controller
-                .send_response(controller::Response::Port(Err(PdError::InvalidPort)))
-                .await;
-            return;
+            return controller::Response::Port(Err(PdError::InvalidPort));
         }
 
         let local_port = local_port.unwrap();
-        let response = match command.data {
+        controller::Response::Port(match command.data {
             controller::PortCommandData::PortStatus => match controller.get_port_status(local_port).await {
                 Ok(status) => Ok(controller::PortResponseData::PortStatus(status)),
                 Err(e) => match e {
@@ -55,41 +52,33 @@ impl<const N: usize, C: Controller> ControllerWrapper<'_, N, C> {
                     },
                 }
             }
-        };
-
-        self.pd_controller
-            .send_response(controller::Response::Port(response))
-            .await;
+        })
     }
 
-    async fn process_controller_command(&self, controller: &mut C, command: controller::InternalCommandData) {
-        let response = match command {
+    async fn process_controller_command(
+        &self,
+        controller: &mut C,
+        command: &controller::InternalCommandData,
+    ) -> Response<'static> {
+        match command {
             controller::InternalCommandData::Status => {
                 let status = controller.get_controller_status().await;
                 controller::Response::Controller(status.map(InternalResponseData::Status).map_err(|_| PdError::Failed))
             }
             _ => controller::Response::Controller(Err(PdError::UnrecognizedCommand)),
-        };
-
-        self.pd_controller.send_response(response).await;
+        }
     }
 
     /// Handle a PD controller command
-    pub(super) async fn process_pd_command(&self, controller: &mut C, command: controller::Command) {
+    pub(super) async fn process_pd_command(
+        &self,
+        controller: &mut C,
+        command: &controller::Command,
+    ) -> Response<'static> {
         match command {
-            controller::Command::Port(command) => {
-                self.process_port_command(controller, command).await;
-            }
-            controller::Command::Controller(command) => {
-                self.process_controller_command(controller, command).await;
-            }
-            controller::Command::Lpm(_) => {
-                self.pd_controller
-                    .send_response(controller::Response::Lpm(lpm::Response::Err(
-                        PdError::UnrecognizedCommand,
-                    )))
-                    .await;
-            }
+            controller::Command::Port(command) => self.process_port_command(controller, command).await,
+            controller::Command::Controller(command) => self.process_controller_command(controller, command).await,
+            controller::Command::Lpm(_) => controller::Response::Lpm(lpm::Response::Err(PdError::UnrecognizedCommand)),
         }
     }
 }
