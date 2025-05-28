@@ -63,7 +63,7 @@ dependencies = [
  "defmt 0.3.100",
  "embassy-executor",
  "embassy-futures",
- "embassy-sync",
+ "embassy-sync 0.7.0",
  "embassy-time",
  "embedded-batteries-async 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "embedded-hal 1.0.0",
@@ -188,7 +188,7 @@ version = "0.1.0"
 dependencies = [
  "defmt 0.3.100",
  "embassy-executor",
- "embassy-sync",
+ "embassy-sync 0.7.0",
  "embassy-time",
  "embedded-cfu-protocol",
  "embedded-services 0.1.0",
@@ -426,7 +426,7 @@ source = "git+https://github.com/embassy-rs/embassy#9409afb02e7fd46d0c3b2257a938
 dependencies = [
  "embassy-futures",
  "embassy-hal-internal",
- "embassy-sync",
+ "embassy-sync 0.6.2",
  "embassy-time",
  "embedded-hal 0.2.7",
  "embedded-hal 1.0.0",
@@ -494,7 +494,7 @@ dependencies = [
  "embassy-embedded-hal",
  "embassy-futures",
  "embassy-hal-internal",
- "embassy-sync",
+ "embassy-sync 0.7.0",
  "embassy-time",
  "embassy-time-driver",
  "embassy-time-queue-utils",
@@ -513,6 +513,19 @@ dependencies = [
  "paste",
  "rand_core",
  "storage_bus 0.1.1 (git+https://github.com/OpenDevicePartnership/embedded-services)",
+]
+
+[[package]]
+name = "embassy-sync"
+version = "0.6.2"
+source = "git+https://github.com/embassy-rs/embassy#9409afb02e7fd46d0c3b2257a938a8bc88244f5b"
+dependencies = [
+ "cfg-if",
+ "critical-section",
+ "embedded-io-async",
+ "futures-sink",
+ "futures-util",
+ "heapless 0.8.0",
 ]
 
 [[package]]
@@ -684,7 +697,7 @@ dependencies = [
  "document-features",
  "embassy-executor",
  "embassy-futures",
- "embassy-sync",
+ "embassy-sync 0.7.0",
  "embassy-time",
  "embassy-time-driver",
  "embedded-batteries-async 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -719,7 +732,7 @@ dependencies = [
  "document-features",
  "embassy-executor",
  "embassy-futures",
- "embassy-sync",
+ "embassy-sync 0.7.0",
  "embassy-time",
  "embedded-batteries-async 0.1.0 (git+https://github.com/OpenDevicePartnership/embedded-batteries)",
  "embedded-cfu-protocol",
@@ -780,7 +793,7 @@ dependencies = [
  "defmt 0.3.100",
  "embassy-executor",
  "embassy-imxrt",
- "embassy-sync",
+ "embassy-sync 0.7.0",
  "embassy-time",
  "embedded-services 0.1.0",
  "log",
@@ -915,7 +928,7 @@ name = "hid-service"
 version = "0.1.0"
 dependencies = [
  "defmt 0.3.100",
- "embassy-sync",
+ "embassy-sync 0.7.0",
  "embassy-time",
  "embedded-hal 1.0.0",
  "embedded-hal-async",
@@ -1061,7 +1074,7 @@ dependencies = [
  "defmt 0.3.100",
  "embassy-executor",
  "embassy-imxrt",
- "embassy-sync",
+ "embassy-sync 0.7.0",
  "embassy-time",
  "embedded-cfu-protocol",
  "embedded-services 0.1.0",
@@ -1098,7 +1111,7 @@ dependencies = [
  "defmt 0.3.100",
  "embassy-executor",
  "embassy-futures",
- "embassy-sync",
+ "embassy-sync 0.7.0",
  "embassy-time",
  "embedded-services 0.1.0",
  "log",
@@ -1242,7 +1255,7 @@ version = "0.1.1"
 dependencies = [
  "defmt 0.3.100",
  "embassy-executor",
- "embassy-sync",
+ "embassy-sync 0.7.0",
  "embassy-time",
  "embedded-services 0.1.0",
  "log",
@@ -1254,7 +1267,7 @@ version = "0.1.1"
 source = "git+https://github.com/OpenDevicePartnership/embedded-services#1ee7545bdcca3159893b85f5e1eac60d1c691bb4"
 dependencies = [
  "embassy-executor",
- "embassy-sync",
+ "embassy-sync 0.7.0",
  "embassy-time",
  "embedded-services 0.1.0 (git+https://github.com/OpenDevicePartnership/embedded-services)",
 ]
@@ -1311,7 +1324,7 @@ dependencies = [
  "bitfield 0.19.0",
  "defmt 0.3.100",
  "device-driver",
- "embassy-sync",
+ "embassy-sync 0.7.0",
  "embassy-time",
  "embedded-hal 1.0.0",
  "embedded-hal-async",
@@ -1328,7 +1341,7 @@ dependencies = [
  "defmt 0.3.100",
  "embassy-executor",
  "embassy-futures",
- "embassy-sync",
+ "embassy-sync 0.7.0",
  "embassy-time",
  "embedded-hal 1.0.0",
  "embedded-hal-async",

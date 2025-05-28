@@ -110,6 +110,16 @@ pub struct PortCommand {
     pub data: PortCommandData,
 }
 
+/// PD controller command-specific data
+#[derive(Copy, Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum RetimerFwUpdateState {
+    /// Retimer FW Update Inactive
+    Inactive,
+    /// Revimer FW Update Active
+    Active,
+}
+
 /// Port-specific response data
 #[derive(Copy, Clone, Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
@@ -121,7 +131,7 @@ pub enum PortResponseData {
     /// ClearEvents
     ClearEvents(PortEventKind),
     /// Retimer Fw Update status
-    RtFwUpdateStatus(bool),
+    RtFwUpdateStatus(RetimerFwUpdateState),
 }
 
 impl PortResponseData {
@@ -323,7 +333,7 @@ pub trait Controller {
     fn get_rt_fw_update_status(
         &mut self,
         port: LocalPortId,
-    ) -> impl Future<Output = Result<bool, Error<Self::BusError>>>;
+    ) -> impl Future<Output = Result<RetimerFwUpdateState, Error<Self::BusError>>>;
     /// Set retimer fw update state
     fn set_rt_fw_update_state(&mut self, port: LocalPortId) -> impl Future<Output = Result<(), Error<Self::BusError>>>;
     /// Clear retimer fw update state
@@ -617,7 +627,7 @@ impl ContextToken {
     }
 
     /// Get the retimer fw update status
-    pub async fn get_rt_fw_update_status(&self, port: GlobalPortId) -> Result<bool, PdError> {
+    pub async fn get_rt_fw_update_status(&self, port: GlobalPortId) -> Result<RetimerFwUpdateState, PdError> {
         match self
             .send_port_command(port, PortCommandData::RetimerFwUpdateGetState)
             .await?

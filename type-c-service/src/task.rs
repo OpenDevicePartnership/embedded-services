@@ -179,9 +179,15 @@ impl Service {
         debug!("Processing external port command: {:#?}", command);
         match command.data {
             external::PortCommandData::PortStatus => self.process_external_port_status(command.port).await,
-            external::PortCommandData::RetimerFwUpdateGetState => self.process_get_rt_fw_update_status(command.port).await,
-            external::PortCommandData::RetimerFwUpdateSetState => self.process_set_rt_fw_update_state(command.port).await,
-            external::PortCommandData::RetimerFwUpdateClearState => self.process_clear_rt_fw_update_state(command.port).await,
+            external::PortCommandData::RetimerFwUpdateGetState => {
+                self.process_get_rt_fw_update_status(command.port).await
+            }
+            external::PortCommandData::RetimerFwUpdateSetState => {
+                self.process_set_rt_fw_update_state(command.port).await
+            }
+            external::PortCommandData::RetimerFwUpdateClearState => {
+                self.process_clear_rt_fw_update_state(command.port).await
+            }
         }
     }
 

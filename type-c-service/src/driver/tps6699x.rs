@@ -260,9 +260,16 @@ impl<const N: usize, M: RawMutex, B: I2c> Controller for Tps6699x<'_, N, M, B> {
     }
 
     #[allow(clippy::await_holding_refcell_ref)]
-    async fn get_rt_fw_update_status(&mut self, port: LocalPortId) -> Result<bool, Error<Self::BusError>> {
+    async fn get_rt_fw_update_status(
+        &mut self,
+        port: LocalPortId,
+    ) -> Result<type_c::controller::RetimerFwUpdateState, Error<Self::BusError>> {
         let mut tps6699x = self.tps6699x.borrow_mut();
-        tps6699x.get_rt_fw_update_status(port).await
+        match tps6699x.get_rt_fw_update_status(port).await {
+            Ok(true) => Ok(type_c::controller::RetimerFwUpdateState::Active),
+            Ok(false) => Ok(type_c::controller::RetimerFwUpdateState::Inactive),
+            Err(e) => Err(e),
+        }
     }
 
     #[allow(clippy::await_holding_refcell_ref)]
