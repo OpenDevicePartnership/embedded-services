@@ -25,7 +25,7 @@ mod test_controller {
 
     use embassy_sync::{blocking_mutex::raw::NoopRawMutex, signal::Signal};
     use embedded_services::type_c::{
-        controller::{Contract, ControllerStatus, PortStatus},
+        controller::{Contract, ControllerStatus, PortStatus, RetimerFwUpdateState},
         event::PortEventKind,
     };
 
@@ -168,8 +168,25 @@ mod test_controller {
                 fw_version1: 0xdeadbeef,
             })
         }
-    }
 
+        async fn get_rt_fw_update_status(
+            &mut self,
+            _port: LocalPortId,
+        ) -> Result<RetimerFwUpdateState, Error<Self::BusError>> {
+            debug!("Get retimer fw update status");
+            Ok(RetimerFwUpdateState::Inactive)
+        }
+
+        async fn set_rt_fw_update_state(&mut self, _port: LocalPortId) -> Result<(), Error<Self::BusError>> {
+            debug!("Get set fw update status");
+            Ok(())
+        }
+
+        async fn clear_rt_fw_update_state(&mut self, _port: LocalPortId) -> Result<(), Error<Self::BusError>> {
+            debug!("Get clear fw update status");
+            Ok(())
+        }
+    }
     pub type Wrapper<'a> = type_c_service::wrapper::ControllerWrapper<'a, 1, Controller<'a>>;
 }
 

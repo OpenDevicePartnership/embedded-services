@@ -20,7 +20,7 @@ async fn task(_spawner: Spawner) {
 
     info!("Getting retimer fw update status");
     let rt_fw_update_status = external::port_get_rt_fw_update_status(GlobalPortId(0)).await.unwrap();
-    info!("Port status: {:?}", port_status);
+    info!("Port status: {:?}", rt_fw_update_status);
 
     info!("Setting retimer fw update state");
     let cmd_state = external::port_set_rt_fw_update_state(GlobalPortId(0)).await.unwrap();
