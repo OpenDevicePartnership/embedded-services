@@ -4,6 +4,9 @@
 [cargo-vet]
 version = "0.10"
 
+[imports.OpenDevicePartnership]
+url = "https://raw.githubusercontent.com/OpenDevicePartnership/rust-crate-audits/main/audits.toml"
+
 [imports.google]
 url = "https://raw.githubusercontent.com/google/rust-crate-audits/main/audits.toml"
 
@@ -41,10 +44,10 @@ audit-as-crates-io = false
 audit-as-crates-io = false
 
 [policy.embedded-batteries]
-audit-as-crates-io = true
+audit-as-crates-io = false
 
 [policy.embedded-batteries-async]
-audit-as-crates-io = true
+audit-as-crates-io = false
 
 [[exemptions.ahash]]
 version = "0.8.11"
