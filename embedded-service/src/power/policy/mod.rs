@@ -20,6 +20,8 @@ pub enum Error {
     InvalidState(device::StateKind, device::StateKind),
     /// Invalid response
     InvalidResponse,
+    /// Busy, the device cannot respond to the request at this time
+    Busy,
     /// Timeout
     Timeout,
     /// Bus error

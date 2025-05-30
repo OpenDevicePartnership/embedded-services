@@ -1,11 +1,22 @@
+use embedded_services::debug;
 use embedded_services::type_c::controller::{InternalResponseData, Response};
 use embedded_usb_pd::ucsi::lpm;
 
 use super::*;
 
-impl<const N: usize, C: Controller> ControllerWrapper<'_, N, C> {
+impl<const N: usize, C: Controller, V: FwOfferValidator> ControllerWrapper<'_, N, C, V> {
     /// Handle a port command
-    async fn process_port_command(&self, controller: &mut C, command: &controller::PortCommand) -> Response<'static> {
+    async fn process_port_command(
+        &self,
+        controller: &mut C,
+        state: &mut InternalState,
+        command: &controller::PortCommand,
+    ) -> Response<'static> {
+        if state.fw_update_state.in_progress() {
+            debug!("FW update in progress, ignoring port command");
+            return controller::Response::Port(Err(PdError::Busy));
+        }
+
         let local_port = self.pd_controller.lookup_local_port(command.port);
         if local_port.is_err() {
             return controller::Response::Port(Err(PdError::InvalidPort));
@@ -58,8 +69,14 @@ impl<const N: usize, C: Controller> ControllerWrapper<'_, N, C> {
     async fn process_controller_command(
         &self,
         controller: &mut C,
+        state: &mut InternalState,
         command: &controller::InternalCommandData,
     ) -> Response<'static> {
+        if state.fw_update_state.in_progress() {
+            debug!("FW update in progress, ignoring controller command");
+            return controller::Response::Controller(Err(PdError::Busy));
+        }
+
         match command {
             controller::InternalCommandData::Status => {
                 let status = controller.get_controller_status().await;
@@ -73,11 +90,14 @@ impl<const N: usize, C: Controller> ControllerWrapper<'_, N, C> {
     pub(super) async fn process_pd_command(
         &self,
         controller: &mut C,
+        state: &mut InternalState,
         command: &controller::Command,
     ) -> Response<'static> {
         match command {
-            controller::Command::Port(command) => self.process_port_command(controller, command).await,
-            controller::Command::Controller(command) => self.process_controller_command(controller, command).await,
+            controller::Command::Port(command) => self.process_port_command(controller, state, command).await,
+            controller::Command::Controller(command) => {
+                self.process_controller_command(controller, state, command).await
+            }
             controller::Command::Lpm(_) => controller::Response::Lpm(lpm::Response::Err(PdError::UnrecognizedCommand)),
         }
     }
