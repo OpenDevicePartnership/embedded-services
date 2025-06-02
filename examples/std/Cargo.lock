@@ -194,6 +194,7 @@ name = "cfu-service"
 version = "0.1.0"
 dependencies = [
  "embassy-executor",
+ "embassy-futures",
  "embassy-sync",
  "embassy-time",
  "embedded-cfu-protocol",
