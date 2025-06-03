@@ -69,7 +69,7 @@ impl<'a, S: Kind> Device<'a, S> {
         capability: Option<PowerCapability>,
     ) -> Result<(), Error> {
         info!(
-            "Device {} consume capability updated {:#?}",
+            "Device {} consume capability updated: {:#?}",
             self.device.id().0,
             capability
         );

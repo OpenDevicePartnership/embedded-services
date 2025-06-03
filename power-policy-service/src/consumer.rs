@@ -26,7 +26,7 @@ impl Ord for State {
 }
 
 impl PowerPolicy {
-    /// Iterate over all devices to determine what is now the highest-powered consumer
+    /// Iterate over all devices to determine what is best power port provides the highest power
     async fn find_highest_power_consumer(&self) -> Result<Option<State>, Error> {
         let mut best_consumer = None;
 
@@ -84,6 +84,7 @@ impl PowerPolicy {
                     "Device {}, disconnecting current consumer",
                     current_consumer.device_id.0
                 );
+                // disconnect current consumer and set idle
                 consumer.disconnect().await?;
             }
 
@@ -129,12 +130,12 @@ impl PowerPolicy {
         Ok(())
     }
 
-    /// Determines and connects the best consumer
+    /// Determines and connects the best power
     pub(super) async fn update_current_consumer(&self) -> Result<(), Error> {
         let mut guard = self.state.lock().await;
         let state = guard.deref_mut();
         info!(
-            "Selecting consumer, current consumer: {:#?}",
+            "Selecting power port, current power: {:#?}",
             state.current_consumer_state
         );
 
