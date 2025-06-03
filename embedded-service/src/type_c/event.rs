@@ -15,6 +15,10 @@ bitfield! {
     pub u8, new_power_contract_as_provider, set_new_power_contract_as_provider: 2, 2;
     /// New power contract as consumer
     pub u8, new_power_contract_as_consumer, set_new_power_contract_as_consumer: 3, 3;
+    /// Source Caps received
+    pub u8, source_caps_received, set_source_caps_received: 4, 4;
+    /// Sink ready
+    pub u8, sink_ready, set_sink_ready: 5, 5;
 }
 
 /// Type-safe wrapper for the raw port event kind
@@ -62,6 +66,26 @@ impl PortEventKind {
     /// Sets the new power contract as consumer event
     pub fn set_new_power_contract_as_consumer(&mut self, value: bool) {
         self.0.set_new_power_contract_as_consumer(value.into());
+    }
+
+    /// Returns true if a source caps msg received
+    pub fn source_caps_received(self) -> bool {
+        self.0.source_caps_received() != 0
+    }
+
+    /// Sets the source caps received event
+    pub fn set_source_caps_received(&mut self, value: bool) {
+        self.0.set_source_caps_received(value.into());
+    }
+
+    /// Returns true if a sink ready event triggered
+    pub fn sink_ready(self) -> bool {
+        self.0.sink_ready() != 0
+    }
+
+    /// Sets the sink ready event
+    pub fn set_sink_ready(&mut self, value: bool) {
+        self.0.set_sink_ready(value.into());
     }
 }
 

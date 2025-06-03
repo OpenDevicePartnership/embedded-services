@@ -347,25 +347,6 @@ pub trait Controller {
         port: LocalPortId,
         enable: bool,
     ) -> impl Future<Output = Result<(), Error<Self::BusError>>>;
-    /// Enable or disable sourcing
-    fn set_sourcing(
-        &mut self,
-        port: LocalPortId,
-        enable: bool,
-    ) -> impl Future<Output = Result<(), Error<Self::BusError>>>;
-    /// Set source current capability
-    fn set_source_current(
-        &mut self,
-        port: LocalPortId,
-        current: TypecCurrent,
-        signal_event: bool,
-    ) -> impl Future<Output = Result<(), Error<Self::BusError>>>;
-    /// Initiate a power-role swap to the given role
-    fn request_pr_swap(
-        &mut self,
-        port: LocalPortId,
-        role: PowerRole,
-    ) -> impl Future<Output = Result<(), Error<Self::BusError>>>;
     /// Get current controller status
     fn get_controller_status(
         &mut self,

@@ -26,7 +26,7 @@ impl Ord for State {
 }
 
 impl PowerPolicy {
-    /// Iterate over all devices to determine what is now the highest-powered consumer
+    /// Iterate over all devices to determine what is best power port provides the highest power
     async fn find_highest_power_consumer(&self) -> Result<Option<State>, Error> {
         let mut best_consumer = None;
 
@@ -84,6 +84,7 @@ impl PowerPolicy {
                     "Device {}, disconnecting current consumer",
                     current_consumer.device_id.0
                 );
+                // disconnect current consumer and set idle
                 consumer.disconnect().await?;
             }
 
@@ -111,6 +112,28 @@ impl PowerPolicy {
         {
             idle.connect_consumer(new_consumer.power_capability).await?;
             state.current_consumer_state = Some(new_consumer);
+            // todo: review the delay time
+            embassy_time::Timer::after_millis(800).await;
+            for node in self.context.chargers().await {
+                let device = node.data::<ChargerDevice>().ok_or(Error::InvalidDevice)?;
+                device
+                    .execute_command(PolicyEvent::PolicyConfiguration(new_consumer.power_capability))
+                    .await?;
+            }
+            self.comms_notify(CommsMessage {
+                data: CommsData::ConsumerConnected(new_consumer.device_id, new_consumer.power_capability),
+            })
+            .await;
+        } else if let Ok(ConnectedProvider) = self
+            .context
+            .try_policy_action::<action::ConnectedProvider>(new_consumer.device_id)
+            .await
+        {
+            ConnectedProvider
+                .connect_consumer(new_consumer.power_capability)
+                .await?;
+            state.current_consumer_state = Some(new_consumer);
+            // todo: review the delay time
             embassy_time::Timer::after_millis(800).await;
             for node in self.context.chargers().await {
                 let device = node.data::<ChargerDevice>().ok_or(Error::InvalidDevice)?;
@@ -129,12 +152,12 @@ impl PowerPolicy {
         Ok(())
     }
 
-    /// Determines and connects the best consumer
+    /// Determines and connects the best external power
     pub(super) async fn update_current_consumer(&self) -> Result<(), Error> {
         let mut guard = self.state.lock().await;
         let state = guard.deref_mut();
         info!(
-            "Selecting consumer, current consumer: {:#?}",
+            "Selecting power port, current power: {:#?}",
             state.current_consumer_state
         );
 
