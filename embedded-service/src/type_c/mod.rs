@@ -98,8 +98,7 @@ impl From<type_c::Current> for policy::PowerCapability {
     fn from(current: type_c::Current) -> Self {
         policy::PowerCapability {
             voltage_mv: 5000,
-            // Assume lower power for now
-            // todo: follow G3, use 900 for now
+            // Assume higher power for now
             current_ma: current.to_ma(false),
         }
     }

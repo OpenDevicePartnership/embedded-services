@@ -130,7 +130,7 @@ impl PowerPolicy {
         Ok(())
     }
 
-    /// Determines and connects the best power
+    /// Determines and connects the best external power
     pub(super) async fn update_current_consumer(&self) -> Result<(), Error> {
         let mut guard = self.state.lock().await;
         let state = guard.deref_mut();

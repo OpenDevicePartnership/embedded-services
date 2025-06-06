@@ -16,9 +16,9 @@ pub enum StateKind {
     Detached,
     /// Device is attached
     Idle,
-    /// Device is actively providing power, source mode
+    /// Device is actively providing power, USB PD source mode
     ConnectedProvider,
-    /// Device is actively consuming power, sink mode
+    /// Device is actively consuming power, USB PD sink mode
     ConnectedConsumer,
 }
 
