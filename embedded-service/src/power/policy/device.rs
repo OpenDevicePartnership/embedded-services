@@ -16,9 +16,9 @@ pub enum StateKind {
     Detached,
     /// Device is attached
     Idle,
-    /// Device is actively providing power
+    /// Device is actively providing power, USB PD source mode
     ConnectedProvider,
-    /// Device is actively consuming power
+    /// Device is actively consuming power, USB PD sink mode
     ConnectedConsumer,
 }
 
@@ -65,9 +65,9 @@ struct InternalState {
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum CommandData {
     /// Start consuming on this device
-    ConnectConsumer(PowerCapability),
-    /// Start providinig on this device
-    ConnectProvider(PowerCapability),
+    ConnectAsConsumer(PowerCapability),
+    /// Start providing power to port partner on this device
+    ConnectAsProvider(PowerCapability),
     /// Stop providing or consuming on this device
     Disconnect,
 }

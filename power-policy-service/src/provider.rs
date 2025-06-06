@@ -3,7 +3,7 @@
 //! the system is in unlimited power state. In this mode up to [provider_unlimited](super::Config::provider_unlimited)
 //! is provided to each device. Above this threshold, the system is in limited power state.
 //! In this mode [provider_limited](super::Config::provider_limited) is provided to each device
-use embedded_services::{debug, trace};
+use embedded_services::trace;
 
 use super::*;
 
@@ -28,7 +28,7 @@ pub(super) struct State {
 impl PowerPolicy {
     /// Attempt to connect the requester as a provider
     pub(super) async fn connect_provider(&self, requester_id: DeviceId) {
-        trace!("Device{}: Attempting to connect provider", requester_id.0);
+        trace!("Device{}: Attempting to connect as provider", requester_id.0);
         let requester = match self.context.get_device(requester_id).await {
             Ok(device) => device,
             Err(_) => {
@@ -44,52 +44,16 @@ impl PowerPolicy {
                 return;
             }
         };
-        let mut state = self.state.lock().await;
-        let mut total_power_mw = 0;
 
-        // Determine total requested power draw
-        for device in self.context.devices().await.iter_only::<device::Device>() {
-            let target_provider_cap = if device.id() == requester_id {
-                // Use the requester's requested power capability
-                // this handles both new connections and upgrade requests
-                Some(requested_power_capability)
-            } else {
-                // Use the device's current working provider capability
-                device.provider_capability().await
-            };
-            total_power_mw += target_provider_cap.map_or(0, |cap| cap.max_power_mw());
-
-            if total_power_mw > self.config.limited_power_threshold_mw {
-                state.current_provider_state.state = PowerState::Limited;
-            } else {
-                state.current_provider_state.state = PowerState::Unlimited;
-            }
-        }
-
-        debug!("New power state: {:?}", state.current_provider_state.state);
-
-        let target_power = match state.current_provider_state.state {
-            PowerState::Limited => self.config.provider_limited,
-            PowerState::Unlimited => {
-                if requested_power_capability.max_power_mw() < self.config.provider_unlimited.max_power_mw() {
-                    // Don't auto upgrade to a higher contract
-                    requested_power_capability
-                } else {
-                    self.config.provider_unlimited
-                }
-            }
-        };
-
-        info!("Device{}: Connecting new provider", requester.id().0);
         let connected = if let Ok(action) = self.context.try_policy_action::<action::Idle>(requester.id()).await {
-            let _ = action.connect_provider(target_power).await;
+            let _ = action.connect_provider(requested_power_capability).await;
             Ok(())
         } else if let Ok(action) = self
             .context
             .try_policy_action::<action::ConnectedProvider>(requester.id())
             .await
         {
-            let _ = action.connect_provider(target_power).await;
+            let _ = action.connect_provider(requested_power_capability).await;
             Ok(())
         } else {
             Err(Error::InvalidState(
@@ -100,7 +64,7 @@ impl PowerPolicy {
 
         // Don't need to do anything special, the device is responsible for attempting to reconnect
         if let Err(e) = connected {
-            error!("Device{}: Failed to connect provider, {:#?}", requester.id().0, e);
+            error!("Device{}: Failed to connect as provider, {:#?}", requester.id().0, e);
         }
     }
 }
