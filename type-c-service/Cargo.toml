@@ -10,6 +10,7 @@ license = "MIT"
 [dependencies]
 bitfield.workspace = true
 defmt = { workspace = true, optional = true }
+embedded-cfu-protocol.workspace = true
 embassy-executor.workspace = true
 embassy-futures.workspace = true
 embassy-sync.workspace = true
