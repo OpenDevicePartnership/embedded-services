@@ -84,7 +84,12 @@ impl<'a, S: Kind> Policy<'a, S> {
 
     /// Common connect provider function used by multiple states
     async fn connect_provider_internal(&self, capability: PowerCapability) -> Result<(), Error> {
-        match with_timeout(DEFAULT_TIMEOUT, self.connect_as_provider_internal_no_timeout(capability)).await {
+        match with_timeout(
+            DEFAULT_TIMEOUT,
+            self.connect_as_provider_internal_no_timeout(capability),
+        )
+        .await
+        {
             Ok(r) => r,
             Err(TimeoutError) => Err(Error::Timeout),
         }
