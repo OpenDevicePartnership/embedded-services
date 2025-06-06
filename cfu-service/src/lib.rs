@@ -7,6 +7,7 @@ use embedded_services::cfu::{CfuError, ContextToken};
 use embedded_services::{comms, error, info};
 
 pub mod host;
+pub mod splitter;
 
 pub struct CfuClient {
     /// Cfu Client context
