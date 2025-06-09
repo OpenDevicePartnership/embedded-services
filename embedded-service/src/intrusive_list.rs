@@ -93,7 +93,7 @@ impl Default for IntrusiveList {
 
 impl IntrusiveList {
     /// construct an empty intrusive list
-    pub fn new() -> IntrusiveList {
+    pub const fn new() -> IntrusiveList {
         IntrusiveList { head: Cell::new(None) }
     }
 
