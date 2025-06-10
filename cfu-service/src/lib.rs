@@ -16,7 +16,19 @@ pub struct CfuClient {
 }
 
 /// use default "do-nothing" implementations
-impl<T, C, E: Default> CfuReceiveContent<T, C, E> for CfuClient {}
+impl<T, C, E: Default + Send> CfuReceiveContent<T, C, E> for CfuClient {
+    async fn process_command(&self, _args: Option<T>, _cmd: C) -> Result<(), E> {
+        Ok(())
+    }
+
+    async fn prepare_components(
+        &self,
+        _args: Option<T>,
+        _primary_component: impl embedded_cfu_protocol::components::CfuComponentTraits,
+    ) -> Result<(), E> {
+        Ok(())
+    }
+}
 
 impl CfuClient {
     /// Create a new Cfu Client

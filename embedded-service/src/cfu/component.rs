@@ -1,12 +1,12 @@
 //! Device struct and methods for component communication
 use core::future::Future;
 
-use embassy_sync::blocking_mutex::raw::NoopRawMutex;
+use embassy_sync::blocking_mutex::raw::{NoopRawMutex, CriticalSectionRawMutex};
 use embassy_sync::channel::Channel;
 use embassy_sync::mutex::Mutex;
 use embedded_cfu_protocol::components::{CfuComponentInfo, CfuComponentStorage, CfuComponentTraits};
 use embedded_cfu_protocol::protocol_definitions::*;
-use embedded_cfu_protocol::{CfuWriter, CfuWriterError};
+use embedded_cfu_protocol::writer::{CfuWriterAsync, CfuWriterError};
 use heapless::Vec;
 
 use super::CfuError;
@@ -162,28 +162,28 @@ impl CfuDevice {
 }
 
 /// Example for CFU Component
-pub struct CfuComponentDefault<W: CfuWriter> {
+pub struct CfuComponentDefault<W>{
     device: CfuDevice,
     is_dual_bank: bool,
     is_primary: bool,
     storage_offset: usize,
     subcomponents: [Option<ComponentId>; MAX_SUBCMPT_COUNT],
-    writer: Mutex<NoopRawMutex, W>,
+    writer: Mutex<CriticalSectionRawMutex, W>,
 }
 
-impl<W: CfuWriter + Default> Default for CfuComponentDefault<W> {
+impl<W: CfuWriterAsync + Default + Send> Default for CfuComponentDefault<W> {
     fn default() -> Self {
         Self::new(1, false, [None; MAX_SUBCMPT_COUNT], W::default())
     }
 }
 
-impl<W: CfuWriter> CfuDeviceContainer for CfuComponentDefault<W> {
+impl<W> CfuDeviceContainer for CfuComponentDefault<W> {
     fn get_cfu_component_device(&self) -> &CfuDevice {
         &self.device
     }
 }
 
-impl<W: CfuWriter> CfuComponentDefault<W> {
+impl<W: CfuWriterAsync + Send> CfuComponentDefault<W> {
     /// Constructor
     pub fn new(
         id: ComponentId,
@@ -272,7 +272,7 @@ impl<W: CfuWriter> CfuComponentDefault<W> {
     }
 }
 
-impl<W: CfuWriter> CfuComponentInfo for CfuComponentDefault<W> {
+impl<W> CfuComponentInfo for CfuComponentDefault<W> {
     fn get_component_id(&self) -> ComponentId {
         self.device.component_id()
     }
@@ -293,12 +293,25 @@ impl<W: CfuWriter> CfuComponentInfo for CfuComponentDefault<W> {
     }
 }
 
-impl<W: CfuWriter> CfuWriter for CfuComponentDefault<W> {
-    async fn cfu_write(&self, mem_offset: Option<usize>, data: &[u8]) -> Result<(), CfuWriterError> {
+unsafe impl<W> Sync for CfuComponentDefault<W> { 
+}
+unsafe impl<W> Send for CfuComponentDefault<W> { 
+}
+
+unsafe impl Sync for CfuDevice { 
+}
+unsafe impl Send for CfuDevice { 
+}
+
+
+
+impl<W: CfuWriterAsync + Send> CfuWriterAsync for CfuComponentDefault<W> {
+    async fn cfu_write(&mut self, mem_offset: Option<usize>, data: &[u8]) -> Result<(), CfuWriterError> {
         self.writer.lock().await.cfu_write(mem_offset, data).await
     }
+
     async fn cfu_write_read(
-        &self,
+        &mut self,
         mem_offset: Option<usize>,
         data: &[u8],
         read: &mut [u8],
@@ -306,12 +319,16 @@ impl<W: CfuWriter> CfuWriter for CfuComponentDefault<W> {
         self.writer.lock().await.cfu_write_read(mem_offset, data, read).await
     }
 
-    async fn cfu_read(&self, mem_offset: Option<usize>, read: &mut [u8]) -> Result<(), CfuWriterError> {
+    async fn cfu_read(&mut self, mem_offset: Option<usize>, read: &mut [u8]) -> Result<(), CfuWriterError> {
         self.writer.lock().await.cfu_read(mem_offset, read).await
     }
+    
+    async fn cfu_storage(&mut self, mem_offset: usize, data: &[u8]) -> Result<(), CfuWriterError> {
+        self.writer.lock().await.cfu_storage(mem_offset, data).await
+    }    
 }
 
-impl<W: CfuWriter> CfuComponentStorage for CfuComponentDefault<W> {
+impl<W: CfuWriterAsync + Send> CfuComponentStorage for CfuComponentDefault<W> {
     fn get_storage_offset(&self) -> usize {
         self.storage_offset
     }
@@ -333,7 +350,7 @@ async fn default_get_fw_version() -> Result<FwVersion, CfuProtocolError> {
     Ok(FwVersion::default())
 }
 
-impl<W: CfuWriter + Default> CfuComponentTraits for CfuComponentDefault<W> {}
+impl<W: CfuWriterAsync + Default + Send> CfuComponentTraits for CfuComponentDefault<W> {}
 
 /// Example Wrapper for CFU Component
 /// Takes type which implements `CFUComponentTraits` and `CfuDeviceContainer`
