@@ -117,18 +117,7 @@ impl<'a, const N: usize, M: RawMutex, B: I2c> Tps6699x<'a, N, M, B> {
             port_status.alt_mode = alt_mode;
 
             // Update power path status
-            let power_path = tps6699x.get_power_path_status(port).await?;
-            port_status.power_path = match port {
-                PORT0 => PowerPathStatus::new(
-                    power_path.pa_ext_vbus_sw() == PpExtVbusSw::EnabledInput,
-                    power_path.pa_int_vbus_sw() == PpIntVbusSw::EnabledOutput,
-                ),
-                PORT1 => PowerPathStatus::new(
-                    power_path.pb_ext_vbus_sw() == PpExtVbusSw::EnabledInput,
-                    power_path.pb_int_vbus_sw() == PpIntVbusSw::EnabledOutput,
-                ),
-                _ => Err(PdError::InvalidPort)?,
-            };
+            port_status.power_path = self.read_power_path_status(tps6699x, port).await?;
             debug!("Port{} power path: {:#?}", port.0, port_status.power_path);
         }
 
@@ -195,6 +184,26 @@ impl<'a, const N: usize, M: RawMutex, B: I2c> Tps6699x<'a, N, M, B> {
         let current = cell.get();
         cell.set(current.union(event));
         self.sw_event.signal(());
+    }
+
+    /// Read the current power path status
+    async fn read_power_path_status(
+        &self,
+        tps6699x: &mut tps6699x::Tps6699x<'a, M, B>,
+        port: LocalPortId,
+    ) -> Result<PowerPathStatus, Error<B::Error>> {
+        let power_path = tps6699x.get_power_path_status(port).await?;
+        match port {
+            PORT0 => Ok(PowerPathStatus::new(
+                power_path.pa_ext_vbus_sw() == PpExtVbusSw::EnabledInput,
+                power_path.pa_int_vbus_sw() == PpIntVbusSw::EnabledOutput,
+            )),
+            PORT1 => Ok(PowerPathStatus::new(
+                power_path.pb_ext_vbus_sw() == PpExtVbusSw::EnabledInput,
+                power_path.pb_int_vbus_sw() == PpIntVbusSw::EnabledOutput,
+            )),
+            _ => Err(PdError::InvalidPort.into()),
+        }
     }
 }
 
@@ -288,15 +297,39 @@ impl<const N: usize, M: RawMutex, B: I2c> Controller for Tps6699x<'_, N, M, B> {
     async fn enable_sink_path(&mut self, port: LocalPortId, enable: bool) -> Result<(), Error<Self::BusError>> {
         debug!("Port{} enable sink path: {}", port.0, enable);
         let mut tps6699x = self.tps6699x.borrow_mut();
-        match tps6699x.enable_sink_path(port, enable).await {
-            // Temporary workaround for autofet rejection
-            // Tracking bug: https://github.com/OpenDevicePartnership/embedded-services/issues/268
-            Err(Error::Pd(PdError::Rejected)) | Err(Error::Pd(PdError::Timeout)) => {
-                info!("Port{} autofet rejection, ignored", port.0);
-                Ok(())
+
+        let pp_status = self.read_power_path_status(&mut tps6699x, port).await?;
+        let pp_status = if pp_status.ext_vbus_sw_en() != enable {
+            // Only enable/disable the sink path if the current state is different
+            match tps6699x.enable_sink_path(port, enable).await {
+                // Temporary workaround for autofet rejection
+                // Tracking bug: https://github.com/OpenDevicePartnership/embedded-services/issues/268
+                Err(Error::Pd(PdError::Rejected)) | Err(Error::Pd(PdError::Timeout)) => {
+                    info!("Port{} autofet rejection, ignored", port.0);
+                }
+                rest => rest?,
             }
-            rest => rest,
+
+            // Re-read the power path status to ensure our internal state is correct
+            self.read_power_path_status(&mut tps6699x, port).await?
+        } else {
+            pp_status
+        };
+
+        // Ensure the power path status is updated
+        let port_status = self.port_status[port.0 as usize].get();
+        if port_status.power_path != pp_status {
+            debug!("Port{} power path changed: {:#?}", port.0, pp_status);
+            self.port_status[port.0 as usize].set(PortStatus {
+                power_path: pp_status,
+                ..port_status
+            });
+
+            let mut event = PortEventKind::none();
+            event.set_power_path_changed(true);
+            self.signal_event(port, event);
         }
+        Ok(())
     }
 
     #[allow(clippy::await_holding_refcell_ref)]

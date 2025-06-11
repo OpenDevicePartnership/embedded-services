@@ -15,6 +15,8 @@ bitfield! {
     pub u8, new_power_contract_as_provider, set_new_power_contract_as_provider: 2, 2;
     /// New power contract as consumer
     pub u8, new_power_contract_as_consumer, set_new_power_contract_as_consumer: 3, 3;
+    /// Power path changed
+    pub u8, power_path_changed, set_power_path_changed: 6, 6;
 }
 
 /// Type-safe wrapper for the raw port event kind
@@ -62,6 +64,16 @@ impl PortEventKind {
     /// Sets the new power contract as consumer event
     pub fn set_new_power_contract_as_consumer(&mut self, value: bool) {
         self.0.set_new_power_contract_as_consumer(value.into());
+    }
+
+    /// Returns true if the power path changed
+    pub fn power_path_changed(self) -> bool {
+        self.0.power_path_changed() != 0
+    }
+
+    /// Sets the power path changed event
+    pub fn set_power_path_changed(&mut self, value: bool) {
+        self.0.set_power_path_changed(value.into());
     }
 }
 
