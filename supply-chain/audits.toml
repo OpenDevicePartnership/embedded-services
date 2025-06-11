@@ -1,6 +1,16 @@
 
 # cargo-vet audits file
 
+[[audits.addr2line]]
+who = "Robert Zieba <robertzieba@microsoft.com>"
+criteria = "safe-to-run"
+version = "0.24.2"
+
+[[audits.backtrace]]
+who = "Robert Zieba <robertzieba@microsoft.com>"
+criteria = "safe-to-run"
+version = "0.3.75"
+
 [[audits.embedded-batteries]]
 who = "Felipe Balbi <febalbi@microsoft.com>"
 criteria = "safe-to-deploy"
@@ -26,6 +36,11 @@ criteria = "safe-to-deploy"
 version = "0.1.0@git:410e2482d54b58c205a425c70d2ccf062e3ee3f3"
 importable = false
 notes = "ODP crates are always trusted."
+
+[[audits.gimli]]
+who = "Robert Zieba <robertzieba@microsoft.com>"
+criteria = "safe-to-run"
+version = "0.31.1"
 
 [[audits.half]]
 who = "Robert Zieba <robertzieba@microsoft.com>"
@@ -39,6 +54,16 @@ criteria = "safe-to-deploy"
 version = "0.11.0"
 notes = "Used as a dependency for embassy-imxrt."
 
+[[audits.libc]]
+who = "Robert Zieba <robertzieba@microsoft.com>"
+criteria = "safe-to-run"
+version = "0.2.172"
+
+[[audits.memchr]]
+who = "Robert Zieba <robertzieba@microsoft.com>"
+criteria = "safe-to-run"
+version = "2.7.4"
+
 [[audits.mimxrt633s-pac]]
 who = "Robert Zieba <robertzieba@microsoft.com>"
 criteria = "safe-to-deploy"
@@ -48,6 +73,76 @@ version = "0.4.0"
 who = "Robert Zieba <robertzieba@microsoft.com>"
 criteria = "safe-to-deploy"
 version = "0.4.1"
+
+[[audits.miniz_oxide]]
+who = "Robert Zieba <robertzieba@microsoft.com>"
+criteria = "safe-to-run"
+version = "0.8.8"
+
+[[audits.object]]
+who = "Robert Zieba <robertzieba@microsoft.com>"
+criteria = "safe-to-run"
+version = "0.36.7"
+
+[[audits.tokio]]
+who = "Robert Zieba <robertzieba@microsoft.com>"
+criteria = "safe-to-run"
+version = "1.45.0"
+
+[[audits.tokio-macros]]
+who = "Robert Zieba <robertzieba@microsoft.com>"
+criteria = "safe-to-run"
+version = "2.5.0"
+
+[[audits.windows-targets]]
+who = "Robert Zieba <robertzieba@microsoft.com>"
+criteria = "safe-to-run"
+version = "0.52.6"
+
+[[audits.windows_aarch64_gnullvm]]
+who = "Robert Zieba <robertzieba@microsoft.com>"
+criteria = "safe-to-run"
+version = "0.52.6"
+
+[[audits.windows_aarch64_msvc]]
+who = "Robert Zieba <robertzieba@microsoft.com>"
+criteria = "safe-to-run"
+version = "0.52.6"
+
+[[audits.windows_i686_gnu]]
+who = "Robert Zieba <robertzieba@microsoft.com>"
+criteria = "safe-to-run"
+version = "0.52.0"
+
+[[audits.windows_i686_gnu]]
+who = "Robert Zieba <robertzieba@microsoft.com>"
+criteria = "safe-to-run"
+version = "0.52.6"
+
+[[audits.windows_i686_gnullvm]]
+who = "Robert Zieba <robertzieba@microsoft.com>"
+criteria = "safe-to-run"
+version = "0.52.6"
+
+[[audits.windows_i686_msvc]]
+who = "Robert Zieba <robertzieba@microsoft.com>"
+criteria = "safe-to-run"
+version = "0.52.6"
+
+[[audits.windows_x86_64_gnu]]
+who = "Robert Zieba <robertzieba@microsoft.com>"
+criteria = "safe-to-run"
+version = "0.52.6"
+
+[[audits.windows_x86_64_gnullvm]]
+who = "Robert Zieba <robertzieba@microsoft.com>"
+criteria = "safe-to-run"
+version = "0.52.6"
+
+[[audits.windows_x86_64_msvc]]
+who = "Robert Zieba <robertzieba@microsoft.com>"
+criteria = "safe-to-run"
+version = "0.52.6"
 
 [[trusted.anyhow]]
 criteria = "safe-to-deploy"
