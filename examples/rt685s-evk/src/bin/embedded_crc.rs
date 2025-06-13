@@ -85,7 +85,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
     test_crc_algorithm_u16(&CRC_12_GSM, "CRC_12_GSM").await;
 }
 
-async fn test_crc_algorithm_u32<'a>(algorithm: &'static Algorithm<u32>, name: &str) {
+async fn test_crc_algorithm_u32(algorithm: &'static Algorithm<u32>, name: &str) {
     // Verify that feeding the bytes separately gets the same result as the feeding the bytes all at once
     info!(
         "\n\n---------------{}---------------\ninit: 0x{:X}, refin: {}, refout: {}, xorout: 0x{:X}",
@@ -142,7 +142,7 @@ async fn test_crc_algorithm_u32<'a>(algorithm: &'static Algorithm<u32>, name: &s
     }
 }
 
-async fn test_crc_algorithm_u16<'a>(algorithm: &'static Algorithm<u16>, name: &str) {
+async fn test_crc_algorithm_u16(algorithm: &'static Algorithm<u16>, name: &str) {
     // Verify that feeding the bytes separately gets the same result as the feeding the bytes all at once
     info!(
         "\n\n---------------{}---------------\ninit: 0x{:X}, refin: {}, refout: {}, xorout: 0x{:X}",

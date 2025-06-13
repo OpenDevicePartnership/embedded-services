@@ -40,7 +40,7 @@ mod sender {
         }
     }
 
-    impl<'a> comms::MailboxDelegate for Sender {
+    impl comms::MailboxDelegate for Sender {
         fn receive(&self, message: &comms::Message) -> Result<(), comms::MailboxDelegateError> {
             let sig = message
                 .data
@@ -88,7 +88,7 @@ mod receiver {
 #[embassy_executor::task(pool_size = 4)]
 async fn button_task(gpio: Input<'static>, config: ButtonConfig) {
     static SENDER: OnceLock<sender::Sender> = OnceLock::new();
-    let sender = SENDER.get_or_init(|| sender::Sender::new());
+    let sender = SENDER.get_or_init(sender::Sender::new);
     let mut button = Button::new(gpio, config);
 
     loop {
