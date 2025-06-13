@@ -174,6 +174,16 @@ impl Service {
         external::Response::Port(status.map(|_| external::PortResponseData::Complete))
     }
 
+    /// Process set retimer compliance
+    async fn process_set_rt_compliance(&self, port_id: GlobalPortId) -> external::Response<'static> {
+        let status = self.context.set_rt_compliance(port_id).await;
+        if let Err(e) = status {
+            error!("Error set retimer compliance: {:#?}", e);
+        }
+
+        external::Response::Port(status.map(|_| external::PortResponseData::Complete))
+    }
+
     /// Process external port commands
     async fn process_external_port_command(&self, command: &external::PortCommand) -> external::Response<'static> {
         debug!("Processing external port command: {:#?}", command);
@@ -188,6 +198,7 @@ impl Service {
             external::PortCommandData::RetimerFwUpdateClearState => {
                 self.process_clear_rt_fw_update_state(command.port).await
             }
+            external::PortCommandData::SetRetimerCompliance => self.process_set_rt_compliance(command.port).await,
         }
     }
 
