@@ -52,7 +52,7 @@ impl comms::MailboxDelegate for Device {
 #[embassy_executor::task]
 async fn host() {
     static HOST: OnceLock<Host> = OnceLock::new();
-    let this = HOST.get_or_init(|| Host::new());
+    let this = HOST.get_or_init(Host::new);
     info!("Registering host endpoint");
     comms::register_endpoint(this, &this.tp).await.unwrap();
     loop {
