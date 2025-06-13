@@ -124,14 +124,12 @@ impl PowerPolicy {
                 data: CommsData::ConsumerConnected(new_consumer.device_id, new_consumer.power_capability),
             })
             .await;
-        } else if let Ok(ConnectedProvider) = self
+        } else if let Ok(provider) = self
             .context
             .try_policy_action::<action::ConnectedProvider>(new_consumer.device_id)
             .await
         {
-            ConnectedProvider
-                .connect_consumer(new_consumer.power_capability)
-                .await?;
+            provider.connect_consumer(new_consumer.power_capability).await?;
             state.current_consumer_state = Some(new_consumer);
             // todo: review the delay time
             embassy_time::Timer::after_millis(800).await;
