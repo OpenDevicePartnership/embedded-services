@@ -63,6 +63,13 @@ impl<const N: usize, C: Controller, V: FwOfferValidator> ControllerWrapper<'_, N
                     },
                 }
             }
+            controller::PortCommandData::SetRetimerCompliance => match controller.set_rt_compliance(local_port).await {
+                Ok(()) => Ok(controller::PortResponseData::Complete),
+                Err(e) => match e {
+                    Error::Bus(_) => Err(PdError::Failed),
+                    Error::Pd(e) => Err(e),
+                },
+            },
         })
     }
 

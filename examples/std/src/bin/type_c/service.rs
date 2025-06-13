@@ -179,12 +179,17 @@ mod test_controller {
         }
 
         async fn set_rt_fw_update_state(&mut self, _port: LocalPortId) -> Result<(), Error<Self::BusError>> {
-            debug!("Get set fw update status");
+            debug!("Set retimer fw update state");
             Ok(())
         }
 
         async fn clear_rt_fw_update_state(&mut self, _port: LocalPortId) -> Result<(), Error<Self::BusError>> {
-            debug!("Get clear fw update status");
+            debug!("Clear retimer fw update state");
+            Ok(())
+        }
+
+        async fn set_rt_compliance(&mut self, _port: LocalPortId) -> Result<(), Error<Self::BusError>> {
+            debug!("Set retimer compliance");
             Ok(())
         }
 
