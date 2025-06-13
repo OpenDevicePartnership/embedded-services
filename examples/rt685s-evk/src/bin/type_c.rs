@@ -203,12 +203,12 @@ async fn main(spawner: Spawner) {
     spawner.must_spawn(pd_controller_task(pd_controller));
 
     static BATTERY: OnceLock<battery::Device> = OnceLock::new();
-    let battery = BATTERY.get_or_init(|| battery::Device::new());
+    let battery = BATTERY.get_or_init(battery::Device::new);
 
     comms::register_endpoint(battery, &battery.tp).await.unwrap();
 
     static DEBUG_ACCESSORY: OnceLock<debug::Device> = OnceLock::new();
-    let debug_accessory = DEBUG_ACCESSORY.get_or_init(|| debug::Device::new());
+    let debug_accessory = DEBUG_ACCESSORY.get_or_init(debug::Device::new);
     comms::register_endpoint(debug_accessory, &debug_accessory.tp)
         .await
         .unwrap();

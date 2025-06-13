@@ -122,7 +122,7 @@ async fn device() {
 async fn host() {
     info!("Host task");
     static HOST: OnceLock<host::Host> = OnceLock::new();
-    let this = HOST.get_or_init(|| host::Host::new());
+    let this = HOST.get_or_init(host::Host::new);
     info!("Registering host endpoint");
     comms::register_endpoint(this, &this.tp).await.unwrap();
 }

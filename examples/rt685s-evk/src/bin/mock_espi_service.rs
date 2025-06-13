@@ -59,7 +59,7 @@ mod espi_service {
 
     // Initialize eSPI service and register it with the transport service
     pub async fn init() {
-        let espi_service = ESPI_SERVICE.get_or_init(|| Service::new());
+        let espi_service = ESPI_SERVICE.get_or_init(Service::new);
 
         comms::register_endpoint(espi_service, &espi_service.endpoint)
             .await
@@ -139,7 +139,7 @@ mod battery_service {
 
     // Initialize battery service
     pub async fn init() {
-        let battery_service = BATTERY_SERVICE.get_or_init(|| Service::new());
+        let battery_service = BATTERY_SERVICE.get_or_init(Service::new);
 
         comms::register_endpoint(battery_service, &battery_service.endpoint)
             .await
