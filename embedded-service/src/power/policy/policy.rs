@@ -167,7 +167,21 @@ pub(super) async fn send_request(from: DeviceId, request: RequestData) -> Result
 pub async fn init_chargers() -> ChargerResponse {
     for charger in &CONTEXT.get().await.chargers {
         if let Some(data) = charger.data::<charger::Device>() {
-            data.execute_command(charger::PolicyEvent::InitRequest).await?;
+            data.execute_command(charger::PolicyEvent::InitRequest)
+                .await
+                .inspect_err(|e| error!("Charger {:?} failed InitRequest: {:?}", data.id(), e))?;
+        }
+    }
+    Ok(Ack)
+}
+
+/// Check if charger hardware is ready for communications.
+pub async fn check_chargers_ready() -> ChargerResponse {
+    for charger in &CONTEXT.get().await.chargers {
+        if let Some(data) = charger.data::<charger::Device>() {
+            data.execute_command(charger::PolicyEvent::CheckReady)
+                .await
+                .inspect_err(|e| error!("Charger {:?} failed CheckReady: {:?}", data.id(), e))?;
         }
     }
     Ok(Ack)
@@ -190,6 +204,8 @@ impl ContextToken {
 
     /// Initialize Policy charger devices
     pub async fn init() -> Result<(), Error> {
+        // Check if the chargers are powered and able to communicate
+        check_chargers_ready().await?;
         // Initialize chargers
         init_chargers().await?;
 

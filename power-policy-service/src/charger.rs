@@ -4,17 +4,23 @@ use embassy_futures::select::select;
 use embedded_services::{
     debug, error, info,
     power::policy::charger::{
-        self, ChargeController, ChargerEvent, ChargerResponse, InternalState, PolicyEvent, State,
+        self, ChargeController, ChargerEvent, ChargerResponse, InternalState, PolicyEvent, PoweredSubstate, State,
     },
     trace, warn,
 };
 
-pub struct Wrapper<'a, C: ChargeController> {
+pub struct Wrapper<'a, C: ChargeController>
+where
+    charger::ChargerError: From<<C as ChargeController>::ChargeControllerError>,
+{
     charger_policy_state: &'a charger::Device,
     controller: RefCell<C>,
 }
 
-impl<'a, C: ChargeController> Wrapper<'a, C> {
+impl<'a, C: ChargeController> Wrapper<'a, C>
+where
+    charger::ChargerError: From<<C as ChargeController>::ChargeControllerError>,
+{
     pub fn new(charger_policy_state: &'a charger::Device, controller: C) -> Self {
         Self {
             charger_policy_state,
@@ -38,54 +44,60 @@ impl<'a, C: ChargeController> Wrapper<'a, C> {
     async fn process_controller_event(&self, _controller: &mut C, event: ChargerEvent) {
         let state = self.get_state().await;
         match state.state {
-            State::Init => match event {
-                ChargerEvent::Initialized(psu_state) => {
-                    self.set_state(InternalState {
-                        state: match psu_state {
-                            charger::PsuState::Attached => State::PsuAttached,
-                            charger::PsuState::Detached => State::PsuDetached,
-                        },
-                        capability: state.capability,
-                    })
-                    .await
-                }
-                // If we are initializing, we don't care about anything else
-                _ => (),
+            State::Powered(powered_substate) => match powered_substate {
+                PoweredSubstate::Init => match event {
+                    ChargerEvent::Initialized(psu_state) => {
+                        self.set_state(InternalState {
+                            state: match psu_state {
+                                charger::PsuState::Attached => State::Powered(PoweredSubstate::PsuAttached),
+                                charger::PsuState::Detached => State::Powered(PoweredSubstate::PsuDetached),
+                            },
+                            capability: state.capability,
+                        })
+                        .await
+                    }
+                    // If we are initializing, we don't care about anything else
+                    _ => (),
+                },
+                PoweredSubstate::PsuAttached => match event {
+                    ChargerEvent::PsuStateChange(charger::PsuState::Detached) => {
+                        self.set_state(InternalState {
+                            state: State::Powered(PoweredSubstate::PsuDetached),
+                            capability: state.capability,
+                        })
+                        .await
+                    }
+                    ChargerEvent::Timeout => {
+                        self.set_state(InternalState {
+                            state: State::Powered(PoweredSubstate::Init),
+                            capability: None,
+                        })
+                        .await
+                    }
+                    _ => (),
+                },
+                PoweredSubstate::PsuDetached => match event {
+                    ChargerEvent::PsuStateChange(charger::PsuState::Attached) => {
+                        self.set_state(InternalState {
+                            state: State::Powered(PoweredSubstate::PsuAttached),
+                            capability: state.capability,
+                        })
+                        .await
+                    }
+                    ChargerEvent::Timeout => {
+                        self.set_state(InternalState {
+                            state: State::Powered(PoweredSubstate::Init),
+                            capability: None,
+                        })
+                        .await
+                    }
+                    _ => (),
+                },
             },
-            State::PsuAttached => match event {
-                ChargerEvent::PsuStateChange(charger::PsuState::Detached) => {
-                    self.set_state(InternalState {
-                        state: State::PsuDetached,
-                        capability: state.capability,
-                    })
-                    .await
-                }
-                ChargerEvent::Timeout => {
-                    self.set_state(InternalState {
-                        state: State::Init,
-                        capability: None,
-                    })
-                    .await
-                }
-                _ => (),
-            },
-            State::PsuDetached => match event {
-                ChargerEvent::PsuStateChange(charger::PsuState::Attached) => {
-                    self.set_state(InternalState {
-                        state: State::PsuAttached,
-                        capability: state.capability,
-                    })
-                    .await
-                }
-                ChargerEvent::Timeout => {
-                    self.set_state(InternalState {
-                        state: State::Init,
-                        capability: None,
-                    })
-                    .await
-                }
-                _ => (),
-            },
+            State::Unpowered => warn!(
+                "Charger is unpowered but ChargeController event received event: {:?}",
+                event
+            ),
         }
     }
 
@@ -93,71 +105,118 @@ impl<'a, C: ChargeController> Wrapper<'a, C> {
         let state = self.get_state().await;
         let res: ChargerResponse = match event {
             PolicyEvent::InitRequest => {
-                if state.state == State::Init {
-                    info!("Charger received request to initialize.");
+                if state.state == State::Unpowered {
+                    error!("Charger received request to initialize but it's unpowered!");
+                    Err(charger::ChargerError::InvalidState(State::Unpowered))
                 } else {
-                    warn!("Charger received request to initialize but it's already initialized! Reinitializing...");
-                }
+                    if state.state == State::Powered(PoweredSubstate::Init) {
+                        info!("Charger received request to initialize.");
+                    } else {
+                        warn!("Charger received request to initialize but it's already initialized! Reinitializing...");
+                    }
 
-                if let Err(_err) = controller.init_charger().await {
-                    error!("Charger failed initialzation sequence.");
-                    Err(charger::ChargerError::BusError)
-                } else {
-                    Ok(charger::ChargerResponseData::Ack)
+                    if let Err(err) = controller.init_charger().await {
+                        error!("Charger failed initialzation sequence.");
+                        Err(err.into())
+                    } else {
+                        Ok(charger::ChargerResponseData::Ack)
+                    }
                 }
             }
             PolicyEvent::PolicyConfiguration(power_capability) => match state.state {
-                State::Init => {
-                    error!("Charger detected new power policy configuration but charger is still initializing.");
-                    Err(charger::ChargerError::InvalidState(state.state))
+                State::Unpowered => {
+                    // Power policy sends this event when a new type-c plug event comes in
+                    // For the scenario where the charger is unpowered, we don't want to block the power policy
+                    // from completing it's connect_consumer() call, as there might be cases where we don't want
+                    // chargers to be powered or the charger can't be powered.
+                    error!("Charger detected new power policy configuration but it's unpowered!");
+                    Ok(charger::ChargerResponseData::UnpoweredAck)
                 }
-                State::PsuAttached | State::PsuDetached => {
-                    if power_capability.current_ma == 0 {
-                        // Policy detected a detach
-                        debug!("Charger detected new power policy configuration. Executing detach sequence");
-                        if let Err(_err) = controller
-                            .detach_handler()
-                            .await
-                            .inspect_err(|_| error!("Error executing charger power port detach sequence!"))
-                        {
-                            Err(charger::ChargerError::BusError)
+                State::Powered(substate) => match substate {
+                    PoweredSubstate::Init => {
+                        error!("Charger detected new power policy configuration but charger is still initializing.");
+                        Err(charger::ChargerError::InvalidState(State::Powered(
+                            PoweredSubstate::Init,
+                        )))
+                    }
+                    PoweredSubstate::PsuAttached | PoweredSubstate::PsuDetached => {
+                        if power_capability.current_ma == 0 {
+                            // Policy detected a detach
+                            debug!("Charger detected new power policy configuration. Executing detach sequence");
+                            if let Err(err) = controller
+                                .detach_handler()
+                                .await
+                                .inspect_err(|_| error!("Error executing charger power port detach sequence!"))
+                            {
+                                Err(err.into())
+                            } else {
+                                // Update power capability but do not change controller state.
+                                // That is handled by process_controller_event().
+                                // This way capability is cached even if the
+                                // hardware charger device lags on changing its PSU state.
+                                self.set_state(InternalState {
+                                    state: state.state,
+                                    capability: None,
+                                })
+                                .await;
+                                Ok(charger::ChargerResponseData::Ack)
+                            }
                         } else {
-                            // Update power capability but do not change controller state.
-                            // That is handled by process_controller_event().
-                            // This way capability is cached even if the
-                            // hardware charger device lags on changing its PSU state.
+                            // Policy detected an attach
+                            debug!("Charger detected new power policy configuration. Executing attach sequence");
+                            if let Err(err) = controller
+                                .attach_handler(power_capability)
+                                .await
+                                .inspect_err(|_| error!("Error executing charger power port attach sequence!"))
+                            {
+                                Err(err.into())
+                            } else {
+                                // Update power capability but do not change controller state.
+                                // That is handled by process_controller_event().
+                                // This way capability is cached even if the
+                                // hardware charger device lags on changing its PSU state.
+                                self.set_state(InternalState {
+                                    state: state.state,
+                                    capability: Some(power_capability),
+                                })
+                                .await;
+                                Ok(charger::ChargerResponseData::Ack)
+                            }
+                        }
+                    }
+                },
+            },
+            PolicyEvent::CheckReady => {
+                debug!("Charger received check ready request.");
+                let ret = controller.is_ready().await;
+                match state.state {
+                    State::Powered(_) => {
+                        if let Err(e) = ret {
                             self.set_state(InternalState {
-                                state: state.state,
-                                capability: None,
+                                state: State::Unpowered,
+                                // Cache capability for logging/debug
+                                capability: state.capability,
                             })
                             .await;
+                            Err(e.into())
+                        } else {
                             Ok(charger::ChargerResponseData::Ack)
                         }
-                    } else {
-                        // Policy detected an attach
-                        debug!("Charger detected new power policy configuration. Executing attach sequence");
-                        if controller
-                            .attach_handler(power_capability)
-                            .await
-                            .inspect_err(|_| error!("Error executing charger power port attach sequence!"))
-                            .is_err()
-                        {
-                            Err(charger::ChargerError::BusError)
+                    }
+                    State::Unpowered => {
+                        if let Err(e) = ret {
+                            Err(e.into())
                         } else {
-                            // Update power capability but do not change controller state.
-                            // That is handled by process_controller_event().
-                            // This way capability is cached even if the
-                            // hardware charger device lags on changing its PSU state.
                             self.set_state(InternalState {
-                                state: state.state,
-                                capability: Some(power_capability),
+                                state: State::Powered(PoweredSubstate::Init),
+                                capability: None,
                             })
                             .await;
                             Ok(charger::ChargerResponseData::Ack)
                         }
                     }
                 }
-            },
+            }
         };
 
         // Send response
