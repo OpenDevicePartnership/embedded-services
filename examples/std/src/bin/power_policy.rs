@@ -29,14 +29,14 @@ impl ExampleDevice {
     async fn process_request(&self) -> Result<(), policy::Error> {
         let request = self.device.receive().await;
         match request.command {
-            device::CommandData::ConnectConsumer(capability) => {
+            device::CommandData::ConnectAsConsumer(capability) => {
                 info!(
                     "Device {} received connect consumer at {:#?}",
                     self.device.id().0,
                     capability
                 );
             }
-            device::CommandData::ConnectProvider(capability) => {
+            device::CommandData::ConnectAsProvider(capability) => {
                 info!(
                     "Device {} received connect provider at {:#?}",
                     self.device.id().0,

@@ -126,40 +126,6 @@ mod test_controller {
             Ok(())
         }
 
-        fn set_sourcing(
-            &mut self,
-            _port: LocalPortId,
-            _enable: bool,
-        ) -> impl Future<Output = Result<(), Error<Self::BusError>>> {
-            debug!("Set sourcing: {}", _enable);
-            poll_fn(|_cx| {
-                return Poll::Ready(Ok(()));
-            })
-        }
-
-        fn set_source_current(
-            &mut self,
-            _port: LocalPortId,
-            _current: TypecCurrent,
-            _signal_event: bool,
-        ) -> impl Future<Output = Result<(), Error<Self::BusError>>> {
-            debug!("Set source current: {:?}", _current);
-            poll_fn(|_cx| {
-                return Poll::Ready(Ok(()));
-            })
-        }
-
-        fn request_pr_swap(
-            &mut self,
-            _port: LocalPortId,
-            _role: PowerRole,
-        ) -> impl Future<Output = Result<(), Error<Self::BusError>>> {
-            debug!("Request PR swap: {:?}", _role);
-            poll_fn(|_cx| {
-                return Poll::Ready(Ok(()));
-            })
-        }
-
         async fn get_controller_status(&mut self) -> Result<ControllerStatus<'static>, Error<Self::BusError>> {
             debug!("Get controller status");
             Ok(ControllerStatus {

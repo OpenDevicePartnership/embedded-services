@@ -28,7 +28,7 @@ pub(super) struct State {
 impl PowerPolicy {
     /// Attempt to connect the requester as a provider
     pub(super) async fn connect_provider(&self, requester_id: DeviceId) {
-        trace!("Device{}: Attempting to connect provider", requester_id.0);
+        trace!("Device{}: Attempting to connect as provider", requester_id.0);
         let requester = match self.context.get_device(requester_id).await {
             Ok(device) => device,
             Err(_) => {
@@ -80,7 +80,6 @@ impl PowerPolicy {
             }
         };
 
-        info!("Device{}: Connecting new provider", requester.id().0);
         let connected = if let Ok(action) = self.context.try_policy_action::<action::Idle>(requester.id()).await {
             let _ = action.connect_provider(target_power).await;
             Ok(())
@@ -100,7 +99,7 @@ impl PowerPolicy {
 
         // Don't need to do anything special, the device is responsible for attempting to reconnect
         if let Err(e) = connected {
-            error!("Device{}: Failed to connect provider, {:#?}", requester.id().0, e);
+            error!("Device{}: Failed to connect as provider, {:#?}", requester.id().0, e);
         }
     }
 }

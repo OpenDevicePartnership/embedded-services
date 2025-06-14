@@ -72,8 +72,7 @@ impl<'a, const N: usize, M: RawMutex, B: I2c> Tps6699x<'a, N, M, B> {
         tps6699x: &mut tps6699x_drv::Tps6699x<'a, M, B>,
         port: LocalPortId,
     ) -> Result<PortEventKind, Error<B::Error>> {
-        let mut events = PortEventKind::none();
-        let previous_status = self.port_status[port.0 as usize].get();
+        let events = PortEventKind::none();
 
         let status = tps6699x.get_port_status(port).await?;
         trace!("Port{} status: {:#?}", port.0, status);
@@ -158,20 +157,6 @@ impl<'a, const N: usize, M: RawMutex, B: I2c> Tps6699x<'a, N, M, B> {
             debug!("Port{} power path: {:#?}", port.0, port_status.power_path);
         }
 
-        if port_status.available_sink_contract.is_some()
-            && port_status.available_sink_contract != previous_status.available_sink_contract
-        {
-            debug!("Port{}: new sink contract", port.0);
-            events.set_new_power_contract_as_consumer(true);
-        }
-
-        if port_status.available_source_contract.is_some()
-            && port_status.available_source_contract != previous_status.available_source_contract
-        {
-            debug!("Port{}: new source contract", port.0);
-            events.set_new_power_contract_as_provider(true);
-        }
-
         self.port_status[port.0 as usize].set(port_status);
         Ok(events)
     }
@@ -190,17 +175,28 @@ impl<'a, const N: usize, M: RawMutex, B: I2c> Tps6699x<'a, N, M, B> {
 
             let mut event = cell.get();
             if interrupt.plug_event() {
-                debug!("Plug event");
+                debug!("Event: Plug event");
                 event.set_plug_inserted_or_removed(true);
+            }
+            if interrupt.source_caps_received() {
+                debug!("Event: Source Caps received");
+                event.set_source_caps_received(true);
+            }
+
+            if interrupt.sink_ready() {
+                debug!("Event: Sink ready");
+                event.set_sink_ready(true);
             }
 
             if interrupt.new_consumer_contract() {
-                debug!("New consumer contract");
+                debug!("Event: New contract as consumer, PD controller act as Sink");
+                // Port is consumer and power negotiation is complete
                 event.set_new_power_contract_as_consumer(true);
             }
 
             if interrupt.new_provider_contract() {
-                debug!("New consumer contract");
+                debug!("Event: New contract as provider, PD controller act as source");
+                // Port is provider and power negotiation is complete
                 event.set_new_power_contract_as_provider(true);
             }
 
@@ -326,53 +322,6 @@ impl<const N: usize, M: RawMutex, B: I2c> Controller for Tps6699x<'_, N, M, B> {
             }
             rest => rest,
         }
-    }
-
-    #[allow(clippy::await_holding_refcell_ref)]
-    async fn set_sourcing(&mut self, port: LocalPortId, enable: bool) -> Result<(), Error<Self::BusError>> {
-        debug!("Port{} enable source: {}", port.0, enable);
-        let mut tps6699x = self.tps6699x.borrow_mut();
-        tps6699x.enable_source(port, enable).await
-    }
-
-    #[allow(clippy::await_holding_refcell_ref)]
-    async fn set_source_current(
-        &mut self,
-        port: LocalPortId,
-        current: TypecCurrent,
-        signal_event: bool,
-    ) -> Result<(), Error<Self::BusError>> {
-        debug!("Port{} set source current: {:?}", port.0, current);
-
-        let mut tps6699x = self.tps6699x.borrow_mut();
-        let mut port_control = tps6699x.get_port_control(port).await?;
-        port_control.set_typec_current(current.into());
-
-        tps6699x.set_port_control(port, port_control).await?;
-        if signal_event {
-            let mut event = PortEventKind::none();
-            event.set_new_power_contract_as_consumer(true);
-            self.signal_event(port, event);
-        }
-        Ok(())
-    }
-
-    #[allow(clippy::await_holding_refcell_ref)]
-    async fn request_pr_swap(
-        &mut self,
-        port: LocalPortId,
-        role: embedded_usb_pd::PowerRole,
-    ) -> Result<(), Error<Self::BusError>> {
-        debug!("Port{} request PR swap to {:?}", port.0, role);
-
-        let mut tps6699x = self.tps6699x.borrow_mut();
-        let mut control = tps6699x.get_port_control(port).await?;
-        match role {
-            PowerRole::Sink => control.set_initiate_swap_to_sink(true),
-            PowerRole::Source => control.set_initiate_swap_to_source(true),
-        }
-
-        tps6699x.set_port_control(port, control).await
     }
 
     #[allow(clippy::await_holding_refcell_ref)]

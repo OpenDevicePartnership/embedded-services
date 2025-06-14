@@ -69,7 +69,7 @@ impl<'a, S: Kind> Device<'a, S> {
         capability: Option<PowerCapability>,
     ) -> Result<(), Error> {
         info!(
-            "Device {} consume capability updated {:#?}",
+            "Device {} consume capability updated: {:#?}",
             self.device.id().0,
             capability
         );
@@ -149,5 +149,10 @@ impl<'a> Device<'a, ConnectedProvider> {
     /// Request the given power from the power policy service
     pub async fn request_provider_power_capability(&self, capability: PowerCapability) -> Result<(), Error> {
         self.request_provider_power_capability_internal(capability).await
+    }
+
+    /// Notify the power policy service of an updated consumer power capability
+    pub async fn notify_consumer_power_capability(&self, capability: Option<PowerCapability>) -> Result<(), Error> {
+        self.notify_consumer_power_capability_internal(capability).await
     }
 }
