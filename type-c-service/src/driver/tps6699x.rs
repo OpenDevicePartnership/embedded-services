@@ -314,6 +314,12 @@ impl<const N: usize, M: RawMutex, B: I2c> Controller for Tps6699x<'_, N, M, B> {
     }
 
     #[allow(clippy::await_holding_refcell_ref)]
+    async fn set_rt_compliance(&mut self, port: LocalPortId) -> Result<(), Error<Self::BusError>> {
+        let mut tps6699x = self.tps6699x.borrow_mut();
+        tps6699x.set_rt_compliance(port).await
+    }
+
+    #[allow(clippy::await_holding_refcell_ref)]
     async fn enable_sink_path(&mut self, port: LocalPortId, enable: bool) -> Result<(), Error<Self::BusError>> {
         debug!("Port{} enable sink path: {}", port.0, enable);
         let mut tps6699x = self.tps6699x.borrow_mut();

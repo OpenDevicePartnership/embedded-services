@@ -50,6 +50,8 @@ pub enum PortCommandData {
     RetimerFwUpdateSetState,
     /// Clear retimer fw update status
     RetimerFwUpdateClearState,
+    /// Set retimer compliance
+    SetRetimerCompliance,
 }
 
 /// Port-specific commands
@@ -174,6 +176,19 @@ pub async fn port_clear_rt_fw_update_state(port: GlobalPortId) -> Result<(), PdE
     match execute_external_port_command(Command::Port(PortCommand {
         port,
         data: PortCommandData::RetimerFwUpdateClearState,
+    }))
+    .await?
+    {
+        PortResponseData::Complete => Ok(()),
+        _ => Err(PdError::InvalidResponse),
+    }
+}
+
+/// Set the retimer comliance state of the given port
+pub async fn port_set_rt_compliance(port: GlobalPortId) -> Result<(), PdError> {
+    match execute_external_port_command(Command::Port(PortCommand {
+        port,
+        data: PortCommandData::SetRetimerCompliance,
     }))
     .await?
     {

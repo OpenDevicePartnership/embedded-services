@@ -98,6 +98,8 @@ pub enum PortCommandData {
     RetimerFwUpdateSetState,
     /// Clear retimer fw update state
     RetimerFwUpdateClearState,
+    /// Set retimer compliance
+    SetRetimerCompliance,
 }
 
 /// Port-specific commands
@@ -341,6 +343,8 @@ pub trait Controller {
         &mut self,
         port: LocalPortId,
     ) -> impl Future<Output = Result<(), Error<Self::BusError>>>;
+    /// Set retimer compliance
+    fn set_rt_compliance(&mut self, port: LocalPortId) -> impl Future<Output = Result<(), Error<Self::BusError>>>;
     /// Enable or disable sink path
     fn enable_sink_path(
         &mut self,
@@ -669,6 +673,17 @@ impl ContextToken {
     pub async fn clear_rt_fw_update_state(&self, port: GlobalPortId) -> Result<(), PdError> {
         match self
             .send_port_command(port, PortCommandData::RetimerFwUpdateClearState)
+            .await?
+        {
+            PortResponseData::Complete => Ok(()),
+            _ => Err(PdError::InvalidResponse),
+        }
+    }
+
+    /// Set the retimer compliance
+    pub async fn set_rt_compliance(&self, port: GlobalPortId) -> Result<(), PdError> {
+        match self
+            .send_port_command(port, PortCommandData::SetRetimerCompliance)
             .await?
         {
             PortResponseData::Complete => Ok(()),
