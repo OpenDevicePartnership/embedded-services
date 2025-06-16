@@ -6,6 +6,8 @@ pub mod policy;
 
 pub use policy::{init, register_device};
 
+use crate::power::policy::charger::ChargerError;
+
 /// Error type
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
@@ -26,6 +28,8 @@ pub enum Error {
     Timeout,
     /// Bus error
     Bus,
+    /// Charger specific error, underlying error should have more context
+    Charger(ChargerError),
     /// Generic failure
     Failed,
 }

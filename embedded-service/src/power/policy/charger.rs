@@ -10,19 +10,33 @@ use super::PowerCapability;
 /// Charger controller trait that device drivers may use to integrate with internal messaging system
 pub trait ChargeController: embedded_batteries_async::charger::Charger {
     /// Type of error returned by the bus
-    type BusError;
+    type ChargeControllerError;
 
     /// Returns with pending events
     fn wait_event(&mut self) -> impl Future<Output = ChargerEvent>;
     /// Initialize charger hardware, after this returns the charger should be ready to charge
-    fn init_charger(&mut self) -> impl Future<Output = Result<(), Self::BusError>>;
+    fn init_charger(&mut self) -> impl Future<Output = Result<(), Self::ChargeControllerError>>;
     /// Returns if the charger hardware detects if a PSU is attached
-    fn is_psu_attached(&mut self) -> impl Future<Output = Result<bool, Self::BusError>>;
+    fn is_psu_attached(&mut self) -> impl Future<Output = Result<bool, Self::ChargeControllerError>>;
     /// Called after power policy attaches to a power port.
-    fn attach_handler(&mut self, capability: PowerCapability) -> impl Future<Output = Result<(), Self::BusError>>;
+    fn attach_handler(
+        &mut self,
+        capability: PowerCapability,
+    ) -> impl Future<Output = Result<(), Self::ChargeControllerError>>;
     /// Called after power policy detaches from a power port, either to switch consumers,
     /// or because PSU was disconnected.
-    fn detach_handler(&mut self) -> impl Future<Output = Result<(), Self::BusError>>;
+    fn detach_handler(&mut self) -> impl Future<Output = Result<(), Self::ChargeControllerError>>;
+    /// Called when a charger CheckReady request (PolicyEvent::CheckReady) is sent to the power policy.
+    /// Upon successful return of this method, the charger is assumed to be powered and ready to communicate,
+    /// transitioning state from unpowered to powered.
+    ///
+    /// If the charger is powered, an Ok(()) does nothing. An Err(_) will put the charger into an
+    /// unpowered state, meaning another PolicyEvent::CheckReady must be sent to re-establish communications
+    /// with the charger. Upon successful return, the charger must be re-initialized by sending a
+    /// `PolicyEvent::InitRequest`.
+    fn is_ready(&mut self) -> impl Future<Output = Result<(), Self::ChargeControllerError>> {
+        core::future::ready(Ok(()))
+    }
 }
 
 /// Charger Device ID new type
@@ -77,10 +91,7 @@ pub enum ChargerError {
 
 impl From<ChargerError> for power::policy::Error {
     fn from(value: ChargerError) -> Self {
-        match value {
-            ChargerError::InvalidState(_) | ChargerError::Timeout => Self::Failed,
-            ChargerError::BusError => Self::Bus,
-        }
+        Self::Charger(value)
     }
 }
 
@@ -90,8 +101,11 @@ impl From<ChargerError> for power::policy::Error {
 pub enum PolicyEvent {
     /// Request to initialize charger hardware
     InitRequest,
-    /// PSU attached and we want to switch to it
+    /// New power policy detected
     PolicyConfiguration(PowerCapability),
+    /// Request to check if the charger hardware is ready to receive communications.
+    /// For example, if the charger is powered.
+    CheckReady,
 }
 
 /// Data for a device request
@@ -100,6 +114,8 @@ pub enum PolicyEvent {
 pub enum ChargerResponseData {
     /// Command completed
     Ack,
+    /// Charger Unpowered, but we are still Ok
+    UnpoweredAck,
 }
 
 /// Response for charger requests from policy commands
@@ -109,13 +125,22 @@ pub type ChargerResponse = Result<ChargerResponseData, ChargerError>;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum State {
+    /// Device is unpowered
+    Unpowered,
+    /// Device is powered
+    Powered(PoweredSubstate),
+}
+
+/// Powered state substates
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum PoweredSubstate {
     /// Device is initializing
     Init,
     /// PSU is attached and device can charge if desired
     PsuAttached,
     /// PSU is detached
     PsuDetached,
-    // TODO: Dead battery revival?
 }
 
 /// Current state of the charger
@@ -141,7 +166,7 @@ pub struct Device {
     state: Mutex<NoopRawMutex, InternalState>,
     /// Channel for requests to the device
     commands: Channel<NoopRawMutex, PolicyEvent, CHARGER_CHANNEL_SIZE>,
-    // /// Channel for responses from the device
+    /// Channel for responses from the device
     response: Channel<NoopRawMutex, ChargerResponse, CHARGER_CHANNEL_SIZE>,
 }
 
@@ -152,7 +177,7 @@ impl Device {
             node: intrusive_list::Node::uninit(),
             id,
             state: Mutex::new(InternalState {
-                state: State::Init,
+                state: State::Unpowered,
                 capability: None,
             }),
             commands: Channel::new(),

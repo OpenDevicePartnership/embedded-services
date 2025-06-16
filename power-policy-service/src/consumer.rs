@@ -1,5 +1,8 @@
+use embedded_services::debug;
 use embedded_services::power::policy::charger::Device as ChargerDevice;
 use embedded_services::power::policy::charger::PolicyEvent;
+use embedded_services::power::policy::policy::check_chargers_ready;
+use embedded_services::power::policy::policy::init_chargers;
 
 use super::*;
 
@@ -63,6 +66,7 @@ impl PowerPolicy {
 
     /// Connect to a new consumer
     async fn connect_new_consumer(&self, state: &mut InternalState, new_consumer: State) -> Result<(), Error> {
+        let mut charger_unpowered = false;
         // Handle our current consumer
         if let Some(current_consumer) = state.current_consumer_state {
             if new_consumer.device_id == current_consumer.device_id
@@ -87,14 +91,22 @@ impl PowerPolicy {
                 consumer.disconnect().await?;
             }
 
+            // If no chargers are registered, they won't receive the new power capability.
+            // Also, if chargers return UnpoweredAck, that means the charger isn't powered.
+            // Further down this fn the power rails are enabled and thus the charger will get power,
+            // so just continue execution.
             for node in self.context.chargers().await {
                 let device = node.data::<ChargerDevice>().ok_or(Error::InvalidDevice)?;
-                device
+                if let embedded_services::power::policy::charger::ChargerResponseData::UnpoweredAck = device
                     .execute_command(PolicyEvent::PolicyConfiguration(PowerCapability {
                         voltage_mv: 0,
                         current_ma: 0,
                     }))
-                    .await?;
+                    .await?
+                {
+                    charger_unpowered = true;
+                    debug!("Charger is unpowered, continuing connect_new_consumer()...");
+                }
             }
 
             self.comms_notify(CommsMessage {
@@ -112,6 +124,13 @@ impl PowerPolicy {
             idle.connect_consumer(new_consumer.power_capability).await?;
             state.current_consumer_state = Some(new_consumer);
             embassy_time::Timer::after_millis(800).await;
+
+            // If no chargers are registered, they won't receive the new power capability.
+            // Chargers should be powered at this point. If they were just unpowered, force CheckReady and InitRequest.
+            if charger_unpowered {
+                check_chargers_ready().await?;
+                init_chargers().await?;
+            }
             for node in self.context.chargers().await {
                 let device = node.data::<ChargerDevice>().ok_or(Error::InvalidDevice)?;
                 device
