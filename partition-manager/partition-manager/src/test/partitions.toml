@@ -1,0 +1,12 @@
+
+variants = ["bootloader", "application"]
+
+[disk]
+size = 0x4000
+alignment = 0x0100
+
+[partitions]
+factory = { offset = 0x0000, size = 0x0100, access = { any = "ro" } }
+settings = { offset = 0x0100, size = 0x0200, access = { any = "ro", bootloader = "rw" } }
+slot_a = { offset = 0x1000, size = 0x1000 }
+slot_b = { offset = 0x2000, size = 0x1000 }
