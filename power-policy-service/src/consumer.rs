@@ -29,7 +29,7 @@ impl Ord for State {
 }
 
 impl PowerPolicy {
-    /// Iterate over all devices to determine what is now the highest-powered consumer
+    /// Iterate over all devices to determine what is best power port provides the highest power
     async fn find_highest_power_consumer(&self) -> Result<Option<State>, Error> {
         let mut best_consumer = None;
 
@@ -66,7 +66,6 @@ impl PowerPolicy {
 
     /// Connect to a new consumer
     async fn connect_new_consumer(&self, state: &mut InternalState, new_consumer: State) -> Result<(), Error> {
-        let mut charger_unpowered = false;
         // Handle our current consumer
         if let Some(current_consumer) = state.current_consumer_state {
             if new_consumer.device_id == current_consumer.device_id
@@ -88,6 +87,7 @@ impl PowerPolicy {
                     "Device {}, disconnecting current consumer",
                     current_consumer.device_id.0
                 );
+                // disconnect current consumer and set idle
                 consumer.disconnect().await?;
             }
 
@@ -104,7 +104,6 @@ impl PowerPolicy {
                     }))
                     .await?
                 {
-                    charger_unpowered = true;
                     debug!("Charger is unpowered, continuing connect_new_consumer()...");
                 }
             }
@@ -123,19 +122,45 @@ impl PowerPolicy {
         {
             idle.connect_consumer(new_consumer.power_capability).await?;
             state.current_consumer_state = Some(new_consumer);
+            // todo: review the delay time
             embassy_time::Timer::after_millis(800).await;
-
-            // If no chargers are registered, they won't receive the new power capability.
-            // Chargers should be powered at this point. If they were just unpowered, force CheckReady and InitRequest.
-            if charger_unpowered {
-                check_chargers_ready().await?;
-                init_chargers().await?;
-            }
             for node in self.context.chargers().await {
                 let device = node.data::<ChargerDevice>().ok_or(Error::InvalidDevice)?;
                 device
                     .execute_command(PolicyEvent::PolicyConfiguration(new_consumer.power_capability))
                     .await?;
+            }
+            self.comms_notify(CommsMessage {
+                data: CommsData::ConsumerConnected(new_consumer.device_id, new_consumer.power_capability),
+            })
+            .await;
+        } else if let Ok(provider) = self
+            .context
+            .try_policy_action::<action::ConnectedProvider>(new_consumer.device_id)
+            .await
+        {
+            provider.connect_consumer(new_consumer.power_capability).await?;
+            state.current_consumer_state = Some(new_consumer);
+            // todo: review the delay time
+            embassy_time::Timer::after_millis(800).await;
+
+            // If no chargers are registered, they won't receive the new power capability.
+            for node in self.context.chargers().await {
+                let device = node.data::<ChargerDevice>().ok_or(Error::InvalidDevice)?;
+                // Chargers should be powered at this point, but in case they are not...
+                if let embedded_services::power::policy::charger::ChargerResponseData::UnpoweredAck = device
+                    .execute_command(PolicyEvent::PolicyConfiguration(new_consumer.power_capability))
+                    .await?
+                {
+                    // Force charger CheckReady and InitRequest to get it into an initialized state.
+                    // This condition can get hit if we did not have a previous consumer and the charger is unpowered.
+                    info!("Charger is unpowered, forcing charger CheckReady and Init sequence");
+                    check_chargers_ready().await?;
+                    init_chargers().await?;
+                    device
+                        .execute_command(PolicyEvent::PolicyConfiguration(new_consumer.power_capability))
+                        .await?;
+                }
             }
             self.comms_notify(CommsMessage {
                 data: CommsData::ConsumerConnected(new_consumer.device_id, new_consumer.power_capability),
@@ -148,12 +173,12 @@ impl PowerPolicy {
         Ok(())
     }
 
-    /// Determines and connects the best consumer
+    /// Determines and connects the best external power
     pub(super) async fn update_current_consumer(&self) -> Result<(), Error> {
         let mut guard = self.state.lock().await;
         let state = guard.deref_mut();
         info!(
-            "Selecting consumer, current consumer: {:#?}",
+            "Selecting power port, current power: {:#?}",
             state.current_consumer_state
         );
 
