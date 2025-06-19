@@ -1,6 +1,3 @@
-use core::future::poll_fn;
-use core::future::Future;
-use core::task::Poll;
 use embassy_executor::{Executor, Spawner};
 use embassy_sync::once_lock::OnceLock;
 use embassy_time::Timer;
@@ -9,11 +6,9 @@ use embedded_services::comms;
 use embedded_services::power::{self, policy};
 use embedded_services::type_c::{controller, ControllerId};
 use embedded_usb_pd::type_c::Current;
-use embedded_usb_pd::type_c::Current as TypecCurrent;
 use embedded_usb_pd::Error;
 use embedded_usb_pd::GlobalPortId;
 use embedded_usb_pd::PortId as LocalPortId;
-use embedded_usb_pd::PowerRole;
 use log::*;
 use static_cell::StaticCell;
 

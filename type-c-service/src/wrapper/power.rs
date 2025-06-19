@@ -8,7 +8,7 @@ use embedded_services::{
         PowerCapability,
     },
 };
-use embedded_usb_pd::{GlobalPortId, PowerRole};
+use embedded_usb_pd::GlobalPortId;
 
 use super::*;
 
@@ -27,9 +27,9 @@ impl<const N: usize, C: Controller, V: FwOfferValidator> ControllerWrapper<'_, N
     /// Handle a new contract as consumer
     pub(super) async fn process_new_consumer_contract(
         &self,
-        controller: &mut C,
+        _controller: &mut C,
         power: &policy::device::Device,
-        port: LocalPortId,
+        _port: LocalPortId,
         status: &PortStatus,
     ) -> Result<(), Error<<C as Controller>::BusError>> {
         info!("Process new consumer contract");

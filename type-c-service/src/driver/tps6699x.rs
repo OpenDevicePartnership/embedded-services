@@ -21,7 +21,7 @@ use embedded_services::{debug, info, trace, type_c, warn};
 use embedded_usb_pd::pdinfo::PowerPathStatus;
 use embedded_usb_pd::pdo::{sink, source, Common, Rdo};
 use embedded_usb_pd::type_c::Current as TypecCurrent;
-use embedded_usb_pd::{Error, GlobalPortId, PdError, PortId as LocalPortId, PowerRole};
+use embedded_usb_pd::{Error, GlobalPortId, PdError, PortId as LocalPortId};
 use tps6699x::asynchronous::embassy as tps6699x_drv;
 use tps6699x::asynchronous::fw_update::UpdateTarget;
 use tps6699x::asynchronous::fw_update::{

@@ -220,6 +220,7 @@ macro_rules! define_static_buffer {
     ($name:ident, $type:ty, $contents:expr) => {
         mod $name {
             #![allow(dead_code)]
+            #[allow(unused_imports)]
             use super::*;
 
             const LEN: usize = $contents.len();

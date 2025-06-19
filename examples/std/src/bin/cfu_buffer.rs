@@ -156,7 +156,7 @@ async fn run(spawner: Spawner) {
     static BUFFER: OnceLock<buffer::Buffer<'static>> = OnceLock::new();
     static BUFFER_CHANNEL: OnceLock<embassy_sync::channel::Channel<NoopRawMutex, FwUpdateContentCommand, 10>> =
         OnceLock::new();
-    let channel = BUFFER_CHANNEL.get_or_init(|| embassy_sync::channel::Channel::new());
+    let channel = BUFFER_CHANNEL.get_or_init(embassy_sync::channel::Channel::new);
     let buffer = BUFFER.get_or_init(|| {
         buffer::Buffer::new(
             CFU_BUFFER_ID,

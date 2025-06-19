@@ -41,12 +41,12 @@ mod mock {
                 if offer.status == OfferStatus::Reject {
                     // Exit on the first rejection
                     error!("Offer rejected: {:?}", offer.reject_reason);
-                    return offer.clone();
+                    return *offer;
                 }
             }
 
             // Otherwise, return the first accepted offer
-            offer_responses[0].clone()
+            offer_responses[0]
         }
 
         fn resolve_content_response(&self, content_responses: &[FwUpdateContentResponse]) -> FwUpdateContentResponse {
@@ -55,10 +55,10 @@ mod mock {
                 if content.status != CfuUpdateContentResponseStatus::Success {
                     // Exit on the first failure
                     error!("Content response failed: {:?}", content.status);
-                    return content.clone();
+                    return *content;
                 }
             }
-            content_responses[0].clone()
+            content_responses[0]
         }
     }
 

@@ -20,8 +20,3 @@ pub(crate) mod defaults;
 
 #[cfg(not(any(feature = "imxrt", feature = "imxrt685")))]
 pub(crate) use defaults::*;
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-}

@@ -17,10 +17,6 @@ mod cfu;
 mod pd;
 mod power;
 
-/// Threshold power capability before we'll attempt to sink from a dual-role supply
-/// This ensures we don't try to sink from something like a phone
-const DUAL_ROLE_CONSUMER_THRESHOLD_MW: u32 = 15000;
-
 /// Base interval for checking for FW update timeouts and recovery attempts
 pub const DEFAULT_FW_UPDATE_TICK_INTERVAL_MS: u64 = 5000;
 /// Default number of ticks before we consider a firmware update to have timed out

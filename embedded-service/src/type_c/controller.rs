@@ -10,8 +10,7 @@ use embedded_usb_pd::ucsi::lpm;
 use embedded_usb_pd::{
     pdinfo::{AltMode, PowerPathStatus},
     type_c::ConnectionState,
-    type_c::Current as TypecCurrent,
-    Error, GlobalPortId, PdError, PortId as LocalPortId, PowerRole,
+    Error, GlobalPortId, PdError, PortId as LocalPortId,
 };
 
 use super::event::{PortEventFlags, PortEventKind};
