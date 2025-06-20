@@ -28,19 +28,16 @@ impl CfuClient {
             tp: comms::Endpoint::uninit(comms::EndpointID::Internal(comms::Internal::Nonvol)),
         })
     }
-    pub async fn process_request(&self) -> Result<(), CfuError> {
-        let request = self.context.wait_request().await;
+    pub async fn process_request(&self) -> InternalResponse {
+        let request = self.context.receive().await;
         //let device = self.context.get_device(request.id).await?;
-        let comp = request.id;
+        let comp = request.command.id;
 
-        match request.data {
+        match request.command.data {
             RequestData::FwVersionRequest => {
                 info!("Received FwVersionRequest, comp {}", comp);
                 if let Ok(device) = self.context.get_device(comp).await {
-                    let resp = device
-                        .execute_device_request(request.data)
-                        .await
-                        .map_err(CfuError::ProtocolError)?;
+                    let resp = device.execute_device_request(request.command).await?;
 
                     // TODO replace with signal to component to get its own fw version
                     //cfu::send_request(comp, RequestData::FwVersionRequest).await?;
@@ -54,15 +51,18 @@ impl CfuClient {
                             return Err(CfuError::ProtocolError(CfuProtocolError::BadResponse));
                         }
                     }
-                    self.context.send_response(resp).await;
-                    return Ok(());
+                    return Ok(resp);
                 }
                 Err(CfuError::InvalidComponent)
             }
-            RequestData::GiveContent(_content_cmd) => Ok(()),
-            RequestData::GiveOffer(_offer_cmd) => Ok(()),
-            RequestData::PrepareComponentForUpdate => Ok(()),
-            RequestData::FinalizeUpdate => Ok(()),
+            RequestData::GiveContent(_content_cmd) => {
+                Ok(InternalResponseData::ContentResponse(FwUpdateContentResponse::default()))
+            }
+            RequestData::GiveOffer(_offer_cmd) => {
+                Ok(InternalResponseData::OfferResponse(FwUpdateOfferResponse::default()))
+            }
+            RequestData::PrepareComponentForUpdate => Ok(InternalResponseData::ComponentPrepared),
+            RequestData::FinalizeUpdate => Ok(InternalResponseData::ComponentPrepared),
         }
     }
 }

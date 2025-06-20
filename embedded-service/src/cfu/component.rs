@@ -2,7 +2,6 @@
 use core::future::Future;
 
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
-use embassy_sync::channel::Channel;
 use embassy_sync::mutex::Mutex;
 use embedded_cfu_protocol::components::{CfuComponentInfo, CfuComponentStorage, CfuComponentTraits};
 use embedded_cfu_protocol::protocol_definitions::*;
@@ -12,6 +11,7 @@ use heapless::Vec;
 use super::CfuError;
 use crate::cfu::route_request;
 use crate::intrusive_list;
+use crate::ipc::deferred;
 
 /// Component internal update state
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -57,6 +57,16 @@ impl Default for InternalState {
     }
 }
 
+/// Request to the cfu service
+#[derive(Debug, PartialEq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct Request {
+    /// Component that sent this request
+    pub id: ComponentId,
+    /// Request data
+    pub data: RequestData,
+}
+
 /// CFU Request types and necessary data
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
@@ -93,8 +103,8 @@ pub enum InternalResponseData {
     ComponentPrepared,
 }
 
-/// Channel size for device requests
-pub const DEVICE_CHANNEL_SIZE: usize = 1;
+/// Wrapper type to make code cleaner
+pub type InternalResponse = Result<InternalResponseData, CfuError>;
 
 /// CfuDevice struct
 /// Can be inserted in an intrusive-list+
@@ -102,8 +112,7 @@ pub struct CfuDevice {
     node: intrusive_list::Node,
     component_id: ComponentId,
     state: Mutex<NoopRawMutex, InternalState>,
-    request: Channel<NoopRawMutex, RequestData, DEVICE_CHANNEL_SIZE>,
-    response: Channel<NoopRawMutex, InternalResponseData, DEVICE_CHANNEL_SIZE>,
+    request: deferred::Channel<NoopRawMutex, Request, InternalResponse>,
 }
 
 impl intrusive_list::NodeContainer for CfuDevice {
@@ -124,6 +133,9 @@ impl CfuDeviceContainer for CfuDevice {
     }
 }
 
+/// Convenience type for CFU request
+pub type CfuRequest<'a> = deferred::Request<'a, NoopRawMutex, Request, InternalResponse>;
+
 impl CfuDevice {
     /// Constructor for CfuDevice
     pub fn new(component_id: ComponentId) -> Self {
@@ -131,8 +143,7 @@ impl CfuDevice {
             node: intrusive_list::Node::uninit(),
             component_id,
             state: Mutex::new(InternalState::default()),
-            request: Channel::new(),
-            response: Channel::new(),
+            request: deferred::Channel::new(),
         }
     }
     /// Getter for component id
@@ -151,19 +162,13 @@ impl CfuDevice {
     }
 
     /// Sends a request to this device and returns a response
-    pub async fn execute_device_request(&self, request: RequestData) -> Result<InternalResponseData, CfuProtocolError> {
-        self.send_request(request).await;
-        Ok(self.wait_response().await)
-    }
-
-    /// Wait for a request
-    pub async fn wait_request(&self) -> RequestData {
-        self.request.receive().await
+    pub async fn execute_device_request(&self, request: Request) -> InternalResponse {
+        self.request.execute(request).await
     }
 
     /// Send a response
-    pub async fn send_response(&self, response: InternalResponseData) {
-        self.response.send(response).await;
+    pub async fn receive(&self) -> CfuRequest {
+        self.request.receive().await
     }
 
     /// Waits for a response
@@ -213,7 +218,8 @@ impl<W: CfuWriter> CfuComponentDefault<W> {
     }
     /// wait for a request and process it
     pub async fn process_request(&self) -> Result<(), CfuError> {
-        match self.device.wait_request().await {
+        let request = self.device.receive().await;
+        match request.command.data {
             RequestData::FwVersionRequest => {
                 let fwv = self.get_fw_version().await.map_err(CfuError::ProtocolError)?;
                 let dev_inf = FwVerComponentInfo::new(fwv, self.get_component_id());
@@ -250,9 +256,7 @@ impl<W: CfuWriter> CfuComponentDefault<W> {
                     ),
                     component_info: comp_info,
                 };
-                self.device
-                    .send_response(InternalResponseData::FwVersionResponse(resp))
-                    .await;
+                request.respond(Ok(InternalResponseData::FwVersionResponse(resp)));
             }
             RequestData::PrepareComponentForUpdate => {
                 self.storage_prepare()
@@ -263,9 +267,7 @@ impl<W: CfuWriter> CfuComponentDefault<W> {
                 // accept any and all offers regardless of what version it is
                 if buf.component_info.component_id == self.get_component_id() {
                     let resp = FwUpdateOfferResponse::new_accept(HostToken::Driver);
-                    self.device
-                        .send_response(InternalResponseData::OfferResponse(resp))
-                        .await;
+                    request.respond(Ok(InternalResponseData::OfferResponse(resp)));
                 }
             }
             RequestData::GiveContent(buf) => {
@@ -276,8 +278,14 @@ impl<W: CfuWriter> CfuComponentDefault<W> {
                     .cfu_write(Some(offset), &buf.data)
                     .await
                     .map_err(|e| CfuError::ProtocolError(CfuProtocolError::WriterError(e)))?;
+                request.respond(Ok(InternalResponseData::ContentResponse(FwUpdateContentResponse::new(
+                    buf.header.sequence_num,
+                    CfuUpdateContentResponseStatus::Success,
+                ))));
             }
-            RequestData::FinalizeUpdate => {}
+            RequestData::FinalizeUpdate => {
+                request.respond(Ok(InternalResponseData::ComponentPrepared));
+            }
         }
         Ok(())
     }
