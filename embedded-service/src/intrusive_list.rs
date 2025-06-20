@@ -2,7 +2,8 @@
 
 // Any type used for dynamic type coercion
 pub use core::any::Any;
-pub use core::cell::Cell;
+
+use crate::sync_cell::SyncCell;
 
 /// Interface error class information
 #[derive(Copy, Clone, Debug)]
@@ -29,7 +30,7 @@ pub struct IntrusiveNode {
 
 /// node type for list allocation. Embed this in the "list wrapper" object, and init with Node::uninit()
 pub struct Node {
-    inner: Cell<IntrusiveNode>,
+    inner: SyncCell<IntrusiveNode>,
 }
 
 struct Invalid {}
@@ -47,7 +48,7 @@ impl Node {
     /// construct an uninitialized node in place
     pub const fn uninit() -> Node {
         Node {
-            inner: Cell::new(Node::EMPTY),
+            inner: SyncCell::new(Node::EMPTY),
         }
     }
 }
@@ -61,7 +62,7 @@ pub trait NodeContainer: Any {
 /// List of intruded nodes of unknown type(s), must be allocated statically
 pub struct IntrusiveList {
     /// traditional head pointer on list. Static reference type is used to ensure static allocations (for safety)
-    head: Cell<Option<&'static IntrusiveNode>>,
+    head: SyncCell<Option<&'static IntrusiveNode>>,
 }
 
 impl IntrusiveNode {
@@ -94,7 +95,9 @@ impl Default for IntrusiveList {
 impl IntrusiveList {
     /// construct an empty intrusive list
     pub const fn new() -> IntrusiveList {
-        IntrusiveList { head: Cell::new(None) }
+        IntrusiveList {
+            head: SyncCell::new(None),
+        }
     }
 
     /// only allow pushing to the head of the list
@@ -213,12 +216,12 @@ mod test {
 
     struct RegistrationA {
         node: Node,
-        owner: Cell<Option<&'static dyn OpA>>,
+        owner: SyncCell<Option<&'static dyn OpA>>,
     }
 
     struct RegistrationB {
         node: Node,
-        owner: Cell<Option<&'static dyn OpB>>,
+        owner: SyncCell<Option<&'static dyn OpB>>,
     }
 
     impl NodeContainer for RegistrationA {
@@ -250,7 +253,7 @@ mod test {
         fn new() -> Self {
             Self {
                 node: Node::uninit(),
-                owner: Cell::new(None),
+                owner: SyncCell::new(None),
             }
         }
 
@@ -267,7 +270,7 @@ mod test {
         fn new() -> Self {
             Self {
                 node: Node::uninit(),
-                owner: Cell::new(None),
+                owner: SyncCell::new(None),
             }
         }
 
@@ -593,5 +596,10 @@ mod test {
         assert_eq!(A.len() + B.len(), list.into_iter().count());
         assert_eq!(A.len(), list.iter_only::<RegistrationA>().count());
         assert_eq!(B.len(), list.iter_only::<RegistrationB>().count());
+    }
+
+    #[test]
+    fn test_static_alloc() {
+        static _LIST: IntrusiveList = IntrusiveList::new();
     }
 }

@@ -6,6 +6,8 @@
 pub mod intrusive_list;
 pub use intrusive_list::*;
 
+pub mod sync_cell;
+
 /// short-hand include all pre-baked services
 pub mod activity;
 pub mod buffer;
