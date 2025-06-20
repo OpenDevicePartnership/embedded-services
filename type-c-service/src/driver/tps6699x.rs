@@ -360,9 +360,9 @@ impl<const N: usize, M: RawMutex, B: I2c> Controller for Tps6699x<'_, N, M, B> {
             BorrowedUpdater::with_config(self.fw_update_config.clone());
 
         // Abandon any previous in-progress update
-        if self.update_state.borrow().is_some() {
+        if let Some(update) = self.update_state.replace(None) {
             warn!("Abandoning in-progress update");
-            return Err(Error::Pd(PdError::InvalidMode));
+            update.updater.abort_fw_update(&mut [&mut tps6699x], &mut delay).await;
         }
 
         let mut guards = [const { None }; 2];
