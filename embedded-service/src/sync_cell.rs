@@ -63,7 +63,10 @@ impl<T: Default> SyncCell<T> {
 }
 
 // SAFETY: Sync is implemented here for SyncCell as T is only accessed via nestable critical sections
-unsafe impl<T: ?Sized> Sync for SyncCell<T> {}
+unsafe impl<T> Sync for SyncCell<T> {}
+
+// SAFETY: Can implement send here due to critical section without T being explicitly Send
+unsafe impl<T> Send for SyncCell<T> {}
 
 impl<T: Copy> Clone for SyncCell<T> {
     #[inline]
