@@ -2,7 +2,7 @@
 
 use embassy_sync::once_lock::OnceLock;
 
-use crate::intrusive_list::*;
+use crate::{intrusive_list::*, sync_cell::SyncCell};
 
 /// potential activity service states
 #[derive(Copy, Clone, Debug)]
@@ -53,7 +53,7 @@ pub trait ActivitySubscriber {
 /// actual subscriber node instance for embedding within static or singleton type T
 pub struct Subscriber {
     node: Node,
-    instance: Cell<Option<&'static dyn ActivitySubscriber>>,
+    instance: SyncCell<Option<&'static dyn ActivitySubscriber>>,
 }
 
 impl Subscriber {
@@ -61,7 +61,7 @@ impl Subscriber {
     pub const fn uninit() -> Self {
         Self {
             node: Node::uninit(),
-            instance: Cell::new(None),
+            instance: SyncCell::new(None),
         }
     }
 
