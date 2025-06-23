@@ -1,7 +1,7 @@
-//! # SyncCell: a cell-like API for static interior mutability scenarios
+//! # SyncCell: a cell-like API for static interior mutability scenarios. Backed by a critical section, implying it's usage may delay or defer interrupts. Recommended to use sparingly.
 use core::cell::Cell;
 
-/// A critical section backed Cell for sync scenarios where you want Cell behaviors, but need it to be thread safe (such as used in statics)
+/// A critical section backed Cell for sync scenarios where you want Cell behaviors, but need it to be thread safe (such as used in statics). Backed by a critical section, use sparingly.
 pub struct SyncCell<T: ?Sized> {
     inner: Cell<T>,
 }
@@ -23,12 +23,15 @@ impl<T> SyncCell<T> {
         critical_section::with(|_cs| self.inner.set(value))
     }
 
-    /// Swap contents between two SyncCell's
+    /// Swap contents between two SyncCell's    
+    /// # Panics
+    ///
+    /// This function will panic if `self` and `other` are different `Cell`s that partially overlap.
+    /// (Using just standard library methods, it is impossible to create such partially overlapping `Cell`s.
+    /// However, unsafe code is allowed to e.g. create two `&Cell<[i32; 2]>` that partially overlap.)
     pub fn swap(&self, other: &Self) {
         critical_section::with(|_cs| self.inner.swap(&other.inner));
     }
-
-    // we do not implement replace() as we cannot guarantee that it will not be called outside of compile time
 
     /// consume the Synccell and return the inner value T
     pub fn into_inner(self) -> T {
@@ -66,7 +69,7 @@ impl<T: Default> SyncCell<T> {
 unsafe impl<T> Sync for SyncCell<T> {}
 
 // SAFETY: Can implement send here due to critical section without T being explicitly Send
-unsafe impl<T> Send for SyncCell<T> where T:Send {}
+unsafe impl<T> Send for SyncCell<T> where T: Send {}
 
 impl<T: Copy> Clone for SyncCell<T> {
     #[inline]
