@@ -47,13 +47,12 @@ impl<T: Copy> SyncCell<T> {
 }
 
 impl<T: ?Sized> SyncCell<T> {
+    /// Return an address to the backing type
     /// Unsafe: allows reads and writes without critical section guard, violating Sync guarantees.
-    /// Note that this is marked unsafe, whereas as_ptr() over a standard Cell<> is safe. This is because
-    /// Cell<> implements !Sync, whereas we are implementing Sync.
     /// # Safety
     /// This may be used safely if and only if the pointer is held during a critical section, or
     /// all accessors to this Cell are blocked until the pointer is released.
-    pub const unsafe fn as_ptr(&self) -> *mut T {
+    pub const fn as_ptr(&self) -> *mut T {
         self.inner.as_ptr()
     }
 }
