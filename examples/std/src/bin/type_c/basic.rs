@@ -61,6 +61,10 @@ mod test_controller {
                         fw_version1: 0xdeadbeef,
                     }))
                 }
+                controller::InternalCommandData::SyncState => {
+                    info!("Sync controller state");
+                    Ok(controller::InternalResponseData::Complete)
+                }
             }
         }
 

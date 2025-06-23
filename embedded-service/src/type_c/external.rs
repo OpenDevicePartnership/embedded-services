@@ -15,6 +15,8 @@ use super::{
 pub enum ControllerCommandData {
     /// Get controller status
     ControllerStatus,
+    /// Sync controller state
+    SyncState,
 }
 
 /// Controller-specific commands
@@ -31,6 +33,8 @@ pub struct ControllerCommand {
 #[derive(Copy, Clone, Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum ControllerResponseData<'a> {
+    /// Command complete
+    Complete,
     /// Get controller status
     ControllerStatus(ControllerStatus<'a>),
 }
@@ -193,6 +197,19 @@ pub async fn port_set_rt_compliance(port: GlobalPortId) -> Result<(), PdError> {
     .await?
     {
         PortResponseData::Complete => Ok(()),
+        _ => Err(PdError::InvalidResponse),
+    }
+}
+
+/// Trigger a sync of the controller state
+pub async fn sync_controller_state(id: ControllerId) -> Result<(), PdError> {
+    match execute_external_controller_command(Command::Controller(ControllerCommand {
+        id,
+        data: ControllerCommandData::SyncState,
+    }))
+    .await?
+    {
+        ControllerResponseData::Complete => Ok(()),
         _ => Err(PdError::InvalidResponse),
     }
 }

@@ -89,6 +89,14 @@ impl<const N: usize, C: Controller, V: FwOfferValidator> ControllerWrapper<'_, N
                 let status = controller.get_controller_status().await;
                 controller::Response::Controller(status.map(InternalResponseData::Status).map_err(|_| PdError::Failed))
             }
+            controller::InternalCommandData::SyncState => {
+                let result = controller.sync_state().await;
+                controller::Response::Controller(
+                    result
+                        .map(|_| InternalResponseData::Complete)
+                        .map_err(|_| PdError::Failed),
+                )
+            }
             _ => controller::Response::Controller(Err(PdError::UnrecognizedCommand)),
         }
     }

@@ -156,6 +156,8 @@ pub enum InternalCommandData {
     Reset,
     /// Get controller status
     Status,
+    /// Sync controller state
+    SyncState,
 }
 
 /// PD controller command
@@ -681,6 +683,20 @@ impl ContextToken {
             .await?
         {
             InternalResponseData::Status(status) => Ok(status),
+            r => {
+                error!("Invalid response: expected controller status, got {:?}", r);
+                Err(PdError::InvalidResponse)
+            }
+        }
+    }
+
+    /// Sync controller state
+    pub async fn sync_controller_state(&self, controller_id: ControllerId) -> Result<(), PdError> {
+        match self
+            .send_controller_command(controller_id, InternalCommandData::SyncState)
+            .await?
+        {
+            InternalResponseData::Complete => Ok(()),
             r => {
                 error!("Invalid response: expected controller status, got {:?}", r);
                 Err(PdError::InvalidResponse)

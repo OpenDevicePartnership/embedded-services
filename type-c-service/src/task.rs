@@ -124,6 +124,15 @@ impl Service {
         external::Response::Controller(status.map(external::ControllerResponseData::ControllerStatus))
     }
 
+    /// Process external controller sync state command
+    async fn process_external_controller_sync_state(&self, controller: ControllerId) -> external::Response<'static> {
+        let status = self.context.sync_controller_state(controller).await;
+        if let Err(e) = status {
+            error!("Error getting controller sync state: {:#?}", e);
+        }
+        external::Response::Controller(status.map(|_| external::ControllerResponseData::Complete))
+    }
+
     /// Process external controller commands
     async fn process_external_controller_command(
         &self,
@@ -132,6 +141,7 @@ impl Service {
         debug!("Processing external controller command: {:#?}", command);
         match command.data {
             ControllerCommandData::ControllerStatus => self.process_external_controller_status(command.id).await,
+            ControllerCommandData::SyncState => self.process_external_controller_sync_state(command.id).await,
         }
     }
 

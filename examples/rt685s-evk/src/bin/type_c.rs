@@ -213,6 +213,9 @@ async fn main(spawner: Spawner) {
         .await
         .unwrap();
 
+    // Sync our internal state with the hardware
+    type_c::external::sync_controller_state(CONTROLLER0_ID).await.unwrap();
+
     embassy_time::Timer::after_secs(10).await;
 
     let status = type_c::external::get_controller_status(CONTROLLER0_ID).await.unwrap();
