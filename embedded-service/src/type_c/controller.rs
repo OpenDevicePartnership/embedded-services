@@ -2,7 +2,6 @@
 use core::future::Future;
 use core::sync::atomic::{AtomicBool, Ordering};
 
-use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_sync::once_lock::OnceLock;
 use embassy_sync::signal::Signal;
 use embassy_time::{with_timeout, Duration};
@@ -17,7 +16,7 @@ use super::event::{PortEventFlags, PortEventKind};
 use super::{external, ControllerId};
 use crate::ipc::deferred;
 use crate::power::policy;
-use crate::{error, intrusive_list, trace, IntrusiveNode};
+use crate::{error, intrusive_list, trace, GlobalRawMutex, IntrusiveNode};
 
 /// Power contract
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -217,7 +216,7 @@ pub struct Device<'a> {
     id: ControllerId,
     ports: &'a [GlobalPortId],
     num_ports: usize,
-    command: deferred::Channel<NoopRawMutex, Command, Response<'static>>,
+    command: deferred::Channel<GlobalRawMutex, Command, Response<'static>>,
 }
 
 impl intrusive_list::NodeContainer for Device<'static> {
@@ -272,7 +271,7 @@ impl<'a> Device<'a> {
     }
 
     /// Create a command handler for this controller
-    pub async fn receive(&self) -> deferred::Request<NoopRawMutex, Command, Response<'static>> {
+    pub async fn receive(&self) -> deferred::Request<GlobalRawMutex, Command, Response<'static>> {
         self.command.receive().await
     }
 
@@ -378,9 +377,9 @@ pub trait Controller {
 /// Internal context for managing PD controllers
 struct Context {
     controllers: intrusive_list::IntrusiveList,
-    port_events: Signal<NoopRawMutex, PortEventFlags>,
+    port_events: Signal<GlobalRawMutex, PortEventFlags>,
     /// Channel for receiving commands to the type-C service
-    external_command: deferred::Channel<NoopRawMutex, external::Command, external::Response<'static>>,
+    external_command: deferred::Channel<GlobalRawMutex, external::Command, external::Response<'static>>,
 }
 
 impl Context {
@@ -707,7 +706,7 @@ impl ContextToken {
     /// Wait for an external command
     pub async fn wait_external_command(
         &self,
-    ) -> deferred::Request<NoopRawMutex, external::Command, external::Response<'static>> {
+    ) -> deferred::Request<GlobalRawMutex, external::Command, external::Response<'static>> {
         CONTEXT.get().await.external_command.receive().await
     }
 }

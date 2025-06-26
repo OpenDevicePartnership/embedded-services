@@ -1,9 +1,8 @@
 use core::cell::Cell;
 
-use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_sync::channel::Channel;
 use embassy_time::Duration;
-use embedded_services::{Node, NodeContainer};
+use embedded_services::{GlobalRawMutex, Node, NodeContainer};
 
 #[derive(Debug, Clone, Copy)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
@@ -115,8 +114,8 @@ pub struct DeviceId(pub u8);
 pub struct Device {
     node: embedded_services::Node,
     id: DeviceId,
-    command: Channel<NoopRawMutex, Command, 1>,
-    response: Channel<NoopRawMutex, Response, 1>,
+    command: Channel<GlobalRawMutex, Command, 1>,
+    response: Channel<GlobalRawMutex, Response, 1>,
     dynamic_battery_cache: Cell<DynamicBatteryMsgs>,
     static_battery_cache: Cell<StaticBatteryMsgs>,
     timeout: Cell<Duration>,

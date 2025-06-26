@@ -1,42 +1,22 @@
-use core::cell::RefCell;
 use core::mem::offset_of;
 use core::slice;
 
+use embassy_sync::mutex::Mutex;
 use embassy_sync::once_lock::OnceLock;
 use embedded_services::comms::{self, EndpointID, External, Internal};
-use embedded_services::{ec_type, error, info};
+use embedded_services::{ec_type, error, info, GlobalRawMutex};
 
 pub struct Service<'a> {
     endpoint: comms::Endpoint,
-    ec_memory: RefCell<&'a mut ec_type::structure::ECMemory>,
+    ec_memory: Mutex<GlobalRawMutex, &'a mut ec_type::structure::ECMemory>,
 }
 
 impl Service<'_> {
     pub fn new(ec_memory: &'static mut ec_type::structure::ECMemory) -> Self {
         Service {
             endpoint: comms::Endpoint::uninit(EndpointID::External(External::Host)),
-            ec_memory: RefCell::new(ec_memory),
+            ec_memory: Mutex::new(ec_memory),
         }
-    }
-
-    fn update_battery_section(&self, msg: &ec_type::message::BatteryMessage) {
-        let mut memory_map = self.ec_memory.borrow_mut();
-        ec_type::update_battery_section(msg, &mut memory_map);
-    }
-
-    fn update_capabilities_section(&self, msg: &ec_type::message::CapabilitiesMessage) {
-        let mut memory_map = self.ec_memory.borrow_mut();
-        ec_type::update_capabilities_section(msg, &mut memory_map);
-    }
-
-    fn update_thermal_section(&self, msg: &ec_type::message::ThermalMessage) {
-        let mut memory_map = self.ec_memory.borrow_mut();
-        ec_type::update_thermal_section(msg, &mut memory_map);
-    }
-
-    fn update_time_alarm_section(&self, msg: &ec_type::message::TimeAlarmMessage) {
-        let mut memory_map = self.ec_memory.borrow_mut();
-        ec_type::update_time_alarm_section(msg, &mut memory_map);
     }
 
     async fn route_to_service(&self, offset: usize, length: usize) -> Result<(), ec_type::Error> {
@@ -77,7 +57,10 @@ impl Service<'_> {
 
     async fn route_to_battery_service(&self, offset: &mut usize, length: &mut usize) -> Result<(), ec_type::Error> {
         let msg = {
-            let memory_map = self.ec_memory.borrow();
+            let memory_map = self
+                .ec_memory
+                .try_lock()
+                .expect("Messages handled one after another, should be infalliable.");
             ec_type::mem_map_to_battery_msg(&memory_map, offset, length)?
         };
 
@@ -94,7 +77,10 @@ impl Service<'_> {
 
     async fn route_to_thermal_service(&self, offset: &mut usize, length: &mut usize) -> Result<(), ec_type::Error> {
         let msg = {
-            let memory_map = self.ec_memory.borrow();
+            let memory_map = self
+                .ec_memory
+                .try_lock()
+                .expect("Messages handled one after another, should be infalliable.");
             ec_type::mem_map_to_thermal_msg(&memory_map, offset, length)?
         };
 
@@ -111,7 +97,10 @@ impl Service<'_> {
 
     async fn route_to_time_alarm_service(&self, offset: &mut usize, length: &mut usize) -> Result<(), ec_type::Error> {
         let msg = {
-            let memory_map = self.ec_memory.borrow();
+            let memory_map = self
+                .ec_memory
+                .try_lock()
+                .expect("Messages handled one after another, should be infalliable.");
             ec_type::mem_map_to_time_alarm_msg(&memory_map, offset, length)?
         };
 
@@ -129,14 +118,18 @@ impl Service<'_> {
 
 impl comms::MailboxDelegate for Service<'_> {
     fn receive(&self, message: &comms::Message) -> Result<(), comms::MailboxDelegateError> {
+        let mut memory_map = self
+            .ec_memory
+            .try_lock()
+            .expect("Messages handled one after another, should be infalliable.");
         if let Some(msg) = message.data.get::<ec_type::message::CapabilitiesMessage>() {
-            self.update_capabilities_section(msg);
+            ec_type::update_capabilities_section(msg, &mut memory_map);
         } else if let Some(msg) = message.data.get::<ec_type::message::BatteryMessage>() {
-            self.update_battery_section(msg);
+            ec_type::update_battery_section(msg, &mut memory_map);
         } else if let Some(msg) = message.data.get::<ec_type::message::ThermalMessage>() {
-            self.update_thermal_section(msg);
+            ec_type::update_thermal_section(msg, &mut memory_map);
         } else if let Some(msg) = message.data.get::<ec_type::message::TimeAlarmMessage>() {
-            self.update_time_alarm_section(msg);
+            ec_type::update_time_alarm_section(msg, &mut memory_map);
         } else {
             return Err(comms::MailboxDelegateError::MessageNotFound);
         }

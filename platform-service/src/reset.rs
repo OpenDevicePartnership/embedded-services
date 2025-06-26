@@ -2,16 +2,16 @@
 
 use core::future::Future;
 
-use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, lazy_lock::LazyLock, signal::Signal};
+use embassy_sync::{lazy_lock::LazyLock, signal::Signal};
 
-use embedded_services::{intrusive_list, IntrusiveList, Node, NodeContainer};
+use embedded_services::{intrusive_list, GlobalRawMutex, IntrusiveList, Node, NodeContainer};
 
 static BLOCKERS: LazyLock<IntrusiveList> = LazyLock::new(IntrusiveList::new);
 
 pub struct Blocker {
     node: Node,
-    reset_pending: Signal<CriticalSectionRawMutex, ()>,
-    unblocked: Signal<CriticalSectionRawMutex, ()>,
+    reset_pending: Signal<GlobalRawMutex, ()>,
+    unblocked: Signal<GlobalRawMutex, ()>,
 }
 
 impl NodeContainer for Blocker {

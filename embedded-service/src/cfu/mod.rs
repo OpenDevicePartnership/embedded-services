@@ -4,7 +4,7 @@ pub mod component;
 
 use core::sync::atomic::{AtomicBool, Ordering};
 
-use embassy_sync::blocking_mutex::raw::NoopRawMutex;
+use crate::GlobalRawMutex;
 use embassy_sync::channel::Channel;
 use embassy_sync::once_lock::OnceLock;
 use embedded_cfu_protocol::protocol_definitions::{CfuProtocolError, ComponentId};
@@ -41,9 +41,9 @@ struct ClientContext {
     /// Registered devices
     devices: intrusive_list::IntrusiveList,
     /// Request to components
-    request: Channel<NoopRawMutex, Request, { DEVICE_CHANNEL_SIZE }>,
+    request: Channel<GlobalRawMutex, Request, { DEVICE_CHANNEL_SIZE }>,
     /// Response from components
-    response: Channel<NoopRawMutex, InternalResponseData, { DEVICE_CHANNEL_SIZE }>,
+    response: Channel<GlobalRawMutex, InternalResponseData, { DEVICE_CHANNEL_SIZE }>,
 }
 
 impl ClientContext {

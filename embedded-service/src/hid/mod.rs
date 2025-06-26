@@ -2,13 +2,12 @@
 //! See spec at http://msdn.microsoft.com/en-us/library/windows/hardware/hh852380.aspx
 use core::convert::Infallible;
 
-use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_sync::once_lock::OnceLock;
 use embassy_sync::signal::Signal;
 
 use crate::buffer::SharedRef;
 use crate::comms::{self, Endpoint, EndpointID, External, Internal, MailboxDelegate};
-use crate::{error, intrusive_list, IntrusiveList, Node, NodeContainer};
+use crate::{error, intrusive_list, GlobalRawMutex, IntrusiveList, Node, NodeContainer};
 
 mod command;
 pub use command::*;
@@ -158,7 +157,7 @@ impl Default for RegisterFile {
 pub struct Device {
     node: Node,
     tp: Endpoint,
-    request: Signal<NoopRawMutex, Request<'static>>,
+    request: Signal<GlobalRawMutex, Request<'static>>,
     /// Device ID
     pub id: DeviceId,
     /// Registers

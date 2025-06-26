@@ -1,6 +1,6 @@
-use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::blocking_mutex::Mutex;
 use embassy_sync::once_lock::OnceLock;
+use embedded_services::GlobalRawMutex;
 
 use crate::nvram_valid_range;
 
@@ -9,7 +9,7 @@ struct Info {
     // the starting address/offset and length in u32 words of the section
     offset: usize,
 
-    guard: Mutex<CriticalSectionRawMutex, ()>,
+    guard: Mutex<GlobalRawMutex, ()>,
 }
 
 /// Section descriptor table for linking indices to offsets

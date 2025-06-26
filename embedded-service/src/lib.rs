@@ -22,6 +22,21 @@ pub mod keyboard;
 pub mod power;
 pub mod type_c;
 
+/// Global Mutex type, ThreadModeRawMutex is used in a microcontroller context, whereas CriticalSectionRawMutex is used
+/// in a standard context for unit testing.
+///
+/// Used because ThreadModeRawMutex is not unit test friendly
+/// but CriticalSectionRawMutex would incur a significant performance impact, since it disables interrupts.
+#[cfg(any(test, not(target_os = "none")))]
+pub type GlobalRawMutex = embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
+/// Global Mutex type, ThreadModeRawMutex is used in a microcontroller context, whereas CriticalSectionRawMutex is used
+/// in a standard context for unit testing.
+///
+/// Used because ThreadModeRawMutex is not unit test friendly
+/// but CriticalSectionRawMutex would incur a significant performance impact, since it disables interrupts.
+#[cfg(all(not(test), target_os = "none"))]
+pub type GlobalRawMutex = embassy_sync::blocking_mutex::raw::ThreadModeRawMutex;
+
 /// initialize all service static interfaces as required. Ideally, this is done before subsystem initialization
 pub async fn init() {
     comms::init();

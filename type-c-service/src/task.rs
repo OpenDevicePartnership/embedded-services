@@ -1,6 +1,5 @@
-use core::cell::RefCell;
 use embassy_futures::select::{select, Either};
-use embassy_sync::once_lock::OnceLock;
+use embassy_sync::{mutex::Mutex, once_lock::OnceLock};
 use embedded_services::{
     comms::{self, EndpointID, Internal},
     debug, error, info,
@@ -11,6 +10,7 @@ use embedded_services::{
         external::{self, ControllerCommandData},
         ControllerId,
     },
+    GlobalRawMutex,
 };
 use embedded_usb_pd::GlobalPortId;
 use embedded_usb_pd::PdError as Error;
@@ -31,7 +31,7 @@ struct Service {
     /// Type-C context token
     context: type_c::controller::ContextToken,
     /// Current state
-    state: RefCell<State>,
+    state: Mutex<GlobalRawMutex, State>,
 }
 
 impl Service {
@@ -40,27 +40,27 @@ impl Service {
         Some(Self {
             tp: comms::Endpoint::uninit(EndpointID::Internal(Internal::Usbc)),
             context: type_c::controller::ContextToken::create()?,
-            state: RefCell::new(State::default()),
+            state: Mutex::new(State::default()),
         })
     }
 
     /// Get the cached port status
-    fn get_cached_port_status(&self, port_id: GlobalPortId) -> Result<PortStatus, Error> {
+    async fn get_cached_port_status(&self, port_id: GlobalPortId) -> Result<PortStatus, Error> {
         if port_id.0 as usize >= MAX_SUPPORTED_PORTS {
             return Err(Error::InvalidPort);
         }
 
-        let state = self.state.borrow();
+        let state = self.state.lock().await;
         Ok(state.port_status[port_id.0 as usize])
     }
 
     /// Set the cached port status
-    fn set_cached_port_status(&self, port_id: GlobalPortId, status: PortStatus) -> Result<(), Error> {
+    async fn set_cached_port_status(&self, port_id: GlobalPortId, status: PortStatus) -> Result<(), Error> {
         if port_id.0 as usize >= MAX_SUPPORTED_PORTS {
             return Err(Error::InvalidPort);
         }
 
-        let mut state = self.state.borrow_mut();
+        let mut state = self.state.lock().await;
         state.port_status[port_id.0 as usize] = status;
         Ok(())
     }
@@ -69,7 +69,7 @@ impl Service {
     async fn process_port_events(&self, port_id: GlobalPortId) -> Result<(), Error> {
         let event = self.context.get_port_event(port_id).await?;
         let status = self.context.get_port_status(port_id).await?;
-        let old_status = self.get_cached_port_status(port_id)?;
+        let old_status = self.get_cached_port_status(port_id).await?;
 
         debug!("Port{}: Event: {:#?}", port_id.0, event);
         debug!("Port{} Previous status: {:#?}", port_id.0, old_status);
@@ -94,7 +94,7 @@ impl Service {
             }
         }
 
-        self.set_cached_port_status(port_id, status)?;
+        self.set_cached_port_status(port_id, status).await?;
 
         Ok(())
     }

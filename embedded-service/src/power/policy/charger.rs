@@ -1,9 +1,9 @@
 //! Charger device struct and controller
 use core::{future::Future, ops::DerefMut};
 
-use embassy_sync::{blocking_mutex::raw::NoopRawMutex, channel::Channel, mutex::Mutex};
+use embassy_sync::{channel::Channel, mutex::Mutex};
 
-use crate::{intrusive_list, power};
+use crate::{intrusive_list, power, GlobalRawMutex};
 
 use super::PowerCapability;
 
@@ -163,11 +163,11 @@ pub struct Device {
     /// Device ID
     id: ChargerId,
     /// Current state of the device
-    state: Mutex<NoopRawMutex, InternalState>,
+    state: Mutex<GlobalRawMutex, InternalState>,
     /// Channel for requests to the device
-    commands: Channel<NoopRawMutex, PolicyEvent, CHARGER_CHANNEL_SIZE>,
+    commands: Channel<GlobalRawMutex, PolicyEvent, CHARGER_CHANNEL_SIZE>,
     /// Channel for responses from the device
-    response: Channel<NoopRawMutex, ChargerResponse, CHARGER_CHANNEL_SIZE>,
+    response: Channel<GlobalRawMutex, ChargerResponse, CHARGER_CHANNEL_SIZE>,
 }
 
 impl Device {

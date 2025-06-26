@@ -56,3 +56,8 @@ rand_core = "0.6.4"
 serde = { version = "1.0.*", default-features = false }
 tps6699x = { git = "https://github.com/OpenDevicePartnership/tps6699x" }
 tokio = { version = "1.42.0" }
+
+# Patch used as a workaround for a circular dependency in espi-service from embassy-imxrt, which depends on
+# `storage-bus` which depends on embedded-services
+[patch."https://github.com/OpenDevicePartnership/embedded-services"]
+embedded-services = { path = "./embedded-service" }

@@ -7,7 +7,7 @@ use platform_service::reset;
 use {defmt_rtt as _, panic_probe as _};
 
 async fn print_watcher_number() {
-    static CONTRIVED: embassy_sync::mutex::Mutex<embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex, usize> =
+    static CONTRIVED: embassy_sync::mutex::Mutex<embedded_services::GlobalRawMutex, usize> =
         embassy_sync::mutex::Mutex::new(0);
 
     // yes, this could be accomplished with atomics. But using a mutex here demonstrates async functionality

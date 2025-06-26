@@ -1,7 +1,7 @@
 //! Context for any power policy implementations
 use core::sync::atomic::{AtomicBool, Ordering};
 
-use embassy_sync::blocking_mutex::raw::NoopRawMutex;
+use crate::GlobalRawMutex;
 use embassy_sync::channel::Channel;
 use embassy_sync::once_lock::OnceLock;
 
@@ -75,9 +75,9 @@ struct Context {
     /// Registered devices
     devices: intrusive_list::IntrusiveList,
     /// Policy request
-    policy_request: Channel<NoopRawMutex, Request, POLICY_CHANNEL_SIZE>,
+    policy_request: Channel<GlobalRawMutex, Request, POLICY_CHANNEL_SIZE>,
     /// Policy response
-    policy_response: Channel<NoopRawMutex, InternalResponseData, POLICY_CHANNEL_SIZE>,
+    policy_response: Channel<GlobalRawMutex, InternalResponseData, POLICY_CHANNEL_SIZE>,
     /// Registered chargers
     chargers: intrusive_list::IntrusiveList,
 }

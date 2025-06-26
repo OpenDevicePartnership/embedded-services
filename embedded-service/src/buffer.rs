@@ -12,9 +12,11 @@
 //! This allows for producer code to own the buffer through a `OwnedRef`, and then allow access to consumers
 //! through any number of `SharedRef`.
 use core::borrow::{Borrow, BorrowMut};
-use core::cell::Cell;
 use core::marker::PhantomData;
 use core::ops::Range;
+
+use crate::sync_cell::SyncCell;
+use core::sync::atomic::AtomicPtr;
 
 #[derive(Copy, Clone, PartialEq, Eq)]
 enum Status {
@@ -25,8 +27,9 @@ enum Status {
 
 /// Underlying buffer storage struct
 pub struct Buffer<'a, T> {
-    buffer: *mut [T],
-    status: Cell<Status>,
+    buffer: AtomicPtr<T>,
+    len: usize,
+    status: SyncCell<Status>,
     _lifetime: PhantomData<&'a ()>,
 }
 
@@ -36,8 +39,9 @@ impl<'a, T> Buffer<'a, T> {
     /// No other code should have access to the buffer
     pub unsafe fn new(raw_buffer: &'a mut [T]) -> Self {
         Buffer {
-            buffer: raw_buffer,
-            status: Cell::new(Status::None),
+            buffer: AtomicPtr::new(raw_buffer.as_mut_ptr()),
+            len: raw_buffer.len(),
+            status: SyncCell::new(Status::None),
             _lifetime: PhantomData,
         }
     }
@@ -52,13 +56,13 @@ impl<'a, T> Buffer<'a, T> {
     /// Returns the length of the buffer
     // SAFETY: The buffer is always valid
     pub fn len(&self) -> usize {
-        unsafe { self.buffer.as_mut().unwrap().len() }
+        self.len
     }
 
     /// Returns `true`` if the buffer has a length of 0
     // SAFETY: The buffer is always valid
     pub fn is_empty(&self) -> bool {
-        unsafe { self.buffer.as_mut().unwrap().is_empty() }
+        self.len == 0
     }
 
     fn borrow(&self, mutable: bool) {
@@ -129,14 +133,16 @@ impl<'a, T> AccessMut<'a, T> {
 // SAFETY: Access to the buffer is dynamically checked
 impl<T> Borrow<[T]> for AccessMut<'_, T> {
     fn borrow(&self) -> &[T] {
-        unsafe { &*self.0.buffer }
+        unsafe { core::slice::from_raw_parts(self.0.buffer.load(core::sync::atomic::Ordering::Acquire), self.0.len) }
     }
 }
 
 // SAFETY: Access to the buffer is dynamically checked
 impl<T> BorrowMut<[T]> for AccessMut<'_, T> {
     fn borrow_mut(&mut self) -> &mut [T] {
-        unsafe { &mut *self.0.buffer }
+        unsafe {
+            core::slice::from_raw_parts_mut(self.0.buffer.load(core::sync::atomic::Ordering::Acquire), self.0.len)
+        }
     }
 }
 
@@ -203,7 +209,12 @@ impl<'a, T> Access<'a, T> {
 // SAFETY: Access to the buffer is dynamically checked
 impl<T> Borrow<[T]> for Access<'_, T> {
     fn borrow(&self) -> &[T] {
-        let buffer = unsafe { &*self.buffer.buffer };
+        let buffer = unsafe {
+            core::slice::from_raw_parts(
+                self.buffer.buffer.load(core::sync::atomic::Ordering::Acquire),
+                self.buffer.len,
+            )
+        };
         &buffer[self.slice.clone()]
     }
 }

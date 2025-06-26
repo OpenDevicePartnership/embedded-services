@@ -1,13 +1,14 @@
 use crate::device::Device;
 use crate::device::{self, DeviceId};
 use embassy_sync::channel::Channel;
+use embassy_sync::channel::TrySendError;
 use embassy_sync::mutex::Mutex;
-use embassy_sync::{blocking_mutex::raw::NoopRawMutex, channel::TrySendError};
 use embassy_time::{with_timeout, Duration};
+use embedded_services::GlobalRawMutex;
 use embedded_services::{debug, error, info, intrusive_list, trace, warn, IntrusiveList};
 
-use core::cell::Cell;
 use core::ops::DerefMut;
+use core::sync::atomic::AtomicUsize;
 
 /// Battery service states.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -94,10 +95,10 @@ pub struct BatteryEvent {
 /// Battery service context, hardware agnostic state.
 pub struct Context {
     fuel_gauges: IntrusiveList,
-    state: Mutex<NoopRawMutex, State>,
-    battery_event: Channel<NoopRawMutex, BatteryEvent, 1>,
-    battery_response: Channel<NoopRawMutex, BatteryResponse, 1>,
-    no_op_retry_count: Cell<usize>,
+    state: Mutex<GlobalRawMutex, State>,
+    battery_event: Channel<GlobalRawMutex, BatteryEvent, 1>,
+    battery_response: Channel<GlobalRawMutex, BatteryResponse, 1>,
+    no_op_retry_count: AtomicUsize,
     config: Config,
 }
 
@@ -123,7 +124,7 @@ impl Context {
             state: Mutex::new(State::NotPresent),
             battery_event: Channel::new(),
             battery_response: Channel::new(),
-            no_op_retry_count: Cell::new(0),
+            no_op_retry_count: AtomicUsize::new(0),
             config: Default::default(),
         }
     }
@@ -134,7 +135,7 @@ impl Context {
             state: Mutex::new(State::NotPresent),
             battery_event: Channel::new(),
             battery_response: Channel::new(),
-            no_op_retry_count: Cell::new(0),
+            no_op_retry_count: AtomicUsize::new(0),
             config,
         }
     }
@@ -151,12 +152,13 @@ impl Context {
 
     /// Get global state machine NotOperational retry count.
     fn get_state_machine_retry_count(&self) -> usize {
-        self.no_op_retry_count.get()
+        self.no_op_retry_count.load(core::sync::atomic::Ordering::Relaxed)
     }
 
     /// Set global state machine NotOperational retry count.
     fn set_state_machine_retry_count(&self, retry_count: usize) {
-        self.no_op_retry_count.set(retry_count)
+        self.no_op_retry_count
+            .store(retry_count, core::sync::atomic::Ordering::Relaxed)
     }
 
     /// Main processing function.

@@ -1,14 +1,14 @@
 use embassy_imxrt::crc::{Config, Polynomial};
-use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_sync::mutex::Mutex;
 use embassy_sync::once_lock::OnceLock;
 use embassy_time::{Duration, WithTimeout};
+use embedded_services::GlobalRawMutex;
 
 use crate::embedded_crc::EmbeddedCrcError;
 
 // Initialize static CRC IMXRT object to access hardware registers
 // Locks register access when in use for each calculation
-static CRC: OnceLock<Mutex<NoopRawMutex, embassy_imxrt::crc::Crc<'static>>> = OnceLock::new();
+static CRC: OnceLock<Mutex<GlobalRawMutex, embassy_imxrt::crc::Crc<'static>>> = OnceLock::new();
 
 pub const CRC_CCITT_POLY: u16 = 0x1021;
 pub const CRC_CRC16_POLY: u16 = 0x8005;

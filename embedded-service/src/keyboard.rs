@@ -1,10 +1,10 @@
 //! Keyboard service data types and common functionality
-use core::cell::Cell;
 
 use embassy_sync::once_lock::OnceLock;
 
 use crate::buffer::SharedRef;
 use crate::comms::{self, EndpointID, External, Internal};
+use crate::sync_cell::SyncCell;
 
 /// Keyboard device ID
 #[derive(Debug, Clone, Copy)]
@@ -60,7 +60,7 @@ pub struct BroadcastConfig {
 
 /// Keyboard service context
 struct Context {
-    broadcast_config: Cell<BroadcastConfig>,
+    broadcast_config: SyncCell<BroadcastConfig>,
 }
 
 static CONTEXT: OnceLock<Context> = OnceLock::new();
@@ -68,7 +68,7 @@ static CONTEXT: OnceLock<Context> = OnceLock::new();
 /// Initialize common keyboard service functionality
 pub fn init() {
     CONTEXT.get_or_init(|| Context {
-        broadcast_config: Cell::new(BroadcastConfig::default()),
+        broadcast_config: SyncCell::new(BroadcastConfig::default()),
     });
 }
 

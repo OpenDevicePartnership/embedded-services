@@ -101,13 +101,13 @@ impl<M: RawMutex, C, R> Request<'_, M, C, R> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
+    use crate::GlobalRawMutex;
     use embassy_sync::once_lock::OnceLock;
     use tokio::time::Duration;
 
     #[test]
     fn test_autoincrement() {
-        let channel = Channel::<CriticalSectionRawMutex, u32, u32>::new();
+        let channel = Channel::<GlobalRawMutex, u32, u32>::new();
         for i in 0..100 {
             let id = channel.get_next_request_id();
             assert_eq!(id.0, i);
@@ -132,7 +132,7 @@ mod tests {
 
     /// Mock command handler
     struct Handler {
-        channel: Channel<CriticalSectionRawMutex, Command, Response>,
+        channel: Channel<GlobalRawMutex, Command, Response>,
     }
 
     impl Handler {
