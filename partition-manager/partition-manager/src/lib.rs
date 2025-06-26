@@ -1,6 +1,9 @@
 #![cfg_attr(not(test), no_std)]
 #![doc = include_str!(concat!("../", env!("CARGO_PKG_README")))]
 
+#[cfg(feature = "macros")]
+pub use partition_manager_macros as macros;
+
 use core::{fmt::Debug, marker::PhantomData};
 use embassy_sync::{
     blocking_mutex::raw::{NoopRawMutex, RawMutex},
@@ -29,6 +32,17 @@ pub struct Partition<'a, F, MARKER, M: RawMutex = NoopRawMutex> {
     offset: u32,
     size: u32,
     _marker: PhantomData<MARKER>,
+}
+
+impl<'a, F, MARKER, M: RawMutex> Partition<'a, F, MARKER, M> {
+    pub const fn new(storage: &'a Mutex<M, F>, offset: u32, size: u32) -> Self {
+        Self {
+            storage,
+            offset,
+            size,
+            _marker: PhantomData,
+        }
+    }
 }
 
 impl<F, M: RawMutex> Partition<'_, F, RW, M> {

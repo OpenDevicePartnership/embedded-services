@@ -243,9 +243,9 @@ pub(crate) mod internal {
         name: Ident,
         map_name: Ident,
         variant_name: Option<String>,
-        source: &str,
+        manifest: &str,
     ) -> proc_macro2::TokenStream {
-        let manifest = match transform_toml_manifest(source) {
+        let manifest = match transform_toml_manifest(manifest) {
             Ok(manifest) => manifest,
             Err(e) => return anyhow_error_to_compile_error(e),
         };
@@ -254,8 +254,8 @@ pub(crate) mod internal {
     }
 
     #[cfg(feature = "toml")]
-    pub(crate) fn transform_toml_manifest(source: &str) -> anyhow::Result<Manifest> {
-        Ok(toml::from_str(source)?)
+    pub(crate) fn transform_toml_manifest(manifest: &str) -> anyhow::Result<Manifest> {
+        Ok(toml::from_str(manifest)?)
     }
 
     fn transform_manifest(
@@ -285,12 +285,7 @@ pub(crate) mod internal {
             let size = partition.size;
             let name = quote::format_ident!("{}", partition.name);
 
-            quote! { #name: partition_manager::Partition {
-                storage,
-                offset: #offset,
-                size: #size,
-                _marker: core::marker::PhantomData,
-            }, }
+            quote! { #name: partition_manager::Partition::new(storage, #offset, #size), }
         });
 
         quote! {
