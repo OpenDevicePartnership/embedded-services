@@ -38,10 +38,13 @@ impl<const N: usize, C: Controller, V: FwOfferValidator> ControllerWrapper<'_, N
         info!("current power state: {:?}", current_state);
 
         // Recover if we're not in the correct state
-        if let action::device::AnyState::Detached(state) = power.device_action().await {
-            if let Err(e) = state.attach().await {
-                error!("Error attaching power device: {:?}", e);
-                return PdError::Failed.into();
+        if status.is_connected() {
+            if let action::device::AnyState::Detached(state) = power.device_action().await {
+                warn!("Power device is detached, attempting to attach");
+                if let Err(e) = state.attach().await {
+                    error!("Error attaching power device: {:?}", e);
+                    return PdError::Failed.into();
+                }
             }
         }
 
@@ -102,10 +105,13 @@ impl<const N: usize, C: Controller, V: FwOfferValidator> ControllerWrapper<'_, N
         }
 
         // Recover if we're not in the correct state
-        if let action::device::AnyState::Detached(state) = power.device_action().await {
-            if let Err(e) = state.attach().await {
-                error!("Error attaching power device: {:?}", e);
-                return PdError::Failed.into();
+        if status.is_connected() {
+            if let action::device::AnyState::Detached(state) = power.device_action().await {
+                warn!("Power device is detached, attempting to attach");
+                if let Err(e) = state.attach().await {
+                    error!("Error attaching power device: {:?}", e);
+                    return PdError::Failed.into();
+                }
             }
         }
 
