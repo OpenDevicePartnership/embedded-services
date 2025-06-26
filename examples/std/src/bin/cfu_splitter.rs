@@ -29,7 +29,7 @@ mod mock {
     impl splitter::Customization for Customization {
         fn resolve_fw_versions(&self, versions: &[GetFwVersionResponse]) -> GetFwVersionResponse {
             for version in versions {
-                info!("Supplied FW version: {:?}", version);
+                info!("Supplied FW version: {version:?}");
             }
             // For simplicity, just return the first version
             versions[0]
@@ -37,7 +37,7 @@ mod mock {
 
         fn resolve_offer_response(&self, offer_responses: &[FwUpdateOfferResponse]) -> FwUpdateOfferResponse {
             for offer in offer_responses {
-                info!("Supplied Offer Response: {:?}", offer);
+                info!("Supplied Offer Response: {offer:?}");
                 if offer.status == OfferStatus::Reject {
                     // Exit on the first rejection
                     error!("Offer rejected: {:?}", offer.reject_reason);
@@ -51,7 +51,7 @@ mod mock {
 
         fn resolve_content_response(&self, content_responses: &[FwUpdateContentResponse]) -> FwUpdateContentResponse {
             for content in content_responses {
-                info!("Supplied Content Response: {:?}", content);
+                info!("Supplied Content Response: {content:?}");
                 if content.status != CfuUpdateContentResponseStatus::Success {
                     // Exit on the first failure
                     error!("Content response failed: {:?}", content.status);
@@ -202,12 +202,12 @@ async fn run(spawner: Spawner) {
         .unwrap();
     let prev_version = match response {
         InternalResponseData::FwVersionResponse(response) => {
-            info!("Got version response: {:#?}", response);
+            info!("Got version response: {response:#?}");
             Into::<u32>::into(response.component_info[0].fw_version)
         }
         _ => panic!("Unexpected response"),
     };
-    info!("Got version: {:#x}", prev_version);
+    info!("Got version: {prev_version:#x}");
 
     info!("Giving offer");
     let offer = route_request(
@@ -222,7 +222,7 @@ async fn run(spawner: Spawner) {
     )
     .await
     .unwrap();
-    info!("Got response: {:?}", offer);
+    info!("Got response: {offer:?}");
 
     let header = FwUpdateContentHeader {
         data_length: DEFAULT_DATA_LENGTH as u8,
@@ -239,7 +239,7 @@ async fn run(spawner: Spawner) {
     let response = route_request(CFU_SPLITTER_ID, RequestData::GiveContent(request))
         .await
         .unwrap();
-    info!("Got response: {:?}", response);
+    info!("Got response: {response:?}");
 }
 
 fn main() {

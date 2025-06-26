@@ -143,9 +143,11 @@ mod tests {
     fn test_empty() {
         let sc = SyncCell::<()>::new(());
 
-        assert_eq!(sc.get(), ());
+        // Ensure get() always returns the same type as the type the SyncCell was initialized with
+        // This can be done statically at compile time
+        let _: () = sc.get();
         sc.set(());
-        assert_eq!(sc.get(), ());
+        let _: () = sc.get();
     }
 
     #[test]
@@ -188,7 +190,7 @@ mod tests {
         });
 
         let updater = tokio::spawn(async {
-            let _ = tokio::time::sleep(tokio::time::Duration::from_millis(300));
+            let _ = tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
             scr.set(true);
         });
 

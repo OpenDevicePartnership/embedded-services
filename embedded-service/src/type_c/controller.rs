@@ -244,7 +244,7 @@ impl<'a> Device<'a> {
     }
 
     /// Send a command to this controller
-    pub async fn execute_command(&self, command: Command) -> Response {
+    pub async fn execute_command(&self, command: Command) -> Response<'_> {
         self.command.execute(command).await
     }
 
@@ -272,7 +272,7 @@ impl<'a> Device<'a> {
     }
 
     /// Create a command handler for this controller
-    pub async fn receive(&self) -> deferred::Request<NoopRawMutex, Command, Response<'static>> {
+    pub async fn receive(&self) -> deferred::Request<'_, NoopRawMutex, Command, Response<'static>> {
         self.command.receive().await
     }
 
@@ -707,7 +707,7 @@ impl ContextToken {
     /// Wait for an external command
     pub async fn wait_external_command(
         &self,
-    ) -> deferred::Request<NoopRawMutex, external::Command, external::Response<'static>> {
+    ) -> deferred::Request<'_, NoopRawMutex, external::Command, external::Response<'static>> {
         CONTEXT.get().await.external_command.receive().await
     }
 }

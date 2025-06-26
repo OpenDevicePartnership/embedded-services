@@ -24,7 +24,7 @@ mod test_controller {
     }
 
     impl controller::DeviceContainer for Controller<'_> {
-        fn get_pd_controller_device(&self) -> &controller::Device {
+        fn get_pd_controller_device(&self) -> &controller::Device<'_> {
             &self.controller
         }
     }
@@ -147,13 +147,13 @@ async fn task(spawner: Spawner) {
     info!("Reset port 1 done");
 
     let status = context.get_controller_status(CONTROLLER0).await.unwrap();
-    info!("Controller 0 status: {:#?}", status);
+    info!("Controller 0 status: {status:#?}");
 
     let status = context.get_port_status(PORT0).await.unwrap();
-    info!("Port 0 status: {:#?}", status);
+    info!("Port 0 status: {status:#?}");
 
     let status = context.get_port_status(PORT1).await.unwrap();
-    info!("Port 1 status: {:#?}", status);
+    info!("Port 1 status: {status:#?}");
 }
 
 fn main() {

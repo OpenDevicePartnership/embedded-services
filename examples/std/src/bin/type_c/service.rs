@@ -99,14 +99,14 @@ mod test_controller {
         async fn wait_port_event(&mut self) -> Result<(), Error<Self::BusError>> {
             trace!("Wait for port event");
             let events = self.state.events.wait().await;
-            trace!("Port event: {:#?}", events);
+            trace!("Port event: {events:#?}");
             self.events.set(events);
             Ok(())
         }
 
         async fn clear_port_events(&mut self, _port: LocalPortId) -> Result<PortEventKind, Error<Self::BusError>> {
             let events = self.events.get();
-            debug!("Clear port events: {:#?}", events);
+            debug!("Clear port events: {events:#?}");
             self.events.set(PortEventKind::none());
             Ok(events)
         }
@@ -117,7 +117,7 @@ mod test_controller {
         }
 
         async fn enable_sink_path(&mut self, _port: LocalPortId, enable: bool) -> Result<(), Error<Self::BusError>> {
-            debug!("Enable sink path: {}", enable);
+            debug!("Enable sink path: {enable}");
             Ok(())
         }
 

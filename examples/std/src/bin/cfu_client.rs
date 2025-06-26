@@ -16,7 +16,7 @@ use crate::cfu::component::RequestData;
 async fn device_task0(component: &'static CfuComponentDefault<CfuWriterDefault>) {
     loop {
         if let Err(e) = component.process_request().await {
-            error!("Error processing request: {:?}", e);
+            error!("Error processing request: {e:?}");
         }
     }
 }
@@ -25,7 +25,7 @@ async fn device_task0(component: &'static CfuComponentDefault<CfuWriterDefault>)
 async fn device_task1(component: &'static CfuComponentDefault<CfuWriterDefault>) {
     loop {
         if let Err(e) = component.process_request().await {
-            error!("Error processing request: {:?}", e);
+            error!("Error processing request: {e:?}");
         }
     }
 }
@@ -74,18 +74,18 @@ async fn run(spawner: Spawner) {
 
     match cfu::route_request(1, RequestData::GiveOffer(dummy_offer0)).await {
         Ok(resp) => {
-            info!("got okay response to device0 update {:?}", resp);
+            info!("got okay response to device0 update {resp:?}");
         }
         Err(e) => {
-            error!("offer failed with error {:?}", e);
+            error!("offer failed with error {e:?}");
         }
     }
     match cfu::route_request(2, RequestData::GiveOffer(dummy_offer1)).await {
         Ok(resp) => {
-            info!("got okay response to device1 update {:?}", resp);
+            info!("got okay response to device1 update {resp:?}");
         }
         Err(e) => {
-            error!("device1 offer failed with error {:?}", e);
+            error!("device1 offer failed with error {e:?}");
         }
     }
 }

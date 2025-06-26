@@ -18,7 +18,7 @@ pub struct State {
 
 impl PartialOrd for State {
     fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
-        Some(self.power_capability.cmp(&other.power_capability))
+        Some(self.cmp(other))
     }
 }
 

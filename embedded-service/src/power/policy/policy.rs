@@ -243,12 +243,15 @@ impl ContextToken {
     }
 
     /// Try to provide access to the actions available to the policy for the given state and device
-    pub async fn try_policy_action<S: action::Kind>(&self, id: DeviceId) -> Result<action::policy::Policy<S>, Error> {
+    pub async fn try_policy_action<S: action::Kind>(
+        &self,
+        id: DeviceId,
+    ) -> Result<action::policy::Policy<'_, S>, Error> {
         self.get_device(id).await?.try_policy_action().await
     }
 
     /// Provide access to current policy actions
-    pub async fn policy_action(&self, id: DeviceId) -> Result<action::policy::AnyState, Error> {
+    pub async fn policy_action(&self, id: DeviceId) -> Result<action::policy::AnyState<'_>, Error> {
         Ok(self.get_device(id).await?.policy_action().await)
     }
 }
