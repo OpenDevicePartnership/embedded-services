@@ -277,24 +277,8 @@ impl<'a> Device<'a> {
     }
 
     /// Notify that there are pending events on one or more ports
-    /// Each bit corresponds to a global port ID
     pub async fn notify_ports(&self, pending: PortEventFlags) {
-        let raw_pending: u32 = pending.into();
-        trace!("Notify ports: {:#x}", raw_pending);
-        // Early exit if no events
-        if pending.is_none() {
-            return;
-        }
-
-        let context = CONTEXT.get().await;
-
-        context
-            .port_events
-            .signal(if let Some(flags) = context.port_events.try_take() {
-                flags.union(pending)
-            } else {
-                pending
-            });
+        CONTEXT.get().await.notify_ports(pending);
     }
 
     /// Number of ports on this controller
@@ -390,6 +374,24 @@ impl Context {
             port_events: Signal::new(),
             external_command: deferred::Channel::new(),
         }
+    }
+
+    /// Notify that there are pending events on one or more ports
+    /// Each bit corresponds to a global port ID
+    fn notify_ports(&self, pending: PortEventFlags) {
+        let raw_pending: u32 = pending.into();
+        trace!("Notify ports: {:#x}", raw_pending);
+        // Early exit if no events
+        if pending.is_none() {
+            return;
+        }
+
+        self.port_events
+            .signal(if let Some(flags) = self.port_events.try_take() {
+                flags.union(pending)
+            } else {
+                pending
+            });
     }
 }
 
@@ -709,6 +711,11 @@ impl ContextToken {
         &self,
     ) -> deferred::Request<'_, NoopRawMutex, external::Command, external::Response<'static>> {
         CONTEXT.get().await.external_command.receive().await
+    }
+
+    /// Notify that there are pending events on one or more ports
+    pub async fn notify_ports(&self, pending: PortEventFlags) {
+        CONTEXT.get().await.notify_ports(pending);
     }
 }
 

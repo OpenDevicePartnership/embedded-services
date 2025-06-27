@@ -1402,11 +1402,13 @@ name = "type-c-service"
 version = "0.1.0"
 dependencies = [
  "bitfield 0.17.0",
+ "critical-section",
  "defmt 0.3.100",
  "embassy-executor",
  "embassy-futures",
  "embassy-sync",
  "embassy-time",
+ "embassy-time-driver",
  "embedded-cfu-protocol",
  "embedded-hal 1.0.0",
  "embedded-hal-async",
