@@ -1,0 +1,32 @@
+[package]
+name = "partition-manager"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords = ["no_std", "storage"]
+categories = ["embedded", "hardware-support", "no-std::no-alloc", "no-std"]
+
+readme = "README.md"
+
+[dependencies]
+embassy-sync.workspace = true
+
+embedded-storage-async = { workspace = true, optional = true }
+block-device-driver = { workspace = true, optional = true }
+aligned = { workspace = true, optional = true }
+
+partition-manager-macros = { path = "../macros", features = [
+    "toml",
+], optional = true }
+
+[features]
+default = ["esa", "bdd", "macros"]
+
+macros = ["dep:partition-manager-macros"]
+
+bdd = ["dep:block-device-driver", "dep:aligned"]
+esa = ["dep:embedded-storage-async"]
+
+[dev-dependencies]
+embassy-futures.workspace = true
