@@ -1087,6 +1087,7 @@ dependencies = [
  "battery-service",
  "cfu-service",
  "critical-section",
+ "either",
  "embassy-executor",
  "embassy-futures",
  "embassy-sync",

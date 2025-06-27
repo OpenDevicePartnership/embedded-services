@@ -183,6 +183,15 @@ impl<'a, C: Customization> Splitter<'a, C> {
                 trace!("Got PrepareComponentForUpdate");
                 InternalResponseData::ComponentPrepared
             }
+            RequestData::GiveExtendedOffer(_) => {
+                trace!("Got GiveExtendedOffer");
+                // Extended offers are not currently supported
+                InternalResponseData::OfferResponse(FwUpdateOfferResponse::new_with_failure(
+                    HostToken::Driver,
+                    OfferRejectReason::InvalidComponent,
+                    OfferStatus::Reject,
+                ))
+            }
         }
     }
 

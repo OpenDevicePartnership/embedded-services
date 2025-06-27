@@ -98,6 +98,14 @@ mod mock {
                     trace!("Got PrepareComponentForUpdate");
                     InternalResponseData::ComponentPrepared
                 }
+                RequestData::GiveExtendedOffer(_) => {
+                    trace!("Got GiveExtendedOffer");
+                    InternalResponseData::OfferResponse(FwUpdateOfferResponse::new_with_failure(
+                        HostToken::Driver,
+                        OfferRejectReason::InvalidComponent,
+                        OfferStatus::Reject,
+                    ))
+                }
             }
         }
 
