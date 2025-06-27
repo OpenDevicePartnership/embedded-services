@@ -134,7 +134,7 @@ impl IntrusiveList {
     }
 
     /// Iterate over the list as if it were items of type `T`, skipping any nodes that are of a different type.
-    pub fn iter_only<T: NodeContainer>(&self) -> OnlyT<T> {
+    pub fn iter_only<T: NodeContainer>(&self) -> OnlyT<'_, T> {
         OnlyT::new(self.into_iter())
     }
 }

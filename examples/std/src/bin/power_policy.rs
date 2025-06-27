@@ -63,7 +63,7 @@ impl policy::device::DeviceContainer for ExampleDevice {
 async fn device_task0(device: &'static ExampleDevice) {
     loop {
         if let Err(e) = device.process_request().await {
-            error!("Error processing request: {:?}", e);
+            error!("Error processing request: {e:?}");
         }
     }
 }
@@ -72,7 +72,7 @@ async fn device_task0(device: &'static ExampleDevice) {
 async fn device_task1(device: &'static ExampleDevice) {
     loop {
         if let Err(e) = device.process_request().await {
-            error!("Error processing request: {:?}", e);
+            error!("Error processing request: {e:?}");
         }
     }
 }

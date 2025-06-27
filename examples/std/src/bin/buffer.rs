@@ -71,7 +71,7 @@ mod receiver {
 
             let borrow = data.borrow();
             let data: &[u8] = borrow.borrow();
-            info!("Received data: {:?}", data);
+            info!("Received data: {data:?}");
 
             Ok(())
         }
