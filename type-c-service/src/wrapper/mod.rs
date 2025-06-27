@@ -198,7 +198,8 @@ impl<'a, const N: usize, C: Controller, V: FwOfferValidator> ControllerWrapper<'
                 continue;
             }
 
-            if event.new_power_contract_as_consumer()
+            // Only notify power policy of a contract after Sink Ready event (always after explicit or implicit contract)
+            if event.sink_ready()
                 && self
                     .process_new_consumer_contract(controller, power, local_port_id, &status)
                     .await
