@@ -113,6 +113,11 @@ impl PortEventFlags {
         self.0.set(port.0 as usize, true);
     }
 
+    /// Clears the pending status of the given port
+    pub fn clear_port(&mut self, port: GlobalPortId) {
+        self.0.set(port.0 as usize, false);
+    }
+
     /// Returns true if the given port is pending
     pub fn is_pending(&self, port: GlobalPortId) -> bool {
         self.0[port.0 as usize]
@@ -133,5 +138,64 @@ impl PortEventFlags {
 impl From<PortEventFlags> for u32 {
     fn from(flags: PortEventFlags) -> Self {
         flags.0.data[0]
+    }
+}
+
+/// An iterator over the pending port event flags
+pub struct PortEventFlagsIter {
+    /// The flags being iterated over
+    flags: PortEventFlags,
+    /// The current index in the flags
+    index: usize,
+}
+
+impl Iterator for PortEventFlagsIter {
+    type Item = GlobalPortId;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while self.index < self.flags.len() {
+            let port_id = GlobalPortId(self.index as u8);
+            if self.flags.is_pending(port_id) {
+                self.index += 1;
+                return Some(port_id);
+            }
+            self.index += 1;
+        }
+        None
+    }
+}
+
+impl IntoIterator for PortEventFlags {
+    type Item = GlobalPortId;
+    type IntoIter = PortEventFlagsIter;
+
+    fn into_iter(self) -> PortEventFlagsIter {
+        PortEventFlagsIter { flags: self, index: 0 }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_port_event_flags_iter() {
+        let mut pending = PortEventFlags::none();
+
+        pending.pend_port(GlobalPortId(0));
+        pending.pend_port(GlobalPortId(1));
+        pending.pend_port(GlobalPortId(2));
+        pending.pend_port(GlobalPortId(10));
+        pending.pend_port(GlobalPortId(23));
+        pending.pend_port(GlobalPortId(31));
+
+        let mut iter = pending.into_iter();
+        assert_eq!(iter.next(), Some(GlobalPortId(0)));
+        assert_eq!(iter.next(), Some(GlobalPortId(1)));
+        assert_eq!(iter.next(), Some(GlobalPortId(2)));
+        assert_eq!(iter.next(), Some(GlobalPortId(10)));
+        assert_eq!(iter.next(), Some(GlobalPortId(23)));
+        assert_eq!(iter.next(), Some(GlobalPortId(31)));
+        assert_eq!(iter.next(), None);
     }
 }
