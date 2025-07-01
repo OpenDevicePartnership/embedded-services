@@ -67,6 +67,8 @@ pub enum RequestData {
     GiveOffer(FwUpdateOffer),
     /// Contains bytes for an accepted fw offer
     GiveContent(FwUpdateContentCommand),
+    /// Contains an extended offer for the component to evaluate
+    GiveExtendedOffer(FwUpdateOfferExtended),
     /// Request for component to prepare itself for an update
     PrepareComponentForUpdate,
     /// Request for component to execute any logic needed to finalize update
@@ -278,6 +280,18 @@ impl<W: CfuWriter> CfuComponentDefault<W> {
                     .map_err(|e| CfuError::ProtocolError(CfuProtocolError::WriterError(e)))?;
             }
             RequestData::FinalizeUpdate => {}
+            RequestData::GiveExtendedOffer(_) => {
+                // Reject any extended offers
+                self.device
+                    .send_response(InternalResponseData::OfferResponse(
+                        FwUpdateOfferResponse::new_with_failure(
+                            HostToken::Driver,
+                            OfferRejectReason::InvalidComponent,
+                            OfferStatus::Reject,
+                        ),
+                    ))
+                    .await;
+            }
         }
         Ok(())
     }
