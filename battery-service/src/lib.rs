@@ -29,6 +29,14 @@ impl Service {
         }
     }
 
+    /// Create a new battery service instance with context configuration.
+    pub fn new_with_ctx_config(config: context::Config) -> Self {
+        Service {
+            endpoint: comms::Endpoint::uninit(comms::EndpointID::Internal(comms::Internal::Battery)),
+            context: context::Context::new_with_config(config),
+        }
+    }
+
     /// Main battery service processing function.
     pub async fn process(&self) {
         let event = self.context.wait_event().await;
@@ -94,6 +102,13 @@ pub async fn wait_for_battery_response() -> context::BatteryResponse {
     let service = SERVICE.get().await;
 
     service.context.wait_response().await
+}
+
+/// Asynchronously query the state from the state machine.
+pub async fn get_state() -> context::State {
+    let service = SERVICE.get().await;
+
+    service.context.get_state().await
 }
 
 /// Battery service task.

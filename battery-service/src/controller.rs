@@ -19,6 +19,8 @@ pub trait Controller: embedded_batteries_async::smart_battery::SmartBattery {
     fn get_device_event(&mut self) -> impl Future<Output = ControllerEvent>;
     fn ping(&mut self) -> impl Future<Output = Result<(), Self::ControllerError>>;
 
-    fn get_timeout(&self) -> Duration;
+    fn get_timeout(&self) -> Duration {
+        Duration::from_secs(60)
+    }
     fn set_timeout(&mut self, duration: Duration);
 }

@@ -1,13 +1,14 @@
-use core::cell::RefCell;
+use core::{cell::RefCell, future::Future};
 use embassy_futures::select::{select, Either};
-use embassy_sync::once_lock::OnceLock;
+use embassy_sync::{blocking_mutex::raw::NoopRawMutex, once_lock::OnceLock};
 use embedded_services::{
     comms::{self, EndpointID, Internal},
-    debug, error, info,
+    debug, error, info, intrusive_list,
+    ipc::deferred,
     type_c::{
         self,
         controller::PortStatus,
-        event::PortEventFlags,
+        event::{PortEventFlagsIter, PortEventKind},
         external::{self, ControllerCommandData},
         ControllerId,
     },
@@ -22,16 +23,25 @@ const MAX_SUPPORTED_PORTS: usize = 4;
 struct State {
     /// Current port status
     port_status: [PortStatus; MAX_SUPPORTED_PORTS],
+    /// Next port to check, this is used to round-robin through ports
+    event_iter: Option<PortEventFlagsIter>,
 }
 
 /// Type-C service
-struct Service {
+pub struct Service {
     /// Comms endpoint
     tp: comms::Endpoint,
     /// Type-C context token
     context: type_c::controller::ContextToken,
     /// Current state
     state: RefCell<State>,
+}
+
+pub enum Event<'a> {
+    /// Port event
+    PortEvent(GlobalPortId, PortEventKind, PortStatus),
+    /// External command
+    ExternalCommand(deferred::Request<'a, NoopRawMutex, external::Command, external::Response<'static>>),
 }
 
 impl Service {
@@ -45,7 +55,7 @@ impl Service {
     }
 
     /// Get the cached port status
-    fn get_cached_port_status(&self, port_id: GlobalPortId) -> Result<PortStatus, Error> {
+    pub fn get_cached_port_status(&self, port_id: GlobalPortId) -> Result<PortStatus, Error> {
         if port_id.0 as usize >= MAX_SUPPORTED_PORTS {
             return Err(Error::InvalidPort);
         }
@@ -66,9 +76,12 @@ impl Service {
     }
 
     /// Process events for a specific port
-    async fn process_port_events(&self, port_id: GlobalPortId) -> Result<(), Error> {
-        let event = self.context.get_port_event(port_id).await?;
-        let status = self.context.get_port_status(port_id).await?;
+    async fn process_port_event(
+        &self,
+        port_id: GlobalPortId,
+        event: PortEventKind,
+        status: PortStatus,
+    ) -> Result<(), Error> {
         let old_status = self.get_cached_port_status(port_id)?;
 
         debug!("Port{}: Event: {:#?}", port_id.0, event);
@@ -97,22 +110,6 @@ impl Service {
         self.set_cached_port_status(port_id, status)?;
 
         Ok(())
-    }
-
-    /// Process unhandled events
-    async fn process_unhandled_events(&self, pending: PortEventFlags) {
-        for i in 0..pending.len() {
-            let port_id = GlobalPortId(i as u8);
-
-            if !pending.is_pending(port_id) {
-                continue;
-            }
-
-            debug!("Port{}: Event", i);
-            if let Err(e) = self.process_port_events(port_id).await {
-                error!("Port{}: Error processing events: {:#?}", i, e);
-            }
-        }
     }
 
     /// Process external controller status command
@@ -220,20 +217,68 @@ impl Service {
         }
     }
 
-    /// Main processing function
-    pub async fn process(&self) {
-        let message = select(
-            self.context.get_unhandled_events(),
-            self.context.wait_external_command(),
-        )
-        .await;
-        match message {
-            Either::First(pending) => self.process_unhandled_events(pending).await,
-            Either::Second(request) => {
-                let response = self.process_external_command(&request.command).await;
-                request.respond(response);
+    /// Wait for port flags
+    #[allow(clippy::await_holding_refcell_ref)]
+    async fn wait_port_flags(&self) -> PortEventFlagsIter {
+        let mut state = self.state.borrow_mut();
+        if state.event_iter.is_some() {
+            // If we have an existing iterator, return it
+            // Yield first to prevent starving other tasks
+            embassy_futures::yield_now().await;
+            state.event_iter.take().unwrap()
+        } else {
+            self.context.get_unhandled_events().await.into_iter()
+        }
+    }
+
+    /// Wait for the next event
+    #[allow(clippy::await_holding_refcell_ref)]
+    pub async fn wait_next(&self) -> Result<Event<'_>, Error> {
+        loop {
+            match select(self.wait_port_flags(), self.context.wait_external_command()).await {
+                Either::First(mut pending) => {
+                    let mut state = self.state.borrow_mut();
+                    if let Some(port_id) = pending.next() {
+                        debug!("Port{}: Event", port_id.0);
+                        state.event_iter = Some(pending);
+                        let event = self.context.get_port_event(port_id).await?;
+                        let status = self.context.get_port_status(port_id).await?;
+
+                        return Ok(Event::PortEvent(port_id, event, status));
+                    } else {
+                        debug!("No pending event, continuing");
+                        state.event_iter = None;
+                        continue;
+                    }
+                }
+                Either::Second(request) => {
+                    return Ok(Event::ExternalCommand(request));
+                }
             }
         }
+    }
+
+    /// Process the given event
+    pub async fn process_event(&self, event: Event<'_>) -> Result<(), Error> {
+        match event {
+            Event::PortEvent(port, event_kind, status) => self.process_port_event(port, event_kind, status).await,
+            Event::ExternalCommand(request) => {
+                let response = self.process_external_command(&request.command).await;
+                request.respond(response);
+                Ok(())
+            }
+        }
+    }
+
+    /// Combined processing function
+    pub async fn process(&self) -> Result<(), Error> {
+        let event = self.wait_next().await?;
+        self.process_event(event).await
+    }
+
+    /// Register the Type-C service with the comms endpoint
+    pub async fn register_comms(&'static self) -> Result<(), intrusive_list::Error> {
+        comms::register_endpoint(self, &self.tp).await
     }
 }
 
@@ -244,8 +289,8 @@ impl comms::MailboxDelegate for Service {
     }
 }
 
-#[embassy_executor::task]
-pub async fn task() {
+/// Task to run the Type-C service, takes a closure to customize the event loop
+pub async fn task_closure<'a, Fut: Future<Output = ()>, F: Fn(&'a Service) -> Fut>(f: F) {
     info!("Starting type-c task");
 
     let service = Service::create();
@@ -260,12 +305,22 @@ pub async fn task() {
     static SERVICE: OnceLock<Service> = OnceLock::new();
     let service = SERVICE.get_or_init(|| service);
 
-    if comms::register_endpoint(service, &service.tp).await.is_err() {
+    if service.register_comms().await.is_err() {
         error!("Failed to register type-c service endpoint");
         return;
     }
 
     loop {
-        service.process().await;
+        f(service).await;
     }
+}
+
+#[embassy_executor::task]
+pub async fn task() {
+    task_closure(|service: &Service| async {
+        if let Err(e) = service.process().await {
+            error!("Type-C service processing error: {:#?}", e);
+        }
+    })
+    .await;
 }

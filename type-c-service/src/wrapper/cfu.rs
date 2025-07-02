@@ -3,6 +3,7 @@
 use embassy_futures::select::{select, Either};
 use embedded_cfu_protocol::protocol_definitions::*;
 use embedded_services::cfu::component::{InternalResponseData, RequestData};
+use embedded_services::power;
 use embedded_services::type_c::controller::Controller;
 use embedded_services::{debug, error};
 
@@ -101,6 +102,49 @@ impl<const N: usize, C: Controller, V: FwOfferValidator> ControllerWrapper<'_, N
         debug!("Got content {:#?}", content);
         if content.header.flags & FW_UPDATE_FLAG_FIRST_BLOCK != 0 {
             debug!("Got first block");
+
+            // Detach from the power policy so it doesn't attempt to do anything while we are updating
+            let controller_id = self.pd_controller.id();
+            let mut detached_all = true;
+            for power in &self.power {
+                info!("Controller{}: checking power device", controller_id.0);
+                if power.state().await != power::policy::device::State::Detached {
+                    info!("Controller{}: Detaching power device", controller_id.0);
+                    if let Err(e) = power.detach().await {
+                        error!("Controller{}: Failed to detach power device: {:?}", controller_id.0, e);
+
+                        // Sync to bring the controller to a known state with all services
+                        match controller.sync_state().await {
+                            Ok(_) => debug!(
+                                "Controller{}: Synced state after detaching power device",
+                                controller_id.0
+                            ),
+                            Err(Error::Pd(e)) => error!(
+                                "Controller{}: Failed to sync state after detaching power device: {:?}",
+                                controller_id.0, e
+                            ),
+                            Err(Error::Bus(_)) => error!(
+                                "Controller{}: Failed to sync state after detaching power device, bus error",
+                                controller_id.0
+                            ),
+                        }
+
+                        detached_all = false;
+                        break;
+                    }
+                }
+            }
+
+            if !detached_all {
+                error!(
+                    "Controller{}: Failed to detach all power devices, rejecting offer",
+                    controller_id.0
+                );
+                return InternalResponseData::ContentResponse(FwUpdateContentResponse::new(
+                    content.header.sequence_num,
+                    CfuUpdateContentResponseStatus::ErrorPrepare,
+                ));
+            }
 
             // Need to start the update
             state.fw_update_ticker.reset();

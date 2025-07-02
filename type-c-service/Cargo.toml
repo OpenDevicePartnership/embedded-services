@@ -23,6 +23,17 @@ embedded-usb-pd.workspace = true
 log = { workspace = true, optional = true }
 tps6699x = { workspace = true, features = ["embassy"] }
 
+[dev-dependencies]
+embassy-sync = { workspace = true, features = ["std"] }
+critical-section = { workspace = true, features = ["std"] }
+embassy-time = { workspace = true, features = ["std"] }
+embassy-time-driver = { workspace = true }
+embassy-executor = { workspace = true, features = [
+    "arch-std",
+    "executor-thread",
+] }
+embassy-futures.workspace = true
+
 [features]
 default = []
 defmt = [

@@ -1,11 +1,12 @@
 use crate::device::Device;
 use crate::device::{self, DeviceId};
 use embassy_sync::channel::Channel;
+use embassy_sync::mutex::Mutex;
 use embassy_sync::{blocking_mutex::raw::NoopRawMutex, channel::TrySendError};
 use embassy_time::{with_timeout, Duration};
 use embedded_services::{debug, error, info, intrusive_list, trace, warn, IntrusiveList};
 
-use core::cell::RefCell;
+use core::cell::Cell;
 use core::ops::DerefMut;
 
 /// Battery service states.
@@ -37,9 +38,18 @@ pub enum OperationalSubstate {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum BatteryEventInner {
+    /// Send this command to initialize or re-initialize the state machine.
     DoInit,
+    /// Send this command while in the Present(Operational(Polling)) state to request the fuel gauge to poll dynamic data.
     PollDynamicData,
+    /// Send this command while in the Present(Operational(Init)) or Present(Operational(Polling)) state to request the fuel gauge to poll static data.
     PollStaticData,
+    /// Send this command while in any state to put the state machine into the Present(NotOperational) state.
+    /// The state machine will ping the FG and if the ping succeeds, the state machine will drop into the
+    /// Present(Operational(Init)) state, where you can send PollStaticData to get it into a polling state.
+    /// If there is a failure, this command can be sent multiple times. Once enough failures have occured, the state
+    /// machine will send a NoOpRecoveryFailed error and will drop into the NotPresent state. At that point, the state
+    /// machine must be reinitialized with a DoInit command.
     Timeout,
     Oem(u8, &'static [u8]),
 }
@@ -58,6 +68,7 @@ pub enum StateMachineError {
     DeviceTimeout,
     DeviceError,
     InvalidActionInState,
+    NoOpRecoveryFailed,
 }
 
 /// External battery state machine response.  
@@ -93,10 +104,25 @@ pub struct BatteryEvent {
 /// Battery service context, hardware agnostic state.
 pub struct Context {
     fuel_gauges: IntrusiveList,
-    state: RefCell<State>,
+    state: Mutex<NoopRawMutex, State>,
     battery_event: Channel<NoopRawMutex, BatteryEvent, 1>,
     battery_response: Channel<NoopRawMutex, BatteryResponse, 1>,
+    no_op_retry_count: Cell<usize>,
+    config: Config,
+}
+
+pub struct Config {
     state_machine_timeout_ms: Duration,
+    no_op_max_retries: usize,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            state_machine_timeout_ms: Duration::from_secs(120),
+            no_op_max_retries: 5,
+        }
+    }
 }
 
 impl Context {
@@ -104,16 +130,43 @@ impl Context {
     pub fn new() -> Self {
         Self {
             fuel_gauges: IntrusiveList::new(),
-            state: RefCell::new(State::NotPresent),
+            state: Mutex::new(State::NotPresent),
             battery_event: Channel::new(),
             battery_response: Channel::new(),
-            state_machine_timeout_ms: Duration::from_secs(120),
+            no_op_retry_count: Cell::new(0),
+            config: Default::default(),
+        }
+    }
+
+    pub fn new_with_config(config: Config) -> Self {
+        Self {
+            fuel_gauges: IntrusiveList::new(),
+            state: Mutex::new(State::NotPresent),
+            battery_event: Channel::new(),
+            battery_response: Channel::new(),
+            no_op_retry_count: Cell::new(0),
+            config,
         }
     }
 
     /// Get global state machine timeout.
     fn get_state_machine_timeout(&self) -> Duration {
-        self.state_machine_timeout_ms
+        self.config.state_machine_timeout_ms
+    }
+
+    /// Get global state machine NotOperational max # of retries.
+    fn get_state_machine_max_retries(&self) -> usize {
+        self.config.no_op_max_retries
+    }
+
+    /// Get global state machine NotOperational retry count.
+    fn get_state_machine_retry_count(&self) -> usize {
+        self.no_op_retry_count.get()
+    }
+
+    /// Set global state machine NotOperational retry count.
+    fn set_state_machine_retry_count(&self, retry_count: usize) {
+        self.no_op_retry_count.set(retry_count)
     }
 
     /// Main processing function.
@@ -168,8 +221,10 @@ impl Context {
                 }
             }
             BatteryEventInner::PollStaticData => {
-                if *state != State::Present(PresentSubstate::Operational(OperationalSubstate::Polling)) {
-                    error!("Battery Service: received static poll request while not in polling state");
+                if *state != State::Present(PresentSubstate::Operational(OperationalSubstate::Init))
+                    && *state != State::Present(PresentSubstate::Operational(OperationalSubstate::Polling))
+                {
+                    error!("Battery Service: received static poll request while not in operational state");
                     trace!("State = {:?}", *state);
                     Err(StateMachineError::InvalidActionInState)
                 } else {
@@ -178,17 +233,20 @@ impl Context {
             }
             BatteryEventInner::Timeout => {
                 warn!("Battery Service: received timeout command");
-                trace!("State = {:?}", *state);
-                Ok(State::Present(PresentSubstate::NotOperational))
+                if *state == State::NotPresent {
+                    error!("Battery Service: received timeout command when battery is not present! Re-initialize the battery instead.");
+                    Err(StateMachineError::InvalidActionInState)
+                } else {
+                    Ok(State::Present(PresentSubstate::NotOperational))
+                }
             }
             BatteryEventInner::Oem(_, _items) => todo!(),
         }
     }
 
     /// Main battery service state machine
-    #[allow(clippy::await_holding_refcell_ref)]
     async fn do_state_machine(&self, event: BatteryEvent) -> StateMachineResponse {
-        let mut state = self.state.borrow_mut();
+        let mut state = self.state.lock().await;
 
         // BatteryEventInner can transition state, or an invalid event can cause the state machine to return
         match self.handle_event(state.deref_mut(), event.event) {
@@ -196,75 +254,108 @@ impl Context {
             Err(err) => return Err(err),
         }
 
-        loop {
-            let mut continue_exec = false;
-            match *state {
-                State::NotPresent => {
-                    info!("Initializing fuel gauge with ID {:?}", event.device_id);
-                    if self
+        match *state {
+            State::NotPresent => {
+                info!("Initializing fuel gauge with ID {:?}", event.device_id);
+                if self
+                    .execute_device_command(event.device_id, device::Command::Ping)
+                    .await
+                    .is_err()
+                {
+                    error!("Error pinging fuel gauge with ID {:?}", event.device_id);
+                    return Err(StateMachineError::DeviceError);
+                }
+                if self
+                    .execute_device_command(event.device_id, device::Command::Initialize)
+                    .await
+                    .is_err()
+                {
+                    error!("Error initializing fuel gauge with ID {:?}", event.device_id);
+                    return Err(StateMachineError::DeviceError);
+                }
+
+                *state = State::Present(PresentSubstate::Operational(OperationalSubstate::Init));
+                Ok(InnerStateMachineResponse::Complete)
+            }
+            State::Present(substate) => match substate {
+                PresentSubstate::NotOperational => {
+                    self.set_state_machine_retry_count(self.get_state_machine_max_retries() + 1);
+                    match self
                         .execute_device_command(event.device_id, device::Command::Ping)
                         .await
-                        .is_err()
                     {
-                        error!("Error pinging fuel gauge with ID {:?}", event.device_id);
-                        return Err(StateMachineError::DeviceError);
+                        Ok(Ok(device::InternalResponse::Complete)) => {
+                            info!("Fuel gauge id: {:?} re-established communication!", event.device_id);
+                            *state = State::Present(PresentSubstate::Operational(OperationalSubstate::Init));
+                            self.set_state_machine_retry_count(0);
+                            Ok(InnerStateMachineResponse::Complete)
+                            // Do not continue execution.
+                        }
+                        Ok(Err(fg_err)) => {
+                            error!(
+                                "Fuel gauge {:?} failed to ping with error {:?}",
+                                event.device_id, fg_err
+                            );
+                            // Do not continue execution, if we got to this point it's because we errored.
+                            // Require re-executing manual Timeout calls. If we go over the max retries,
+                            // transition to the NotPresent state.
+                            if self.get_state_machine_retry_count() > self.get_state_machine_max_retries() {
+                                *state = State::NotPresent;
+                                return Err(StateMachineError::NoOpRecoveryFailed);
+                            }
+                            Err(StateMachineError::DeviceTimeout)
+                        }
+                        Err(ctx_err) => {
+                            error!(
+                                "Battery state machine NotOperational error: {:?} for ID {:?}",
+                                ctx_err, event.device_id
+                            );
+                            // Do not continue execution, if we got to this point it's because we errored.
+                            // Require re-executing manual Timeout calls. If we go over the max retries,
+                            // transition to the NotPresent state.
+                            if self.get_state_machine_retry_count() > self.get_state_machine_max_retries() {
+                                *state = State::NotPresent;
+                                return Err(StateMachineError::NoOpRecoveryFailed);
+                            }
+                            Err(StateMachineError::DeviceTimeout)
+                        }
                     }
-                    if self
-                        .execute_device_command(event.device_id, device::Command::Initialize)
-                        .await
-                        .is_err()
-                    {
-                        error!("Error initializing fuel gauge with ID {:?}", event.device_id);
-                        return Err(StateMachineError::DeviceError);
-                    }
-
-                    *state = State::Present(PresentSubstate::Operational(OperationalSubstate::Init));
-                    continue_exec = true;
                 }
-                State::Present(substate) => match substate {
-                    PresentSubstate::NotOperational => {
-                        // After some time transition to the not present state
-                        *state = State::NotPresent;
-                        return Err(StateMachineError::DeviceTimeout);
+                PresentSubstate::Operational(operational_substate) => match operational_substate {
+                    OperationalSubstate::Init => {
+                        // Collect static data
+                        // TODO: Add retry logic
+                        info!("Collecting fuel gauge static cache with ID {:?}", event.device_id);
+                        if self
+                            .execute_device_command(event.device_id, device::Command::UpdateStaticCache)
+                            .await
+                            .is_err()
+                        {
+                            error!("Error updating fuel gauge static cache with ID {:?}", event.device_id);
+                            return Err(StateMachineError::DeviceError);
+                        }
+                        *state = State::Present(PresentSubstate::Operational(OperationalSubstate::Polling));
+                        Ok(InnerStateMachineResponse::Complete)
                     }
-                    PresentSubstate::Operational(operational_substate) => match operational_substate {
-                        OperationalSubstate::Init => {
-                            // Collect static data
-                            // TODO: Add retry logic
-                            info!("Collecting fuel gauge static cache with ID {:?}", event.device_id);
-                            if self
-                                .execute_device_command(event.device_id, device::Command::UpdateStaticCache)
-                                .await
-                                .is_err()
-                            {
-                                error!("Error updating fuel gauge static cache with ID {:?}", event.device_id);
-                                return Err(StateMachineError::DeviceError);
-                            }
-                            *state = State::Present(PresentSubstate::Operational(OperationalSubstate::Polling));
-                            continue_exec = true;
+                    OperationalSubstate::Polling => {
+                        // Collect dynamic data
+                        // TODO: Add retry logic
+                        info!("Collecting fuel gauge dynamic cache with ID {:?}", event.device_id);
+                        if self
+                            .execute_device_command(event.device_id, device::Command::UpdateDynamicCache)
+                            .await
+                            .is_err()
+                        {
+                            error!(
+                                "Error initializing fuel gauge dynamic cache with ID {:?}",
+                                event.device_id
+                            );
+                            return Err(StateMachineError::DeviceError);
                         }
-                        OperationalSubstate::Polling => {
-                            // Collect dynamic data
-                            // TODO: Add retry logic
-                            info!("Collecting fuel gauge dynamic cache with ID {:?}", event.device_id);
-                            if self
-                                .execute_device_command(event.device_id, device::Command::UpdateDynamicCache)
-                                .await
-                                .is_err()
-                            {
-                                error!(
-                                    "Error initializing fuel gauge dynamic cache with ID {:?}",
-                                    event.device_id
-                                );
-                                return Err(StateMachineError::DeviceError);
-                            }
-                        }
-                    },
+                        Ok(InnerStateMachineResponse::Complete)
+                    }
                 },
-            }
-            if !continue_exec {
-                return Ok(InnerStateMachineResponse::Complete);
-            }
+            },
         }
     }
 
@@ -311,6 +402,10 @@ impl Context {
     /// Wait for battery event.
     pub async fn wait_event(&self) -> BatteryEvent {
         self.battery_event.receive().await
+    }
+
+    pub async fn get_state(&self) -> State {
+        *self.state.lock().await
     }
 
     async fn execute_device_command(

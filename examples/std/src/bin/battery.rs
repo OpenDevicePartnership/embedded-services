@@ -50,7 +50,7 @@ mod espi_service {
 
             match msg {
                 BatteryMessage::CycleCount(cycles) => {
-                    info!("Bat cycles: {}", cycles);
+                    info!("Bat cycles: {cycles}");
                     Ok(())
                 }
                 _ => Err(comms::MailboxDelegateError::InvalidData),

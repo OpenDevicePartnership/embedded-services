@@ -1,0 +1,19 @@
+[package]
+name = "partition-manager-macros"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+proc-macro = true
+
+[dependencies]
+partition-manager-generation = { path = "../generation" }
+
+syn.workspace = true
+proc-macro2.workspace = true
+
+[features]
+default = ["toml"]
+toml = ["partition-manager-generation/toml"]

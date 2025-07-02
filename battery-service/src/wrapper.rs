@@ -17,6 +17,9 @@ pub struct Wrapper<'a, C: Controller> {
 impl<'a, C: Controller> Wrapper<'a, C> {
     /// Create a new fuel gauge wrapper.
     pub fn new(device: &'a Device, controller: C) -> Self {
+        // Set device timeout when constructing.
+        device.set_timeout(controller.get_timeout());
+
         Self {
             device,
             controller: RefCell::new(controller),

@@ -72,7 +72,7 @@ mod mock {
                 }
                 RequestData::GiveContent(content) => {
                     if self.init.get() {
-                        trace!("Got GiveContent: {:#?}", content);
+                        trace!("Got GiveContent: {content:#?}");
                         // If the device is already initialized, accept the content
                         InternalResponseData::ContentResponse(FwUpdateContentResponse::new(
                             content.header.sequence_num,
@@ -103,7 +103,7 @@ mod mock {
 
         pub async fn send_response(&self, response: InternalResponseData) {
             self.cfu_device.send_response(response).await;
-            trace!("Sent response: {:?}", response);
+            trace!("Sent response: {response:?}");
         }
     }
 
@@ -175,12 +175,12 @@ async fn run(spawner: Spawner) {
         .unwrap();
     let prev_version = match response {
         InternalResponseData::FwVersionResponse(response) => {
-            info!("Got version response: {:#?}", response);
+            info!("Got version response: {response:#?}");
             Into::<u32>::into(response.component_info[0].fw_version)
         }
         _ => panic!("Unexpected response"),
     };
-    info!("Got version: {:#x}", prev_version);
+    info!("Got version: {prev_version:#x}");
 
     info!("Giving offer");
     let offer = route_request(
@@ -195,7 +195,7 @@ async fn run(spawner: Spawner) {
     )
     .await
     .unwrap();
-    info!("Got response: {:?}", offer);
+    info!("Got response: {offer:?}");
 
     for i in 0..10 {
         let header = FwUpdateContentHeader {

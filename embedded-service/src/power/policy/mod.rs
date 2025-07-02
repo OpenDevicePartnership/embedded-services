@@ -58,7 +58,7 @@ impl PowerCapability {
 
 impl PartialOrd for PowerCapability {
     fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
-        Some(self.max_power_mw().cmp(&other.max_power_mw()))
+        Some(self.cmp(other))
     }
 }
 
