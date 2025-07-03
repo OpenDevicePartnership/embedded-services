@@ -10,9 +10,11 @@ use embedded_cfu_protocol::protocol_definitions::*;
 use embedded_services::{
     cfu::{
         self,
-        component::{CfuDevice, InternalResponseData, RequestData},
+        component::{CfuDevice, InternalResponse, InternalResponseData, RequestData},
     },
-    error, intrusive_list, trace,
+    error, intrusive_list,
+    ipc::deferred::RequestId,
+    trace,
 };
 
 /// Internal state for [`Buffer`]
@@ -148,6 +150,8 @@ impl<'a> Buffer<'a> {
             state.pending_response = None;
         }
 
+        let mut have_id = false;
+        let mut req_id: RequestId = RequestId::default();
         if state.component_busy {
             // Buffer the content if the component is busy
             // If the buffer is full, this will block until space is available
@@ -155,17 +159,28 @@ impl<'a> Buffer<'a> {
             self.buffer_sender.send(*content).await;
         } else {
             // Buffered component can accept new content, send it
-            if let Err(e) = cfu::send_device_request(self.buffered_id, RequestData::GiveContent(*content)).await {
-                error!(
-                    "Failed to send content to buffered component {:?}: {:?}",
-                    self.buffered_id, e
-                );
-                return Self::create_content_rejection(content.header.sequence_num);
+            match cfu::send_device_request(self.buffered_id, RequestData::GiveContent(*content)).await {
+                Ok(id) => {
+                    have_id = true;
+                    req_id = id;
+                }
+                Err(e) => {
+                    error!(
+                        "Failed to send content to buffered component {:?}: {:?}",
+                        self.buffered_id, e
+                    );
+                    return Self::create_content_rejection(content.header.sequence_num);
+                }
             }
         }
 
         // Wait for a response from the buffered component
-        match with_timeout(self.config.buffer_timeout, cfu::wait_device_response(self.buffered_id)).await {
+        let fut = if have_id {
+            cfu::wait_device_response(self.buffered_id, Some(req_id))
+        } else {
+            cfu::wait_device_response(self.buffered_id, None)
+        };
+        match with_timeout(self.config.buffer_timeout, fut).await {
             Err(TimeoutError) => {
                 // Component didn't respond in time
                 state.component_busy = true;
@@ -195,7 +210,7 @@ impl<'a> Buffer<'a> {
             Ok(response) => {
                 trace!("Buffered component responded");
                 state.component_busy = false;
-                match response {
+                match response.unwrap() {
                     Ok(InternalResponseData::ContentResponse(mut response)) => {
                         response.sequence = content.header.sequence_num;
                         InternalResponseData::ContentResponse(response)
@@ -233,9 +248,9 @@ impl<'a> Buffer<'a> {
             // Wait for a buffered content request
             self.wait_buffered_content(is_busy),
             // Wait for a request from the host
-            self.cfu_device.wait_request(),
+            self.cfu_device.receive(),
             // Wait for response from the buffered component
-            cfu::wait_device_response(self.buffered_id),
+            cfu::wait_device_response(self.buffered_id, None),
         )
         .await
         {
@@ -244,11 +259,11 @@ impl<'a> Buffer<'a> {
                 Event::BufferedContent(content)
             }
             Either3::Second(request) => {
-                trace!("Request received: {:?}", request);
-                Event::CfuRequest(request)
+                trace!("Request received: {:?}", request.command);
+                Event::CfuRequest(request.command.data)
             }
             Either3::Third(response) => {
-                if let Ok(response) = response {
+                if let Ok(Ok(response)) = response {
                     trace!("Response received: {:?}", response);
                     Event::ComponentResponse(response)
                 } else {
@@ -315,8 +330,8 @@ impl<'a> Buffer<'a> {
     }
 
     /// Send a response to the CFU message
-    pub async fn send_response(&self, response: InternalResponseData) {
-        self.cfu_device.send_response(response).await;
+    pub async fn send_response(&self, response: InternalResponse, request_id: RequestId) {
+        self.cfu_device.send_response(request_id, response).await
     }
 
     /// Register the buffer with all relevant services

@@ -2,7 +2,7 @@
 //! TODO: remove this once we have a more generic FW update implementation
 use embassy_futures::select::{select, Either};
 use embedded_cfu_protocol::protocol_definitions::*;
-use embedded_services::cfu::component::{InternalResponseData, RequestData};
+use embedded_services::cfu::component::{CfuRequest, InternalResponseData, RequestData};
 use embedded_services::power;
 use embedded_services::type_c::controller::Controller;
 use embedded_services::{debug, error};
@@ -297,22 +297,17 @@ impl<const N: usize, C: Controller, V: FwOfferValidator> ControllerWrapper<'_, N
         }
     }
 
-    /// Sends a CFU response to the command
-    pub async fn send_cfu_response(&self, response: InternalResponseData) {
-        self.cfu_device.send_response(response).await;
-    }
-
     /// Wait for a CFU command
     ///
     /// Returns None if the FW update ticker has ticked
-    pub async fn wait_cfu_command(&self, state: &mut InternalState) -> Option<RequestData> {
+    pub async fn wait_cfu_command(&self, state: &mut InternalState) -> Option<CfuRequest> {
         match state.fw_update_state {
             FwUpdateState::Idle => {
                 // No FW update in progress, just wait for a command
-                Some(self.cfu_device.wait_request().await)
+                Some(self.cfu_device.receive().await)
             }
             FwUpdateState::InProgress(_) => {
-                match select(self.cfu_device.wait_request(), state.fw_update_ticker.next()).await {
+                match select(self.cfu_device.receive(), state.fw_update_ticker.next()).await {
                     Either::First(command) => Some(command),
                     Either::Second(_) => {
                         debug!("FW update ticker ticked");

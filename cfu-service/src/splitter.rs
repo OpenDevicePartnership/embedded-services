@@ -8,9 +8,11 @@ use embedded_cfu_protocol::protocol_definitions::*;
 use embedded_services::{
     cfu::{
         self,
-        component::{CfuDevice, InternalResponseData, RequestData},
+        component::{CfuDevice, InternalResponseData, Request, RequestData},
     },
-    error, intrusive_list, trace,
+    error, intrusive_list,
+    ipc::deferred,
+    trace,
 };
 
 /// Trait containing customization functionality for [`Splitter`]
@@ -156,8 +158,8 @@ impl<'a, C: Customization> Splitter<'a, C> {
     }
 
     /// Wait for a CFU message
-    pub async fn wait_request(&self) -> RequestData {
-        self.cfu_device.wait_request().await
+    pub async fn wait_request(&self) -> Request {
+        self.cfu_device.receive().await.command
     }
 
     /// Process a CFU message and produce a response
@@ -187,8 +189,8 @@ impl<'a, C: Customization> Splitter<'a, C> {
     }
 
     /// Send a response to the CFU message
-    pub async fn send_response(&self, response: InternalResponseData) {
-        self.cfu_device.send_response(response).await;
+    pub async fn send_response(&self, response: InternalResponseData, request_id: deferred::RequestId) {
+        self.cfu_device.send_response(request_id, Ok(response)).await;
     }
 
     pub async fn register(&'static self) -> Result<(), intrusive_list::Error> {

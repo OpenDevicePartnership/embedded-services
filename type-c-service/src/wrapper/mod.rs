@@ -256,8 +256,10 @@ impl<'a, const N: usize, C: Controller, V: FwOfferValidator> ControllerWrapper<'
             }
             Either4::Fourth(request) => match request {
                 Some(request) => {
-                    let response = self.process_cfu_command(&mut controller, &mut state, &request).await;
-                    self.send_cfu_response(response).await;
+                    let response = self
+                        .process_cfu_command(&mut controller, &mut state, &request.command.data)
+                        .await;
+                    request.respond(Ok(response));
                 }
                 None => {
                     // FW Update tick, process timeouts and recovery attempts

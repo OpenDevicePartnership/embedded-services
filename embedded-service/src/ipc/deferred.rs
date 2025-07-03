@@ -5,9 +5,9 @@ use crate::debug;
 use embassy_sync::{blocking_mutex::raw::RawMutex, mutex::Mutex, signal::Signal};
 
 /// A unique identifier for a particular command invocation
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-struct RequestId(usize);
+pub struct RequestId(usize);
 
 /// A simple channel for executing deferred commands.
 ///
@@ -69,6 +69,40 @@ impl<M: RawMutex, C, R> Channel<M, C, R> {
             request_id,
             command,
         }
+    }
+
+    /// Send a command without waiting for a response
+    /// returns the request ID for tracking
+    pub async fn send_command(&self, command: C) -> RequestId {
+        let _guard = self.request_lock.lock().await;
+        let request_id = self.get_next_request_id();
+        self.command.signal((command, request_id));
+        request_id
+    }
+
+    /// Wait for a response to a specific request ID
+    pub async fn wait_for_response(&self, id: RequestId) -> R {
+        loop {
+            let (response, response_id) = self.response.wait().await;
+            if response_id == id {
+                return response;
+            } else {
+                // Not an error because this is the expected behavior in certain cases,
+                // particularly if the sender times out before the response is received.
+                debug!("Received response for different invocation: {}", response_id.0);
+            }
+        }
+    }
+
+    /// Wait for the next response, regardless of request ID
+    pub async fn wait_for_next_response(&self) -> R {
+        let (response, _) = self.response.wait().await;
+        response
+    }
+
+    /// Send a response to a specific request ID
+    pub async fn send_response(&self, response: R, request_id: RequestId) {
+        self.response.signal((response, request_id));
     }
 }
 
