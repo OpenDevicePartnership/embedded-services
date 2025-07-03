@@ -9,7 +9,7 @@ use embassy_sync::channel::Channel;
 use embassy_sync::once_lock::OnceLock;
 use embedded_cfu_protocol::protocol_definitions::{CfuProtocolError, ComponentId};
 
-use crate::cfu::component::{CfuDevice, CfuDeviceContainer, InternalResponseData, RequestData, DEVICE_CHANNEL_SIZE};
+use crate::cfu::component::{CfuDevice, CfuDeviceContainer, DEVICE_CHANNEL_SIZE, InternalResponseData, RequestData};
 use crate::{error, intrusive_list};
 
 /// Error type

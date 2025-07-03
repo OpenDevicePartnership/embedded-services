@@ -1,9 +1,9 @@
 use crate::{
-    test::{
-        mock::{self, ActionErase, ActionRead, ActionWrite, MockDisk},
-        TestConfig, TestMap,
-    },
     Error, PartitionManager,
+    test::{
+        TestConfig, TestMap,
+        mock::{self, ActionErase, ActionRead, ActionWrite, MockDisk},
+    },
 };
 
 #[test]

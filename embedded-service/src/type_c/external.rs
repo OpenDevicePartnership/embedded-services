@@ -2,11 +2,11 @@
 use embedded_usb_pd::{GlobalPortId, PdError, PortId as LocalPortId};
 
 use super::{
-    controller::{
-        execute_external_controller_command, execute_external_port_command, lookup_controller, ControllerStatus,
-        PortStatus, RetimerFwUpdateState,
-    },
     ControllerId,
+    controller::{
+        ControllerStatus, PortStatus, RetimerFwUpdateState, execute_external_controller_command,
+        execute_external_port_command, lookup_controller,
+    },
 };
 
 /// Data for controller-specific commands

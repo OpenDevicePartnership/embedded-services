@@ -3,9 +3,9 @@ use core::ops::DerefMut;
 
 use embassy_sync::mutex::Mutex;
 
-use super::{action, DeviceId, Error, PowerCapability};
+use super::{DeviceId, Error, PowerCapability, action};
 use crate::ipc::deferred;
-use crate::{intrusive_list, GlobalRawMutex};
+use crate::{GlobalRawMutex, intrusive_list};
 
 /// Most basic device states
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

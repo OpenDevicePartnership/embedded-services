@@ -2,9 +2,9 @@
 use core::ops::DerefMut;
 use embassy_sync::mutex::Mutex;
 use embassy_sync::once_lock::OnceLock;
+use embedded_services::GlobalRawMutex;
 use embedded_services::power::policy::device::Device;
 use embedded_services::power::policy::{action, policy, *};
-use embedded_services::GlobalRawMutex;
 use embedded_services::{comms, error, info};
 
 pub mod config;

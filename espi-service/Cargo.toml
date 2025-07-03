@@ -1,7 +1,7 @@
 [package]
 name = "espi-service"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 description = "eSPI embedded service implementation"
 repository = "https://github.com/OpenDevicePartnership/embedded-services"
 rust-version = "1.85"

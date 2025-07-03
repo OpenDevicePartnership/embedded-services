@@ -35,7 +35,7 @@ impl PortEventKind {
     /// Returns the union of self and other
     pub fn union(self, other: PortEventKind) -> PortEventKind {
         // This spacing is what rustfmt wants
-        PortEventKind(PortEventKindRaw(self.0 .0 | other.0 .0))
+        PortEventKind(PortEventKindRaw(self.0.0 | other.0.0))
     }
 
     /// Returns true if a plug was inserted or removed
