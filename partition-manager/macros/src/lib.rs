@@ -2,7 +2,7 @@ use std::{fs::File, io::Read, ops::Deref, path::PathBuf};
 
 use proc_macro::TokenStream;
 use proc_macro2::Span;
-use syn::{parse::Lookahead1, Ident, LitStr};
+use syn::{Ident, LitStr, parse::Lookahead1};
 
 fn transform(input: Input) -> Result<proc_macro2::TokenStream, syn::Error> {
     let mut path = PathBuf::from(input.manifest.value());

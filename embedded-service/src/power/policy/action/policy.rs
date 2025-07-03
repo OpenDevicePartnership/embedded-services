@@ -1,8 +1,8 @@
 //! Policy state machine
-use embassy_time::{with_timeout, Duration, TimeoutError};
+use embassy_time::{Duration, TimeoutError, with_timeout};
 
 use super::*;
-use crate::power::policy::{device, Error, PowerCapability};
+use crate::power::policy::{Error, PowerCapability, device};
 use crate::{error, info};
 
 /// Default timeout for device commands to prevent the policy from getting stuck

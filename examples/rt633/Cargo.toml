@@ -3,7 +3,7 @@
 [package]
 name = "rt633-examples"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 license = "MIT"
 
 [dependencies]
@@ -46,9 +46,7 @@ rand = { version = "0.8.5", default-features = false }
 espi-service = { path = "../../espi-service", features = ["defmt"] }
 embedded-services = { path = "../../embedded-service", features = ["defmt"] }
 
-embedded-batteries-async = { version = "0.1.0", features = [
-    "defmt",
-] }
+embedded-batteries-async = { version = "0.1.0", features = ["defmt"] }
 bq25773 = { git = "https://github.com/OpenDevicePartnership/bq25773" }
 battery-service = { path = "../../battery-service", features = ["defmt"] }
 bq40z50 = { git = "https://github.com/OpenDevicePartnership/bq40z50", features = [

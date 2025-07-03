@@ -3,7 +3,7 @@ use core::borrow::BorrowMut;
 use embassy_sync::mutex::Mutex;
 use embedded_hal_async::i2c::{AddressMode, I2c};
 use embedded_services::hid::{DeviceContainer, Opcode, Response};
-use embedded_services::{buffer::*, GlobalRawMutex};
+use embedded_services::{GlobalRawMutex, buffer::*};
 use embedded_services::{error, hid, info, trace};
 
 use crate::Error;

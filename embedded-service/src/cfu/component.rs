@@ -9,9 +9,9 @@ use embedded_cfu_protocol::{CfuWriter, CfuWriterError};
 use heapless::Vec;
 
 use super::CfuError;
+use crate::GlobalRawMutex;
 use crate::cfu::route_request;
 use crate::intrusive_list;
-use crate::GlobalRawMutex;
 
 /// Component internal update state
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

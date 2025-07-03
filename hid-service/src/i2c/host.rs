@@ -3,11 +3,11 @@ use core::borrow::{Borrow, BorrowMut};
 
 use embassy_sync::mutex::Mutex;
 use embassy_sync::signal::Signal;
-use embassy_time::{with_timeout, Duration};
+use embassy_time::{Duration, with_timeout};
+use embedded_services::GlobalRawMutex;
 use embedded_services::buffer::OwnedRef;
 use embedded_services::comms::{self, Endpoint, EndpointID, External, MailboxDelegate};
 use embedded_services::hid::{self, DeviceId, Opcode};
-use embedded_services::GlobalRawMutex;
 use embedded_services::{error, trace};
 
 use super::{Command as I2cCommand, I2cSlaveAsync};
@@ -251,7 +251,7 @@ impl<B: I2cSlaveAsync> Host<B> {
                 }
             }
 
-            let result = match response {
+            match response {
                 hid::Response::Descriptor(data)
                 | hid::Response::ReportDescriptor(data)
                 | hid::Response::InputReport(data)
@@ -274,9 +274,7 @@ impl<B: I2cSlaveAsync> Host<B> {
                     }
                     hid::CommandResponse::Vendor => Ok(()),
                 },
-            };
-
-            result
+            }
         } else {
             Ok(())
         }

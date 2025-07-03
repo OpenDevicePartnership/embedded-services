@@ -3,9 +3,9 @@
 use embassy_sync::mutex::Mutex;
 use embassy_sync::once_lock::OnceLock;
 
+use crate::GlobalRawMutex;
 use crate::buffer::SharedRef;
 use crate::comms::{self, EndpointID, External, Internal};
-use crate::GlobalRawMutex;
 
 /// Keyboard device ID
 #[derive(Debug, Clone, Copy)]

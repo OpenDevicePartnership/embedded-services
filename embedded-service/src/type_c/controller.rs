@@ -4,19 +4,19 @@ use core::sync::atomic::{AtomicBool, Ordering};
 
 use embassy_sync::once_lock::OnceLock;
 use embassy_sync::signal::Signal;
-use embassy_time::{with_timeout, Duration};
+use embassy_time::{Duration, with_timeout};
 use embedded_usb_pd::ucsi::lpm;
 use embedded_usb_pd::{
+    Error, GlobalPortId, PdError, PortId as LocalPortId,
     pdinfo::{AltMode, PowerPathStatus},
     type_c::ConnectionState,
-    Error, GlobalPortId, PdError, PortId as LocalPortId,
 };
 
 use super::event::{PortEventFlags, PortEventKind};
-use super::{external, ControllerId};
+use super::{ControllerId, external};
 use crate::ipc::deferred;
 use crate::power::policy;
-use crate::{error, intrusive_list, trace, GlobalRawMutex, IntrusiveNode};
+use crate::{GlobalRawMutex, IntrusiveNode, error, intrusive_list, trace};
 
 /// Power contract
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -314,7 +314,7 @@ pub trait Controller {
     ) -> impl Future<Output = Result<PortEventKind, Error<Self::BusError>>>;
     /// Returns the port status
     fn get_port_status(&mut self, port: LocalPortId)
-        -> impl Future<Output = Result<PortStatus, Error<Self::BusError>>>;
+    -> impl Future<Output = Result<PortStatus, Error<Self::BusError>>>;
     /// Returns the retimer fw update state
     fn get_rt_fw_update_status(
         &mut self,
