@@ -3,9 +3,9 @@ use crate::device::{self, DeviceId};
 use embassy_sync::channel::Channel;
 use embassy_sync::channel::TrySendError;
 use embassy_sync::mutex::Mutex;
-use embassy_time::{with_timeout, Duration};
+use embassy_time::{Duration, with_timeout};
 use embedded_services::GlobalRawMutex;
-use embedded_services::{debug, error, info, intrusive_list, trace, warn, IntrusiveList};
+use embedded_services::{IntrusiveList, debug, error, info, intrusive_list, trace, warn};
 
 use core::ops::DerefMut;
 use core::sync::atomic::AtomicUsize;
@@ -236,7 +236,9 @@ impl Context {
             BatteryEventInner::Timeout => {
                 warn!("Battery Service: received timeout command");
                 if *state == State::NotPresent {
-                    error!("Battery Service: received timeout command when battery is not present! Re-initialize the battery instead.");
+                    error!(
+                        "Battery Service: received timeout command when battery is not present! Re-initialize the battery instead."
+                    );
                     Err(StateMachineError::InvalidActionInState)
                 } else {
                     Ok(State::Present(PresentSubstate::NotOperational))

@@ -1,7 +1,7 @@
 [package]
 name = "embedded-services"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 license = "MIT"
 description = "Embedded Service Layer for IPC, Feature Customization and Extension in Embedded Devices."
 repository = "https://github.com/OpenDevicePartnership/embedded-services"

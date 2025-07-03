@@ -3,7 +3,7 @@ use core::{future::Future, ops::DerefMut};
 
 use embassy_sync::{channel::Channel, mutex::Mutex};
 
-use crate::{intrusive_list, power, GlobalRawMutex};
+use crate::{GlobalRawMutex, intrusive_list, power};
 
 use super::PowerCapability;
 

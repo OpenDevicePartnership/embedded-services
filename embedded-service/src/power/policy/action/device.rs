@@ -1,6 +1,6 @@
 //! Device state machine actions
 use super::*;
-use crate::power::policy::{device, policy, Error, PowerCapability};
+use crate::power::policy::{Error, PowerCapability, device, policy};
 use crate::{info, trace};
 
 /// Device state machine control

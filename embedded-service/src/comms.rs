@@ -6,9 +6,9 @@ use core::convert::Infallible;
 use embassy_sync::once_lock::OnceLock;
 use serde::{Deserialize, Serialize};
 
-use crate::intrusive_list::{self, Node, NodeContainer};
 use crate::IntrusiveList;
 use crate::SyncCell;
+use crate::intrusive_list::{self, Node, NodeContainer};
 
 /// key type for OEM Endpoint declarations
 pub type OemKey = isize;

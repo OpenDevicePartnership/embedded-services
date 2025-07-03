@@ -23,8 +23,8 @@ use embassy_executor::Spawner;
 use embassy_imxrt::bind_interrupts;
 use embassy_imxrt::espi::BaseOrAsz;
 use embassy_imxrt::espi::{Base, Capabilities, Config, Direction, Espi, InterruptHandler, Len, Maxspd, PortConfig};
-use embassy_imxrt::i2c::master::I2cMaster;
 use embassy_imxrt::i2c::Async;
+use embassy_imxrt::i2c::master::I2cMaster;
 use embassy_imxrt::peripherals::ESPI;
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_sync::mutex::Mutex;
@@ -206,7 +206,8 @@ bind_interrupts!(struct Irqs {
     ESPI => InterruptHandler<ESPI>;
 });
 
-extern "C" {
+// SAFETY: These are symbols defined by the linker and guaranteed to point to valid memory
+unsafe extern "C" {
     static __start_espi_data: u8;
     static __end_espi_data: u8;
 }

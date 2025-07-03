@@ -7,7 +7,7 @@ use embassy_sync::once_lock::OnceLock;
 
 use super::charger::ChargerResponse;
 use super::device::{self};
-use super::{action, charger, DeviceId, Error, PowerCapability};
+use super::{DeviceId, Error, PowerCapability, action, charger};
 use crate::power::policy::charger::ChargerResponseData::Ack;
 use crate::{error, intrusive_list};
 

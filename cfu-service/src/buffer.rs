@@ -3,19 +3,20 @@
 
 use core::future::pending;
 
-use embassy_futures::select::{select3, Either3};
+use embassy_futures::select::{Either3, select3};
 use embassy_sync::{
     channel::{DynamicReceiver, DynamicSender},
     mutex::Mutex,
 };
-use embassy_time::{with_timeout, Duration, TimeoutError};
+use embassy_time::{Duration, TimeoutError, with_timeout};
 use embedded_cfu_protocol::protocol_definitions::*;
 use embedded_services::{
+    GlobalRawMutex,
     cfu::{
         self,
         component::{CfuDevice, InternalResponseData, RequestData},
     },
-    error, intrusive_list, trace, GlobalRawMutex,
+    error, intrusive_list, trace,
 };
 
 /// Internal state for [`Buffer`]

@@ -7,7 +7,7 @@ use embassy_sync::signal::Signal;
 
 use crate::buffer::SharedRef;
 use crate::comms::{self, Endpoint, EndpointID, External, Internal, MailboxDelegate};
-use crate::{error, intrusive_list, GlobalRawMutex, IntrusiveList, Node, NodeContainer};
+use crate::{GlobalRawMutex, IntrusiveList, Node, NodeContainer, error, intrusive_list};
 
 mod command;
 pub use command::*;

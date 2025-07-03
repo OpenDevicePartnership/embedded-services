@@ -4,7 +4,7 @@ use core::future::Future;
 
 use embassy_sync::{lazy_lock::LazyLock, signal::Signal};
 
-use embedded_services::{intrusive_list, GlobalRawMutex, IntrusiveList, Node, NodeContainer};
+use embedded_services::{GlobalRawMutex, IntrusiveList, Node, NodeContainer, intrusive_list};
 
 static BLOCKERS: LazyLock<IntrusiveList> = LazyLock::new(IntrusiveList::new);
 

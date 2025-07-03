@@ -1,7 +1,7 @@
 use embassy_sync::{mutex::Mutex, signal::Signal};
 use embedded_hal::digital::OutputPin;
 use embedded_hal_async::digital::Wait;
-use embedded_services::{trace, GlobalRawMutex};
+use embedded_services::{GlobalRawMutex, trace};
 
 /// This struct manages interrupt signal passthrough
 /// When an interrupt from the device occurs the interrupt to the host is assert

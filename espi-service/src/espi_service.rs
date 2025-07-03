@@ -4,7 +4,7 @@ use core::slice;
 use embassy_sync::mutex::Mutex;
 use embassy_sync::once_lock::OnceLock;
 use embedded_services::comms::{self, EndpointID, External, Internal};
-use embedded_services::{ec_type, error, info, GlobalRawMutex};
+use embedded_services::{GlobalRawMutex, ec_type, error, info};
 
 pub struct Service<'a> {
     endpoint: comms::Endpoint,

@@ -197,7 +197,7 @@ pub mod esa {
 #[cfg(feature = "bdd")]
 pub mod bdd {
     use super::*;
-    use block_device_driver::{blocks_to_slice, blocks_to_slice_mut, BlockDevice};
+    use block_device_driver::{BlockDevice, blocks_to_slice, blocks_to_slice_mut};
 
     #[derive(Debug, PartialEq)]
     pub struct OutOfBounds;

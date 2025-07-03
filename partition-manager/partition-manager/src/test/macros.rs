@@ -1,9 +1,8 @@
 use std::collections::VecDeque;
 
 use crate::{
-    self as partition_manager,
+    self as partition_manager, PartitionManager,
     test::mock::{ActionErase, ActionRead, ActionWrite, MockDisk},
-    PartitionManager,
 };
 
 partition_manager_macros::create_partition_map!(
@@ -55,7 +54,7 @@ fn macros() {
 
             #[cfg(feature = "esa")]
             {
-                use crate::{test::mock, Error};
+                use crate::{Error, test::mock};
                 use embedded_storage_async::nor_flash::{NorFlash, ReadNorFlash};
 
                 let mut buf = [0u8; 8];

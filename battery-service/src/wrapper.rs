@@ -1,7 +1,7 @@
 use embassy_futures::select::select;
 use embassy_sync::mutex::Mutex;
-use embedded_services::trace;
 use embedded_services::GlobalRawMutex;
+use embedded_services::trace;
 
 use crate::{
     controller::{Controller, ControllerEvent},
