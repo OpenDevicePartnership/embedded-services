@@ -1,10 +1,13 @@
 #![no_std]
+use core::convert::Infallible;
+
 use embassy_sync::once_lock::OnceLock;
 use embedded_cfu_protocol::client::CfuReceiveContent;
+use embedded_cfu_protocol::components::CfuComponentTraits;
 use embedded_cfu_protocol::protocol_definitions::*;
 use embedded_services::cfu::component::*;
 use embedded_services::cfu::{CfuError, ContextToken};
-use embedded_services::{comms, error, info};
+use embedded_services::{comms, error, info, trace};
 
 pub mod buffer;
 pub mod host;
@@ -17,8 +20,17 @@ pub struct CfuClient {
     tp: comms::Endpoint,
 }
 
-/// use default "do-nothing" implementations
-impl<T, C, E: Default> CfuReceiveContent<T, C, E> for CfuClient {}
+impl<T, C> CfuReceiveContent<T, C, Infallible> for CfuClient {
+    async fn process_command(&self, args: Option<T>, cmd: C) -> Result<(), Infallible> {
+        trace!("CfuClient CfuReceiveContent::process_command do nothing implementation.");
+        Ok(())
+    }
+
+    async fn prepare_components(&self, args: Option<T>, primary_component: impl CfuComponentTraits) -> Result<(), Infallible> {
+        trace!("CfuClient CfuReceiveContent::prepare_components do nothing implementation.");
+        Ok(())
+    }
+}
 
 impl CfuClient {
     /// Create a new Cfu Client
