@@ -646,8 +646,8 @@ dependencies = [
 
 [[package]]
 name = "embedded-cfu-protocol"
-version = "0.1.0"
-source = "git+https://github.com/OpenDevicePartnership/embedded-cfu#ffb9041a2ec9ca7a411f3439f45eec3bc01b975b"
+version = "0.2.0"
+source = "git+https://github.com/OpenDevicePartnership/embedded-cfu#a4cc8707842b878048447abbf2af4efa79fed368"
 dependencies = [
  "defmt 0.3.100",
  "embedded-io-async",
