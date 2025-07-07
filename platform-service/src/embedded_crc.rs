@@ -17,7 +17,7 @@ pub enum EmbeddedCrcError {
 }
 
 impl EmbeddedCrc<u32> {
-    pub fn new(algorithm: &'static Algorithm<u32>) -> Self {
+    pub const fn new(algorithm: &'static Algorithm<u32>) -> Self {
         Self {
             algorithm,
             current_crc: None,
@@ -67,7 +67,7 @@ impl EmbeddedCrc<u32> {
 }
 
 impl EmbeddedCrc<u16> {
-    pub fn new(algorithm: &'static Algorithm<u16>) -> Self {
+    pub const fn new(algorithm: &'static Algorithm<u16>) -> Self {
         Self {
             algorithm,
             current_crc: None,
