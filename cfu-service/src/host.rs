@@ -3,30 +3,31 @@ use core::future::Future;
 use embedded_cfu_protocol::components::CfuComponentTraits;
 use embedded_cfu_protocol::host::{CfuHostStates, CfuUpdater};
 use embedded_cfu_protocol::protocol_definitions::*;
-use embedded_cfu_protocol::{CfuImage, CfuWriter, CfuWriterDefault, CfuWriterError};
+use embedded_cfu_protocol::{
+    CfuImage,
+    writer::{CfuWriterAsync, CfuWriterError, CfuWriterNop},
+};
 use heapless::Vec;
 
 use crate::CfuError;
 
 /// All host side Cfu traits, in some cases this will originate from a OS driver for CFU
-pub trait CfuHost: CfuHostStates {
+pub trait CfuHost<W>: CfuHostStates<W> {
     /// Get all images
     fn get_cfu_images<I: CfuImage>(&self) -> impl Future<Output = Result<Vec<I, MAX_CMPT_COUNT>, CfuError>>;
     /// Gets the firmware version of all components
-    fn get_all_fw_versions<T: CfuWriter>(
+    fn get_all_fw_versions(
         self,
-        writer: &mut T,
+        writer: &mut W,
         primary_cmpt: ComponentId,
     ) -> impl Future<Output = Result<GetFwVersionResponse, CfuError>>;
     /// Goes through the offer list and returns a slice of offer responses
-    fn process_cfu_offers<'a, T: CfuWriter>(
+    fn process_cfu_offers<'a>(
         offer_commands: &'a [FwUpdateOffer],
-        writer: &mut T,
+        writer: &mut W,
     ) -> impl Future<Output = Result<&'a [FwUpdateOfferResponse], CfuError>>;
     /// For a specific component, update its content
-    fn update_cfu_content<T: CfuWriter>(
-        writer: &mut T,
-    ) -> impl Future<Output = Result<FwUpdateContentResponse, CfuError>>;
+    fn update_cfu_content(writer: &mut W) -> impl Future<Output = Result<FwUpdateContentResponse, CfuError>>;
     /// For a specific image that was updated, validate its content
     fn is_cfu_image_valid<I: CfuImage>(image: I) -> impl Future<Output = Result<bool, CfuError>>;
 }
@@ -34,7 +35,7 @@ pub trait CfuHost: CfuHostStates {
 pub struct CfuHostInstance<I: CfuImage, C: CfuComponentTraits> {
     pub updater: CfuUpdater,
     pub images: heapless::Vec<I, MAX_CMPT_COUNT>,
-    pub writer: CfuWriterDefault,
+    pub writer: CfuWriterNop,
     pub primary_cmpt: C,
     pub host_token: HostToken,
 }
@@ -45,15 +46,15 @@ impl<I: CfuImage, C: CfuComponentTraits> CfuHostInstance<I, C> {
         Self {
             updater: CfuUpdater {},
             images: Vec::new(),
-            writer: CfuWriterDefault::default(),
+            writer: CfuWriterNop,
             primary_cmpt,
             host_token: HostToken::Driver,
         }
     }
 }
 
-impl<I: CfuImage, C: CfuComponentTraits> CfuHostStates for CfuHostInstance<I, C> {
-    async fn start_transaction<T: CfuWriter>(self, _writer: &mut T) -> Result<FwUpdateOfferResponse, CfuProtocolError> {
+impl<I: CfuImage, C: CfuComponentTraits, W: CfuWriterAsync> CfuHostStates<W> for CfuHostInstance<I, C> {
+    async fn start_transaction(self, _writer: &mut W) -> Result<FwUpdateOfferResponse, CfuProtocolError> {
         let _mock_cmd = FwUpdateOfferInformation::new(OfferInformationComponentInfo::new(
             HostToken::Driver,
             SpecialComponentIds::Info,
@@ -62,10 +63,7 @@ impl<I: CfuImage, C: CfuComponentTraits> CfuHostStates for CfuHostInstance<I, C>
         let mockresponse = FwUpdateOfferResponse::default();
         Ok(mockresponse)
     }
-    async fn notify_start_offer_list<T: CfuWriter>(
-        self,
-        writer: &mut T,
-    ) -> Result<FwUpdateOfferResponse, CfuProtocolError> {
+    async fn notify_start_offer_list(self, writer: &mut W) -> Result<FwUpdateOfferResponse, CfuProtocolError> {
         // Serialize FwUpdateOfferInformation to bytes
         let mock_cmd = FwUpdateOfferInformation::new(OfferInformationComponentInfo::new(
             HostToken::Driver,
@@ -89,10 +87,7 @@ impl<I: CfuImage, C: CfuComponentTraits> CfuHostStates for CfuHostInstance<I, C>
         }
     }
 
-    async fn notify_end_offer_list<T: CfuWriter>(
-        self,
-        writer: &mut T,
-    ) -> Result<FwUpdateOfferResponse, CfuProtocolError> {
+    async fn notify_end_offer_list(self, writer: &mut W) -> Result<FwUpdateOfferResponse, CfuProtocolError> {
         let mock_cmd = FwUpdateOfferInformation::new(OfferInformationComponentInfo::new(
             HostToken::Driver,
             SpecialComponentIds::Info,
@@ -128,14 +123,14 @@ impl<I: CfuImage, C: CfuComponentTraits> CfuHostStates for CfuHostInstance<I, C>
     }
 }
 
-impl<I: CfuImage, C: CfuComponentTraits> CfuHost for CfuHostInstance<I, C> {
+impl<I: CfuImage, C: CfuComponentTraits, W: CfuWriterAsync> CfuHost<W> for CfuHostInstance<I, C> {
     async fn get_cfu_images<T: CfuImage>(&self) -> Result<Vec<T, MAX_CMPT_COUNT>, CfuError> {
         Err(CfuError::BadImage)
     }
 
-    async fn get_all_fw_versions<T: CfuWriter>(
+    async fn get_all_fw_versions(
         self,
-        _writer: &mut T,
+        _writer: &mut W,
         primary_cmpt: ComponentId,
     ) -> Result<GetFwVersionResponse, CfuError> {
         let mut component_count: u8 = 0;
@@ -172,15 +167,15 @@ impl<I: CfuImage, C: CfuComponentTraits> CfuHost for CfuHostInstance<I, C> {
         }
     }
 
-    async fn process_cfu_offers<'a, T: CfuWriter>(
+    async fn process_cfu_offers<'a>(
         _offer_commands: &'a [FwUpdateOffer],
-        _writer: &mut T,
+        _writer: &mut W,
     ) -> Result<&'a [FwUpdateOfferResponse], CfuError> {
         // TODO
         Err(CfuError::BadImage)
     }
 
-    async fn update_cfu_content<T: CfuWriter>(_writer: &mut T) -> Result<FwUpdateContentResponse, CfuError> {
+    async fn update_cfu_content(_writer: &mut W) -> Result<FwUpdateContentResponse, CfuError> {
         Err(CfuError::ProtocolError(CfuProtocolError::WriterError(
             CfuWriterError::Other,
         )))
