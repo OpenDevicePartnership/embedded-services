@@ -24,7 +24,7 @@ impl<const N: usize, C: Controller, V: FwOfferValidator> ControllerWrapper<'_, N
 
         let local_port = local_port.unwrap();
         controller::Response::Port(match command.data {
-            controller::PortCommandData::PortStatus => match controller.get_port_status(local_port).await {
+            controller::PortCommandData::PortStatus => match controller.get_port_status(local_port, false).await {
                 Ok(status) => Ok(controller::PortResponseData::PortStatus(status)),
                 Err(e) => match e {
                     Error::Bus(_) => Err(PdError::Failed),

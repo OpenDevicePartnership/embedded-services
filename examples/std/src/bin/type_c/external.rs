@@ -1,6 +1,6 @@
 //! Low-level example of external messaging with a simple type-C service
 use embassy_executor::{Executor, Spawner};
-use embedded_services::type_c::{external, ControllerId};
+use embedded_services::type_c::{ControllerId, external};
 use embedded_usb_pd::GlobalPortId;
 use log::*;
 use static_cell::StaticCell;

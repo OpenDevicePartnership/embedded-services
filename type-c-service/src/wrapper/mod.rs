@@ -172,7 +172,7 @@ impl<'a, const N: usize, C: Controller, V: FwOfferValidator> ControllerWrapper<'
 
             port_events.pend_port(global_port_id);
 
-            let status = match controller.get_port_status(local_port_id).await {
+            let status = match controller.get_port_status(local_port_id, false).await {
                 Ok(status) => status,
                 Err(_) => {
                     error!("Port{}: Error getting port status", global_port_id.0);
@@ -222,6 +222,7 @@ impl<'a, const N: usize, C: Controller, V: FwOfferValidator> ControllerWrapper<'
             }
 
             self.active_events[port].set(event);
+            trace!("Port{}: Active Event: {:#?}", port, event);
         }
 
         self.pd_controller.notify_ports(port_events).await;

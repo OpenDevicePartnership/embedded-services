@@ -21,7 +21,7 @@ use embedded_services::{debug, info, trace, type_c, warn, GlobalRawMutex};
 use embedded_usb_pd::pdinfo::PowerPathStatus;
 use embedded_usb_pd::pdo::{sink, source, Common, Rdo};
 use embedded_usb_pd::type_c::Current as TypecCurrent;
-use embedded_usb_pd::{Error, GlobalPortId, PdError, PortId as LocalPortId};
+use embedded_usb_pd::{DataRole, Error, GlobalPortId, PdError, PlugOrientation, PortId as LocalPortId, PowerRole};
 use tps6699x::asynchronous::embassy as tps6699x_drv;
 use tps6699x::asynchronous::fw_update::UpdateTarget;
 use tps6699x::asynchronous::fw_update::{
@@ -136,6 +136,22 @@ impl<'a, const N: usize, M: RawMutex, B: I2c> Tps6699x<'a, N, M, B> {
                 port_status.available_sink_contract = new_contract;
             }
 
+            port_status.plug_orientation = if status.plug_orientation() {
+                PlugOrientation::CC2
+            } else {
+                PlugOrientation::CC1
+            };
+            port_status.power_role = if status.port_role() {
+                PowerRole::Source
+            } else {
+                PowerRole::Sink
+            };
+            port_status.data_role = if status.data_role() {
+                DataRole::Dfp
+            } else {
+                DataRole::Ufp
+            };
+
             // Update alt-mode status
             let alt_mode = tps6699x.get_alt_mode_status(port).await?;
             debug!("Port{} alt mode: {:#?}", port.0, alt_mode);
@@ -145,12 +161,12 @@ impl<'a, const N: usize, M: RawMutex, B: I2c> Tps6699x<'a, N, M, B> {
             let power_path = tps6699x.get_power_path_status(port).await?;
             port_status.power_path = match port {
                 PORT0 => PowerPathStatus::new(
-                    power_path.pa_ext_vbus_sw() == PpExtVbusSw::EnabledInput,
                     power_path.pa_int_vbus_sw() == PpIntVbusSw::EnabledOutput,
+                    power_path.pa_ext_vbus_sw() == PpExtVbusSw::EnabledInput,
                 ),
                 PORT1 => PowerPathStatus::new(
-                    power_path.pb_ext_vbus_sw() == PpExtVbusSw::EnabledInput,
                     power_path.pb_int_vbus_sw() == PpIntVbusSw::EnabledOutput,
+                    power_path.pb_ext_vbus_sw() == PpExtVbusSw::EnabledInput,
                 ),
                 _ => Err(PdError::InvalidPort)?,
             };
@@ -289,9 +305,24 @@ impl<const N: usize, M: RawMutex, B: I2c> Controller for Tps6699x<'_, N, M, B> {
     async fn get_port_status(
         &mut self,
         port: LocalPortId,
+        cached: bool,
     ) -> Result<type_c::controller::PortStatus, Error<Self::BusError>> {
         if port.0 >= self.port_status.len() as u8 {
             return PdError::InvalidPort.into();
+        }
+
+        // sync port status
+        if !cached {
+            debug!("update port status");
+
+            let mut tps6699x = self
+                .tps6699x
+                .try_lock()
+                .expect("Driver should not have been locked before this, thus infallible");
+
+            let _ = self.update_port_status(&mut tps6699x, port).await;
+        } else {
+            debug!("using cached port status");
         }
 
         Ok(*self.port_status[port.0 as usize].lock().await)
