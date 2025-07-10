@@ -4,7 +4,7 @@ use embedded_usb_pd::{GlobalPortId, PdError, PortId as LocalPortId};
 use super::{
     ControllerId,
     controller::{
-        ControllerStatus, PortStatus, RetimerFwUpdateState, execute_external_controller_command,
+        ControllerStatus, PortInfo, PortStatus, RetimerFwUpdateState, execute_external_controller_command,
         execute_external_port_command, lookup_controller,
     },
 };
@@ -56,6 +56,8 @@ pub enum PortCommandData {
     RetimerFwUpdateClearState,
     /// Set retimer compliance
     SetRetimerCompliance,
+    /// Get port info
+    PortInfo,
 }
 
 /// Port-specific commands
@@ -78,6 +80,8 @@ pub enum PortResponseData {
     PortStatus(PortStatus),
     /// Get retimer fw update status
     RetimerFwUpdateGetState(RetimerFwUpdateState),
+    /// Port info
+    PortInfo(PortInfo),
 }
 
 /// Port-specific command response
@@ -112,6 +116,19 @@ pub async fn get_port_status(port: GlobalPortId) -> Result<PortStatus, PdError> 
     .await?
     {
         PortResponseData::PortStatus(status) => Ok(status),
+        _ => Err(PdError::InvalidResponse),
+    }
+}
+
+/// Get the info of the given port
+pub async fn get_port_info(port: GlobalPortId) -> Result<PortInfo, PdError> {
+    match execute_external_port_command(Command::Port(PortCommand {
+        port,
+        data: PortCommandData::PortInfo,
+    }))
+    .await?
+    {
+        PortResponseData::PortInfo(info) => Ok(info),
         _ => Err(PdError::InvalidResponse),
     }
 }

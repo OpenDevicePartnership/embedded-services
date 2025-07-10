@@ -23,7 +23,7 @@ mod test_controller {
     use embedded_services::{
         GlobalRawMutex,
         type_c::{
-            controller::{Contract, ControllerStatus, PortStatus, RetimerFwUpdateState},
+            controller::{Contract, ControllerStatus, PortInfo, PortStatus, RetimerFwUpdateState},
             event::PortEventKind,
         },
     };
@@ -117,6 +117,16 @@ mod test_controller {
         async fn get_port_status(&mut self, _port: LocalPortId) -> Result<PortStatus, Error<Self::BusError>> {
             debug!("Get port status: {:#?}", *self.state.status.lock().await);
             Ok(*self.state.status.lock().await)
+        }
+
+        async fn get_port_info(&mut self, _port: LocalPortId) -> Result<PortInfo, Error<Self::BusError>> {
+            debug!("Get port info");
+            Ok(PortInfo {
+                conn_present: false,
+                plug_orientation_flipped: false,
+                power_role_source: false,
+                data_role_dfp: false,
+            })
         }
 
         async fn enable_sink_path(&mut self, _port: LocalPortId, enable: bool) -> Result<(), Error<Self::BusError>> {

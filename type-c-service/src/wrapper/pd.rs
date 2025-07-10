@@ -31,6 +31,13 @@ impl<const N: usize, C: Controller, V: FwOfferValidator> ControllerWrapper<'_, N
                     Error::Pd(e) => Err(e),
                 },
             },
+            controller::PortCommandData::PortInfo => match controller.get_port_info(local_port).await {
+                Ok(info) => Ok(controller::PortResponseData::PortInfo(info)),
+                Err(e) => match e {
+                    Error::Bus(_) => Err(PdError::Failed),
+                    Error::Pd(e) => Err(e),
+                },
+            },
             controller::PortCommandData::ClearEvents => {
                 let event = self.active_events[0].get();
                 self.active_events[0].set(PortEventKind::none());
