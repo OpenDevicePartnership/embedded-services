@@ -1,6 +1,6 @@
 //! Low-level example of external messaging with a simple type-C service
 use embassy_executor::{Executor, Spawner};
-use embedded_services::type_c::{external, ControllerId};
+use embedded_services::type_c::{ControllerId, external};
 use embedded_usb_pd::GlobalPortId;
 use log::*;
 use static_cell::StaticCell;
@@ -30,6 +30,10 @@ async fn task(_spawner: Spawner) {
 
     info!("Setting retimer compliance");
     external::port_set_rt_compliance(GlobalPortId(0)).await.unwrap();
+
+    info!("Getting port info");
+    let port_info = external::get_port_info(GlobalPortId(0)).await.unwrap();
+    info!("Port info: {port_info:?}");
 }
 
 fn main() {

@@ -152,6 +152,15 @@ impl Service {
         external::Response::Port(status.map(external::PortResponseData::PortStatus))
     }
 
+    /// Process external port info command
+    async fn process_external_port_info(&self, port_id: GlobalPortId) -> external::Response<'static> {
+        let info = self.context.get_port_info(port_id).await;
+        if let Err(e) = info {
+            error!("Error getting port status: {:#?}", e);
+        }
+        external::Response::Port(info.map(external::PortResponseData::PortInfo))
+    }
+
     /// Process get retimer fw update status commands
     async fn process_get_rt_fw_update_status(&self, port_id: GlobalPortId) -> external::Response<'static> {
         let status = self.context.get_rt_fw_update_status(port_id).await;
@@ -197,6 +206,7 @@ impl Service {
         debug!("Processing external port command: {:#?}", command);
         match command.data {
             external::PortCommandData::PortStatus => self.process_external_port_status(command.port).await,
+            external::PortCommandData::PortInfo => self.process_external_port_info(command.port).await,
             external::PortCommandData::RetimerFwUpdateGetState => {
                 self.process_get_rt_fw_update_status(command.port).await
             }

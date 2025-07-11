@@ -2,7 +2,7 @@ use core::array::from_fn;
 use core::iter::zip;
 
 use ::tps6699x::registers::field_sets::IntEventBus1;
-use ::tps6699x::registers::{PdCcPullUp, PpExtVbusSw, PpIntVbusSw};
+use ::tps6699x::registers::{PdCcPullUp, PlugMode, PpExtVbusSw, PpIntVbusSw};
 use ::tps6699x::{PORT0, PORT1, TPS66993_NUM_PORTS, TPS66994_NUM_PORTS};
 use bitfield::bitfield;
 use embassy_futures::select::select;
@@ -14,7 +14,7 @@ use embedded_cfu_protocol::protocol_definitions::ComponentId;
 use embedded_hal_async::i2c::I2c;
 use embedded_services::cfu::component::CfuDevice;
 use embedded_services::power::policy::{self, PowerCapability};
-use embedded_services::type_c::controller::{self, Controller, ControllerStatus, PortStatus};
+use embedded_services::type_c::controller::{self, Controller, ControllerStatus, PortInfo, PortStatus};
 use embedded_services::type_c::event::PortEventKind;
 use embedded_services::type_c::ControllerId;
 use embedded_services::{debug, info, trace, type_c, warn, GlobalRawMutex};
@@ -145,12 +145,12 @@ impl<'a, const N: usize, M: RawMutex, B: I2c> Tps6699x<'a, N, M, B> {
             let power_path = tps6699x.get_power_path_status(port).await?;
             port_status.power_path = match port {
                 PORT0 => PowerPathStatus::new(
-                    power_path.pa_ext_vbus_sw() == PpExtVbusSw::EnabledInput,
                     power_path.pa_int_vbus_sw() == PpIntVbusSw::EnabledOutput,
+                    power_path.pa_ext_vbus_sw() == PpExtVbusSw::EnabledInput,
                 ),
                 PORT1 => PowerPathStatus::new(
-                    power_path.pb_ext_vbus_sw() == PpExtVbusSw::EnabledInput,
                     power_path.pb_int_vbus_sw() == PpIntVbusSw::EnabledOutput,
+                    power_path.pb_ext_vbus_sw() == PpExtVbusSw::EnabledInput,
                 ),
                 _ => Err(PdError::InvalidPort)?,
             };
@@ -294,7 +294,47 @@ impl<const N: usize, M: RawMutex, B: I2c> Controller for Tps6699x<'_, N, M, B> {
             return PdError::InvalidPort.into();
         }
 
+        // sync port status
+        info!("update port status");
+
+        let mut tps6699x = self
+            .tps6699x
+            .try_lock()
+            .expect("Driver should not have been locked before this, thus infallible");
+
+        let _ = self.update_port_status(&mut tps6699x, port).await;
+
         Ok(*self.port_status[port.0 as usize].lock().await)
+    }
+
+    /// Returns the current info of the port
+    async fn get_port_info(
+        &mut self,
+        port: LocalPortId,
+    ) -> Result<type_c::controller::PortInfo, Error<Self::BusError>> {
+        info!("get port info");
+        let mut tps6699x = self
+            .tps6699x
+            .try_lock()
+            .expect("Driver should not have been locked before this, thus infallible");
+
+        let status = tps6699x.get_port_status(port).await?;
+        let mut port_info = PortInfo::default();
+        let plug_present = status.plug_present();
+        let conn_state = status.connection_state();
+        let valid_conn = matches!(
+            conn_state,
+            PlugMode::Audio | PlugMode::Debug | PlugMode::Reserved | PlugMode::ConnectedNoRa | PlugMode::Connected
+        );
+        port_info.conn_present = plug_present && valid_conn;
+
+        if port_info.conn_present {
+            port_info.plug_orientation_flipped = status.plug_orientation();
+            port_info.power_role_source = status.port_role();
+            port_info.data_role_dfp = status.data_role();
+        }
+
+        Ok(port_info)
     }
 
     async fn get_rt_fw_update_status(

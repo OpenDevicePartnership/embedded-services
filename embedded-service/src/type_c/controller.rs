@@ -82,6 +82,39 @@ impl Default for PortStatus {
     }
 }
 
+/// Port Info
+#[derive(Copy, Clone, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct PortInfo {
+    /// connection present
+    pub conn_present: bool,
+    /// plug orientation
+    pub plug_orientation_flipped: bool,
+    /// power role
+    pub power_role_source: bool,
+    /// data role
+    pub data_role_dfp: bool,
+}
+
+impl PortInfo {
+    /// Create a new blank port status
+    /// Needed because default() is not const
+    pub const fn new() -> Self {
+        Self {
+            conn_present: false,
+            plug_orientation_flipped: false,
+            power_role_source: false,
+            data_role_dfp: false,
+        }
+    }
+}
+
+impl Default for PortInfo {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Port-specific command data
 #[derive(Copy, Clone, Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
@@ -98,6 +131,8 @@ pub enum PortCommandData {
     RetimerFwUpdateClearState,
     /// Set retimer compliance
     SetRetimerCompliance,
+    /// Get port info
+    PortInfo,
 }
 
 /// Port-specific commands
@@ -132,6 +167,8 @@ pub enum PortResponseData {
     ClearEvents(PortEventKind),
     /// Retimer Fw Update status
     RtFwUpdateStatus(RetimerFwUpdateState),
+    /// Port info
+    PortInfo(PortInfo),
 }
 
 impl PortResponseData {
@@ -315,6 +352,10 @@ pub trait Controller {
     /// Returns the port status
     fn get_port_status(&mut self, port: LocalPortId)
     -> impl Future<Output = Result<PortStatus, Error<Self::BusError>>>;
+
+    /// Returns the port info
+    fn get_port_info(&mut self, port: LocalPortId) -> impl Future<Output = Result<PortInfo, Error<Self::BusError>>>;
+
     /// Returns the retimer fw update state
     fn get_rt_fw_update_status(
         &mut self,
@@ -625,6 +666,17 @@ impl ContextToken {
             PortResponseData::PortStatus(status) => Ok(status),
             r => {
                 error!("Invalid response: expected port status, got {:?}", r);
+                Err(PdError::InvalidResponse)
+            }
+        }
+    }
+
+    /// Get the current port info
+    pub async fn get_port_info(&self, port: GlobalPortId) -> Result<PortInfo, PdError> {
+        match self.send_port_command(port, PortCommandData::PortInfo).await? {
+            PortResponseData::PortInfo(info) => Ok(info),
+            r => {
+                error!("Invalid response: expected port info, got {:?}", r);
                 Err(PdError::InvalidResponse)
             }
         }
