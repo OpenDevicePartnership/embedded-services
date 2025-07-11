@@ -2,6 +2,7 @@
 pub mod action;
 pub mod charger;
 pub mod device;
+pub mod flags;
 pub mod policy;
 
 pub use policy::{init, register_device};
@@ -66,6 +67,54 @@ impl Ord for PowerCapability {
     fn cmp(&self, other: &Self) -> core::cmp::Ordering {
         self.max_power_mw().cmp(&other.max_power_mw())
     }
+}
+
+/// Power capability with consumer flags
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct ConsumerPowerCapability {
+    /// Power capability
+    pub capability: PowerCapability,
+    /// Consumer flags
+    pub flags: flags::Consumer,
+}
+
+impl From<PowerCapability> for ConsumerPowerCapability {
+    fn from(capability: PowerCapability) -> Self {
+        Self {
+            capability,
+            flags: flags::Consumer::none(),
+        }
+    }
+}
+
+/// Power capability with provider flags
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct ProviderPowerCapability {
+    /// Power capability
+    pub capability: PowerCapability,
+    /// Provider flags
+    pub flags: flags::Provider,
+}
+
+impl From<PowerCapability> for ProviderPowerCapability {
+    fn from(capability: PowerCapability) -> Self {
+        Self {
+            capability,
+            flags: flags::Provider::none(),
+        }
+    }
+}
+
+/// Combined power capability with flags enum
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum PowerCapabilityFlags {
+    /// Consumer flags
+    Consumer(ConsumerPowerCapability),
+    /// Provider flags
+    Provider(ProviderPowerCapability),
 }
 
 /// Data to send with the comms service

@@ -2,12 +2,13 @@
 use core::sync::atomic::{AtomicBool, Ordering};
 
 use crate::GlobalRawMutex;
+use crate::power::policy::{ConsumerPowerCapability, ProviderPowerCapability};
 use embassy_sync::channel::Channel;
 use embassy_sync::once_lock::OnceLock;
 
 use super::charger::ChargerResponse;
 use super::device::{self};
-use super::{DeviceId, Error, PowerCapability, action, charger};
+use super::{DeviceId, Error, action, charger};
 use crate::power::policy::charger::ChargerResponseData::Ack;
 use crate::{error, intrusive_list};
 
@@ -21,9 +22,9 @@ pub enum RequestData {
     /// Notify that a device has attached
     NotifyAttached,
     /// Notify that available power for consumption has changed
-    NotifyConsumerCapability(Option<PowerCapability>),
+    NotifyConsumerCapability(Option<ConsumerPowerCapability>),
     /// Request the given amount of power to provider
-    RequestProviderCapability(PowerCapability),
+    RequestProviderCapability(ProviderPowerCapability),
     /// Notify that a device cannot consume or provide power anymore
     NotifyDisconnect,
     /// Notify that a device has detached

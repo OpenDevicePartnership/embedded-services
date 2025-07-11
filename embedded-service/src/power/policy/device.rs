@@ -3,8 +3,9 @@ use core::ops::DerefMut;
 
 use embassy_sync::mutex::Mutex;
 
-use super::{DeviceId, Error, PowerCapability, action};
+use super::{DeviceId, Error, action};
 use crate::ipc::deferred;
+use crate::power::policy::{ConsumerPowerCapability, ProviderPowerCapability};
 use crate::{GlobalRawMutex, intrusive_list};
 
 /// Most basic device states
@@ -28,9 +29,9 @@ pub enum State {
     /// Device is attached, but is not currently providing or consuming power
     Idle,
     /// Device is attached and is currently providing power
-    ConnectedProvider(PowerCapability),
+    ConnectedProvider(ProviderPowerCapability),
     /// Device is attached and is currently consuming power
-    ConnectedConsumer(PowerCapability),
+    ConnectedConsumer(ConsumerPowerCapability),
     /// No device attached
     Detached,
 }
@@ -54,9 +55,9 @@ struct InternalState {
     /// Current state of the device
     pub state: State,
     /// Current consumer capability
-    pub consumer_capability: Option<PowerCapability>,
+    pub consumer_capability: Option<ConsumerPowerCapability>,
     /// Current requested provider capability
-    pub requested_provider_capability: Option<PowerCapability>,
+    pub requested_provider_capability: Option<ProviderPowerCapability>,
 }
 
 /// Data for a device request
@@ -64,9 +65,9 @@ struct InternalState {
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum CommandData {
     /// Start consuming on this device
-    ConnectAsConsumer(PowerCapability),
+    ConnectAsConsumer(ConsumerPowerCapability),
     /// Start providing power to port partner on this device
-    ConnectAsProvider(PowerCapability),
+    ConnectAsProvider(ProviderPowerCapability),
     /// Stop providing or consuming on this device
     Disconnect,
 }
@@ -147,7 +148,7 @@ impl Device {
     }
 
     /// Returns the current consumer capability of the device
-    pub async fn consumer_capability(&self) -> Option<PowerCapability> {
+    pub async fn consumer_capability(&self) -> Option<ConsumerPowerCapability> {
         self.state.lock().await.consumer_capability
     }
 
@@ -157,7 +158,7 @@ impl Device {
     }
 
     /// Returns current provider power capability
-    pub async fn provider_capability(&self) -> Option<PowerCapability> {
+    pub async fn provider_capability(&self) -> Option<ProviderPowerCapability> {
         match self.state().await {
             State::ConnectedProvider(capability) => Some(capability),
             _ => None,
@@ -165,7 +166,7 @@ impl Device {
     }
 
     /// Returns the current requested provider capability
-    pub async fn requested_provider_capability(&self) -> Option<PowerCapability> {
+    pub async fn requested_provider_capability(&self) -> Option<ProviderPowerCapability> {
         self.state.lock().await.requested_provider_capability
     }
 
@@ -192,14 +193,14 @@ impl Device {
     }
 
     /// Internal function to set consumer capability
-    pub(super) async fn update_consumer_capability(&self, capability: Option<PowerCapability>) {
+    pub(super) async fn update_consumer_capability(&self, capability: Option<ConsumerPowerCapability>) {
         let mut lock = self.state.lock().await;
         let state = lock.deref_mut();
         state.consumer_capability = capability;
     }
 
     /// Internal function to set requested provider capability
-    pub(super) async fn update_requested_provider_capability(&self, capability: Option<PowerCapability>) {
+    pub(super) async fn update_requested_provider_capability(&self, capability: Option<ProviderPowerCapability>) {
         let mut lock = self.state.lock().await;
         let state = lock.deref_mut();
         state.requested_provider_capability = capability;
