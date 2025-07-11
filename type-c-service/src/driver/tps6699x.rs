@@ -15,7 +15,7 @@ use embedded_hal_async::i2c::I2c;
 use embedded_services::cfu::component::CfuDevice;
 use embedded_services::power::policy::{self, PowerCapability};
 use embedded_services::type_c::controller::{self, Controller, ControllerStatus, PortStatus};
-use embedded_services::type_c::event::PortEventKind;
+use embedded_services::type_c::event::{PortEvent, PortStatusChanged};
 use embedded_services::type_c::ControllerId;
 use embedded_services::{debug, info, trace, type_c, warn, GlobalRawMutex};
 use embedded_usb_pd::pdinfo::PowerPathStatus;
@@ -45,7 +45,7 @@ struct FwUpdateState<'a, M: RawMutex, B: I2c> {
 }
 
 pub struct Tps6699x<'a, const N: usize, M: RawMutex, B: I2c> {
-    port_events: [Mutex<GlobalRawMutex, PortEventKind>; N],
+    port_events: [Mutex<GlobalRawMutex, PortEvent>; N],
     port_status: [Mutex<GlobalRawMutex, PortStatus>; N],
     sw_event: Signal<M, ()>,
     tps6699x: Mutex<GlobalRawMutex, tps6699x_drv::Tps6699x<'a, M, B>>,
@@ -57,7 +57,7 @@ pub struct Tps6699x<'a, const N: usize, M: RawMutex, B: I2c> {
 impl<'a, const N: usize, M: RawMutex, B: I2c> Tps6699x<'a, N, M, B> {
     pub fn new(tps6699x: tps6699x_drv::Tps6699x<'a, M, B>, fw_update_config: FwUpdateConfig) -> Self {
         Self {
-            port_events: [const { Mutex::new(PortEventKind::none()) }; N],
+            port_events: [const { Mutex::new(PortEvent::none()) }; N],
             port_status: [const { Mutex::new(PortStatus::new()) }; N],
             sw_event: Signal::new(),
             tps6699x: Mutex::new(tps6699x),
@@ -71,8 +71,8 @@ impl<'a, const N: usize, M: RawMutex, B: I2c> Tps6699x<'a, N, M, B> {
         &self,
         tps6699x: &mut tps6699x_drv::Tps6699x<'a, M, B>,
         port: LocalPortId,
-    ) -> Result<PortEventKind, Error<B::Error>> {
-        let events = PortEventKind::none();
+    ) -> Result<PortStatusChanged, Error<B::Error>> {
+        let events = PortStatusChanged::none();
 
         let status = tps6699x.get_port_status(port).await?;
         trace!("Port{} status: {:#?}", port.0, status);
@@ -177,28 +177,28 @@ impl<'a, const N: usize, M: RawMutex, B: I2c> Tps6699x<'a, N, M, B> {
                 let mut event = mutex.lock().await;
                 if interrupt.plug_event() {
                     debug!("Event: Plug event");
-                    event.set_plug_inserted_or_removed(true);
+                    event.status.set_plug_inserted_or_removed(true);
                 }
                 if interrupt.source_caps_received() {
                     debug!("Event: Source Caps received");
-                    event.set_source_caps_received(true);
+                    event.status.set_source_caps_received(true);
                 }
 
                 if interrupt.sink_ready() {
                     debug!("Event: Sink ready");
-                    event.set_sink_ready(true);
+                    event.status.set_sink_ready(true);
                 }
 
                 if interrupt.new_consumer_contract() {
                     debug!("Event: New contract as consumer, PD controller act as Sink");
                     // Port is consumer and power negotiation is complete
-                    event.set_new_power_contract_as_consumer(true);
+                    event.status.set_new_power_contract_as_consumer(true);
                 }
 
                 if interrupt.new_provider_contract() {
                     debug!("Event: New contract as provider, PD controller act as source");
                     // Port is provider and power negotiation is complete
-                    event.set_new_power_contract_as_provider(true);
+                    event.status.set_new_power_contract_as_provider(true);
                 }
             }
         }
@@ -211,7 +211,7 @@ impl<'a, const N: usize, M: RawMutex, B: I2c> Tps6699x<'a, N, M, B> {
     }
 
     /// Signal an event on the given port
-    async fn signal_event(&self, port: LocalPortId, event: PortEventKind) {
+    async fn signal_event(&self, port: LocalPortId, event: PortEvent) {
         if port.0 >= self.port_events.len() as u8 {
             return;
         }
@@ -232,7 +232,7 @@ impl<const N: usize, M: RawMutex, B: I2c> Controller for Tps6699x<'_, N, M, B> {
     async fn sync_state(&mut self) -> Result<(), Error<Self::BusError>> {
         for i in 0..N {
             let port = LocalPortId(i as u8);
-            let event: PortEventKind;
+            let event: PortStatusChanged;
             {
                 let mut tps6699x = self
                     .tps6699x
@@ -240,7 +240,7 @@ impl<const N: usize, M: RawMutex, B: I2c> Controller for Tps6699x<'_, N, M, B> {
                     .expect("Driver should not have been locked before this, thus infallible");
                 event = self.update_port_status(&mut tps6699x, port).await?;
             }
-            self.signal_event(port, event).await;
+            self.signal_event(port, event.into()).await;
         }
 
         Ok(())
@@ -259,7 +259,7 @@ impl<const N: usize, M: RawMutex, B: I2c> Controller for Tps6699x<'_, N, M, B> {
 
             let mut guard = mutex.lock().await;
 
-            let event = guard.union(self.update_port_status(&mut tps6699x, port).await?);
+            let event = guard.union(self.update_port_status(&mut tps6699x, port).await?.into());
 
             // TODO: We get interrupts for certain status changes that don't currently map to a generic port event
             // Enable this when those get fleshed out
@@ -275,13 +275,13 @@ impl<const N: usize, M: RawMutex, B: I2c> Controller for Tps6699x<'_, N, M, B> {
     }
 
     /// Returns and clears current events for the given port
-    async fn clear_port_events(&mut self, port: LocalPortId) -> Result<PortEventKind, Error<Self::BusError>> {
+    async fn clear_port_events(&mut self, port: LocalPortId) -> Result<PortEvent, Error<Self::BusError>> {
         if port.0 >= self.port_events.len() as u8 {
             return PdError::InvalidPort.into();
         }
         let mut guard = self.port_events[port.0 as usize].lock().await;
         let port_events = *guard;
-        *guard = PortEventKind::none();
+        *guard = PortEvent::none();
         Ok(port_events)
     }
 
