@@ -322,13 +322,11 @@ impl<const N: usize, M: RawMutex, B: I2c> Controller for Tps6699x<'_, N, M, B> {
         let mut port_info = PortInfo::default();
         let plug_present = status.plug_present();
         let conn_state = status.connection_state();
-        let valid_conn = match conn_state {
-            PlugMode::Audio | PlugMode::Debug | PlugMode::Reserved | PlugMode::ConnectedNoRa | PlugMode::Connected => {
-                true
-            }
-            _ => false,
-        };
-        port_info.conn_present = plug_present & valid_conn;
+        let valid_conn = matches!(
+            conn_state,
+            PlugMode::Audio | PlugMode::Debug | PlugMode::Reserved | PlugMode::ConnectedNoRa | PlugMode::Connected
+        );
+        port_info.conn_present = plug_present && valid_conn;
 
         if port_info.conn_present {
             port_info.plug_orientation_flipped = status.plug_orientation();

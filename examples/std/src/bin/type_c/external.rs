@@ -33,7 +33,7 @@ async fn task(_spawner: Spawner) {
 
     info!("Getting port info");
     let port_info = external::get_port_info(GlobalPortId(0)).await.unwrap();
-    info!("Port info: {:?}", port_info);
+    info!("Port info: {port_info:?}");
 }
 
 fn main() {
