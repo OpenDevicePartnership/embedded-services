@@ -34,8 +34,11 @@ pub type GlobalRawMutex = embassy_sync::blocking_mutex::raw::CriticalSectionRawM
 ///
 /// Used because ThreadModeRawMutex is not unit test friendly
 /// but CriticalSectionRawMutex would incur a significant performance impact, since it disables interrupts.
-#[cfg(all(not(test), target_os = "none"))]
+#[cfg(all(not(test), target_os = "none", not(feature = "mpssfh")))]
 pub type GlobalRawMutex = embassy_sync::blocking_mutex::raw::ThreadModeRawMutex;
+
+#[cfg(all(not(test), target_os = "none", feature = "mpssfh"))]
+pub type GlobalRawMutex = embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 
 /// A cell type that is Sync and Send. CriticalSectionCell is used in a standard context to support multiple cores and
 /// executors, whereas ThreadModeCell is leaner and used in a microcontroller context for when there's a guarantee of a

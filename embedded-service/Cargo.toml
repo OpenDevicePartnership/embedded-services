@@ -32,6 +32,7 @@ embedded-batteries-async.workspace = true
 fixed.workspace = true
 heapless.workspace = true
 log = { workspace = true, optional = true }
+portable-atomic.workspace = true
 postcard.workspace = true
 rand_core.workspace = true
 serde.workspace = true
@@ -53,6 +54,7 @@ embassy-executor = { workspace = true, features = [
 embassy-futures.workspace = true
 
 [features]
+mpssfh = []
 default = []
 defmt = [
     "dep:defmt",

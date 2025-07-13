@@ -1,5 +1,8 @@
 //! Definitions for deferred execution of commands
+#[cfg(not(feature = "mpssfh"))]
 use core::sync::atomic::{AtomicUsize, Ordering};
+#[cfg(feature = "mpssfh")]
+use portable_atomic::{AtomicUsize, Ordering};
 
 use crate::debug;
 use embassy_sync::{blocking_mutex::raw::RawMutex, mutex::Mutex, signal::Signal};
