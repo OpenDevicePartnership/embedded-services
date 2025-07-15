@@ -71,18 +71,6 @@ impl<T: Copy> ThreadModeCell<T> {
         assert!(in_thread_mode(), "ThreadModeCell can only be accessed in thread mode.");
         self.inner.get()
     }
-
-    /// Updates the `ThreadModeCell`'s content using a function.
-    ///
-    /// This guarantees race conditions will not occur as this can only be called in a single
-    /// execution environment (thread mode) with cooperative scheduling.
-    /// # Panics
-    ///
-    /// This function will panic if called from within an interrupt context.
-    pub fn update(&self, f: impl FnOnce(T) -> T) {
-        assert!(in_thread_mode(), "ThreadModeCell can only be accessed in thread mode.");
-        self.inner.update(f)
-    }
 }
 
 impl<T: ?Sized> ThreadModeCell<T> {
