@@ -1088,6 +1088,7 @@ version = "0.1.0"
 dependencies = [
  "aligned",
  "block-device-driver",
+ "defmt 0.3.100",
  "embassy-futures",
  "embassy-sync",
  "embedded-storage-async",
