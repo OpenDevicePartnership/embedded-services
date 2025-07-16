@@ -200,6 +200,66 @@ impl<'a, const N: usize, M: RawMutex, B: I2c> Tps6699x<'a, N, M, B> {
                     // Port is provider and power negotiation is complete
                     event.set_new_power_contract_as_provider(true);
                 }
+
+                if interrupt.power_swap_completed() {
+                    debug!("Event: power swap completed");
+                    event.set_power_swap_completed(true);
+                }
+
+                if interrupt.data_swap_completed() {
+                    debug!("Event: data swap completed");
+                    event.set_data_swap_completed(true);
+                }
+
+                if interrupt.am_entered() {
+                    debug!("Event: alt mode entered");
+                    event.set_alt_mode_entered(true);
+                }
+
+                if interrupt.hard_reset() {
+                    debug!("Event: hard reset");
+                    event.set_pd_hard_reset(true);
+                }
+
+                if interrupt.crossbar_error() {
+                    debug!("Event: crossbar error");
+                    event.set_usb_mux_error_recovery(true);
+                }
+
+                if interrupt.usvid_mode_entered() {
+                    debug!("Event: user svid mode entered");
+                    event.set_custom_mode_entered(true);
+                }
+
+                if interrupt.usvid_mode_exited() {
+                    debug!("Event: usvid mode exited");
+                    event.set_custom_mode_exited(true);
+                }
+
+                if interrupt.usvid_attention_vdm_received() {
+                    debug!("Event: user svid attention vdm received");
+                    event.set_custom_mode_attention_received(true);
+                }
+
+                if interrupt.usvid_other_vdm_received() {
+                    debug!("Event: user svid other vdm received");
+                    event.set_custom_mode_other_vdm_received(true);
+                }
+
+                if interrupt.discover_mode_completed() {
+                    debug!("Event: discover mode completed");
+                    event.set_discover_mode_completed(true);
+                }
+
+                if interrupt.dp_sid_status_updated() {
+                    debug!("Event: dp sid status updated");
+                    event.set_dp_status_update(true);
+                }
+
+                if interrupt.alert_message_received() {
+                    debug!("Event: alert message received");
+                    event.set_pd_alert_received(true);
+                }
             }
         }
         Ok(())
