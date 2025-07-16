@@ -91,6 +91,11 @@ impl<'a, const N: usize, C: Controller, V: FwOfferValidator> ControllerWrapper<'
         }
     }
 
+    /// Get the power policy devices for this controller.
+    pub fn power_policy_devices(&self) -> &[policy::device::Device; N] {
+        &self.power
+    }
+
     /// Handle a plug event
     async fn process_plug_event(
         &self,
