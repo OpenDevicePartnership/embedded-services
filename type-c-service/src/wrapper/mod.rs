@@ -92,7 +92,7 @@ impl<'a, const N: usize, C: Controller, V: FwOfferValidator> ControllerWrapper<'
     }
 
     /// Get the power policy devices for this controller.
-    pub fn power_policy_devices(&self) -> &[policy::device::Device; N] {
+    pub fn power_policy_devices(&self) -> &[policy::device::Device] {
         &self.power
     }
 
