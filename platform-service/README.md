@@ -2,13 +2,9 @@
 Platform service provides generic abstraction over embedded functions so implementation can remain hardware agnostic.
 
 Services contained:
-- NVRAM
 - CRC
 
 Additional usage examples can be found in embedded-services/examples/rt685s-evk
-
-# NVRAM
-(TODO)
 
 # CRC
 Contains EmbeddedCrc struct which can be instantiated to calculate a CRC over a specific algorithm.
