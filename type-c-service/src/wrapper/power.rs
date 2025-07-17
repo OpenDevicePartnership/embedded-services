@@ -4,7 +4,7 @@ use embedded_services::{
     ipc::deferred,
     power::policy::{
         device::{CommandData, InternalResponseData},
-        PowerCapability,
+        ProviderPowerCapability,
     },
 };
 use embedded_usb_pd::GlobalPortId;
@@ -49,7 +49,7 @@ impl<const N: usize, C: Controller, V: FwOfferValidator> ControllerWrapper<'_, N
 
         if let Ok(state) = power.try_device_action::<action::Idle>().await {
             if let Err(e) = state
-                .notify_consumer_power_capability(status.available_sink_contract)
+                .notify_consumer_power_capability(status.available_sink_contract.map(Into::into))
                 .await
             {
                 error!("Error setting power contract: {:?}", e);
@@ -57,7 +57,7 @@ impl<const N: usize, C: Controller, V: FwOfferValidator> ControllerWrapper<'_, N
             }
         } else if let Ok(state) = power.try_device_action::<action::ConnectedConsumer>().await {
             if let Err(e) = state
-                .notify_consumer_power_capability(status.available_sink_contract)
+                .notify_consumer_power_capability(status.available_sink_contract.map(Into::into))
                 .await
             {
                 error!("Error setting power contract: {:?}", e);
@@ -65,7 +65,7 @@ impl<const N: usize, C: Controller, V: FwOfferValidator> ControllerWrapper<'_, N
             }
         } else if let Ok(state) = power.try_device_action::<action::ConnectedProvider>().await {
             if let Err(e) = state
-                .notify_consumer_power_capability(status.available_sink_contract)
+                .notify_consumer_power_capability(status.available_sink_contract.map(Into::into))
                 .await
             {
                 error!("Error setting power contract: {:?}", e);
@@ -116,14 +116,14 @@ impl<const N: usize, C: Controller, V: FwOfferValidator> ControllerWrapper<'_, N
 
         if let Ok(state) = power.try_device_action::<action::Idle>().await {
             if let Some(contract) = status.available_source_contract {
-                if let Err(e) = state.request_provider_power_capability(contract).await {
+                if let Err(e) = state.request_provider_power_capability(contract.into()).await {
                     error!("Error setting power contract: {:?}", e);
                     return PdError::Failed.into();
                 }
             }
         } else if let Ok(state) = power.try_device_action::<action::ConnectedProvider>().await {
             if let Some(contract) = status.available_source_contract {
-                if let Err(e) = state.request_provider_power_capability(contract).await {
+                if let Err(e) = state.request_provider_power_capability(contract.into()).await {
                     error!("Error setting power contract: {:?}", e);
                     return PdError::Failed.into();
                 }
@@ -165,7 +165,7 @@ impl<const N: usize, C: Controller, V: FwOfferValidator> ControllerWrapper<'_, N
     async fn process_connect_as_provider(
         &self,
         port: LocalPortId,
-        capability: PowerCapability,
+        capability: ProviderPowerCapability,
         _controller: &mut C,
     ) -> Result<(), Error<C::BusError>> {
         info!("Port{}: Connect as provider: {:#?}", port.0, capability);
