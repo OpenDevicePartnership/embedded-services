@@ -39,6 +39,12 @@ version = "0.1.0@git:410e2482d54b58c205a425c70d2ccf062e3ee3f3"
 importable = false
 notes = "ODP crates are always trusted."
 
+[[audits.embedded-batteries]]
+who = "Matteo Tullo <matteotullo@microsoft.com>"
+criteria = "safe-to-deploy"
+version = "0.2.0"
+notes = "ODP crates are always trusted."
+
 [[audits.embedded-batteries-async]]
 who = "Felipe Balbi <febalbi@microsoft.com>"
 criteria = "safe-to-deploy"
@@ -50,6 +56,12 @@ who = "Felipe Balbi <febalbi@microsoft.com>"
 criteria = "safe-to-deploy"
 version = "0.1.0@git:410e2482d54b58c205a425c70d2ccf062e3ee3f3"
 importable = false
+notes = "ODP crates are always trusted."
+
+[[audits.embedded-batteries-async]]
+who = "Matteo Tullo <matteotullo@microsoft.com>"
+criteria = "safe-to-deploy"
+version = "0.2.0"
 notes = "ODP crates are always trusted."
 
 [[audits.gimli]]

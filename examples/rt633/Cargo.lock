@@ -147,7 +147,7 @@ dependencies = [
 [[package]]
 name = "bq25773"
 version = "0.1.0"
-source = "git+https://github.com/OpenDevicePartnership/bq25773#025db35ca05fe870cac4bfb7e4e5413ca9326eef"
+source = "git+https://github.com/OpenDevicePartnership/bq25773#20bc26219b5372bc6146cdc509c21f6d43e257b3"
 dependencies = [
  "device-driver",
  "embedded-batteries-async",
@@ -156,11 +156,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "bq40z50"
-version = "0.1.0"
-source = "git+https://github.com/OpenDevicePartnership/bq40z50#9850c086fe1e3ef2519fc5c794a06035479c225e"
+name = "bq40z50-rx"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6490641e82ed3770614a0f2a301fc26422ee83b52eb7d2802805e41f471be318"
 dependencies = [
- "defmt 0.3.100",
  "device-driver",
  "embedded-batteries-async",
  "embedded-hal 1.0.0",
@@ -346,7 +346,6 @@ version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c424cfcc4a418769975185d1d9066ad07fa05cb343fda8ea0adf98a9e9d195d2"
 dependencies = [
- "defmt 0.3.100",
  "device-driver-macros",
  "embedded-io",
  "embedded-io-async",
@@ -537,20 +536,21 @@ dependencies = [
 
 [[package]]
 name = "embedded-batteries"
-version = "0.1.0"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4919f477b322518335c90aff8820355ffff4cd1aa567e10a8bfe5c8829a3ff15"
+checksum = "b4be47256affdef01a03a622283ab883130af02e1fa0c786ba310bb5dac48abf"
 dependencies = [
  "bitfield-struct",
+ "bitflags 2.9.0",
  "defmt 0.3.100",
  "embedded-hal 1.0.0",
 ]
 
 [[package]]
 name = "embedded-batteries-async"
-version = "0.1.0"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "02b35cd3052eaffa4d2914d07adda1b8631f9cb14300b62ce6b082b68ef926dd"
+checksum = "cc047df7395e547e925ec9765c21da77a1d26e086054433a426227cded8ee75a"
 dependencies = [
  "bitfield-struct",
  "defmt 0.3.100",
@@ -607,9 +607,6 @@ name = "embedded-io"
 version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "edd0f118536f44f5ccd48bcb8b111bdc3de888b58c74639dfb034a357d0f206d"
-dependencies = [
- "defmt 0.3.100",
-]
 
 [[package]]
 name = "embedded-io-async"
@@ -1085,7 +1082,7 @@ version = "0.1.0"
 dependencies = [
  "battery-service",
  "bq25773",
- "bq40z50",
+ "bq40z50-rx",
  "cortex-m",
  "cortex-m-rt",
  "defmt 0.3.100",

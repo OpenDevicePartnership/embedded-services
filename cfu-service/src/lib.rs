@@ -78,6 +78,32 @@ impl CfuClient {
             RequestData::GiveOffer(_offer_cmd) => Ok(()),
             RequestData::PrepareComponentForUpdate => Ok(()),
             RequestData::FinalizeUpdate => Ok(()),
+            RequestData::GiveOfferExtended(_) => {
+                // Don't currently support extended offers
+                self.context
+                    .send_response(InternalResponseData::OfferResponse(
+                        FwUpdateOfferResponse::new_with_failure(
+                            HostToken::Driver,
+                            OfferRejectReason::InvalidComponent,
+                            OfferStatus::Reject,
+                        ),
+                    ))
+                    .await;
+                Ok(())
+            }
+            RequestData::GiveOfferInformation(_) => {
+                // Don't currently support information offers
+                self.context
+                    .send_response(InternalResponseData::OfferResponse(
+                        FwUpdateOfferResponse::new_with_failure(
+                            HostToken::Driver,
+                            OfferRejectReason::InvalidComponent,
+                            OfferStatus::Reject,
+                        ),
+                    ))
+                    .await;
+                Ok(())
+            }
         }
     }
 }

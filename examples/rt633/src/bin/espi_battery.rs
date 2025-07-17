@@ -17,7 +17,7 @@ use embedded_services::{error, info};
 use battery_service::controller::{Controller, ControllerEvent};
 use battery_service::device::{Device, DeviceId, DynamicBatteryMsgs, StaticBatteryMsgs};
 use battery_service::wrapper::Wrapper;
-use bq40z50::Bq40z50;
+use bq40z50_rx::Bq40z50;
 use embassy_embedded_hal::shared_bus::asynch::i2c::I2cDevice;
 use embassy_executor::Spawner;
 use embassy_imxrt::bind_interrupts;

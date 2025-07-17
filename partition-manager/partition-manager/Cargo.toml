@@ -20,13 +20,17 @@ partition-manager-macros = { path = "../macros", features = [
     "toml",
 ], optional = true }
 
+defmt = { workspace = true, optional = true }
+
 [features]
-default = ["esa", "bdd", "macros"]
+default = ["esa", "bdd", "macros", "defmt"]
 
 macros = ["dep:partition-manager-macros"]
 
 bdd = ["dep:block-device-driver", "dep:aligned"]
 esa = ["dep:embedded-storage-async"]
+
+defmt = ["dep:defmt"]
 
 [dev-dependencies]
 embassy-futures.workspace = true

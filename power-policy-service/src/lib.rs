@@ -107,17 +107,17 @@ impl PowerPolicy {
             }
             policy::RequestData::NotifyConsumerCapability(capability) => {
                 info!(
-                    "Received notify consumer capability from device {}: {:#?}",
+                    "Device{}: Received notify consumer capability: {:#?}",
                     device.id().0,
-                    capability
+                    capability,
                 );
                 self.process_notify_consumer_power_capability().await
             }
             policy::RequestData::RequestProviderCapability(capability) => {
                 info!(
-                    "Received request provider capability from device {}: {:#?}",
+                    "Device{}: Received request provider capability: {:#?}",
                     device.id().0,
-                    capability
+                    capability,
                 );
                 self.process_request_provider_power_capabilities(device.id()).await
             }
