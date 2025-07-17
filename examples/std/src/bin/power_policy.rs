@@ -1,7 +1,10 @@
 use embassy_executor::{Executor, Spawner};
-use embassy_sync::once_lock::OnceLock;
+use embassy_sync::{blocking_mutex::raw::NoopRawMutex, once_lock::OnceLock, pubsub::PubSubChannel};
 use embassy_time::{self as _, Timer};
-use embedded_services::power::policy::{self, ConsumerPowerCapability, PowerCapability, device, flags};
+use embedded_services::{
+    broadcaster::immediate as broadcaster,
+    power::policy::{self, ConsumerPowerCapability, PowerCapability, device, flags},
+};
 use log::*;
 use static_cell::StaticCell;
 
@@ -186,6 +189,31 @@ async fn run(spawner: Spawner) {
     Timer::after_millis(250).await;
 }
 
+#[embassy_executor::task]
+async fn receiver_task() {
+    static CHANNEL: StaticCell<PubSubChannel<NoopRawMutex, policy::CommsMessage, 1, 1, 0>> = StaticCell::new();
+    let channel = CHANNEL.init(PubSubChannel::new());
+
+    let publisher = channel.dyn_immediate_publisher();
+    let mut subscriber = channel.dyn_subscriber().unwrap();
+
+    static RECEIVER: StaticCell<broadcaster::Receiver<'static, policy::CommsMessage>> = StaticCell::new();
+    let receiver = RECEIVER.init(broadcaster::Receiver::new(publisher));
+
+    policy::policy::register_message_receiver(receiver).await.unwrap();
+
+    loop {
+        match subscriber.next_message().await {
+            embassy_sync::pubsub::WaitResult::Message(msg) => {
+                info!("Received message: {msg:?}");
+            }
+            embassy_sync::pubsub::WaitResult::Lagged(count) => {
+                warn!("Lagged messages: {count}");
+            }
+        }
+    }
+}
+
 fn main() {
     env_logger::builder().filter_level(log::LevelFilter::Trace).init();
 
@@ -196,5 +224,6 @@ fn main() {
             power_policy_service::config::Config::default(),
         ));
         spawner.must_spawn(run(spawner));
+        spawner.must_spawn(receiver_task());
     });
 }
