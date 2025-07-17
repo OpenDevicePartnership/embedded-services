@@ -8,26 +8,3 @@ rust-version = "1.85"
 license = "MIT"
 
 [dependencies]
-defmt = { workspace = true, optional = true }
-embassy-executor.workspace = true
-embassy-sync.workspace = true
-embassy-time.workspace = true
-embedded-services.workspace = true
-log = { workspace = true, optional = true }
-
-[features]
-default = []
-defmt = [
-    "dep:defmt",
-    "embedded-services/defmt",
-    "embassy-time/defmt",
-    "embassy-sync/defmt",
-    "embassy-executor/defmt",
-]
-log = [
-    "dep:log",
-    "embedded-services/log",
-    "embassy-time/log",
-    "embassy-sync/log",
-    "embassy-executor/log",
-]
