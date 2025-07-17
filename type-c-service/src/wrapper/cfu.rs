@@ -294,6 +294,14 @@ impl<const N: usize, C: Controller, V: FwOfferValidator> ControllerWrapper<'_, N
                 debug!("Got PrepareComponentForUpdate");
                 InternalResponseData::ComponentPrepared
             }
+            RequestData::GiveOfferExtended(_) => {
+                debug!("Got GiveExtendedOffer, rejecting");
+                Self::create_offer_rejection()
+            }
+            RequestData::GiveOfferInformation(_) => {
+                debug!("Got GiveOfferInformation, rejecting");
+                Self::create_offer_rejection()
+            }
         }
     }
 

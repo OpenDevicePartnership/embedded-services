@@ -65,6 +65,7 @@ pub struct Buffer<'a> {
     config: Config,
 }
 
+/// Events that the buffer can produce
 pub enum Event {
     /// Content request from the host
     CfuRequest(RequestData),
@@ -157,6 +158,7 @@ impl<'a> Buffer<'a> {
             // If the buffer is full, this will block until space is available
             trace!("Component is busy, buffering content");
             self.buffer_sender.send(*content).await;
+            trace!("Content successfully buffered");
         } else {
             // Buffered component can accept new content, send it
             if let Err(e) = cfu::send_device_request(self.buffered_id, RequestData::GiveContent(*content)).await {
@@ -313,6 +315,24 @@ impl<'a> Buffer<'a> {
             RequestData::PrepareComponentForUpdate => {
                 trace!("Got PrepareComponentForUpdate");
                 InternalResponseData::ComponentPrepared
+            }
+            RequestData::GiveOfferExtended(_) => {
+                trace!("Got GiveOfferExtended");
+                // Extended offers are not currently supported
+                InternalResponseData::OfferResponse(FwUpdateOfferResponse::new_with_failure(
+                    HostToken::Driver,
+                    OfferRejectReason::InvalidComponent,
+                    OfferStatus::Reject,
+                ))
+            }
+            RequestData::GiveOfferInformation(_) => {
+                trace!("Got GiveOfferInformation");
+                // Offer information is not currently supported
+                InternalResponseData::OfferResponse(FwUpdateOfferResponse::new_with_failure(
+                    HostToken::Driver,
+                    OfferRejectReason::InvalidComponent,
+                    OfferStatus::Reject,
+                ))
             }
         }
     }

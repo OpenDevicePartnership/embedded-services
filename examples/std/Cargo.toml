@@ -30,7 +30,7 @@ power-policy-service = { path = "../../power-policy-service", features = [
 cfu-service = { path = "../../cfu-service", features = ["log"] }
 embedded-cfu-protocol = { git = "https://github.com/OpenDevicePartnership/embedded-cfu" }
 
-embedded-batteries-async = "0.1.0"
+embedded-batteries-async = "0.2.0"
 battery-service = { path = "../../battery-service", features = ["log"] }
 type-c-service = { path = "../../type-c-service", features = ["log"] }
 

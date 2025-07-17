@@ -1,6 +1,7 @@
 //! This module contains the `Controller` trait. Any types that implement this trait can be used with the `ControllerWrapper` struct
 //! which provides a bridge between various service messages and the actual controller functions.
 use core::array::from_fn;
+use core::future::Future;
 
 use embassy_futures::select::{select4, select_array, Either4};
 use embassy_sync::mutex::Mutex;
@@ -8,6 +9,7 @@ use embedded_cfu_protocol::protocol_definitions::{FwUpdateOffer, FwUpdateOfferRe
 use embedded_services::cfu::component::CfuDevice;
 use embedded_services::power::policy::device::StateKind;
 use embedded_services::power::policy::{self, action};
+use embedded_services::transformers::object::{Object, RefGuard, RefMutGuard};
 use embedded_services::type_c::controller::{self, Controller, PortStatus};
 use embedded_services::type_c::event::{PortEventFlags, PortEventKind};
 use embedded_services::GlobalRawMutex;
@@ -301,5 +303,15 @@ impl<'a, const N: usize, C: Controller, V: FwOfferValidator> ControllerWrapper<'
                 Error::Pd(PdError::Failed)
             })?;
         Ok(())
+    }
+}
+
+impl<'a, const N: usize, C: Controller, V: FwOfferValidator> Object<C> for ControllerWrapper<'a, N, C, V> {
+    fn get_inner(&self) -> impl Future<Output = impl RefGuard<C>> {
+        self.controller.lock()
+    }
+
+    fn get_inner_mut(&self) -> impl Future<Output = impl RefMutGuard<C>> {
+        self.controller.lock()
     }
 }

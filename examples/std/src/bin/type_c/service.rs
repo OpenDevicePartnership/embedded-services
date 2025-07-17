@@ -4,6 +4,7 @@ use embassy_time::Timer;
 use embedded_cfu_protocol::protocol_definitions::{FwUpdateOfferResponse, HostToken};
 use embedded_services::comms;
 use embedded_services::power::{self, policy};
+use embedded_services::transformers::object::Object;
 use embedded_services::type_c::{ControllerId, controller};
 use embedded_usb_pd::Error;
 use embedded_usb_pd::GlobalPortId;
@@ -89,6 +90,11 @@ mod test_controller {
                 state,
                 events: Cell::new(PortEventKind::none()),
             }
+        }
+
+        /// Function to demonstrate calling functions directly on the controller
+        pub fn custom_function(&self) {
+            info!("Custom function called on controller");
         }
     }
 
@@ -248,6 +254,8 @@ async fn controller_task(state: &'static test_controller::ControllerState) {
     });
 
     wrapper.register().await.unwrap();
+
+    wrapper.get_inner().await.custom_function();
 
     loop {
         wrapper.process().await;
