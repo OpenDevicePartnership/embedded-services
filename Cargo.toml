@@ -12,7 +12,6 @@ members = [
     "platform-service",
     "power-button-service",
     "power-policy-service",
-    "storage-bus",
     "type-c-service",
 ]
 exclude = ["examples/*"]
