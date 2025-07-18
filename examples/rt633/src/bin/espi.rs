@@ -16,7 +16,7 @@ use {defmt_rtt as _, panic_probe as _};
 // Mock battery service
 mod battery_service {
     use defmt::info;
-    use embassy_sync::blocking_mutex::raw::NoopRawMutex;
+    use embassy_sync::blocking_mutex::raw::ThreadModeRawMutex;
     use embassy_sync::once_lock::OnceLock;
     use embassy_sync::signal::Signal;
     use embedded_services::comms::{self, EndpointID, External, Internal};
@@ -26,7 +26,7 @@ mod battery_service {
         endpoint: comms::Endpoint,
 
         // This is can be an Embassy signal or channel or whatever Embassy async notification construct
-        signal: Signal<NoopRawMutex, ec_type::message::BatteryMessage>,
+        signal: Signal<ThreadModeRawMutex, ec_type::message::BatteryMessage>,
     }
 
     impl Service {
