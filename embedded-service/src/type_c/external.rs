@@ -47,7 +47,7 @@ pub type ControllerResponse<'a> = Result<ControllerResponseData<'a>, PdError>;
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum PortCommandData {
     /// Get port status
-    PortStatus,
+    PortStatus(bool),
     /// Get retimer fw update status
     RetimerFwUpdateGetState,
     /// Set retimer fw update status
@@ -107,7 +107,7 @@ pub enum Response<'a> {
 pub async fn get_port_status(port: GlobalPortId) -> Result<PortStatus, PdError> {
     match execute_external_port_command(Command::Port(PortCommand {
         port,
-        data: PortCommandData::PortStatus,
+        data: PortCommandData::PortStatus(false),
     }))
     .await?
     {

@@ -174,7 +174,7 @@ impl<'a, const N: usize, C: Controller, V: FwOfferValidator> ControllerWrapper<'
 
             port_events.pend_port(global_port_id);
 
-            let status = match controller.get_port_status(local_port_id, false).await {
+            let status = match controller.get_port_status(local_port_id, true).await {
                 Ok(status) => status,
                 Err(_) => {
                     error!("Port{}: Error getting port status", global_port_id.0);

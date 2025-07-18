@@ -96,7 +96,7 @@ impl Default for PortStatus {
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum PortCommandData {
     /// Get port status
-    PortStatus,
+    PortStatus(bool),
     /// Get and clear events
     ClearEvents,
     /// Get retimer fw update state
@@ -633,8 +633,11 @@ impl ContextToken {
     }
 
     /// Get the current port status
-    pub async fn get_port_status(&self, port: GlobalPortId) -> Result<PortStatus, PdError> {
-        match self.send_port_command(port, PortCommandData::PortStatus).await? {
+    pub async fn get_port_status(&self, port: GlobalPortId, cached: bool) -> Result<PortStatus, PdError> {
+        match self
+            .send_port_command(port, PortCommandData::PortStatus(cached))
+            .await?
+        {
             PortResponseData::PortStatus(status) => Ok(status),
             r => {
                 error!("Invalid response: expected port status, got {:?}", r);

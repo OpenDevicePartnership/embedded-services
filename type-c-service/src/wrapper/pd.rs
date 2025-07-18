@@ -24,13 +24,15 @@ impl<const N: usize, C: Controller, V: FwOfferValidator> ControllerWrapper<'_, N
 
         let local_port = local_port.unwrap();
         controller::Response::Port(match command.data {
-            controller::PortCommandData::PortStatus => match controller.get_port_status(local_port, false).await {
-                Ok(status) => Ok(controller::PortResponseData::PortStatus(status)),
-                Err(e) => match e {
-                    Error::Bus(_) => Err(PdError::Failed),
-                    Error::Pd(e) => Err(e),
-                },
-            },
+            controller::PortCommandData::PortStatus(cashed) => {
+                match controller.get_port_status(local_port, cashed).await {
+                    Ok(status) => Ok(controller::PortResponseData::PortStatus(status)),
+                    Err(e) => match e {
+                        Error::Bus(_) => Err(PdError::Failed),
+                        Error::Pd(e) => Err(e),
+                    },
+                }
+            }
             controller::PortCommandData::ClearEvents => {
                 let event = self.active_events[0].get();
                 self.active_events[0].set(PortEventKind::none());

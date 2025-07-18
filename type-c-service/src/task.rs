@@ -144,8 +144,8 @@ impl Service {
     }
 
     /// Process external port status command
-    async fn process_external_port_status(&self, port_id: GlobalPortId) -> external::Response<'static> {
-        let status = self.context.get_port_status(port_id).await;
+    async fn process_external_port_status(&self, port_id: GlobalPortId, cached: bool) -> external::Response<'static> {
+        let status = self.context.get_port_status(port_id, cached).await;
         if let Err(e) = status {
             error!("Error getting port status: {:#?}", e);
         }
@@ -196,7 +196,9 @@ impl Service {
     async fn process_external_port_command(&self, command: &external::PortCommand) -> external::Response<'static> {
         debug!("Processing external port command: {:#?}", command);
         match command.data {
-            external::PortCommandData::PortStatus => self.process_external_port_status(command.port).await,
+            external::PortCommandData::PortStatus(cached) => {
+                self.process_external_port_status(command.port, cached).await
+            }
             external::PortCommandData::RetimerFwUpdateGetState => {
                 self.process_get_rt_fw_update_status(command.port).await
             }
@@ -241,7 +243,7 @@ impl Service {
                         debug!("Port{}: Event", port_id.0);
                         state.event_iter = Some(pending);
                         let event = self.context.get_port_event(port_id).await?;
-                        let status = self.context.get_port_status(port_id).await?;
+                        let status = self.context.get_port_status(port_id, true).await?;
 
                         return Ok(Event::PortEvent(port_id, event, status));
                     } else {
