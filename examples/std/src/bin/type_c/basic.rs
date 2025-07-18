@@ -2,7 +2,7 @@ use embassy_executor::{Executor, Spawner};
 use embassy_sync::once_lock::OnceLock;
 use embassy_time::Timer;
 use embedded_services::power;
-use embedded_services::type_c::{controller, ControllerId};
+use embedded_services::type_c::{ControllerId, controller};
 use embedded_usb_pd::ucsi::lpm;
 use embedded_usb_pd::{GlobalPortId, PdError as Error};
 use log::*;
