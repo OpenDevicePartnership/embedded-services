@@ -1,10 +1,11 @@
-use core::array::from_fn;
-use core::iter::zip;
-
+use crate::wrapper::{ControllerWrapper, FwOfferValidator};
 use ::tps6699x::registers::field_sets::IntEventBus1;
 use ::tps6699x::registers::{PdCcPullUp, PpExtVbusSw, PpIntVbusSw};
 use ::tps6699x::{PORT0, PORT1, TPS66993_NUM_PORTS, TPS66994_NUM_PORTS};
 use bitfield::bitfield;
+use core::array::from_fn;
+use core::future::Future;
+use core::iter::zip;
 use embassy_futures::select::select;
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use embassy_sync::mutex::Mutex;
@@ -14,6 +15,7 @@ use embedded_cfu_protocol::protocol_definitions::ComponentId;
 use embedded_hal_async::i2c::I2c;
 use embedded_services::cfu::component::CfuDevice;
 use embedded_services::power::policy::{self, PowerCapability};
+use embedded_services::transformers::object::{Object, RefGuard, RefMutGuard};
 use embedded_services::type_c::controller::{self, Controller, ControllerStatus, PortStatus};
 use embedded_services::type_c::event::PortEventKind;
 use embedded_services::type_c::ControllerId;
@@ -30,8 +32,6 @@ use tps6699x::asynchronous::fw_update::{
 use tps6699x::fw_update::UpdateConfig as FwUpdateConfig;
 
 type Updater<'a, M, B> = BorrowedUpdaterInProgress<tps6699x_drv::Tps6699x<'a, M, B>>;
-
-use crate::wrapper::{ControllerWrapper, FwOfferValidator};
 
 /// Firmware update state
 struct FwUpdateState<'a, M: RawMutex, B: I2c> {
@@ -581,6 +581,16 @@ impl<const N: usize, M: RawMutex, B: I2c> Controller for Tps6699x<'_, N, M, B> {
         } else {
             Err(PdError::InvalidMode.into())
         }
+    }
+}
+
+impl<'a, const N: usize, M: RawMutex, B: I2c> Object<tps6699x_drv::Tps6699x<'a, M, B>> for Tps6699x<'a, N, M, B> {
+    fn get_inner(&self) -> impl Future<Output = impl RefGuard<tps6699x_drv::Tps6699x<'a, M, B>>> {
+        self.tps6699x.lock()
+    }
+
+    fn get_inner_mut(&self) -> impl Future<Output = impl RefMutGuard<tps6699x_drv::Tps6699x<'a, M, B>>> {
+        self.tps6699x.lock()
     }
 }
 
