@@ -129,6 +129,8 @@ pub enum CommsData {
     Unconstrained(bool),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 /// Message to send with the comms service
 pub struct CommsMessage {
     /// Message data

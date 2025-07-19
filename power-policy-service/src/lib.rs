@@ -86,6 +86,7 @@ impl PowerPolicy {
 
     /// Send a notification with the comms service
     async fn comms_notify(&self, message: CommsMessage) {
+        self.context.broadcast_message(message).await;
         let _ = self
             .tp
             .send(comms::EndpointID::Internal(comms::Internal::Battery), &message)
