@@ -5,7 +5,8 @@ extern crate rt685s_evk_example;
 
 use defmt::info;
 use embassy_executor::Spawner;
-use embassy_sync::once_lock::OnceLock;
+
+use static_cell::StaticCell;
 
 mod activity_example {
     use embassy_sync::blocking_mutex::raw::NoopRawMutex;
@@ -93,8 +94,8 @@ mod activity_example {
 
         #[embassy_executor::task]
         pub async fn task() {
-            static CONTEXT: OnceLock<BacklightContext> = OnceLock::new();
-            let context = CONTEXT.get_or_init(BacklightContext::new);
+            static CONTEXT: StaticCell<BacklightContext> = StaticCell::new();
+            let context = CONTEXT.init(BacklightContext::new());
             context.init().await;
             context.event_loop().await;
         }
@@ -111,15 +112,14 @@ mod activity_example {
 
         #[embassy_executor::task]
         pub async fn keyboard_task() {
-            static KEYBOARD: OnceLock<Keyboard> = OnceLock::new();
+            static KEYBOARD: StaticCell<Keyboard> = StaticCell::new();
 
-            let keyboard = KEYBOARD.get_or_init(|| {
-                embassy_futures::block_on(async {
-                    Keyboard {
-                        activity_publisher: activity::register_publisher(activity::Class::Keyboard).await.unwrap(),
-                    }
-                })
+            let k = embassy_futures::block_on(async {
+                Keyboard {
+                    activity_publisher: activity::register_publisher(activity::Class::Keyboard).await.unwrap(),
+                }
             });
+            let keyboard = KEYBOARD.init(k);
 
             let mut count = 0;
             loop {

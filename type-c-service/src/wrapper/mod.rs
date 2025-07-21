@@ -91,6 +91,11 @@ impl<'a, const N: usize, C: Controller, V: FwOfferValidator> ControllerWrapper<'
         }
     }
 
+    /// Get the power policy devices for this controller.
+    pub fn power_policy_devices(&self) -> &[policy::device::Device] {
+        &self.power
+    }
+
     /// Handle a plug event
     async fn process_plug_event(
         &self,
@@ -174,7 +179,7 @@ impl<'a, const N: usize, C: Controller, V: FwOfferValidator> ControllerWrapper<'
 
             port_events.pend_port(global_port_id);
 
-            let status = match controller.get_port_status(local_port_id).await {
+            let status = match controller.get_port_status(local_port_id, true).await {
                 Ok(status) => status,
                 Err(_) => {
                     error!("Port{}: Error getting port status", global_port_id.0);
@@ -224,6 +229,7 @@ impl<'a, const N: usize, C: Controller, V: FwOfferValidator> ControllerWrapper<'
             }
 
             self.active_events[port].set(event);
+            trace!("Port{}: Active Event: {:#?}", port, event);
         }
 
         self.pd_controller.notify_ports(port_events).await;

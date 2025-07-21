@@ -392,8 +392,8 @@ checksum = "48c757948c5ede0e46177b7add2e67155f70e33c07fea8284df6576da70b3719"
 
 [[package]]
 name = "embassy-embedded-hal"
-version = "0.3.0"
-source = "git+https://github.com/embassy-rs/embassy#141c170db426404444a454c063c2eec07c74a1c3"
+version = "0.3.1"
+source = "git+https://github.com/embassy-rs/embassy#e3aff148f488221829b55b8ff3266d7ce0d05a32"
 dependencies = [
  "defmt 1.0.1",
  "embassy-futures",
@@ -411,7 +411,7 @@ dependencies = [
 [[package]]
 name = "embassy-executor"
 version = "0.7.0"
-source = "git+https://github.com/embassy-rs/embassy#141c170db426404444a454c063c2eec07c74a1c3"
+source = "git+https://github.com/embassy-rs/embassy#e3aff148f488221829b55b8ff3266d7ce0d05a32"
 dependencies = [
  "cortex-m",
  "critical-section",
@@ -423,7 +423,7 @@ dependencies = [
 [[package]]
 name = "embassy-executor-macros"
 version = "0.6.2"
-source = "git+https://github.com/embassy-rs/embassy#141c170db426404444a454c063c2eec07c74a1c3"
+source = "git+https://github.com/embassy-rs/embassy#e3aff148f488221829b55b8ff3266d7ce0d05a32"
 dependencies = [
  "darling",
  "proc-macro2",
@@ -434,15 +434,15 @@ dependencies = [
 [[package]]
 name = "embassy-futures"
 version = "0.1.1"
-source = "git+https://github.com/embassy-rs/embassy#141c170db426404444a454c063c2eec07c74a1c3"
+source = "git+https://github.com/embassy-rs/embassy#e3aff148f488221829b55b8ff3266d7ce0d05a32"
 dependencies = [
  "defmt 1.0.1",
 ]
 
 [[package]]
 name = "embassy-hal-internal"
-version = "0.2.0"
-source = "git+https://github.com/embassy-rs/embassy#141c170db426404444a454c063c2eec07c74a1c3"
+version = "0.3.0"
+source = "git+https://github.com/embassy-rs/embassy#e3aff148f488221829b55b8ff3266d7ce0d05a32"
 dependencies = [
  "cortex-m",
  "critical-section",
@@ -488,21 +488,21 @@ dependencies = [
 [[package]]
 name = "embassy-sync"
 version = "0.7.0"
-source = "git+https://github.com/embassy-rs/embassy#141c170db426404444a454c063c2eec07c74a1c3"
+source = "git+https://github.com/embassy-rs/embassy#e3aff148f488221829b55b8ff3266d7ce0d05a32"
 dependencies = [
  "cfg-if",
  "critical-section",
  "defmt 1.0.1",
  "embedded-io-async",
+ "futures-core",
  "futures-sink",
- "futures-util",
  "heapless 0.8.0",
 ]
 
 [[package]]
 name = "embassy-time"
 version = "0.4.0"
-source = "git+https://github.com/embassy-rs/embassy#141c170db426404444a454c063c2eec07c74a1c3"
+source = "git+https://github.com/embassy-rs/embassy#e3aff148f488221829b55b8ff3266d7ce0d05a32"
 dependencies = [
  "cfg-if",
  "critical-section",
@@ -512,13 +512,13 @@ dependencies = [
  "embedded-hal 0.2.7",
  "embedded-hal 1.0.0",
  "embedded-hal-async",
- "futures-util",
+ "futures-core",
 ]
 
 [[package]]
 name = "embassy-time-driver"
 version = "0.2.0"
-source = "git+https://github.com/embassy-rs/embassy#141c170db426404444a454c063c2eec07c74a1c3"
+source = "git+https://github.com/embassy-rs/embassy#e3aff148f488221829b55b8ff3266d7ce0d05a32"
 dependencies = [
  "document-features",
 ]
@@ -526,7 +526,7 @@ dependencies = [
 [[package]]
 name = "embassy-time-queue-utils"
 version = "0.1.0"
-source = "git+https://github.com/embassy-rs/embassy#141c170db426404444a454c063c2eec07c74a1c3"
+source = "git+https://github.com/embassy-rs/embassy#e3aff148f488221829b55b8ff3266d7ce0d05a32"
 dependencies = [
  "embassy-executor",
  "heapless 0.8.0",
@@ -667,7 +667,7 @@ dependencies = [
 [[package]]
 name = "embedded-usb-pd"
 version = "0.1.0"
-source = "git+https://github.com/OpenDevicePartnership/embedded-usb-pd#b8948c96b8c8e920c837307d30653cfd74cf80cd"
+source = "git+https://github.com/OpenDevicePartnership/embedded-usb-pd#9cd23ecde3937c0b172057257f320dfb37d4295b"
 dependencies = [
  "bitfield 0.19.0",
  "defmt 0.3.100",

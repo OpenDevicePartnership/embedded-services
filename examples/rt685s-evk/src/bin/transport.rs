@@ -8,9 +8,9 @@ use embassy_executor::Spawner;
 
 mod simple_example {
     use embassy_sync::blocking_mutex::raw::NoopRawMutex;
-    use embassy_sync::once_lock::OnceLock;
     use embassy_sync::signal::Signal;
     use embedded_services::comms;
+    use static_cell::StaticCell;
 
     use super::*;
 
@@ -78,8 +78,8 @@ mod simple_example {
 
     #[embassy_executor::task]
     pub async fn sender() {
-        static SENDER: OnceLock<Context> = OnceLock::new();
-        let this = SENDER.get_or_init(|| Context::new(Key::Sender));
+        static SENDER: StaticCell<Context> = StaticCell::new();
+        let this = SENDER.init(Context::new(Key::Sender));
 
         // register sender transport node
         comms::register_endpoint(this, &this.tp).await.unwrap();
@@ -116,8 +116,8 @@ mod simple_example {
 
     #[embassy_executor::task]
     pub async fn receiver() {
-        static RECEIVER: OnceLock<Context> = OnceLock::new();
-        let this = RECEIVER.get_or_init(|| Context::new(Key::Receiver));
+        static RECEIVER: StaticCell<Context> = StaticCell::new();
+        let this = RECEIVER.init(Context::new(Key::Receiver));
 
         comms::register_endpoint(this, &this.tp).await.unwrap();
 

@@ -19,12 +19,13 @@ enum RxMessage {
 // Mock eSPI transport service
 mod espi_service {
     use crate::{RxMessage, TxMessage};
-    use core::convert::Infallible;
     use defmt::info;
+    use embassy_futures::select::{Either, select};
     use embassy_sync::blocking_mutex::raw::NoopRawMutex;
-    use embassy_sync::once_lock::OnceLock;
     use embassy_sync::signal::Signal;
+    use embassy_time::{Duration, Ticker};
     use embedded_services::comms::{self, EndpointID, External, Internal};
+    use static_cell::StaticCell;
 
     struct Service {
         endpoint: comms::Endpoint,
@@ -55,42 +56,39 @@ mod espi_service {
         }
     }
 
-    static ESPI_SERVICE: OnceLock<Service> = OnceLock::new();
-
-    // Initialize eSPI service and register it with the transport service
-    pub async fn init() {
-        let espi_service = ESPI_SERVICE.get_or_init(Service::new);
+    // espi service that will update the memory map
+    #[embassy_executor::task]
+    pub async fn espi_service() {
+        static ESPI_SERVICE: StaticCell<Service> = StaticCell::new();
+        let espi_service = ESPI_SERVICE.init(Service::new());
+        let mut ticker = Ticker::every(Duration::from_secs(1));
 
         comms::register_endpoint(espi_service, &espi_service.endpoint)
             .await
             .unwrap();
-    }
 
-    // Funtion to forward a battery_charge_message to the battery service
-    pub async fn forward_set_battery_charge_message(battery_charge: u32) -> Result<(), Infallible> {
-        let espi_service = ESPI_SERVICE.get().await;
-
-        espi_service
-            .endpoint
-            .send(
-                EndpointID::Internal(Internal::Battery),
-                &RxMessage::SetBatteryCharge(battery_charge),
-            )
-            .await
-    }
-
-    // espi service that will update the memory map
-    #[embassy_executor::task]
-    pub async fn espi_service() {
-        let espi_service = ESPI_SERVICE.get().await;
+        let mut battery_charge = 0;
 
         loop {
-            let msg = espi_service.signal.wait().await;
+            let event = select(espi_service.signal.wait(), ticker.next()).await;
 
-            match msg {
-                TxMessage::UpdateBatteryStatus(_) => {
-                    info!("Update battery status in memory map");
-                    embassy_time::Timer::after_secs(1).await;
+            match event {
+                Either::First(msg) => match msg {
+                    TxMessage::UpdateBatteryStatus(charge) => {
+                        info!("Update battery charge: {}", charge);
+                        battery_charge = charge;
+                        embassy_time::Timer::after_secs(1).await;
+                    }
+                },
+                Either::Second(_) => {
+                    espi_service
+                        .endpoint
+                        .send(
+                            EndpointID::Internal(Internal::Battery),
+                            &RxMessage::SetBatteryCharge(battery_charge),
+                        )
+                        .await
+                        .unwrap();
                 }
             }
         }
@@ -101,10 +99,12 @@ mod espi_service {
 mod battery_service {
     use crate::{RxMessage, TxMessage};
     use defmt::info;
+    use embassy_futures::select::{Either, select};
     use embassy_sync::blocking_mutex::raw::NoopRawMutex;
-    use embassy_sync::once_lock::OnceLock;
     use embassy_sync::signal::Signal;
+    use embassy_time::{Duration, Ticker};
     use embedded_services::comms::{self, EndpointID, External, Internal};
+    use static_cell::StaticCell;
 
     struct Service {
         endpoint: comms::Endpoint,
@@ -135,49 +135,37 @@ mod battery_service {
         }
     }
 
-    static BATTERY_SERVICE: OnceLock<Service> = OnceLock::new();
-
-    // Initialize battery service
-    pub async fn init() {
-        let battery_service = BATTERY_SERVICE.get_or_init(Service::new);
+    // Service to receive battery configuration request from the host
+    #[embassy_executor::task]
+    pub async fn battery_service_task() {
+        static BATTERY_SERVICE: StaticCell<Service> = StaticCell::new();
+        let battery_service = BATTERY_SERVICE.init(Service::new());
+        let mut ticker = Ticker::every(Duration::from_secs(1));
 
         comms::register_endpoint(battery_service, &battery_service.endpoint)
             .await
             .unwrap();
-    }
-
-    // Service to update the battery value in the memory map periodically
-    #[embassy_executor::task]
-    pub async fn battery_update_service() {
-        let battery_service = BATTERY_SERVICE.get().await;
 
         loop {
-            let battery_status = 0;
-            battery_service
-                .endpoint
-                .send(
-                    EndpointID::External(External::Host),
-                    &TxMessage::UpdateBatteryStatus(battery_status),
-                )
-                .await
-                .unwrap();
-            info!("Sending updated battery status to espi service");
+            let event = select(battery_service.signal.wait(), ticker.next()).await;
 
-            embassy_time::Timer::after_secs(1).await;
-        }
-    }
-
-    // Service to receive battery configuration request from the host
-    #[embassy_executor::task]
-    pub async fn battery_config_service() {
-        let battery_service = BATTERY_SERVICE.get().await;
-
-        loop {
-            let msg = battery_service.signal.wait().await;
-
-            match msg {
-                RxMessage::SetBatteryCharge(charge) => {
-                    info!("Set battery charge {}", charge);
+            match event {
+                Either::First(msg) => match msg {
+                    RxMessage::SetBatteryCharge(charge) => {
+                        info!("Set battery charge {}", charge);
+                    }
+                },
+                Either::Second(_) => {
+                    let battery_status = 0;
+                    battery_service
+                        .endpoint
+                        .send(
+                            EndpointID::External(External::Host),
+                            &TxMessage::UpdateBatteryStatus(battery_status),
+                        )
+                        .await
+                        .unwrap();
+                    info!("Sending updated battery status to espi service");
                 }
             }
         }
@@ -194,23 +182,9 @@ async fn main(spawner: Spawner) {
 
     info!("Service initialization complete...");
 
-    espi_service::init().await;
-    battery_service::init().await;
-
     spawner.spawn(espi_service::espi_service()).unwrap();
 
-    spawner.spawn(battery_service::battery_update_service()).unwrap();
-    spawner.spawn(battery_service::battery_config_service()).unwrap();
+    spawner.spawn(battery_service::battery_service_task()).unwrap();
 
     info!("Subsystem initialization complete...");
-
-    // Pretend this loop is an interrupt that fires every second to set the battery charge
-    let mut battery_charge = 0;
-    loop {
-        battery_charge += 1;
-        embassy_time::Timer::after_secs(1).await;
-        espi_service::forward_set_battery_charge_message(battery_charge)
-            .await
-            .unwrap();
-    }
 }

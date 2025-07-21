@@ -742,6 +742,7 @@ dependencies = [
  "postcard",
  "rand_core",
  "serde",
+ "static_cell",
  "tokio",
 ]
 
@@ -763,7 +764,7 @@ dependencies = [
 [[package]]
 name = "embedded-usb-pd"
 version = "0.1.0"
-source = "git+https://github.com/OpenDevicePartnership/embedded-usb-pd#99232ecdfdd9f5aa93b1dedbfc22f11c8d12632c"
+source = "git+https://github.com/OpenDevicePartnership/embedded-usb-pd#9cd23ecde3937c0b172057257f320dfb37d4295b"
 dependencies = [
  "bitfield 0.19.0",
  "defmt 0.3.100",
@@ -1146,6 +1147,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "portable-atomic"
+version = "1.11.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f84267b20a16ea918e43c6a88433c2d54fa145c92a811b5b047ccbe153674483"
+
+[[package]]
 name = "postcard"
 version = "1.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1326,6 +1333,15 @@ name = "stable_deref_trait"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a8f112729512f8e442d81f95a8a7ddf2b7c6b8a1a6f509a95864142b30cab2d3"
+
+[[package]]
+name = "static_cell"
+version = "2.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0530892bb4fa575ee0da4b86f86c667132a94b74bb72160f58ee5a4afec74c23"
+dependencies = [
+ "portable-atomic",
+]
 
 [[package]]
 name = "storage_bus"

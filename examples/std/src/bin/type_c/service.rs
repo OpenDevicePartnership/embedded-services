@@ -120,7 +120,11 @@ mod test_controller {
             Ok(events)
         }
 
-        async fn get_port_status(&mut self, _port: LocalPortId) -> Result<PortStatus, Error<Self::BusError>> {
+        async fn get_port_status(
+            &mut self,
+            _port: LocalPortId,
+            _cached: bool,
+        ) -> Result<PortStatus, Error<Self::BusError>> {
             debug!("Get port status: {:#?}", *self.state.status.lock().await);
             Ok(*self.state.status.lock().await)
         }

@@ -125,8 +125,12 @@ pub enum CommsData {
     ConsumerDisconnected(DeviceId),
     /// Consumer connected
     ConsumerConnected(DeviceId, PowerCapability),
+    /// Unconstrained state changed
+    Unconstrained(bool),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 /// Message to send with the comms service
 pub struct CommsMessage {
     /// Message data

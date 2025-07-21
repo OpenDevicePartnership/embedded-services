@@ -51,6 +51,7 @@ embassy-executor = { workspace = true, features = [
     "executor-thread",
 ] }
 embassy-futures.workspace = true
+static_cell.workspace = true
 
 [features]
 default = []

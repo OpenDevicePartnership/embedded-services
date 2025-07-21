@@ -12,6 +12,7 @@ pub mod thread_mode_cell;
 
 /// short-hand include all pre-baked services
 pub mod activity;
+pub mod broadcaster;
 pub mod buffer;
 pub mod cfu;
 pub mod comms;

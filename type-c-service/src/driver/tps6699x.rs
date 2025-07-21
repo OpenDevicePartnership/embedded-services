@@ -1,10 +1,11 @@
-use core::array::from_fn;
-use core::iter::zip;
-
+use crate::wrapper::{ControllerWrapper, FwOfferValidator};
 use ::tps6699x::registers::field_sets::IntEventBus1;
 use ::tps6699x::registers::{PdCcPullUp, PpExtVbusSw, PpIntVbusSw};
 use ::tps6699x::{PORT0, PORT1, TPS66993_NUM_PORTS, TPS66994_NUM_PORTS};
 use bitfield::bitfield;
+use core::array::from_fn;
+use core::future::Future;
+use core::iter::zip;
 use embassy_futures::select::select;
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use embassy_sync::mutex::Mutex;
@@ -14,6 +15,7 @@ use embedded_cfu_protocol::protocol_definitions::ComponentId;
 use embedded_hal_async::i2c::I2c;
 use embedded_services::cfu::component::CfuDevice;
 use embedded_services::power::policy::{self, PowerCapability};
+use embedded_services::transformers::object::{Object, RefGuard, RefMutGuard};
 use embedded_services::type_c::controller::{self, Controller, ControllerStatus, PortStatus};
 use embedded_services::type_c::event::PortEventKind;
 use embedded_services::type_c::ControllerId;
@@ -21,7 +23,7 @@ use embedded_services::{debug, info, trace, type_c, warn, GlobalRawMutex};
 use embedded_usb_pd::pdinfo::PowerPathStatus;
 use embedded_usb_pd::pdo::{sink, source, Common, Rdo};
 use embedded_usb_pd::type_c::Current as TypecCurrent;
-use embedded_usb_pd::{Error, GlobalPortId, PdError, PortId as LocalPortId};
+use embedded_usb_pd::{DataRole, Error, GlobalPortId, PdError, PlugOrientation, PortId as LocalPortId, PowerRole};
 use tps6699x::asynchronous::embassy as tps6699x_drv;
 use tps6699x::asynchronous::fw_update::UpdateTarget;
 use tps6699x::asynchronous::fw_update::{
@@ -30,8 +32,6 @@ use tps6699x::asynchronous::fw_update::{
 use tps6699x::fw_update::UpdateConfig as FwUpdateConfig;
 
 type Updater<'a, M, B> = BorrowedUpdaterInProgress<tps6699x_drv::Tps6699x<'a, M, B>>;
-
-use crate::wrapper::{ControllerWrapper, FwOfferValidator};
 
 /// Firmware update state
 struct FwUpdateState<'a, M: RawMutex, B: I2c> {
@@ -136,6 +136,22 @@ impl<'a, const N: usize, M: RawMutex, B: I2c> Tps6699x<'a, N, M, B> {
                 port_status.available_sink_contract = new_contract;
             }
 
+            port_status.plug_orientation = if status.plug_orientation() {
+                PlugOrientation::CC2
+            } else {
+                PlugOrientation::CC1
+            };
+            port_status.power_role = if status.port_role() {
+                PowerRole::Source
+            } else {
+                PowerRole::Sink
+            };
+            port_status.data_role = if status.data_role() {
+                DataRole::Dfp
+            } else {
+                DataRole::Ufp
+            };
+
             // Update alt-mode status
             let alt_mode = tps6699x.get_alt_mode_status(port).await?;
             debug!("Port{} alt mode: {:#?}", port.0, alt_mode);
@@ -145,12 +161,12 @@ impl<'a, const N: usize, M: RawMutex, B: I2c> Tps6699x<'a, N, M, B> {
             let power_path = tps6699x.get_power_path_status(port).await?;
             port_status.power_path = match port {
                 PORT0 => PowerPathStatus::new(
-                    power_path.pa_ext_vbus_sw() == PpExtVbusSw::EnabledInput,
                     power_path.pa_int_vbus_sw() == PpIntVbusSw::EnabledOutput,
+                    power_path.pa_ext_vbus_sw() == PpExtVbusSw::EnabledInput,
                 ),
                 PORT1 => PowerPathStatus::new(
-                    power_path.pb_ext_vbus_sw() == PpExtVbusSw::EnabledInput,
                     power_path.pb_int_vbus_sw() == PpIntVbusSw::EnabledOutput,
+                    power_path.pb_ext_vbus_sw() == PpExtVbusSw::EnabledInput,
                 ),
                 _ => Err(PdError::InvalidPort)?,
             };
@@ -199,6 +215,66 @@ impl<'a, const N: usize, M: RawMutex, B: I2c> Tps6699x<'a, N, M, B> {
                     debug!("Event: New contract as provider, PD controller act as source");
                     // Port is provider and power negotiation is complete
                     event.set_new_power_contract_as_provider(true);
+                }
+
+                if interrupt.power_swap_completed() {
+                    debug!("Event: power swap completed");
+                    event.set_power_swap_completed(true);
+                }
+
+                if interrupt.data_swap_completed() {
+                    debug!("Event: data swap completed");
+                    event.set_data_swap_completed(true);
+                }
+
+                if interrupt.am_entered() {
+                    debug!("Event: alt mode entered");
+                    event.set_alt_mode_entered(true);
+                }
+
+                if interrupt.hard_reset() {
+                    debug!("Event: hard reset");
+                    event.set_pd_hard_reset(true);
+                }
+
+                if interrupt.crossbar_error() {
+                    debug!("Event: crossbar error");
+                    event.set_usb_mux_error_recovery(true);
+                }
+
+                if interrupt.usvid_mode_entered() {
+                    debug!("Event: user svid mode entered");
+                    event.set_custom_mode_entered(true);
+                }
+
+                if interrupt.usvid_mode_exited() {
+                    debug!("Event: usvid mode exited");
+                    event.set_custom_mode_exited(true);
+                }
+
+                if interrupt.usvid_attention_vdm_received() {
+                    debug!("Event: user svid attention vdm received");
+                    event.set_custom_mode_attention_received(true);
+                }
+
+                if interrupt.usvid_other_vdm_received() {
+                    debug!("Event: user svid other vdm received");
+                    event.set_custom_mode_other_vdm_received(true);
+                }
+
+                if interrupt.discover_mode_completed() {
+                    debug!("Event: discover mode completed");
+                    event.set_discover_mode_completed(true);
+                }
+
+                if interrupt.dp_sid_status_updated() {
+                    debug!("Event: dp sid status updated");
+                    event.set_dp_status_update(true);
+                }
+
+                if interrupt.alert_message_received() {
+                    debug!("Event: alert message received");
+                    event.set_pd_alert_received(true);
                 }
             }
         }
@@ -289,9 +365,24 @@ impl<const N: usize, M: RawMutex, B: I2c> Controller for Tps6699x<'_, N, M, B> {
     async fn get_port_status(
         &mut self,
         port: LocalPortId,
+        cached: bool,
     ) -> Result<type_c::controller::PortStatus, Error<Self::BusError>> {
         if port.0 >= self.port_status.len() as u8 {
             return PdError::InvalidPort.into();
+        }
+
+        // sync port status
+        if !cached {
+            debug!("update port status");
+
+            let mut tps6699x = self
+                .tps6699x
+                .try_lock()
+                .expect("Driver should not have been locked before this, thus infallible");
+
+            let _ = self.update_port_status(&mut tps6699x, port).await;
+        } else {
+            debug!("using cached port status");
         }
 
         Ok(*self.port_status[port.0 as usize].lock().await)
@@ -490,6 +581,16 @@ impl<const N: usize, M: RawMutex, B: I2c> Controller for Tps6699x<'_, N, M, B> {
         } else {
             Err(PdError::InvalidMode.into())
         }
+    }
+}
+
+impl<'a, const N: usize, M: RawMutex, B: I2c> Object<tps6699x_drv::Tps6699x<'a, M, B>> for Tps6699x<'a, N, M, B> {
+    fn get_inner(&self) -> impl Future<Output = impl RefGuard<tps6699x_drv::Tps6699x<'a, M, B>>> {
+        self.tps6699x.lock()
+    }
+
+    fn get_inner_mut(&self) -> impl Future<Output = impl RefMutGuard<tps6699x_drv::Tps6699x<'a, M, B>>> {
+        self.tps6699x.lock()
     }
 }
 

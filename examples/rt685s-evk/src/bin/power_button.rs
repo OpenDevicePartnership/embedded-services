@@ -7,13 +7,13 @@ use defmt::info;
 use embassy_executor::Spawner;
 use embassy_imxrt::gpio::{self, Input, Inverter, Pull};
 use embassy_sync::blocking_mutex::raw::ThreadModeRawMutex;
-use embassy_sync::once_lock::OnceLock;
 use embassy_sync::signal::Signal;
 use embassy_time::Duration;
 use embedded_services::comms::{self, EndpointID, Internal};
 use power_button_service::button::{Button, ButtonConfig};
-use power_button_service::button_interpreter::{check_button_press, Message};
+use power_button_service::button_interpreter::{Message, check_button_press};
 use power_button_service::debounce::{ActiveState, Debouncer};
+use static_cell::StaticCell;
 use {defmt_rtt as _, panic_probe as _};
 
 mod sender {
@@ -87,8 +87,8 @@ mod receiver {
 
 #[embassy_executor::task(pool_size = 4)]
 async fn button_task(gpio: Input<'static>, config: ButtonConfig) {
-    static SENDER: OnceLock<sender::Sender> = OnceLock::new();
-    let sender = SENDER.get_or_init(sender::Sender::new);
+    static SENDER: StaticCell<sender::Sender> = StaticCell::new();
+    let sender = SENDER.init(sender::Sender::new());
     let mut button = Button::new(gpio, config);
 
     loop {
@@ -132,8 +132,8 @@ async fn main(spawner: Spawner) {
     spawner.must_spawn(button_task(button_a, config_a));
     spawner.must_spawn(button_task(button_b, config_b));
 
-    static RECEIVER: OnceLock<receiver::Receiver> = OnceLock::new();
-    let receiver = RECEIVER.get_or_init(receiver::Receiver::new);
+    static RECEIVER: StaticCell<receiver::Receiver> = StaticCell::new();
+    let receiver = RECEIVER.init(receiver::Receiver::new());
 
     comms::register_endpoint(receiver, &receiver.tp).await.unwrap();
 

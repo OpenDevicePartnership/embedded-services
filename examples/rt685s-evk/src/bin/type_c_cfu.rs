@@ -6,12 +6,11 @@ use defmt::info;
 use embassy_embedded_hal::shared_bus::asynch::i2c::I2cDevice;
 use embassy_executor::Spawner;
 use embassy_imxrt::gpio::{Input, Inverter, Pull};
-use embassy_imxrt::i2c::master::{Config, I2cMaster};
 use embassy_imxrt::i2c::Async;
+use embassy_imxrt::i2c::master::{Config, I2cMaster};
 use embassy_imxrt::{bind_interrupts, peripherals};
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_sync::mutex::Mutex;
-use embassy_sync::once_lock::OnceLock;
 use embassy_time::Timer;
 use embassy_time::{self as _, Delay};
 use embedded_cfu_protocol::protocol_definitions::*;
@@ -162,12 +161,10 @@ async fn main(spawner: Spawner) {
     spawner.must_spawn(type_c_service::task());
 
     let int_in = Input::new(p.PIO1_7, Pull::Up, Inverter::Disabled);
-    static BUS: OnceLock<Mutex<NoopRawMutex, BusMaster<'static>>> = OnceLock::new();
-    let bus = BUS.get_or_init(|| {
-        Mutex::new(
-            I2cMaster::new_async(p.FLEXCOMM2, p.PIO0_18, p.PIO0_17, Irqs, Config::default(), p.DMA0_CH5).unwrap(),
-        )
-    });
+    static BUS: StaticCell<Mutex<NoopRawMutex, BusMaster<'static>>> = StaticCell::new();
+    let bus = BUS.init(Mutex::new(
+        I2cMaster::new_async(p.FLEXCOMM2, p.PIO0_18, p.PIO0_17, Irqs, Config::default(), p.DMA0_CH5).unwrap(),
+    ));
 
     let device = I2cDevice::new(bus);
 
@@ -198,8 +195,8 @@ async fn main(spawner: Spawner) {
     static PD_PORTS: [GlobalPortId; 2] = [PORT0_ID, PORT1_ID];
 
     info!("Spawining PD controller task");
-    static PD_CONTROLLER: OnceLock<Wrapper> = OnceLock::new();
-    let pd_controller = PD_CONTROLLER.get_or_init(|| {
+    static PD_CONTROLLER: StaticCell<Wrapper> = StaticCell::new();
+    let pd_controller = PD_CONTROLLER.init(
         tps6699x_drv::tps66994(
             tps6699x,
             CONTROLLER0_ID,
@@ -209,8 +206,8 @@ async fn main(spawner: Spawner) {
             Default::default(),
             Validator,
         )
-        .unwrap()
-    });
+        .unwrap(),
+    );
 
     pd_controller.register().await.unwrap();
     spawner.must_spawn(pd_controller_task(pd_controller));

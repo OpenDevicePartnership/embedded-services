@@ -7,7 +7,7 @@ use embassy_sync::signal::Signal;
 use embassy_time::{Duration, with_timeout};
 use embedded_usb_pd::ucsi::lpm;
 use embedded_usb_pd::{
-    Error, GlobalPortId, PdError, PortId as LocalPortId,
+    DataRole, Error, GlobalPortId, PdError, PlugOrientation, PortId as LocalPortId, PowerRole,
     pdinfo::{AltMode, PowerPathStatus},
     type_c::ConnectionState,
 };
@@ -40,6 +40,12 @@ pub struct PortStatus {
     pub connection_state: Option<ConnectionState>,
     /// Port partner supports dual-power roles
     pub dual_power: bool,
+    /// plug orientation
+    pub plug_orientation: PlugOrientation,
+    /// power role
+    pub power_role: PowerRole,
+    /// data role
+    pub data_role: DataRole,
     /// Active alt-modes
     pub alt_mode: AltMode,
     /// Power path status
@@ -55,6 +61,9 @@ impl PortStatus {
             available_sink_contract: None,
             connection_state: None,
             dual_power: false,
+            plug_orientation: PlugOrientation::CC1,
+            power_role: PowerRole::Sink,
+            data_role: DataRole::Dfp,
             alt_mode: AltMode::none(),
             power_path: PowerPathStatus::none(),
         }
@@ -87,7 +96,7 @@ impl Default for PortStatus {
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum PortCommandData {
     /// Get port status
-    PortStatus,
+    PortStatus(bool),
     /// Get and clear events
     ClearEvents,
     /// Get retimer fw update state
@@ -313,8 +322,12 @@ pub trait Controller {
         port: LocalPortId,
     ) -> impl Future<Output = Result<PortEventKind, Error<Self::BusError>>>;
     /// Returns the port status
-    fn get_port_status(&mut self, port: LocalPortId)
-    -> impl Future<Output = Result<PortStatus, Error<Self::BusError>>>;
+    fn get_port_status(
+        &mut self,
+        port: LocalPortId,
+        cached: bool,
+    ) -> impl Future<Output = Result<PortStatus, Error<Self::BusError>>>;
+
     /// Returns the retimer fw update state
     fn get_rt_fw_update_status(
         &mut self,
@@ -620,8 +633,11 @@ impl ContextToken {
     }
 
     /// Get the current port status
-    pub async fn get_port_status(&self, port: GlobalPortId) -> Result<PortStatus, PdError> {
-        match self.send_port_command(port, PortCommandData::PortStatus).await? {
+    pub async fn get_port_status(&self, port: GlobalPortId, cached: bool) -> Result<PortStatus, PdError> {
+        match self
+            .send_port_command(port, PortCommandData::PortStatus(cached))
+            .await?
+        {
             PortResponseData::PortStatus(status) => Ok(status),
             r => {
                 error!("Invalid response: expected port status, got {:?}", r);

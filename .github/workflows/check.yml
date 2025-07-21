@@ -79,13 +79,13 @@ jobs:
     # which is required for feature unification
     # additionally, replacing `check` with `clippy` ensures all combinations of features generate no clippy warnings
     runs-on: ubuntu-latest
-    # The name is kept as 'stable / clippy' and `beta / clippy` to match required checks from repo settings
-    name: ${{ matrix.toolchain }} / clippy
+    name: ${{ matrix.toolchain }} / ${{ matrix.target }} / clippy
     strategy:
       fail-fast: false
       matrix:
         # Get early warning of new lints which are regularly introduced in beta channels.
         toolchain: [stable, beta]
+        target: [x86_64-unknown-linux-gnu, thumbv8m.main-none-eabihf]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -100,7 +100,7 @@ jobs:
       # intentionally no target specifier; see https://github.com/jonhoo/rust-ci-conf/pull/4
       # --feature-powerset runs for every combination of features
       - name: cargo hack
-        run: cargo hack --feature-powerset --mutually-exclusive-features=log,defmt clippy --locked -- -Dwarnings
+        run: cargo hack --feature-powerset --mutually-exclusive-features=log,defmt clippy --locked --target ${{ matrix.target }} -- -Dwarnings
 
   deny:
     # cargo-deny checks licenses, advisories, sources, and bans for
@@ -159,7 +159,8 @@ jobs:
       fail-fast: false
       matrix:
         msrv: ["1.85"]
-    name: ubuntu / ${{ matrix.msrv }}
+        target: [x86_64-unknown-linux-gnu, thumbv8m.main-none-eabihf]
+    name: ubuntu / ${{ matrix.msrv }} / ${{ matrix.target }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -170,8 +171,8 @@ jobs:
           toolchain: ${{ matrix.msrv }}
       - name: cargo +${{ matrix.msrv }} check
         run: |
-          cargo check -F log --locked
-          cargo check -F defmt --locked
+          cargo check -F log --locked --target ${{ matrix.target }}
+          cargo check -F defmt --locked --target ${{ matrix.target }}
 
   check-arm-examples:
     runs-on: ubuntu-latest
