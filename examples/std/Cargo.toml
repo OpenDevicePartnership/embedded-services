@@ -5,6 +5,12 @@ name = "std-examples"
 version = "0.1.0"
 edition = "2024"
 
+[workspace.lints.rust]
+warnings = "deny"
+
+[lints]
+workspace = true
+
 [dependencies]
 embassy-sync = { git = "https://github.com/embassy-rs/embassy", features = [
     "log",

@@ -87,13 +87,13 @@ impl MockDisk {
                     assert_eq!(action.len, expected.len);
                 }
                 (action, expected) => {
-                    panic!("Expected {:?}, got {:?}", action, expected);
+                    panic!("Expected {action:?}, got {expected:?}");
                 }
             }
 
             None
         } else {
-            panic!("Action {:?} performed on MockDisk, none remaining", action);
+            panic!("Action {action:?} performed on MockDisk, none remaining");
         }
     }
 

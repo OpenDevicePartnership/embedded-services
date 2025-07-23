@@ -111,7 +111,7 @@ jobs:
       # intentionally no target specifier; see https://github.com/jonhoo/rust-ci-conf/pull/4
       # --feature-powerset runs for every combination of features
       - name: cargo hack
-        run: cargo hack --feature-powerset --mutually-exclusive-features=log,defmt clippy --locked --target ${{ matrix.target }} -- -Dwarnings
+        run: cargo hack --feature-powerset --mutually-exclusive-features=log,defmt clippy --locked --target ${{ matrix.target }}
 
   deny:
     # cargo-deny checks licenses, advisories, sources, and bans for
@@ -138,21 +138,9 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
-    name: ubuntu / stable / test / ${{ matrix.crate }}
+    name: ubuntu / stable / test
     strategy:
       fail-fast: false
-      matrix:
-        crate:
-          - battery-service
-          - cfu-service
-          - embedded-services
-          - espi-service
-          - hid-service
-          - platform-service
-          - power-button-service
-          - power-policy-service
-          - storage_bus
-          - type-c-service
     steps:
       - uses: actions/checkout@v4
         with:
@@ -165,11 +153,11 @@ jobs:
         with:
           name: updated-lock-files
       - name: cargo test
-        run: cargo test --locked -p ${{ matrix.crate }}
+        run: cargo test --locked
         # After ensuring tests pass, finally ensure the test code itself contains no clippy warnings
       - name: cargo clippy
         run: |
-          cargo clippy --locked --tests -p ${{ matrix.crate }} -- -Dwarnings
+          cargo clippy --locked --tests
 
   msrv:
     # check that we can build using the minimal rust version that is specified by this crate
@@ -223,7 +211,7 @@ jobs:
       - name: cargo clippy
         working-directory: ${{ matrix.example_directory }}
         run: |
-          cargo clippy --target thumbv8m.main-none-eabihf --locked -- -Dwarnings
+          cargo clippy --target thumbv8m.main-none-eabihf --locked
 
   check-std-examples:
     runs-on: ubuntu-latest
@@ -248,4 +236,4 @@ jobs:
       - name: cargo clippy
         working-directory: ${{ matrix.example_directory }}
         run: |
-          cargo clippy --locked -- -Dwarnings
+          cargo clippy --locked

@@ -570,7 +570,7 @@ dependencies = [
  "nb 1.1.0",
  "paste",
  "rand_core",
- "storage_bus 0.1.0",
+ "storage_bus",
 ]
 
 [[package]]
@@ -1347,10 +1347,6 @@ dependencies = [
 name = "storage_bus"
 version = "0.1.0"
 source = "git+https://github.com/OpenDevicePartnership/embedded-mcu#004ccaa45d341a56073360b0764d2a538d46780d"
-
-[[package]]
-name = "storage_bus"
-version = "0.1.1"
 
 [[package]]
 name = "strsim"

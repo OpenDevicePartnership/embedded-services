@@ -9,6 +9,9 @@ categories = ["embedded", "hardware-support", "no-std::no-alloc", "no-std"]
 
 readme = "README.md"
 
+[lints]
+workspace = true
+
 [dependencies]
 embassy-sync.workspace = true
 

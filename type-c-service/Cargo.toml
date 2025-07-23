@@ -7,6 +7,9 @@ repository = "https://github.com/OpenDevicePartnership/embedded-services"
 rust-version = "1.85"
 license = "MIT"
 
+[lints]
+workspace = true
+
 [dependencies]
 bitfield.workspace = true
 defmt = { workspace = true, optional = true }

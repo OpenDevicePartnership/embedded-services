@@ -11,6 +11,7 @@ pub mod config;
 pub mod consumer;
 pub mod provider;
 
+pub use config::Config;
 pub mod charger;
 
 struct InternalState {

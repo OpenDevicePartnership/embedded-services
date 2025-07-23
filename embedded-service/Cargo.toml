@@ -7,6 +7,9 @@ description = "Embedded Service Layer for IPC, Feature Customization and Extensi
 repository = "https://github.com/OpenDevicePartnership/embedded-services"
 rust-version = "1.85"
 
+[lints]
+workspace = true
+
 [dependencies]
 bitfield.workspace = true
 bitflags.workspace = true
@@ -46,10 +49,6 @@ critical-section = { workspace = true, features = ["std"] }
 tokio = { workspace = true, features = ["rt", "macros", "time"] }
 embassy-time = { workspace = true, features = ["std"] }
 embassy-time-driver = { workspace = true }
-embassy-executor = { workspace = true, features = [
-    "arch-std",
-    "executor-thread",
-] }
 embassy-futures.workspace = true
 static_cell.workspace = true
 

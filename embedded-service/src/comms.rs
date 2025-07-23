@@ -117,17 +117,31 @@ impl<'a> Data<'a> {
 
     /// Fetch type ID for message contents to allow reception of multiple top level elements
     /// Ex:
-    /// match message.data.type_id() {
-    ///     TypeId::of::<MessageClassA>() -> (),
-    ///     TypeId::of::<MessageClassB>() -> (), etc.
+    /// ```
+    /// # use core::any::TypeId;
+    /// # use embedded_services::comms::{Data, Message, EndpointID, Internal};
+    /// struct MessageClassA;
+    /// struct MessageClassB;
+    /// let message = Message {
+    ///     from: EndpointID::from(Internal::PlatformInfo),
+    ///     to: EndpointID::from(Internal::PlatformInfo),
+    ///     data: Data::new(&MessageClassA),
+    /// };
+    /// if message.data.type_id() == TypeId::of::<MessageClassA>() {
+    ///     // do something
+    /// } else if message.data.type_id() == TypeId::of::<MessageClassB>() {
+    ///     // do something else
+    /// } else {
+    ///     // do something else
     /// }
+    /// ```
     pub fn type_id(&self) -> TypeId {
         self.contents.type_id()
     }
 
     /// Shorthand if only a few Message types are supported by an Endpoint:
-    /// if data.is_a::<MessageClassA>() {}
-    /// else if data.is_a::<MessageClassB>() {}
+    /// if `data.is_a::<MessageClassA>() {}`
+    /// else if `data.is_a::<MessageClassB>() {}`
     /// etc.
     pub fn is_a<T: Any>(&self) -> bool {
         self.type_id() == TypeId::of::<T>()

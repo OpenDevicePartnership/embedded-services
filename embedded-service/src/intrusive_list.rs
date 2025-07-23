@@ -12,7 +12,7 @@ pub enum Error {
     NodeAlreadyInList,
 }
 
-/// override Result type for shorthand -> Result<T>
+/// override Result type for shorthand `-> Result<T>`
 pub type Result<T> = core::result::Result<T, Error>;
 
 /// Embedded node that "intrudes" on a structure

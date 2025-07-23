@@ -7,21 +7,17 @@ repository = "https://github.com/OpenDevicePartnership/embedded-services"
 rust-version = "1.85"
 license = "MIT"
 
+[lints]
+workspace = true
+
 [dependencies]
 embedded-services.workspace = true
 defmt = { workspace = true, optional = true }
 log = { workspace = true, optional = true }
 embassy-time.workspace = true
 embassy-sync.workspace = true
-embassy-imxrt = { workspace = true, features = [
-    "time-driver-os-timer",
-    "time",
-    "mimxrt633s",
-] }
-embassy-executor = { workspace = true, features = [
-    "executor-thread",
-    "executor-interrupt",
-] }
+embassy-imxrt = { workspace = true, features = ["mimxrt633s"] }
+embassy-executor.workspace = true
 
 [target.'cfg(target_os = "none")'.dependencies]
 embassy-executor = { workspace = true, features = [
@@ -33,6 +29,11 @@ cortex-m-rt.workspace = true
 cortex-m = { workspace = true, features = [
     "inline-asm",
     "critical-section-single-core",
+] }
+embassy-imxrt = { workspace = true, features = [
+    "time-driver-os-timer",
+    "time",
+    "mimxrt633s",
 ] }
 
 [features]

@@ -20,7 +20,7 @@ struct TestMap<'a, F, M: RawMutex = NoopRawMutex> {
     pub slot_b: Partition<'a, F, RW, M>,
 }
 
-impl<'a, F, M: RawMutex> PartitionMap for TestMap<'a, F, M> {}
+impl<F, M: RawMutex> PartitionMap for TestMap<'_, F, M> {}
 
 struct TestConfig;
 

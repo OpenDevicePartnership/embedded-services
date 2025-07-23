@@ -7,6 +7,9 @@ description = "Power button service built upon embedded service"
 repository = "https://github.com/OpenDevicePartnership/embedded-services"
 rust-version = "1.85"
 
+[lints]
+workspace = true
+
 [dependencies]
 defmt = { workspace = true, optional = true }
 embassy-time.workspace = true

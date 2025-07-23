@@ -1,5 +1,5 @@
 //! HID sevices
-//! See spec at http://msdn.microsoft.com/en-us/library/windows/hardware/hh852380.aspx
+//! See spec at <http://msdn.microsoft.com/en-us/library/windows/hardware/hh852380.aspx>
 use core::convert::Infallible;
 
 use embassy_sync::once_lock::OnceLock;

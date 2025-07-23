@@ -257,8 +257,8 @@ impl<'a, const N: usize, C: Controller, V: FwOfferValidator> ControllerWrapper<'
                     if let Some((port_id, event)) = stream
                         .next(async |port_id| {
                             let mut controller = self.controller.lock().await;
-                            let ret = controller.clear_port_events(LocalPortId(port_id as u8)).await;
-                            ret
+
+                            controller.clear_port_events(LocalPortId(port_id as u8)).await
                         })
                         .await?
                     {
@@ -368,7 +368,7 @@ impl<'a, const N: usize, C: Controller, V: FwOfferValidator> ControllerWrapper<'
     }
 }
 
-impl<'a, const N: usize, C: Controller, V: FwOfferValidator> Object<C> for ControllerWrapper<'a, N, C, V> {
+impl<const N: usize, C: Controller, V: FwOfferValidator> Object<C> for ControllerWrapper<'_, N, C, V> {
     fn get_inner(&self) -> impl Future<Output = impl RefGuard<C>> {
         self.controller.lock()
     }
