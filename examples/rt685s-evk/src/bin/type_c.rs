@@ -220,9 +220,9 @@ async fn main(spawner: Spawner) {
 
     info!("Controller status: {:?}", status);
 
-    let status = type_c::external::get_port_status(PORT0_ID).await.unwrap();
+    let status = type_c::external::get_port_status(PORT0_ID, true).await.unwrap();
     info!("Port status: {:?}", status);
 
-    let status = type_c::external::get_port_status(PORT1_ID).await.unwrap();
+    let status = type_c::external::get_port_status(PORT1_ID, true).await.unwrap();
     info!("Port status: {:?}", status);
 }

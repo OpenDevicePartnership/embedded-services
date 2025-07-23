@@ -46,7 +46,7 @@ pub type ControllerResponse<'a> = Result<ControllerResponseData<'a>, PdError>;
 #[derive(Copy, Clone, Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum PortCommandData {
-    /// Get port status
+    /// Get port status. The `bool` argument indicates whether to use cached data or force a fetch of register values.
     PortStatus(bool),
     /// Get retimer fw update status
     RetimerFwUpdateGetState,
@@ -103,11 +103,13 @@ pub enum Response<'a> {
     Controller(ControllerResponse<'a>),
 }
 
-/// Get the status of the given port
-pub async fn get_port_status(port: GlobalPortId) -> Result<PortStatus, PdError> {
+/// Get the status of the given port.
+///
+/// Use the `cached` argument to specify whether to use cached data or force a fetch of register values.
+pub async fn get_port_status(port: GlobalPortId, cached: bool) -> Result<PortStatus, PdError> {
     match execute_external_port_command(Command::Port(PortCommand {
         port,
-        data: PortCommandData::PortStatus(false),
+        data: PortCommandData::PortStatus(cached),
     }))
     .await?
     {
@@ -116,10 +118,16 @@ pub async fn get_port_status(port: GlobalPortId) -> Result<PortStatus, PdError> 
     }
 }
 
-/// Get the status of the given port by its controller and local port ID
-pub async fn get_controller_port_status(controller: ControllerId, port: LocalPortId) -> Result<PortStatus, PdError> {
+/// Get the status of the given port by its controller and local port ID.
+///
+/// Use the `cached` argument to specify whether to use cached data or force a fetch of register values.
+pub async fn get_controller_port_status(
+    controller: ControllerId,
+    port: LocalPortId,
+    cached: bool,
+) -> Result<PortStatus, PdError> {
     let global_port = controller_port_to_global_id(controller, port).await?;
-    get_port_status(global_port).await
+    get_port_status(global_port, cached).await
 }
 
 /// Get the status of the given controller
