@@ -35,7 +35,7 @@ impl<const N: usize, C: Controller, V: FwOfferValidator> ControllerWrapper<'_, N
             }
             controller::PortCommandData::ClearEvents => {
                 let event = self.active_events[0].get();
-                self.active_events[0].set(PortEventKind::none());
+                self.active_events[0].set(PortEvent::none());
                 Ok(controller::PortResponseData::ClearEvents(event))
             }
             controller::PortCommandData::RetimerFwUpdateGetState => {

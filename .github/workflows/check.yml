@@ -18,6 +18,12 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_call:
+    inputs:
+      download-lockfiles:
+        required: false
+        type: boolean
+        default: false
 # If new code is pushed to a PR branch, then cancel in progress workflows for that PR. Ensures that
 # we don't waste CI time, and returns results quicker https://github.com/jonhoo/rust-ci-conf/pull/5
 concurrency:
@@ -97,6 +103,11 @@ jobs:
           components: clippy
       - name: cargo install cargo-hack
         uses: taiki-e/install-action@cargo-hack
+      - name: Download Cargo.lock files
+        if: ${{ inputs.download-lockfiles }}
+        uses: actions/download-artifact@v4
+        with:
+          name: updated-lock-files
       # intentionally no target specifier; see https://github.com/jonhoo/rust-ci-conf/pull/4
       # --feature-powerset runs for every combination of features
       - name: cargo hack
@@ -113,6 +124,11 @@ jobs:
           submodules: true
       - name: Install stable
         uses: dtolnay/rust-toolchain@stable
+      - name: Download Cargo.lock files
+        if: ${{ inputs.download-lockfiles }}
+        uses: actions/download-artifact@v4
+        with:
+          name: updated-lock-files
       - name: cargo install cargo-deny
         uses: EmbarkStudios/cargo-deny-action@v2
         with:
@@ -143,6 +159,11 @@ jobs:
           submodules: true
       - name: Install stable
         uses: dtolnay/rust-toolchain@stable
+      - name: Download Cargo.lock files
+        if: ${{ inputs.download-lockfiles }}
+        uses: actions/download-artifact@v4
+        with:
+          name: updated-lock-files
       - name: cargo test
         run: cargo test --locked -p ${{ matrix.crate }}
         # After ensuring tests pass, finally ensure the test code itself contains no clippy warnings
@@ -169,6 +190,11 @@ jobs:
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.msrv }}
+      - name: Download Cargo.lock files
+        if: ${{ inputs.download-lockfiles }}
+        uses: actions/download-artifact@v4
+        with:
+          name: updated-lock-files
       - name: cargo +${{ matrix.msrv }} check
         run: |
           cargo check -F log --locked --target ${{ matrix.target }}
@@ -189,6 +215,11 @@ jobs:
           submodules: true
       - name: Install stable
         uses: dtolnay/rust-toolchain@stable
+      - name: Download Cargo.lock files
+        if: ${{ inputs.download-lockfiles }}
+        uses: actions/download-artifact@v4
+        with:
+          name: updated-lock-files
       - name: cargo clippy
         working-directory: ${{ matrix.example_directory }}
         run: |
@@ -209,6 +240,11 @@ jobs:
           submodules: true
       - name: Install stable
         uses: dtolnay/rust-toolchain@stable
+      - name: Download Cargo.lock files
+        if: ${{ inputs.download-lockfiles }}
+        uses: actions/download-artifact@v4
+        with:
+          name: updated-lock-files
       - name: cargo clippy
         working-directory: ${{ matrix.example_directory }}
         run: |

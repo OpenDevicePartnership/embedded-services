@@ -33,6 +33,7 @@ embassy-executor = { workspace = true, features = [
     "executor-thread",
 ] }
 embassy-futures.workspace = true
+tokio = { workspace = true, features = ["rt", "macros", "time"] }
 
 [features]
 default = []

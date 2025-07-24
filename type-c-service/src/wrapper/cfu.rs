@@ -28,6 +28,14 @@ impl FwUpdateState {
     }
 }
 
+/// CFU events
+pub enum Event {
+    /// CFU request
+    Request(RequestData),
+    /// Recovery tick
+    RecoveryTick,
+}
+
 impl<const N: usize, C: Controller, V: FwOfferValidator> ControllerWrapper<'_, N, C, V> {
     /// Create a new invalid FW version response
     fn create_invalid_fw_version_response(&self) -> InternalResponseData {
@@ -147,7 +155,7 @@ impl<const N: usize, C: Controller, V: FwOfferValidator> ControllerWrapper<'_, N
             }
 
             // Need to start the update
-            state.fw_update_ticker.reset();
+            self.fw_update_ticker.lock().await.reset();
             match controller.start_fw_update().await {
                 Ok(_) => {
                     debug!("FW update started successfully");
@@ -313,26 +321,33 @@ impl<const N: usize, C: Controller, V: FwOfferValidator> ControllerWrapper<'_, N
     /// Wait for a CFU command
     ///
     /// Returns None if the FW update ticker has ticked
-    pub async fn wait_cfu_command(&self, state: &mut InternalState) -> Option<RequestData> {
-        match state.fw_update_state {
+    pub async fn wait_cfu_command(&self) -> Event {
+        // Only lock long enough to grab our state
+        let fw_update_state = self.state.lock().await.fw_update_state;
+        match fw_update_state {
             FwUpdateState::Idle => {
                 // No FW update in progress, just wait for a command
-                Some(self.cfu_device.wait_request().await)
+                Event::Request(self.cfu_device.wait_request().await)
             }
             FwUpdateState::InProgress(_) => {
-                match select(self.cfu_device.wait_request(), state.fw_update_ticker.next()).await {
-                    Either::First(command) => Some(command),
+                match select(
+                    self.cfu_device.wait_request(),
+                    self.fw_update_ticker.lock().await.next(),
+                )
+                .await
+                {
+                    Either::First(command) => Event::Request(command),
                     Either::Second(_) => {
                         debug!("FW update ticker ticked");
-                        None
+                        Event::RecoveryTick
                     }
                 }
             }
             FwUpdateState::Recovery => {
                 // Recovery state, wait for the next attempt to recover the device
-                state.fw_update_ticker.next().await;
+                self.fw_update_ticker.lock().await.next().await;
                 debug!("FW update ticker ticked");
-                None
+                Event::RecoveryTick
             }
         }
     }

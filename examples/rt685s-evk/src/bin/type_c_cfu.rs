@@ -2,7 +2,6 @@
 #![no_main]
 
 use ::tps6699x::ADDR1;
-use defmt::info;
 use embassy_embedded_hal::shared_bus::asynch::i2c::I2cDevice;
 use embassy_executor::Spawner;
 use embassy_imxrt::gpio::{Input, Inverter, Pull};
@@ -20,6 +19,7 @@ use embedded_services::cfu::component::InternalResponseData;
 use embedded_services::cfu::component::RequestData;
 use embedded_services::power::policy::DeviceId as PowerId;
 use embedded_services::type_c::{self, ControllerId};
+use embedded_services::{error, info};
 use embedded_usb_pd::GlobalPortId;
 use static_cell::StaticCell;
 use tps6699x::asynchronous::embassy as tps6699x;
@@ -56,7 +56,9 @@ const PORT1_PWR_ID: PowerId = PowerId(1);
 #[embassy_executor::task]
 async fn pd_controller_task(controller: &'static Wrapper<'static>) {
     loop {
-        controller.process().await;
+        if let Err(e) = controller.process_next_event().await {
+            error!("Error processing controller event: {:?}", e);
+        }
     }
 }
 

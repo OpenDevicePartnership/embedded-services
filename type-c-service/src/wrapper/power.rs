@@ -174,16 +174,18 @@ impl<const N: usize, C: Controller, V: FwOfferValidator> ControllerWrapper<'_, N
     }
 
     /// Wait for a power command
+    ///
+    /// Returns (local port ID, deferred request)
     pub(super) async fn wait_power_command(
         &self,
     ) -> (
-        deferred::Request<'_, GlobalRawMutex, CommandData, InternalResponseData>,
         LocalPortId,
+        deferred::Request<'_, GlobalRawMutex, CommandData, InternalResponseData>,
     ) {
         let futures: [_; N] = from_fn(|i| self.power[i].receive());
         let (request, local_id) = select_array(futures).await;
         trace!("Power command: device{} {:#?}", local_id, request.command);
-        (request, LocalPortId(local_id as u8))
+        (LocalPortId(local_id as u8), request)
     }
 
     /// Process a power command

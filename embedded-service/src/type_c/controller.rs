@@ -12,10 +12,10 @@ use embedded_usb_pd::{
     type_c::ConnectionState,
 };
 
-use super::event::{PortEventFlags, PortEventKind};
 use super::{ControllerId, external};
 use crate::ipc::deferred;
 use crate::power::policy;
+use crate::type_c::event::{PortEvent, PortPending};
 use crate::{GlobalRawMutex, IntrusiveNode, error, intrusive_list, trace};
 
 /// Power contract
@@ -138,7 +138,7 @@ pub enum PortResponseData {
     /// Port status
     PortStatus(PortStatus),
     /// ClearEvents
-    ClearEvents(PortEventKind),
+    ClearEvents(PortEvent),
     /// Retimer Fw Update status
     RtFwUpdateStatus(RetimerFwUpdateState),
 }
@@ -285,7 +285,7 @@ impl<'a> Device<'a> {
     }
 
     /// Notify that there are pending events on one or more ports
-    pub async fn notify_ports(&self, pending: PortEventFlags) {
+    pub async fn notify_ports(&self, pending: PortPending) {
         CONTEXT.get().await.notify_ports(pending);
     }
 
@@ -320,7 +320,7 @@ pub trait Controller {
     fn clear_port_events(
         &mut self,
         port: LocalPortId,
-    ) -> impl Future<Output = Result<PortEventKind, Error<Self::BusError>>>;
+    ) -> impl Future<Output = Result<PortEvent, Error<Self::BusError>>>;
     /// Returns the port status
     fn get_port_status(
         &mut self,
@@ -374,7 +374,7 @@ pub trait Controller {
 /// Internal context for managing PD controllers
 struct Context {
     controllers: intrusive_list::IntrusiveList,
-    port_events: Signal<GlobalRawMutex, PortEventFlags>,
+    port_events: Signal<GlobalRawMutex, PortPending>,
     /// Channel for receiving commands to the type-C service
     external_command: deferred::Channel<GlobalRawMutex, external::Command, external::Response<'static>>,
 }
@@ -390,7 +390,7 @@ impl Context {
 
     /// Notify that there are pending events on one or more ports
     /// Each bit corresponds to a global port ID
-    fn notify_ports(&self, pending: PortEventFlags) {
+    fn notify_ports(&self, pending: PortPending) {
         let raw_pending: u32 = pending.into();
         trace!("Notify ports: {:#x}", raw_pending);
         // Early exit if no events
@@ -617,12 +617,12 @@ impl ContextToken {
     }
 
     /// Get the current port events
-    pub async fn get_unhandled_events(&self) -> PortEventFlags {
+    pub async fn get_unhandled_events(&self) -> PortPending {
         CONTEXT.get().await.port_events.wait().await
     }
 
     /// Get the unhandled events for the given port
-    pub async fn get_port_event(&self, port: GlobalPortId) -> Result<PortEventKind, PdError> {
+    pub async fn get_port_event(&self, port: GlobalPortId) -> Result<PortEvent, PdError> {
         match self.send_port_command(port, PortCommandData::ClearEvents).await? {
             PortResponseData::ClearEvents(event) => Ok(event),
             r => {
@@ -729,7 +729,7 @@ impl ContextToken {
     }
 
     /// Notify that there are pending events on one or more ports
-    pub async fn notify_ports(&self, pending: PortEventFlags) {
+    pub async fn notify_ports(&self, pending: PortPending) {
         CONTEXT.get().await.notify_ports(pending);
     }
 }

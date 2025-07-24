@@ -5,10 +5,11 @@ use embedded_services::{
     comms::{self, EndpointID, Internal},
     debug, error, info, intrusive_list,
     ipc::deferred,
+    trace,
     type_c::{
         self,
         controller::PortStatus,
-        event::{PortEventFlagsIter, PortEventKind},
+        event::{PortNotificationSingle, PortStatusChanged},
         external::{self, ControllerCommandData},
         ControllerId,
     },
@@ -16,6 +17,8 @@ use embedded_services::{
 };
 use embedded_usb_pd::GlobalPortId;
 use embedded_usb_pd::PdError as Error;
+
+use crate::{PortEventStreamer, PortEventVariant};
 
 const MAX_SUPPORTED_PORTS: usize = 4;
 
@@ -25,7 +28,7 @@ struct State {
     /// Current port status
     port_status: [PortStatus; MAX_SUPPORTED_PORTS],
     /// Next port to check, this is used to round-robin through ports
-    event_iter: Option<PortEventFlagsIter>,
+    port_event_streaming_state: Option<PortEventStreamer>,
 }
 
 /// Type-C service
@@ -38,9 +41,12 @@ pub struct Service {
     state: Mutex<GlobalRawMutex, State>,
 }
 
+/// Type-C service events
 pub enum Event<'a> {
     /// Port event
-    PortEvent(GlobalPortId, PortEventKind, PortStatus),
+    PortStatusChanged(GlobalPortId, PortStatusChanged, PortStatus),
+    /// Port notification
+    PortNotification(GlobalPortId, PortNotificationSingle),
     /// External command
     ExternalCommand(deferred::Request<'a, GlobalRawMutex, external::Command, external::Response<'static>>),
 }
@@ -80,7 +86,7 @@ impl Service {
     async fn process_port_event(
         &self,
         port_id: GlobalPortId,
-        event: PortEventKind,
+        event: PortStatusChanged,
         status: PortStatus,
     ) -> Result<(), Error> {
         let old_status = self.get_cached_port_status(port_id).await?;
@@ -221,15 +227,15 @@ impl Service {
     }
 
     /// Wait for port flags
-    async fn wait_port_flags(&self) -> PortEventFlagsIter {
-        let mut state = self.state.lock().await;
-        if state.event_iter.is_some() {
+    async fn wait_port_flags(&self) -> PortEventStreamer {
+        if let Some(ref streamer) = self.state.lock().await.port_event_streaming_state {
             // If we have an existing iterator, return it
             // Yield first to prevent starving other tasks
             embassy_futures::yield_now().await;
-            state.event_iter.take().unwrap()
+            *streamer
         } else {
-            self.context.get_unhandled_events().await.into_iter()
+            // Wait for the next port event and create a streamer
+            PortEventStreamer::new(self.context.get_unhandled_events().await.into_iter())
         }
     }
 
@@ -237,19 +243,26 @@ impl Service {
     pub async fn wait_next(&self) -> Result<Event<'_>, Error> {
         loop {
             match select(self.wait_port_flags(), self.context.wait_external_command()).await {
-                Either::First(mut pending) => {
-                    let mut state = self.state.lock().await;
-                    if let Some(port_id) = pending.next() {
-                        debug!("Port{}: Event", port_id.0);
-                        state.event_iter = Some(pending);
-                        let event = self.context.get_port_event(port_id).await?;
-                        let status = self.context.get_port_status(port_id, true).await?;
-
-                        return Ok(Event::PortEvent(port_id, event, status));
+                Either::First(mut stream) => {
+                    if let Some((port_id, event)) = stream
+                        .next(|port_id| self.context.get_port_event(GlobalPortId(port_id as u8)))
+                        .await?
+                    {
+                        let port_id = GlobalPortId(port_id as u8);
+                        self.state.lock().await.port_event_streaming_state = Some(stream);
+                        match event {
+                            PortEventVariant::StatusChanged(status_event) => {
+                                // Return a port status changed event
+                                let status = self.context.get_port_status(port_id, true).await?;
+                                return Ok(Event::PortStatusChanged(port_id, status_event, status));
+                            }
+                            PortEventVariant::Notification(notification) => {
+                                // Return a port notification event
+                                return Ok(Event::PortNotification(port_id, notification));
+                            }
+                        }
                     } else {
-                        debug!("No pending event, continuing");
-                        state.event_iter = None;
-                        continue;
+                        self.state.lock().await.port_event_streaming_state = None;
                     }
                 }
                 Either::Second(request) => {
@@ -262,8 +275,17 @@ impl Service {
     /// Process the given event
     pub async fn process_event(&self, event: Event<'_>) -> Result<(), Error> {
         match event {
-            Event::PortEvent(port, event_kind, status) => self.process_port_event(port, event_kind, status).await,
+            Event::PortStatusChanged(port, event_kind, status) => {
+                trace!("Port{}: Processing port status changed", port.0);
+                self.process_port_event(port, event_kind, status).await
+            }
+            Event::PortNotification(port, _notification) => {
+                // Port notifications currently don't have any processing logic
+                trace!("Port{}: Processing notification", port.0);
+                Ok(())
+            }
             Event::ExternalCommand(request) => {
+                trace!("Processing external command");
                 let response = self.process_external_command(&request.command).await;
                 request.respond(response);
                 Ok(())
@@ -272,7 +294,7 @@ impl Service {
     }
 
     /// Combined processing function
-    pub async fn process(&self) -> Result<(), Error> {
+    pub async fn process_next_event(&self) -> Result<(), Error> {
         let event = self.wait_next().await?;
         self.process_event(event).await
     }
@@ -319,7 +341,7 @@ pub async fn task_closure<'a, Fut: Future<Output = ()>, F: Fn(&'a Service) -> Fu
 #[embassy_executor::task]
 pub async fn task() {
     task_closure(|service: &Service| async {
-        if let Err(e) = service.process().await {
+        if let Err(e) = service.process_next_event().await {
             error!("Type-C service processing error: {:#?}", e);
         }
     })
