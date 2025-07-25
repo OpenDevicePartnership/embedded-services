@@ -9,9 +9,11 @@ use embedded_services::type_c::{ControllerId, controller};
 use embedded_usb_pd::Error;
 use embedded_usb_pd::GlobalPortId;
 use embedded_usb_pd::PortId as LocalPortId;
+use embedded_usb_pd::ado::Ado;
 use embedded_usb_pd::type_c::Current;
 use log::*;
 use static_cell::StaticCell;
+use type_c_service::wrapper::Event;
 
 const CONTROLLER0: ControllerId = ControllerId(0);
 const PORT0: GlobalPortId = GlobalPortId(0);
@@ -36,6 +38,7 @@ mod test_controller {
     pub struct ControllerState {
         events: Signal<GlobalRawMutex, PortEvent>,
         status: Mutex<GlobalRawMutex, PortStatus>,
+        pd_alert: Mutex<GlobalRawMutex, Option<Ado>>,
     }
 
     impl ControllerState {
@@ -43,6 +46,7 @@ mod test_controller {
             Self {
                 events: Signal::new(),
                 status: Mutex::new(PortStatus::default()),
+                pd_alert: Mutex::new(None),
             }
         }
 
@@ -88,6 +92,15 @@ mod test_controller {
         /// Simulate a debug accessory source connecting
         pub async fn connect_debug_accessory_source(&self, current: Current) {
             self.connect(Contract::Sink(current.into()), true).await;
+        }
+
+        /// Simulate a PD alert
+        pub async fn send_pd_alert(&self, ado: Ado) {
+            *self.pd_alert.lock().await = Some(ado);
+
+            let mut events = PortEvent::none();
+            events.notification.set_alert(true);
+            self.events.signal(events);
         }
     }
 
@@ -176,6 +189,17 @@ mod test_controller {
         async fn set_rt_compliance(&mut self, _port: LocalPortId) -> Result<(), Error<Self::BusError>> {
             debug!("Set retimer compliance");
             Ok(())
+        }
+
+        async fn get_pd_alert(&mut self, port: LocalPortId) -> Result<Option<Ado>, Error<Self::BusError>> {
+            let pd_alert = self.state.pd_alert.lock().await;
+            if let Some(ado) = *pd_alert {
+                debug!("Port{}: Get PD alert: {ado:#?}", port.0);
+                Ok(Some(ado))
+            } else {
+                debug!("Port{}: No PD alert", port.0);
+                Ok(None)
+            }
         }
 
         async fn get_active_fw_version(&self) -> Result<u32, Error<Self::BusError>> {
@@ -269,8 +293,19 @@ async fn controller_task(state: &'static test_controller::ControllerState) {
     wrapper.get_inner().await.custom_function();
 
     loop {
-        if let Err(e) = wrapper.process_next_event().await {
-            error!("Error processing wrapper: {e:#?}");
+        let event = wrapper.wait_next().await;
+        if let Err(e) = event {
+            error!("Error waiting for event: {e:?}");
+            continue;
+        }
+
+        let event = event.unwrap();
+        if let Event::PdAlert(port_id, ado) = event {
+            info!("Port{}: PD alert received: {:?}", port_id.0, ado);
+        }
+
+        if let Err(e) = wrapper.process_event(event).await {
+            error!("Error processing event: {e:?}");
         }
     }
 }
@@ -296,6 +331,10 @@ async fn task(spawner: Spawner) {
 
     info!("Simulating connection");
     state.connect_sink(Current::UsbDefault).await;
+    Timer::after_millis(DELAY_MS).await;
+
+    info!("Simulating PD alert");
+    state.send_pd_alert(Ado::PowerButtonPress).await;
     Timer::after_millis(DELAY_MS).await;
 
     info!("Simulating disconnection");

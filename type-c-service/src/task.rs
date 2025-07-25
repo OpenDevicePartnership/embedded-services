@@ -15,6 +15,7 @@ use embedded_services::{
     },
     GlobalRawMutex,
 };
+use embedded_usb_pd::ado::Ado;
 use embedded_usb_pd::GlobalPortId;
 use embedded_usb_pd::PdError as Error;
 
@@ -45,8 +46,8 @@ pub struct Service {
 pub enum Event<'a> {
     /// Port event
     PortStatusChanged(GlobalPortId, PortStatusChanged, PortStatus),
-    /// Port notification
-    PortNotification(GlobalPortId, PortNotificationSingle),
+    /// PD alert
+    PdAlert(GlobalPortId, Ado),
     /// External command
     ExternalCommand(deferred::Request<'a, GlobalRawMutex, external::Command, external::Response<'static>>),
 }
@@ -256,10 +257,22 @@ impl Service {
                                 let status = self.context.get_port_status(port_id, true).await?;
                                 return Ok(Event::PortStatusChanged(port_id, status_event, status));
                             }
-                            PortEventVariant::Notification(notification) => {
-                                // Return a port notification event
-                                return Ok(Event::PortNotification(port_id, notification));
-                            }
+                            PortEventVariant::Notification(notification) => match notification {
+                                PortNotificationSingle::Alert => {
+                                    if let Some(ado) = self.context.get_pd_alert(port_id).await? {
+                                        // Return a PD alert event
+                                        return Ok(Event::PdAlert(port_id, ado));
+                                    } else {
+                                        // Didn't get an ADO, wait for next event
+                                        continue;
+                                    }
+                                }
+                                _ => {
+                                    // Other notifications currently unimplemented
+                                    trace!("Unimplemented port notification: {:?}", notification);
+                                    continue;
+                                }
+                            },
                         }
                     } else {
                         self.state.lock().await.port_event_streaming_state = None;
@@ -279,9 +292,9 @@ impl Service {
                 trace!("Port{}: Processing port status changed", port.0);
                 self.process_port_event(port, event_kind, status).await
             }
-            Event::PortNotification(port, _notification) => {
+            Event::PdAlert(port, alert) => {
                 // Port notifications currently don't have any processing logic
-                trace!("Port{}: Processing notification", port.0);
+                info!("Port{}: Got PD alert: {:?}", port.0, alert);
                 Ok(())
             }
             Event::ExternalCommand(request) => {

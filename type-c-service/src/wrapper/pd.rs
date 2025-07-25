@@ -72,6 +72,14 @@ impl<const N: usize, C: Controller, V: FwOfferValidator> ControllerWrapper<'_, N
                     Error::Pd(e) => Err(e),
                 },
             },
+            controller::PortCommandData::GetPdAlert => {
+                let channel = &self.pd_alerts[local_port.0 as usize];
+                if channel.is_empty() {
+                    Ok(controller::PortResponseData::PdAlert(None))
+                } else {
+                    Ok(controller::PortResponseData::PdAlert(Some(channel.receive().await)))
+                }
+            }
         })
     }
 

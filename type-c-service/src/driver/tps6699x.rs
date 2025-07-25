@@ -20,6 +20,7 @@ use embedded_services::type_c::controller::{self, Controller, ControllerStatus, 
 use embedded_services::type_c::event::{PortEvent, PortStatusChanged};
 use embedded_services::type_c::ControllerId;
 use embedded_services::{debug, info, trace, type_c, warn, GlobalRawMutex};
+use embedded_usb_pd::ado::Ado;
 use embedded_usb_pd::pdinfo::PowerPathStatus;
 use embedded_usb_pd::pdo::{sink, source, Common, Rdo};
 use embedded_usb_pd::type_c::Current as TypecCurrent;
@@ -442,6 +443,14 @@ impl<const N: usize, M: RawMutex, B: I2c> Controller for Tps6699x<'_, N, M, B> {
             }
             rest => rest,
         }
+    }
+
+    async fn get_pd_alert(&mut self, port: LocalPortId) -> Result<Option<Ado>, Error<Self::BusError>> {
+        let mut tps6699x = self
+            .tps6699x
+            .try_lock()
+            .expect("Driver should not have been locked before this, thus infallible");
+        tps6699x.get_rx_ado(port).await
     }
 
     async fn get_controller_status(&mut self) -> Result<ControllerStatus<'static>, Error<Self::BusError>> {

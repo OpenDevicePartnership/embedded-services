@@ -8,6 +8,7 @@ use embassy_time::{Duration, with_timeout};
 use embedded_usb_pd::ucsi::lpm;
 use embedded_usb_pd::{
     DataRole, Error, GlobalPortId, PdError, PlugOrientation, PortId as LocalPortId, PowerRole,
+    ado::Ado,
     pdinfo::{AltMode, PowerPathStatus},
     type_c::ConnectionState,
 };
@@ -107,6 +108,8 @@ pub enum PortCommandData {
     RetimerFwUpdateClearState,
     /// Set retimer compliance
     SetRetimerCompliance,
+    /// Get oldest unhandled PD alert
+    GetPdAlert,
 }
 
 /// Port-specific commands
@@ -141,6 +144,8 @@ pub enum PortResponseData {
     ClearEvents(PortEvent),
     /// Retimer Fw Update status
     RtFwUpdateStatus(RetimerFwUpdateState),
+    /// PD alert
+    PdAlert(Option<Ado>),
 }
 
 impl PortResponseData {
@@ -352,6 +357,8 @@ pub trait Controller {
     fn get_controller_status(
         &mut self,
     ) -> impl Future<Output = Result<ControllerStatus<'static>, Error<Self::BusError>>>;
+    /// Get current PD alert
+    fn get_pd_alert(&mut self, port: LocalPortId) -> impl Future<Output = Result<Option<Ado>, Error<Self::BusError>>>;
 
     // TODO: remove all these once we migrate to a generic FW update trait
     // https://github.com/OpenDevicePartnership/embedded-services/issues/242
@@ -641,6 +648,17 @@ impl ContextToken {
             PortResponseData::PortStatus(status) => Ok(status),
             r => {
                 error!("Invalid response: expected port status, got {:?}", r);
+                Err(PdError::InvalidResponse)
+            }
+        }
+    }
+
+    /// Get the oldest unhandled PD alert for the given port
+    pub async fn get_pd_alert(&self, port: GlobalPortId) -> Result<Option<Ado>, PdError> {
+        match self.send_port_command(port, PortCommandData::GetPdAlert).await? {
+            PortResponseData::PdAlert(alert) => Ok(alert),
+            r => {
+                error!("Invalid response: expected PD alert, got {:?}", r);
                 Err(PdError::InvalidResponse)
             }
         }

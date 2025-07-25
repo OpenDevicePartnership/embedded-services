@@ -4,6 +4,7 @@ use core::array::from_fn;
 use core::future::{pending, Future};
 
 use embassy_futures::select::{select4, select_array, Either4};
+use embassy_sync::channel::Channel;
 use embassy_sync::mutex::Mutex;
 use embedded_cfu_protocol::protocol_definitions::{FwUpdateOffer, FwUpdateOfferResponse, FwVersion};
 use embedded_services::cfu::component::CfuDevice;
@@ -16,6 +17,7 @@ use embedded_services::type_c::event::{PortEvent, PortNotificationSingle, PortPe
 use embedded_services::GlobalRawMutex;
 use embedded_services::SyncCell;
 use embedded_services::{debug, error, info, trace, warn};
+use embedded_usb_pd::ado::Ado;
 use embedded_usb_pd::{Error, PdError, PortId as LocalPortId};
 
 use crate::{PortEventStreamer, PortEventVariant};
@@ -59,8 +61,8 @@ pub trait FwOfferValidator {
 pub enum Event<'a> {
     /// Port status changed
     PortStatusChanged(LocalPortId, PortStatusChanged),
-    /// Port notification received
-    PortNotification(LocalPortId, PortNotificationSingle),
+    /// PD alert
+    PdAlert(LocalPortId, Ado),
     /// Power policy command received
     PowerPolicyCommand(
         LocalPortId,
@@ -70,6 +72,8 @@ pub enum Event<'a> {
     ControllerCommand(deferred::Request<'a, GlobalRawMutex, controller::Command, controller::Response<'static>>),
     CfuEvent(cfu::Event),
 }
+
+const MAX_BUFFERED_PD_ALERTS: usize = 4;
 
 /// Takes an implementation of the `Controller` trait and wraps it with logic to handle
 /// message passing and power-policy integration.
@@ -88,6 +92,10 @@ pub struct ControllerWrapper<'a, const N: usize, C: Controller, V: FwOfferValida
     fw_version_validator: V,
     /// FW update ticker used to check for timeouts and recovery attempts
     fw_update_ticker: Mutex<GlobalRawMutex, embassy_time::Ticker>,
+    /// Pending PD alerts
+    // Even though we want the immediate publishing behavior of a PubSub channel,
+    // we'd have declare it externally because it doesn't have publish functions on it like a standard channel does
+    pd_alerts: [Channel<GlobalRawMutex, Ado, MAX_BUFFERED_PD_ALERTS>; N],
 }
 
 impl<'a, const N: usize, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, N, C, V> {
@@ -110,6 +118,7 @@ impl<'a, const N: usize, C: Controller, V: FwOfferValidator> ControllerWrapper<'
             fw_update_ticker: Mutex::new(embassy_time::Ticker::every(embassy_time::Duration::from_millis(
                 DEFAULT_FW_UPDATE_TICK_INTERVAL_MS,
             ))),
+            pd_alerts: [const { Channel::new() }; N],
         }
     }
 
@@ -215,6 +224,34 @@ impl<'a, const N: usize, C: Controller, V: FwOfferValidator> ControllerWrapper<'
         Ok(())
     }
 
+    /// Process a PD alert
+    async fn process_pd_alert(&self, port: LocalPortId, alert: Ado) -> Result<(), Error<<C as Controller>::BusError>> {
+        let port_index = port.0 as usize;
+        if port_index >= N {
+            error!("Invalid port {}", port_index);
+            return Err(PdError::InvalidPort.into());
+        }
+
+        // Buffer the alert
+        let channel = &self.pd_alerts[port_index];
+        if channel.is_full() {
+            // Discard oldest alert
+            let _ = channel.receive().await;
+        }
+        channel.send(alert).await;
+
+        // Pend the alert
+        let mut event = self.active_events[port_index].get();
+        event.notification.set_alert(true);
+        self.active_events[port_index].set(event);
+
+        // Pend this port
+        let mut pending = PortPending::none();
+        pending.pend_port(port.0 as usize);
+        self.pd_controller.notify_ports(pending).await;
+        Ok(())
+    }
+
     /// Wait for a pending port event
     async fn wait_port_pending(
         &self,
@@ -269,10 +306,22 @@ impl<'a, const N: usize, C: Controller, V: FwOfferValidator> ControllerWrapper<'
                                 // Return a port status changed event
                                 return Ok(Event::PortStatusChanged(port_id, status_event));
                             }
-                            PortEventVariant::Notification(notification) => {
-                                // Return a port notification event
-                                return Ok(Event::PortNotification(port_id, notification));
-                            }
+                            PortEventVariant::Notification(notification) => match notification {
+                                PortNotificationSingle::Alert => {
+                                    if let Some(ado) = self.controller.lock().await.get_pd_alert(port_id).await? {
+                                        // Return a PD alert event
+                                        return Ok(Event::PdAlert(port_id, ado));
+                                    } else {
+                                        // Didn't get an ADO, wait for next event
+                                        continue;
+                                    }
+                                }
+                                _ => {
+                                    // Other notifications currently unimplemented
+                                    trace!("Unimplemented port notification: {:?}", notification);
+                                    continue;
+                                }
+                            },
                         }
                     } else {
                         self.state.lock().await.port_event_streaming_state = None;
@@ -321,10 +370,7 @@ impl<'a, const N: usize, C: Controller, V: FwOfferValidator> ControllerWrapper<'
                     Ok(())
                 }
             },
-            Event::PortNotification(_, _) => {
-                // Nop for us
-                Ok(())
-            }
+            Event::PdAlert(port, alert) => self.process_pd_alert(port, alert).await,
         }
     }
 
