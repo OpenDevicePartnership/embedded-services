@@ -221,3 +221,8 @@ pub async fn sync_controller_state(id: ControllerId) -> Result<(), PdError> {
         _ => Err(PdError::InvalidResponse),
     }
 }
+
+/// Get number of ports on the system
+pub async fn get_num_ports() -> usize {
+    super::controller::get_num_ports().await
+}

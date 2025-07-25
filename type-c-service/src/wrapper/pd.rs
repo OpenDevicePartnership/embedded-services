@@ -72,6 +72,15 @@ impl<const N: usize, C: Controller, V: FwOfferValidator> ControllerWrapper<'_, N
                     Error::Pd(e) => Err(e),
                 },
             },
+            controller::PortCommandData::SetUnconstrainedPower(unconstrained) => {
+                match controller.set_unconstrained_power(local_port, unconstrained).await {
+                    Ok(()) => Ok(controller::PortResponseData::Complete),
+                    Err(e) => match e {
+                        Error::Bus(_) => Err(PdError::Failed),
+                        Error::Pd(e) => Err(e),
+                    },
+                }
+            }
         })
     }
 

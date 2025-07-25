@@ -209,7 +209,7 @@ impl<'a, const N: usize, C: Controller, V: FwOfferValidator> ControllerWrapper<'
         self.active_events[port_index].set(event.union(status_event.into()));
 
         let mut pending = PortPending::none();
-        pending.pend_port(port_index);
+        pending.pend_port(global_port_id.0 as usize);
         self.pd_controller.notify_ports(pending).await;
 
         Ok(())

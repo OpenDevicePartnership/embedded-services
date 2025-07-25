@@ -101,19 +101,28 @@ impl<'a, const N: usize, M: RawMutex, B: I2c> Tps6699x<'a, N, M, B> {
             if pdo_raw != 0 && rdo_raw != 0 {
                 // Got a valid explicit contract
                 if pd_status.is_source() {
-                    let pdo = source::Pdo::try_from(pdo_raw).map_err(Error::Pd)?;
+                    let pdo = source::Pdo::try_from(pdo_raw).map_err(Into::<Error<B::Error>>::into)?;
                     let rdo = Rdo::for_pdo(rdo_raw, pdo);
                     debug!("PDO: {:#?}", pdo);
                     debug!("RDO: {:#?}", rdo);
                     port_status.available_source_contract = Some(PowerCapability::from(pdo));
-                    port_status.dual_power = pdo.is_dual_role();
+                    port_status.dual_power = pdo.dual_role_power();
+                    port_status.unconstrained_power = port_control.unconstrained_power();
                 } else {
-                    let pdo = sink::Pdo::try_from(pdo_raw).map_err(Error::Pd)?;
+                    // active_rdo_contract doesn't contain the full picture
+                    // Certain flags are only set in the 5V fixed supply source PDO
+                    let mut source_pdos: [source::Pdo; 1] = [source::Pdo::default()];
+                    // Read 5V fixed supply source PDO, guaranteed to be present as the first PDO
+                    let _ = tps6699x.get_rx_src_caps(port, 0, &mut source_pdos[..]).await?;
+
+                    let pdo = sink::Pdo::try_from(pdo_raw).map_err(Into::<Error<B::Error>>::into)?;
                     let rdo = Rdo::for_pdo(rdo_raw, pdo);
                     debug!("PDO: {:#?}", pdo);
                     debug!("RDO: {:#?}", rdo);
+                    debug!("Source 5V fixed PDO: {:#?}", source_pdos[0]);
                     port_status.available_sink_contract = Some(PowerCapability::from(pdo));
-                    port_status.dual_power = pdo.is_dual_role()
+                    port_status.dual_power = source_pdos[0].dual_role_power();
+                    port_status.unconstrained_power = source_pdos[0].unconstrained_power();
                 }
             } else if pd_status.is_source() {
                 // Implicit source contract
@@ -459,6 +468,18 @@ impl<const N: usize, M: RawMutex, B: I2c> Controller for Tps6699x<'_, N, M, B> {
             fw_version0: customer_use.ti_fw_version(),
             fw_version1: customer_use.custom_fw_version(),
         })
+    }
+
+    async fn set_unconstrained_power(
+        &mut self,
+        port: LocalPortId,
+        unconstrained: bool,
+    ) -> Result<(), Error<Self::BusError>> {
+        let mut tps6699x = self
+            .tps6699x
+            .try_lock()
+            .expect("Driver should not have been locked before this, thus infallible");
+        tps6699x.set_unconstrained_power(port, unconstrained).await
     }
 
     async fn get_active_fw_version(&self) -> Result<u32, Error<Self::BusError>> {

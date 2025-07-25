@@ -1,7 +1,7 @@
 #![no_std]
 #![no_main]
 
-use ::tps6699x::ADDR0;
+use ::tps6699x::ADDR1;
 use embassy_embedded_hal::shared_bus::asynch::i2c::I2cDevice;
 use embassy_executor::Spawner;
 use embassy_imxrt::gpio::{Input, Inverter, Pull};
@@ -158,7 +158,7 @@ async fn main(spawner: Spawner) {
     let device = I2cDevice::new(bus);
 
     static CONTROLLER: StaticCell<Controller<'static>> = StaticCell::new();
-    let controller = CONTROLLER.init(Controller::new_tps66994(device, ADDR0).unwrap());
+    let controller = CONTROLLER.init(Controller::new_tps66994(device, ADDR1).unwrap());
     let (mut tps6699x, interrupt) = controller.make_parts();
 
     info!("Resetting PD controller");

@@ -20,7 +20,7 @@ struct InternalState {
     /// Current provider global state
     current_provider_state: provider::State,
     /// System unconstrained power
-    unconstrained: bool,
+    unconstrained: UnconstrainedState,
 }
 
 impl InternalState {
@@ -28,7 +28,7 @@ impl InternalState {
         Self {
             current_consumer_state: None,
             current_provider_state: provider::State::default(),
-            unconstrained: false,
+            unconstrained: UnconstrainedState::default(),
         }
     }
 }
