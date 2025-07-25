@@ -52,11 +52,19 @@ jobs:
     uses: ./.github/workflows/check.yml
     with:
       download-lockfiles: true
+  
+  check-cargo-vet:
+    name: cargo-update / check-cargo-vet
+    needs: [update-dependencies, check-build]
+    if: ${{ needs.update-dependencies.outputs.pr-needed == 'true' }}
+    uses: ./.github/workflows/cargo-vet.yml
+    with:
+      download-lockfiles: true
 
   pull-request:
     name: cargo-update / pull-request
     runs-on: ubuntu-latest
-    needs: [check-build, update-dependencies]
+    needs: [check-build, check-cargo-vet, update-dependencies]
     if: ${{ needs.update-dependencies.outputs.pr-needed == 'true' }}
     steps:
       - uses: actions/checkout@v4
