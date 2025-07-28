@@ -99,6 +99,26 @@ impl<const N: usize, C: Controller, V: FwOfferValidator> ControllerWrapper<'_, N
         InternalResponseData::OfferResponse(self.fw_version_validator.validate(FwVersion::new(version), offer))
     }
 
+    async fn process_abort_update(&self, controller: &mut C, state: &mut InternalState) -> InternalResponseData {
+        // abort the update process
+        match controller.abort_fw_update().await {
+            Ok(_) => {
+                debug!("FW update aborted successfully");
+                state.fw_update_state = FwUpdateState::Idle;
+            }
+            Err(Error::Pd(e)) => {
+                error!("Failed to abort FW update: {:?}", e);
+                state.fw_update_state = FwUpdateState::Recovery;
+            }
+            Err(Error::Bus(_)) => {
+                error!("Failed to abort FW update, bus error");
+                state.fw_update_state = FwUpdateState::Recovery;
+            }
+        }
+
+        InternalResponseData::ComponentPrepared
+    }
+
     /// Process a GiveContent command
     async fn process_give_content(
         &self,
@@ -293,6 +313,10 @@ impl<const N: usize, C: Controller, V: FwOfferValidator> ControllerWrapper<'_, N
             RequestData::GiveContent(content) => {
                 debug!("Got GiveContent");
                 self.process_give_content(controller, state, content).await
+            }
+            RequestData::AbortUpdate => {
+                debug!("Got AbortUpdate");
+                self.process_abort_update(controller, state).await
             }
             RequestData::FinalizeUpdate => {
                 debug!("Got FinalizeUpdate");

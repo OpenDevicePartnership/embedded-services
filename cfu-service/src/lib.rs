@@ -77,6 +77,7 @@ impl CfuClient {
             RequestData::GiveContent(_content_cmd) => Ok(()),
             RequestData::GiveOffer(_offer_cmd) => Ok(()),
             RequestData::PrepareComponentForUpdate => Ok(()),
+            RequestData::AbortUpdate => Ok(()),
             RequestData::FinalizeUpdate => Ok(()),
             RequestData::GiveOfferExtended(_) => {
                 // Don't currently support extended offers
