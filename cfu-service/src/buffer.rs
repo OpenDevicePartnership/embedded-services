@@ -129,11 +129,12 @@ impl<'a> Buffer<'a> {
     }
 
     async fn process_abort_update(&self) -> InternalResponseData {
-        if let Ok(response) = cfu::route_request(self.buffered_id, RequestData::AbortUpdate).await {
-            response
-        } else {
-            error!("Failed to abort update for device {}", self.buffered_id);
-            InternalResponseData::ComponentBusy
+        match cfu::route_request(self.buffered_id, RequestData::AbortUpdate).await {
+            Ok(response) => response,
+            Err(e) => {
+                error!("Failed to abort update for device {}: {}", self.buffered_id, e);
+                InternalResponseData::ComponentBusy
+            }
         }
     }
 
