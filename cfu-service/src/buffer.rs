@@ -132,7 +132,7 @@ impl<'a> Buffer<'a> {
         match cfu::route_request(self.buffered_id, RequestData::AbortUpdate).await {
             Ok(response) => response,
             Err(e) => {
-                error!("Failed to abort update for device {}: {}", self.buffered_id, e);
+                error!("Failed to abort update for device {}: {:?}", self.buffered_id, e);
                 InternalResponseData::ComponentBusy
             }
         }
