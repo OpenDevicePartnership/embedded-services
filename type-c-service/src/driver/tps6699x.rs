@@ -11,7 +11,7 @@ use embassy_futures::select::select;
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use embassy_sync::mutex::Mutex;
 use embassy_sync::signal::Signal;
-use embassy_time::Delay;
+use embassy_time::{with_timeout, Delay, Duration, Ticker, TimeoutError};
 use embedded_cfu_protocol::protocol_definitions::ComponentId;
 use embedded_hal_async::i2c::I2c;
 use embedded_services::cfu::component::CfuDevice;
@@ -32,6 +32,7 @@ use tps6699x::asynchronous::fw_update::{
     disable_all_interrupts, enable_port0_interrupts, BorrowedUpdater, BorrowedUpdaterInProgress,
 };
 use tps6699x::fw_update::UpdateConfig as FwUpdateConfig;
+use tps6699x::Mode;
 
 type Updater<'a, M, B> = BorrowedUpdaterInProgress<tps6699x_drv::Tps6699x<'a, M, B>>;
 
@@ -68,6 +69,39 @@ impl<'a, const N: usize, M: RawMutex, B: I2c> Tps6699x<'a, N, M, B> {
         }
     }
 
+    /// Wait for the controller to enter [`Mode::App1`], indefinitely.
+    async fn wait_app1_no_timeout(
+        &self,
+        tps6699x: &mut tps6699x_drv::Tps6699x<'a, M, B>,
+        period: Duration,
+    ) -> Result<(), Error<B::Error>> {
+        let mut ticker = Ticker::every(period);
+        loop {
+            if tps6699x.get_mode().await? == Mode::App1 {
+                return Ok(());
+            }
+
+            ticker.next().await;
+        }
+    }
+
+    /// Wait for the controller to enter [`Mode::App1`] within `timeout`.
+    async fn wait_app1(&self, tps6699x: &mut tps6699x_drv::Tps6699x<'a, M, B>) -> Result<(), Error<B::Error>> {
+        let timeout = Duration::from_millis(800); // expected duration from power-on to APP1
+        match with_timeout(timeout, self.wait_app1_no_timeout(tps6699x, Duration::from_millis(50))).await {
+            Ok(Ok(())) => Ok(()),
+            Ok(Err(e)) => Err(e),
+            Err(TimeoutError) => {
+                debug!(
+                    "Port not in {:?} after {}ms timeout, waiting for app mode",
+                    Mode::App1,
+                    timeout.as_millis()
+                );
+                Err(Error::Pd(PdError::InvalidMode))
+            }
+        }
+    }
+
     /// Reads and caches the current status of the port, returns any detected events
     async fn update_port_status(
         &self,
@@ -75,6 +109,8 @@ impl<'a, const N: usize, M: RawMutex, B: I2c> Tps6699x<'a, N, M, B> {
         port: LocalPortId,
     ) -> Result<PortStatusChanged, Error<B::Error>> {
         let events = PortStatusChanged::none();
+
+        self.wait_app1(tps6699x).await?;
 
         let status = tps6699x.get_port_status(port).await?;
         trace!("Port{} status: {:#?}", port.0, status);
@@ -161,6 +197,7 @@ impl<'a, const N: usize, M: RawMutex, B: I2c> Tps6699x<'a, N, M, B> {
 
             // Update power path status
             let power_path = tps6699x.get_power_path_status(port).await?;
+            trace!("Port{} power source: {:#?}", port.0, power_path);
             port_status.power_path = match port {
                 PORT0 => PowerPathStatus::new(
                     power_path.pa_int_vbus_sw() == PpIntVbusSw::EnabledOutput,
