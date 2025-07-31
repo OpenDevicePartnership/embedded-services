@@ -13,9 +13,18 @@ macro_rules! define_i2c_passthrough_device_task {
             define_static_buffer!(gen_buffer, u8, [0; 512]);
             let gen_buffer = gen_buffer::get_mut().unwrap();
 
+            let custom_regs = RegisterFile {
+                hid_desc_reg: 0x00,
+                report_desc_reg: 0x20,
+                input_reg: 0x60,
+                output_reg: 0x62,
+                command_reg: 0x64,
+                data_reg: 0x66,
+            };
+
             info!("Create HID passthrough device {}", id.0);
             static DEVICE: OnceLock<Device<u8, $bus>> = OnceLock::new();
-            let device = DEVICE.get_or_init(|| Device::new(id, addr, bus, Default::default(), gen_buffer));
+            let device = DEVICE.get_or_init(|| Device::new(id, addr, bus, custom_regs, gen_buffer));
             hid::register_device(device).await.unwrap();
 
             info!("Starting device task");
