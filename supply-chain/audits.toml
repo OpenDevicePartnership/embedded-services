@@ -118,6 +118,11 @@ version = "0.36.7"
 
 [[audits.portable-atomic]]
 who = "Robert Zieba <robertzieba@microsoft.com>"
+criteria = "safe-to-deploy"
+version = "1.11.1"
+
+[[audits.portable-atomic]]
+who = "Robert Zieba <robertzieba@microsoft.com>"
 criteria = "safe-to-run"
 version = "1.11.1"
 
@@ -125,6 +130,11 @@ version = "1.11.1"
 who = "jerrysxie <jerryxie@microsoft.com>"
 criteria = "safe-to-deploy"
 version = "0.6.8"
+
+[[audits.static_cell]]
+who = "Robert Zieba <robertzieba@microsoft.com>"
+criteria = "safe-to-deploy"
+version = "2.1.1"
 
 [[audits.static_cell]]
 who = "Robert Zieba <robertzieba@microsoft.com>"

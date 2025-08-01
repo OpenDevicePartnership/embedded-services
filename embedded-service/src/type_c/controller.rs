@@ -53,6 +53,8 @@ pub struct PortStatus {
     pub power_path: PowerPathStatus,
     /// EPR mode active
     pub epr: bool,
+    /// Port partner is unconstrained
+    pub unconstrained_power: bool,
 }
 
 impl PortStatus {
@@ -70,6 +72,7 @@ impl PortStatus {
             alt_mode: AltMode::none(),
             power_path: PowerPathStatus::none(),
             epr: false,
+            unconstrained_power: false,
         }
     }
 
@@ -115,6 +118,8 @@ pub enum PortCommandData {
     GetPdAlert,
     /// Set the maximum sink voltage in mV for the given port
     SetMaxSinkVoltage(Option<u16>),
+    /// Set unconstrained power
+    SetUnconstrainedPower(bool),
 }
 
 /// Port-specific commands
@@ -372,6 +377,12 @@ pub trait Controller {
         port: LocalPortId,
         voltage_mv: Option<u16>,
     ) -> impl Future<Output = Result<(), Error<Self::BusError>>>;
+    /// Set port unconstrained status
+    fn set_unconstrained_power(
+        &mut self,
+        port: LocalPortId,
+        unconstrained: bool,
+    ) -> impl Future<Output = Result<(), Error<Self::BusError>>>;
 
     // TODO: remove all these once we migrate to a generic FW update trait
     // https://github.com/OpenDevicePartnership/embedded-services/issues/242
@@ -452,6 +463,16 @@ pub(super) async fn lookup_controller(controller_id: ControllerId) -> Result<&'s
         .filter_map(|node| node.data::<Device>())
         .find(|controller| controller.id == controller_id)
         .ok_or(PdError::InvalidController)
+}
+
+/// Get total number of ports on the system
+pub(super) async fn get_num_ports() -> usize {
+    CONTEXT
+        .get()
+        .await
+        .controllers
+        .iter_only::<Device>()
+        .fold(0, |acc, controller| acc + controller.num_ports())
 }
 
 /// Default command timeout
@@ -738,6 +759,17 @@ impl ContextToken {
         }
     }
 
+    /// Set unconstrained power for the given port
+    pub async fn set_unconstrained_power(&self, port: GlobalPortId, unconstrained: bool) -> Result<(), PdError> {
+        match self
+            .send_port_command(port, PortCommandData::SetUnconstrainedPower(unconstrained))
+            .await?
+        {
+            PortResponseData::Complete => Ok(()),
+            _ => Err(PdError::InvalidResponse),
+        }
+    }
+
     /// Sync controller state
     pub async fn sync_controller_state(&self, controller_id: ControllerId) -> Result<(), PdError> {
         match self
@@ -762,6 +794,11 @@ impl ContextToken {
     /// Notify that there are pending events on one or more ports
     pub async fn notify_ports(&self, pending: PortPending) {
         CONTEXT.get().await.notify_ports(pending);
+    }
+
+    /// Get the number of ports on the system
+    pub async fn get_num_ports(&self) -> usize {
+        get_num_ports().await
     }
 }
 

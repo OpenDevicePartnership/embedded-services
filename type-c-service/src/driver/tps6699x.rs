@@ -20,7 +20,7 @@ use embedded_services::transformers::object::{Object, RefGuard, RefMutGuard};
 use embedded_services::type_c::controller::{self, Controller, ControllerStatus, PortStatus};
 use embedded_services::type_c::event::{PortEvent, PortStatusChanged};
 use embedded_services::type_c::ControllerId;
-use embedded_services::{debug, info, trace, type_c, warn, GlobalRawMutex};
+use embedded_services::{debug, error, info, trace, type_c, warn, GlobalRawMutex};
 use embedded_usb_pd::ado::Ado;
 use embedded_usb_pd::pdinfo::PowerPathStatus;
 use embedded_usb_pd::pdo::{sink, source, Common, Rdo};
@@ -146,12 +146,28 @@ impl<'a, const N: usize, M: RawMutex, B: I2c> Tps6699x<'a, N, M, B> {
                     port_status.available_source_contract = Some(PowerCapability::from(pdo));
                     port_status.dual_power = pdo.dual_role_power();
                 } else {
+                    // active_rdo_contract doesn't contain the full picture
+                    let mut source_pdos: [source::Pdo; 1] = [source::Pdo::default()];
+                    // Read 5V fixed supply source PDO, guaranteed to be present as the first SPR PDO
+                    let (num_sprs, _) = tps6699x
+                        .lock_inner()
+                        .await
+                        .get_rx_src_caps(port, &mut source_pdos[..], &mut [])
+                        .await?;
+
+                    if num_sprs == 0 {
+                        // USB PD spec requires at least one source PDO be present, something is really wrong
+                        error!("Port{} no source PDOs found", port.0);
+                        return Err(PdError::InvalidParams.into());
+                    }
+
                     let pdo = sink::Pdo::try_from(pdo_raw).map_err(|_| Error::from(PdError::InvalidParams))?;
                     let rdo = Rdo::for_pdo(rdo_raw, pdo);
                     debug!("PDO: {:#?}", pdo);
                     debug!("RDO: {:#?}", rdo);
                     port_status.available_sink_contract = Some(PowerCapability::from(pdo));
-                    port_status.dual_power = pdo.dual_role_power();
+                    port_status.dual_power = source_pdos[0].dual_role_power();
+                    port_status.unconstrained_power = source_pdos[0].unconstrained_power();
                 }
             } else if pd_status.is_source() {
                 // Implicit source contract
@@ -506,6 +522,18 @@ impl<const N: usize, M: RawMutex, B: I2c> Controller for Tps6699x<'_, N, M, B> {
             fw_version0: customer_use.ti_fw_version(),
             fw_version1: customer_use.custom_fw_version(),
         })
+    }
+
+    async fn set_unconstrained_power(
+        &mut self,
+        port: LocalPortId,
+        unconstrained: bool,
+    ) -> Result<(), Error<Self::BusError>> {
+        let mut tps6699x = self
+            .tps6699x
+            .try_lock()
+            .expect("Driver should not have been locked before this, thus infallible");
+        tps6699x.set_unconstrained_power(port, unconstrained).await
     }
 
     async fn get_active_fw_version(&self) -> Result<u32, Error<Self::BusError>> {
