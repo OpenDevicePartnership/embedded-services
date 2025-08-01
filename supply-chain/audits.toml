@@ -288,6 +288,6 @@ version = "0.8.26"
 
 [[trusted.anyhow]]
 criteria = "safe-to-deploy"
-user-id = 3618              # David Tolnay (dtolnay)
+user-id = 3618 # David Tolnay (dtolnay)
 start = "2019-10-05"
 end = "2026-04-16"
