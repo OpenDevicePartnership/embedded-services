@@ -1,5 +1,7 @@
 //! Message definitions for external type-C commands
-use embedded_usb_pd::{GlobalPortId, PdError, PortId as LocalPortId};
+use embedded_usb_pd::{GlobalPortId, PdError, PortId as LocalPortId, ucsi};
+
+use crate::type_c::controller::execute_external_ucsi_command;
 
 use super::{
     ControllerId,
@@ -91,6 +93,18 @@ pub enum Command {
     Port(PortCommand),
     /// Controller command
     Controller(ControllerCommand),
+    /// UCSI command
+    Ucsi(ucsi::Command),
+}
+
+/// UCSI command response
+#[derive(Copy, Clone, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct UcsiResponse {
+    /// Notify the OPM, the function call
+    pub notify_opm: bool,
+    /// UCSI response
+    pub response: ucsi::Response,
 }
 
 /// External command response for type-C service
@@ -101,6 +115,8 @@ pub enum Response<'a> {
     Port(PortResponse),
     /// Controller command response
     Controller(ControllerResponse<'a>),
+    /// UCSI command response
+    Ucsi(Result<UcsiResponse, PdError>),
 }
 
 /// Get the status of the given port.
@@ -220,4 +236,9 @@ pub async fn sync_controller_state(id: ControllerId) -> Result<(), PdError> {
         ControllerResponseData::Complete => Ok(()),
         _ => Err(PdError::InvalidResponse),
     }
+}
+
+/// Execute a UCSI command
+pub async fn execute_ucsi_command(command: ucsi::Command) -> Result<UcsiResponse, PdError> {
+    execute_external_ucsi_command(command).await
 }

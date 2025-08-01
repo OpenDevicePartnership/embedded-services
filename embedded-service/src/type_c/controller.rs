@@ -5,7 +5,7 @@ use core::sync::atomic::{AtomicBool, Ordering};
 use embassy_sync::once_lock::OnceLock;
 use embassy_sync::signal::Signal;
 use embassy_time::{Duration, with_timeout};
-use embedded_usb_pd::ucsi::lpm;
+use embedded_usb_pd::ucsi::{self, lpm};
 use embedded_usb_pd::{
     DataRole, Error, GlobalPortId, PdError, PlugOrientation, PortId as LocalPortId, PowerRole,
     ado::Ado,
@@ -788,6 +788,18 @@ pub(super) async fn execute_external_controller_command(
         external::Response::Controller(response) => response,
         r => {
             error!("Invalid response: expected external controller, got {:?}", r);
+            Err(PdError::InvalidResponse)
+        }
+    }
+}
+
+/// Execute an external UCSI command
+pub(super) async fn execute_external_ucsi_command(command: ucsi::Command) -> Result<external::UcsiResponse, PdError> {
+    let context = CONTEXT.get().await;
+    match context.external_command.execute(external::Command::Ucsi(command)).await {
+        external::Response::Ucsi(response) => response,
+        r => {
+            error!("Invalid response: expected external UCSI, got {:?}", r);
             Err(PdError::InvalidResponse)
         }
     }

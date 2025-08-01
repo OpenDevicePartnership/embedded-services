@@ -1,5 +1,6 @@
 #![no_std]
 pub mod driver;
+pub mod service;
 pub mod task;
 pub mod wrapper;
 
