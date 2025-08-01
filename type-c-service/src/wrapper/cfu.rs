@@ -99,7 +99,7 @@ impl<'a, const N: usize, C: Controller, BACK: Backing<'a>, V: FwOfferValidator> 
         InternalResponseData::OfferResponse(self.fw_version_validator.validate(FwVersion::new(version), offer))
     }
 
-    async fn process_abort_update(&self, controller: &mut C, state: &mut InternalState) -> InternalResponseData {
+    async fn process_abort_update(&self, controller: &mut C, state: &mut InternalState<N>) -> InternalResponseData {
         // abort the update process
         match controller.abort_fw_update().await {
             Ok(_) => {
