@@ -221,6 +221,11 @@ who = "jerrysxie <jerryxie@microsoft.com>"
 criteria = "safe-to-deploy"
 version = "0.22.26"
 
+[[audits.uuid]]
+who = "Jerry Xie <jerryxie@microsoft.com>"
+criteria = "safe-to-deploy"
+version = "1.17.0"
+
 [[audits.windows-targets]]
 who = "Robert Zieba <robertzieba@microsoft.com>"
 criteria = "safe-to-run"
