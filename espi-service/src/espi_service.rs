@@ -3,12 +3,14 @@ use core::slice;
 
 use embassy_sync::mutex::Mutex;
 use embassy_sync::once_lock::OnceLock;
+use embassy_sync::signal::Signal;
 use embedded_services::comms::{self, EndpointID, External, Internal};
 use embedded_services::{GlobalRawMutex, ec_type, error, info};
 
 pub struct Service<'a> {
     endpoint: comms::Endpoint,
     ec_memory: Mutex<GlobalRawMutex, &'a mut ec_type::structure::ECMemory>,
+    comms_signal: Signal<GlobalRawMutex, ([u8; 69], usize)>,
 }
 
 impl Service<'_> {
@@ -16,6 +18,7 @@ impl Service<'_> {
         Service {
             endpoint: comms::Endpoint::uninit(EndpointID::External(External::Host)),
             ec_memory: Mutex::new(ec_memory),
+            comms_signal: Signal::new(),
         }
     }
 
@@ -118,24 +121,119 @@ impl Service<'_> {
 
 impl comms::MailboxDelegate for Service<'_> {
     fn receive(&self, message: &comms::Message) -> Result<(), comms::MailboxDelegateError> {
-        let mut memory_map = self
-            .ec_memory
-            .try_lock()
-            .expect("Messages handled one after another, should be infallible.");
-        if let Some(msg) = message.data.get::<ec_type::message::CapabilitiesMessage>() {
-            ec_type::update_capabilities_section(msg, &mut memory_map);
-        } else if let Some(msg) = message.data.get::<ec_type::message::BatteryMessage>() {
-            ec_type::update_battery_section(msg, &mut memory_map);
-        } else if let Some(msg) = message.data.get::<ec_type::message::ThermalMessage>() {
-            ec_type::update_thermal_section(msg, &mut memory_map);
-        } else if let Some(msg) = message.data.get::<ec_type::message::TimeAlarmMessage>() {
-            ec_type::update_time_alarm_section(msg, &mut memory_map);
-        } else {
-            return Err(comms::MailboxDelegateError::MessageNotFound);
+        if let Some(msg) = message.data.get::<([u8; 69], usize)>() {
+            info!("Espi service: recvd acpi response: {:?}", msg);
+            self.comms_signal.signal(*msg);
         }
+        // let mut memory_map = self
+        //     .ec_memory
+        //     .try_lock()
+        //     .expect("Messages handled one after another, should be infallible.");
+        // if let Some(msg) = message.data.get::<ec_type::message::CapabilitiesMessage>() {
+        //     ec_type::update_capabilities_section(msg, &mut memory_map);
+        // } else if let Some(msg) = message.data.get::<ec_type::message::BatteryMessage>() {
+        //     ec_type::update_battery_section(msg, &mut memory_map);
+        // } else if let Some(msg) = message.data.get::<ec_type::message::ThermalMessage>() {
+        //     ec_type::update_thermal_section(msg, &mut memory_map);
+        // } else if let Some(msg) = message.data.get::<ec_type::message::TimeAlarmMessage>() {
+        //     ec_type::update_time_alarm_section(msg, &mut memory_map);
+        // } else {
+        //     return Err(comms::MailboxDelegateError::MessageNotFound);
+        // }
 
         Ok(())
     }
+}
+
+#[derive(Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+enum MctpError {
+    InvalidHeaderSize,
+    WrongDestinationAddr,
+    InvalidCommandCode,
+    InvalidByteCount,
+    InvalidHeaderVersion,
+    InvalidDestinationEndpoint,
+    InvalidSourceEndpoint,
+    /// Multi message not supported
+    InvalidFlags,
+}
+
+type PayloadLen = usize;
+
+fn handle_mctp_header(mctp_msg: &[u8], data: &mut [u8]) -> Result<(EndpointID, PayloadLen), MctpError> {
+    info!("Test1");
+    // assert we have at least 9 bytes, minimum
+    if mctp_msg.len() < 9 {
+        return Err(MctpError::InvalidHeaderSize);
+    }
+
+    // EC is at address 2, if we have anything other than 2 reject it.
+    if mctp_msg[0] != 2 {
+        return Err(MctpError::WrongDestinationAddr);
+    }
+
+    // MCTP command code is 0x0F.
+    if mctp_msg[1] != 0x0F {
+        return Err(MctpError::InvalidCommandCode);
+    }
+
+    // Check the byte count is correctly formed and is not larger than the max in the spec.
+    if mctp_msg[2] > 69 {
+        return Err(MctpError::InvalidByteCount);
+    }
+
+    // Only support header version 1.
+    if mctp_msg[4] != 1 {
+        return Err(MctpError::InvalidHeaderVersion);
+    }
+
+    // Only subsystem supported currently is battery (2) and thermal (3).
+    let endpoint_id = match mctp_msg[5] {
+        2 => EndpointID::Internal(Internal::Battery),
+        3 => EndpointID::Internal(Internal::Thermal),
+        _ => return Err(MctpError::InvalidDestinationEndpoint),
+    };
+
+    // Only source endpoint supported currently is host (1).
+    if mctp_msg[6] != 1 {
+        return Err(MctpError::InvalidSourceEndpoint);
+    }
+
+    let som = mctp_msg[7] & (1 << 7) != 0;
+    let eom = mctp_msg[7] & (1 << 6) != 0;
+    let seq_num = (mctp_msg[7] & 0b0011_0000) >> 4;
+    let msg_tag = mctp_msg[7] & 0b0000_0111;
+
+    // Verify flags
+    if !som || !eom || seq_num != 1 || msg_tag != 3 {
+        return Err(MctpError::InvalidFlags);
+    }
+
+    info!("Test2");
+
+    let len = usize::from(mctp_msg[2]) - 5;
+    data[..len].copy_from_slice(&mctp_msg[8..8 + len]);
+
+    info!("Test3");
+
+    Ok((endpoint_id, len))
+}
+
+fn build_mctp_header(data: &[u8], data_len: usize) -> ([u8; 69 + 3], usize) {
+    let mut ret = [0u8; 69 + 3];
+
+    ret[0] = 0;
+    ret[1] = 0x0F;
+    ret[2] = (data_len + 5) as u8;
+    ret[3] = 3;
+    ret[4] = 1;
+    ret[5] = 1;
+    ret[6] = 2;
+    ret[7] = 0xD3;
+    ret[8..data_len + 8].copy_from_slice(&data[..data_len]);
+
+    (ret, data_len + 5 + 3)
 }
 
 static ESPI_SERVICE: OnceLock<Service> = OnceLock::new();
@@ -195,6 +293,7 @@ pub async fn espi_service(mut espi: espi::Espi<'static>, memory_map_buffer: &'st
                 espi.complete_port(port_event.port).await;
             }
             Ok(espi::Event::OOBEvent(port_event)) => {
+                let mut payload = [0u8; 69];
                 info!(
                     "eSPI OOBEvent Port: {}, direction: {}, address: {}, offset: {}, length: {}",
                     port_event.port, port_event.direction, port_event.offset, port_event.base_addr, port_event.length,
@@ -207,11 +306,32 @@ pub async fn espi_service(mut espi: espi::Espi<'static>, memory_map_buffer: &'st
                     #[cfg(feature = "defmt")]
                     info!("OOB message: {:02X}", &src_slice[0..]);
 
+                    match handle_mctp_header(src_slice, &mut payload) {
+                        Ok((endpoint, payload_len)) => {
+                            info!("payload: {:?}, payload len: {:?}", payload, payload_len);
+                            espi_service
+                                .endpoint
+                                .send(endpoint, &(payload, payload_len))
+                                .await
+                                .unwrap();
+                        }
+                        Err(e) => error!("MCTP packet malformed: {:?}", e),
+                    }
+
+                    info!("MCTP packet sent!");
+
+                    let (raw_response_data, response_data_size) = espi_service.comms_signal.wait().await;
+
+                    let (final_packet, final_packet_size) = build_mctp_header(&raw_response_data, response_data_size);
+
+                    #[cfg(feature = "defmt")]
+                    info!("Sending MCTP response: {:?}", final_packet[..final_packet_size]);
+
                     let result = unsafe { espi.oob_get_write_buffer(port_event.port) };
 
                     match result {
                         Ok(dest_slice) => {
-                            dest_slice[..src_slice.len()].copy_from_slice(src_slice);
+                            dest_slice[..final_packet_size].copy_from_slice(&final_packet[..final_packet_size]);
                         }
                         Err(_e) => {
                             #[cfg(feature = "defmt")]
@@ -225,7 +345,7 @@ pub async fn espi_service(mut espi: espi::Espi<'static>, memory_map_buffer: &'st
                     espi.complete_port(port_event.port).await;
 
                     // Test code send same data on loopback
-                    let res = espi.oob_write_data(port_event.port, port_event.length as u8);
+                    let res = espi.oob_write_data(port_event.port, final_packet_size as u8);
 
                     if res.is_err() {
                         #[cfg(feature = "defmt")]
