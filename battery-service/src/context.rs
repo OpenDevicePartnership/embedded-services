@@ -3,10 +3,13 @@ use crate::device::{self, DeviceId};
 use embassy_sync::channel::Channel;
 use embassy_sync::channel::TrySendError;
 use embassy_sync::mutex::Mutex;
+use embassy_sync::signal::Signal;
 use embassy_time::{Duration, with_timeout};
 use embedded_services::GlobalRawMutex;
+use embedded_services::ec_type::message::AcpiMsgComms;
 use embedded_services::{IntrusiveList, debug, error, info, intrusive_list, trace, warn};
 
+use core::borrow::Borrow;
 use core::ops::DerefMut;
 use core::sync::atomic::AtomicUsize;
 
@@ -103,13 +106,14 @@ pub struct BatteryEvent {
 }
 
 /// Battery service context, hardware agnostic state.
-pub struct Context {
+pub struct Context<'a> {
     fuel_gauges: IntrusiveList,
     state: Mutex<GlobalRawMutex, State>,
     battery_event: Channel<GlobalRawMutex, BatteryEvent, 1>,
     battery_response: Channel<GlobalRawMutex, BatteryResponse, 1>,
     no_op_retry_count: AtomicUsize,
     config: Config,
+    acpi_request: Signal<GlobalRawMutex, AcpiMsgComms<'a>>,
 }
 
 pub struct Config {
@@ -126,7 +130,7 @@ impl Default for Config {
     }
 }
 
-impl Context {
+impl<'a> Context<'a> {
     /// Create a new context instance.
     pub fn new() -> Self {
         Self {
@@ -136,6 +140,7 @@ impl Context {
             battery_response: Channel::new(),
             no_op_retry_count: AtomicUsize::new(0),
             config: Default::default(),
+            acpi_request: Signal::new(),
         }
     }
 
@@ -147,6 +152,7 @@ impl Context {
             battery_response: Channel::new(),
             no_op_retry_count: AtomicUsize::new(0),
             config,
+            acpi_request: Signal::new(),
         }
     }
 
@@ -361,6 +367,38 @@ impl Context {
         }
     }
 
+    pub(super) async fn process_acpi_cmd(&self, acpi_msg: AcpiMsgComms<'a>) {
+        if let Some(fg) = self.get_fuel_gauge(DeviceId(0)) {
+            let payload_len = acpi_msg.payload_len;
+            let access = acpi_msg.payload.borrow();
+            let raw = access.borrow();
+            if let Ok(payload) = crate::acpi::Payload::from_raw(raw, payload_len) {
+                info!("payload struct: {:?}", payload);
+                match payload.command {
+                    crate::acpi::AcpiCmd::GetBix => self.bix_handler(fg, &payload).await,
+                    crate::acpi::AcpiCmd::GetBst => self.bst_handler(fg, &payload).await,
+                    crate::acpi::AcpiCmd::GetPsr => self.psr_handler(fg, &payload).await,
+                    crate::acpi::AcpiCmd::GetPif => self.pif_handler(fg, &payload).await,
+                    crate::acpi::AcpiCmd::GetBps => self.bps_handler(fg, &payload).await,
+                    crate::acpi::AcpiCmd::SetBtp => self.btp_handler(fg, &payload).await,
+                    crate::acpi::AcpiCmd::SetBpt => self.bpt_handler(fg, &payload).await,
+                    crate::acpi::AcpiCmd::GetBpc => self.bpc_handler(fg, &payload).await,
+                    crate::acpi::AcpiCmd::SetBmc => self.bmc_handler(fg, &payload).await,
+                    crate::acpi::AcpiCmd::GetBmd => self.bmd_handler(fg, &payload).await,
+                    crate::acpi::AcpiCmd::GetBct => self.bct_handler(fg, &payload).await,
+                    crate::acpi::AcpiCmd::GetBtm => self.btm_handler(fg, &payload).await,
+                    crate::acpi::AcpiCmd::SetBms => self.bms_handler(fg, &payload).await,
+                    crate::acpi::AcpiCmd::SetBma => self.bma_handler(fg, &payload).await,
+                    crate::acpi::AcpiCmd::GetSta => self.sta_handler(fg, &payload).await,
+                }
+            } else {
+                error!("Battery service: malformed ACPI payload!");
+            }
+        } else {
+            error!("Battery service: FG not found when trying to process ACPI cmd!");
+        }
+    }
+
     fn get_fuel_gauge(&self, id: DeviceId) -> Option<&'static Device> {
         for device in &self.fuel_gauges {
             if let Some(data) = device.data::<Device>() {
@@ -406,6 +444,14 @@ impl Context {
         self.battery_event.receive().await
     }
 
+    pub(super) fn send_acpi_cmd(&self, raw: AcpiMsgComms<'a>) {
+        self.acpi_request.signal(raw);
+    }
+
+    pub(super) async fn wait_acpi_cmd(&self) -> AcpiMsgComms<'a> {
+        self.acpi_request.wait().await
+    }
+
     pub async fn get_state(&self) -> State {
         *self.state.lock().await
     }
@@ -435,7 +481,7 @@ impl Context {
     }
 }
 
-impl Default for Context {
+impl<'a> Default for Context<'a> {
     fn default() -> Self {
         Self::new()
     }

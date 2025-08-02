@@ -89,6 +89,7 @@ dependencies = [
  "embedded-hal-async",
  "embedded-services",
  "log",
+ "zerocopy",
 ]
 
 [[package]]
