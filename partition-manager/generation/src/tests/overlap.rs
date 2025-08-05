@@ -55,5 +55,5 @@ fn overlap() {
 
     let result = manifest.check_consistency();
 
-    assert_eq!(format!("{:?}", result), "Err(Partitions slot_a and slot_b overlap)");
+    assert_eq!(format!("{result:?}"), "Err(Partitions slot_a and slot_b overlap)");
 }

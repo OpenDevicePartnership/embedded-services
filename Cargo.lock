@@ -479,8 +479,8 @@ checksum = "48c757948c5ede0e46177b7add2e67155f70e33c07fea8284df6576da70b3719"
 
 [[package]]
 name = "embassy-embedded-hal"
-version = "0.3.0"
-source = "git+https://github.com/embassy-rs/embassy#b528ed06e3025e0803e8fd6dc53ac968df9f49bc"
+version = "0.3.1"
+source = "git+https://github.com/embassy-rs/embassy#71b482e0a726242c92771bff246d9fdcce2627c4"
 dependencies = [
  "embassy-futures",
  "embassy-hal-internal",
@@ -497,7 +497,7 @@ dependencies = [
 [[package]]
 name = "embassy-executor"
 version = "0.7.0"
-source = "git+https://github.com/embassy-rs/embassy#b528ed06e3025e0803e8fd6dc53ac968df9f49bc"
+source = "git+https://github.com/embassy-rs/embassy#e145a653cf9d31f101b0735406b8b7c9208bc1da"
 dependencies = [
  "cortex-m",
  "critical-section",
@@ -510,7 +510,7 @@ dependencies = [
 [[package]]
 name = "embassy-executor-macros"
 version = "0.6.2"
-source = "git+https://github.com/embassy-rs/embassy#b528ed06e3025e0803e8fd6dc53ac968df9f49bc"
+source = "git+https://github.com/embassy-rs/embassy#e145a653cf9d31f101b0735406b8b7c9208bc1da"
 dependencies = [
  "darling",
  "proc-macro2",
@@ -521,7 +521,7 @@ dependencies = [
 [[package]]
 name = "embassy-futures"
 version = "0.1.1"
-source = "git+https://github.com/embassy-rs/embassy#b528ed06e3025e0803e8fd6dc53ac968df9f49bc"
+source = "git+https://github.com/embassy-rs/embassy#71b482e0a726242c92771bff246d9fdcce2627c4"
 dependencies = [
  "defmt 1.0.1",
  "log",
@@ -529,8 +529,8 @@ dependencies = [
 
 [[package]]
 name = "embassy-hal-internal"
-version = "0.2.0"
-source = "git+https://github.com/embassy-rs/embassy#b528ed06e3025e0803e8fd6dc53ac968df9f49bc"
+version = "0.3.0"
+source = "git+https://github.com/embassy-rs/embassy#71b482e0a726242c92771bff246d9fdcce2627c4"
 dependencies = [
  "cortex-m",
  "critical-section",
@@ -570,13 +570,13 @@ dependencies = [
  "nb 1.1.0",
  "paste",
  "rand_core",
- "storage_bus 0.1.0",
+ "storage_bus",
 ]
 
 [[package]]
 name = "embassy-sync"
 version = "0.7.0"
-source = "git+https://github.com/embassy-rs/embassy#b528ed06e3025e0803e8fd6dc53ac968df9f49bc"
+source = "git+https://github.com/embassy-rs/embassy#e145a653cf9d31f101b0735406b8b7c9208bc1da"
 dependencies = [
  "cfg-if",
  "critical-section",
@@ -591,7 +591,7 @@ dependencies = [
 [[package]]
 name = "embassy-time"
 version = "0.4.0"
-source = "git+https://github.com/embassy-rs/embassy#b528ed06e3025e0803e8fd6dc53ac968df9f49bc"
+source = "git+https://github.com/embassy-rs/embassy#e145a653cf9d31f101b0735406b8b7c9208bc1da"
 dependencies = [
  "cfg-if",
  "critical-section",
@@ -609,7 +609,7 @@ dependencies = [
 [[package]]
 name = "embassy-time-driver"
 version = "0.2.0"
-source = "git+https://github.com/embassy-rs/embassy#b528ed06e3025e0803e8fd6dc53ac968df9f49bc"
+source = "git+https://github.com/embassy-rs/embassy#e145a653cf9d31f101b0735406b8b7c9208bc1da"
 dependencies = [
  "document-features",
 ]
@@ -617,7 +617,7 @@ dependencies = [
 [[package]]
 name = "embassy-time-queue-utils"
 version = "0.1.0"
-source = "git+https://github.com/embassy-rs/embassy#b528ed06e3025e0803e8fd6dc53ac968df9f49bc"
+source = "git+https://github.com/embassy-rs/embassy#e145a653cf9d31f101b0735406b8b7c9208bc1da"
 dependencies = [
  "embassy-executor",
  "heapless 0.8.0",
@@ -742,6 +742,7 @@ dependencies = [
  "postcard",
  "rand_core",
  "serde",
+ "static_cell",
  "tokio",
 ]
 
@@ -763,8 +764,9 @@ dependencies = [
 [[package]]
 name = "embedded-usb-pd"
 version = "0.1.0"
-source = "git+https://github.com/OpenDevicePartnership/embedded-usb-pd#99232ecdfdd9f5aa93b1dedbfc22f11c8d12632c"
+source = "git+https://github.com/OpenDevicePartnership/embedded-usb-pd#851d4848d0374253bbf961b159858cc7c69a0c67"
 dependencies = [
+ "bincode",
  "bitfield 0.19.0",
  "defmt 0.3.100",
  "embedded-hal-async",
@@ -1088,6 +1090,7 @@ version = "0.1.0"
 dependencies = [
  "aligned",
  "block-device-driver",
+ "defmt 0.3.100",
  "embassy-futures",
  "embassy-sync",
  "embedded-storage-async",
@@ -1143,6 +1146,12 @@ dependencies = [
  "heapless 0.8.0",
  "log",
 ]
+
+[[package]]
+name = "portable-atomic"
+version = "1.11.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f84267b20a16ea918e43c6a88433c2d54fa145c92a811b5b047ccbe153674483"
 
 [[package]]
 name = "postcard"
@@ -1327,21 +1336,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a8f112729512f8e442d81f95a8a7ddf2b7c6b8a1a6f509a95864142b30cab2d3"
 
 [[package]]
-name = "storage_bus"
-version = "0.1.0"
-source = "git+https://github.com/OpenDevicePartnership/embedded-mcu#004ccaa45d341a56073360b0764d2a538d46780d"
+name = "static_cell"
+version = "2.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0530892bb4fa575ee0da4b86f86c667132a94b74bb72160f58ee5a4afec74c23"
+dependencies = [
+ "portable-atomic",
+]
 
 [[package]]
 name = "storage_bus"
-version = "0.1.1"
-dependencies = [
- "defmt 0.3.100",
- "embassy-executor",
- "embassy-sync",
- "embassy-time",
- "embedded-services",
- "log",
-]
+version = "0.1.0"
+source = "git+https://github.com/OpenDevicePartnership/embedded-mcu#004ccaa45d341a56073360b0764d2a538d46780d"
 
 [[package]]
 name = "strsim"
@@ -1446,7 +1452,7 @@ dependencies = [
 [[package]]
 name = "tps6699x"
 version = "0.1.0"
-source = "git+https://github.com/OpenDevicePartnership/tps6699x#edb2c0de8095ae73fcb23af711f5ac5d7a6a282a"
+source = "git+https://github.com/OpenDevicePartnership/tps6699x#5f3f4db255b5351306fd45aa3d8e3d45faffdf5f"
 dependencies = [
  "bincode",
  "bitfield 0.19.0",
@@ -1480,6 +1486,7 @@ dependencies = [
  "embedded-services",
  "embedded-usb-pd",
  "log",
+ "tokio",
  "tps6699x",
 ]
 

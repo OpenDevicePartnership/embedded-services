@@ -12,6 +12,7 @@ pub mod thread_mode_cell;
 
 /// short-hand include all pre-baked services
 pub mod activity;
+pub mod broadcaster;
 pub mod buffer;
 pub mod cfu;
 pub mod comms;
@@ -22,6 +23,7 @@ pub mod init;
 pub mod ipc;
 pub mod keyboard;
 pub mod power;
+pub mod transformers;
 pub mod type_c;
 
 /// Global Mutex type, ThreadModeRawMutex is used in a microcontroller context, whereas CriticalSectionRawMutex is used

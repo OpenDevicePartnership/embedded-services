@@ -5,6 +5,9 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
+[lints]
+workspace = true
+
 [target.'cfg(not(target_os = "none"))'.dependencies]
 proc-macro2.workspace = true
 syn.workspace = true

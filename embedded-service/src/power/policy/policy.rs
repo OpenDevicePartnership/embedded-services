@@ -2,12 +2,14 @@
 use core::sync::atomic::{AtomicBool, Ordering};
 
 use crate::GlobalRawMutex;
+use crate::broadcaster::immediate as broadcaster;
+use crate::power::policy::{CommsMessage, ConsumerPowerCapability, ProviderPowerCapability};
 use embassy_sync::channel::Channel;
 use embassy_sync::once_lock::OnceLock;
 
 use super::charger::ChargerResponse;
 use super::device::{self};
-use super::{DeviceId, Error, PowerCapability, action, charger};
+use super::{DeviceId, Error, action, charger};
 use crate::power::policy::charger::ChargerResponseData::Ack;
 use crate::{error, intrusive_list};
 
@@ -21,9 +23,9 @@ pub enum RequestData {
     /// Notify that a device has attached
     NotifyAttached,
     /// Notify that available power for consumption has changed
-    NotifyConsumerCapability(Option<PowerCapability>),
+    NotifyConsumerCapability(Option<ConsumerPowerCapability>),
     /// Request the given amount of power to provider
-    RequestProviderCapability(PowerCapability),
+    RequestProviderCapability(ProviderPowerCapability),
     /// Notify that a device cannot consume or provide power anymore
     NotifyDisconnect,
     /// Notify that a device has detached
@@ -80,6 +82,8 @@ struct Context {
     policy_response: Channel<GlobalRawMutex, InternalResponseData, POLICY_CHANNEL_SIZE>,
     /// Registered chargers
     chargers: intrusive_list::IntrusiveList,
+    /// Message broadcaster
+    broadcaster: broadcaster::Immediate<CommsMessage>,
 }
 
 impl Context {
@@ -89,6 +93,7 @@ impl Context {
             chargers: intrusive_list::IntrusiveList::new(),
             policy_request: Channel::new(),
             policy_response: Channel::new(),
+            broadcaster: broadcaster::Immediate::default(),
         }
     }
 }
@@ -187,6 +192,13 @@ pub async fn check_chargers_ready() -> ChargerResponse {
     Ok(Ack)
 }
 
+/// Register a message receiver for power policy messages
+pub async fn register_message_receiver(
+    receiver: &'static broadcaster::Receiver<'_, CommsMessage>,
+) -> intrusive_list::Result<()> {
+    CONTEXT.get().await.broadcaster.register_receiver(receiver)
+}
+
 /// Singleton struct to give access to the power policy context
 pub struct ContextToken(());
 
@@ -253,5 +265,10 @@ impl ContextToken {
     /// Provide access to current policy actions
     pub async fn policy_action(&self, id: DeviceId) -> Result<action::policy::AnyState<'_>, Error> {
         Ok(self.get_device(id).await?.policy_action().await)
+    }
+
+    /// Broadcast a power policy message to all subscribers
+    pub async fn broadcast_message(&self, message: CommsMessage) {
+        CONTEXT.get().await.broadcaster.broadcast(message).await;
     }
 }

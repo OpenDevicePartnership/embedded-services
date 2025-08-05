@@ -11,13 +11,16 @@ pub mod config;
 pub mod consumer;
 pub mod provider;
 
+pub use config::Config;
 pub mod charger;
 
 struct InternalState {
     /// Current consumer state, if any
-    current_consumer_state: Option<consumer::State>,
+    current_consumer_state: Option<consumer::AvailableConsumer>,
     /// Current provider global state
     current_provider_state: provider::State,
+    /// System unconstrained power
+    unconstrained: bool,
 }
 
 impl InternalState {
@@ -25,6 +28,7 @@ impl InternalState {
         Self {
             current_consumer_state: None,
             current_provider_state: provider::State::default(),
+            unconstrained: false,
         }
     }
 }
@@ -77,12 +81,23 @@ impl PowerPolicy {
 
     async fn process_notify_disconnect(&self) -> Result<(), Error> {
         self.context.send_response(Ok(policy::ResponseData::Complete)).await;
+        if let Some(consumer) = self.state.lock().await.current_consumer_state.take() {
+            info!("Device{}: Connected consumer disconnected", consumer.device_id.0);
+            self.disconnect_chargers().await?;
+
+            self.comms_notify(CommsMessage {
+                data: CommsData::ConsumerDisconnected(consumer.device_id),
+            })
+            .await;
+        }
+
         self.update_current_consumer().await?;
         Ok(())
     }
 
     /// Send a notification with the comms service
     async fn comms_notify(&self, message: CommsMessage) {
+        self.context.broadcast_message(message).await;
         let _ = self
             .tp
             .send(comms::EndpointID::Internal(comms::Internal::Battery), &message)
@@ -107,17 +122,17 @@ impl PowerPolicy {
             }
             policy::RequestData::NotifyConsumerCapability(capability) => {
                 info!(
-                    "Received notify consumer capability from device {}: {:#?}",
+                    "Device{}: Received notify consumer capability: {:#?}",
                     device.id().0,
-                    capability
+                    capability,
                 );
                 self.process_notify_consumer_power_capability().await
             }
             policy::RequestData::RequestProviderCapability(capability) => {
                 info!(
-                    "Received request provider capability from device {}: {:#?}",
+                    "Device{}: Received request provider capability: {:#?}",
                     device.id().0,
-                    capability
+                    capability,
                 );
                 self.process_request_provider_power_capabilities(device.id()).await
             }

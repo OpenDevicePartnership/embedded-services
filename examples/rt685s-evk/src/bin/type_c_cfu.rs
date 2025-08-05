@@ -1,30 +1,30 @@
 #![no_std]
 #![no_main]
 
-use ::tps6699x::ADDR1;
-use defmt::info;
+use ::tps6699x::{ADDR1, TPS66994_NUM_PORTS};
 use embassy_embedded_hal::shared_bus::asynch::i2c::I2cDevice;
 use embassy_executor::Spawner;
 use embassy_imxrt::gpio::{Input, Inverter, Pull};
-use embassy_imxrt::i2c::master::{Config, I2cMaster};
 use embassy_imxrt::i2c::Async;
+use embassy_imxrt::i2c::master::{Config, I2cMaster};
 use embassy_imxrt::{bind_interrupts, peripherals};
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_sync::mutex::Mutex;
-use embassy_sync::once_lock::OnceLock;
 use embassy_time::Timer;
 use embassy_time::{self as _, Delay};
 use embedded_cfu_protocol::protocol_definitions::*;
 use embedded_cfu_protocol::protocol_definitions::{FwUpdateOffer, FwUpdateOfferResponse, FwVersion};
-use embedded_services::cfu;
 use embedded_services::cfu::component::InternalResponseData;
 use embedded_services::cfu::component::RequestData;
 use embedded_services::power::policy::DeviceId as PowerId;
 use embedded_services::type_c::{self, ControllerId};
+use embedded_services::{GlobalRawMutex, cfu};
+use embedded_services::{error, info};
 use embedded_usb_pd::GlobalPortId;
 use static_cell::StaticCell;
 use tps6699x::asynchronous::embassy as tps6699x;
 use type_c_service::driver::tps6699x::{self as tps6699x_drv};
+use type_c_service::wrapper::backing::{BackingDefault, BackingDefaultStorage};
 
 extern crate rt685s_evk_example;
 
@@ -43,7 +43,8 @@ impl type_c_service::wrapper::FwOfferValidator for Validator {
 
 type BusMaster<'a> = I2cMaster<'a, Async>;
 type BusDevice<'a> = I2cDevice<'a, NoopRawMutex, BusMaster<'a>>;
-type Wrapper<'a> = tps6699x_drv::Tps66994Wrapper<'a, NoopRawMutex, BusDevice<'a>, Validator>;
+type Wrapper<'a> =
+    tps6699x_drv::Tps66994Wrapper<'a, NoopRawMutex, BusDevice<'a>, BackingDefault<'a, TPS66994_NUM_PORTS>, Validator>;
 type Controller<'a> = tps6699x::controller::Controller<NoopRawMutex, BusDevice<'a>>;
 type Interrupt<'a> = tps6699x::Interrupt<'a, NoopRawMutex, BusDevice<'a>>;
 
@@ -57,7 +58,9 @@ const PORT1_PWR_ID: PowerId = PowerId(1);
 #[embassy_executor::task]
 async fn pd_controller_task(controller: &'static Wrapper<'static>) {
     loop {
-        controller.process().await;
+        if let Err(e) = controller.process_next_event().await {
+            error!("Error processing controller event: {:?}", e);
+        }
     }
 }
 
@@ -162,12 +165,10 @@ async fn main(spawner: Spawner) {
     spawner.must_spawn(type_c_service::task());
 
     let int_in = Input::new(p.PIO1_7, Pull::Up, Inverter::Disabled);
-    static BUS: OnceLock<Mutex<NoopRawMutex, BusMaster<'static>>> = OnceLock::new();
-    let bus = BUS.get_or_init(|| {
-        Mutex::new(
-            I2cMaster::new_async(p.FLEXCOMM2, p.PIO0_18, p.PIO0_17, Irqs, Config::default(), p.DMA0_CH5).unwrap(),
-        )
-    });
+    static BUS: StaticCell<Mutex<NoopRawMutex, BusMaster<'static>>> = StaticCell::new();
+    let bus = BUS.init(Mutex::new(
+        I2cMaster::new_async(p.FLEXCOMM2, p.PIO0_18, p.PIO0_17, Irqs, Config::default(), p.DMA0_CH5).unwrap(),
+    ));
 
     let device = I2cDevice::new(bus);
 
@@ -196,21 +197,25 @@ async fn main(spawner: Spawner) {
         .unwrap();
 
     static PD_PORTS: [GlobalPortId; 2] = [PORT0_ID, PORT1_ID];
+    static BACKING_STORAGE: StaticCell<BackingDefaultStorage<TPS66994_NUM_PORTS, GlobalRawMutex>> = StaticCell::new();
+    let backing_storage = BACKING_STORAGE.init(BackingDefaultStorage::new());
+    let backing = backing_storage.get_backing().expect("Failed to create backing storage");
 
     info!("Spawining PD controller task");
-    static PD_CONTROLLER: OnceLock<Wrapper> = OnceLock::new();
-    let pd_controller = PD_CONTROLLER.get_or_init(|| {
+    static PD_CONTROLLER: StaticCell<Wrapper> = StaticCell::new();
+    let pd_controller = PD_CONTROLLER.init(
         tps6699x_drv::tps66994(
             tps6699x,
             CONTROLLER0_ID,
             &PD_PORTS,
             [PORT0_PWR_ID, PORT1_PWR_ID],
             CONTROLLER0_CFU_ID,
+            backing,
             Default::default(),
             Validator,
         )
-        .unwrap()
-    });
+        .unwrap(),
+    );
 
     pd_controller.register().await.unwrap();
     spawner.must_spawn(pd_controller_task(pd_controller));

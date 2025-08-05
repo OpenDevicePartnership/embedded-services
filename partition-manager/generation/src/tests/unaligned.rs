@@ -56,7 +56,7 @@ fn unaligned_end() {
     let result = manifest.check_consistency();
 
     assert_eq!(
-        format!("{:?}", result),
+        format!("{result:?}"),
         "Err(Partition settings is not aligned to 256 bytes)"
     );
 }
@@ -109,7 +109,7 @@ fn unaligned_start() {
     let result = manifest.check_consistency();
 
     assert_eq!(
-        format!("{:?}", result),
+        format!("{result:?}"),
         "Err(Partition settings is not aligned to 256 bytes)"
     );
 }

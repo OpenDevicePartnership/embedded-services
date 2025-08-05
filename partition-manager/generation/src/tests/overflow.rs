@@ -56,7 +56,7 @@ fn overflow() {
     let result = manifest.check_consistency();
 
     assert_eq!(
-        format!("{:?}", result),
+        format!("{result:?}"),
         "Err(Partition slot_b goes over underlying disk edge)"
     );
 }

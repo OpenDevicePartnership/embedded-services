@@ -75,6 +75,8 @@ pub enum RequestData {
     PrepareComponentForUpdate,
     /// Request for component to execute any logic needed to finalize update
     FinalizeUpdate,
+    /// Request for component to execute any logic needed to abort update
+    AbortUpdate,
 }
 
 /// CFU Response types and necessary data
@@ -281,6 +283,7 @@ impl<W: CfuWriterAsync> CfuComponentDefault<W> {
                     .await
                     .map_err(|e| CfuError::ProtocolError(CfuProtocolError::WriterError(e)))?;
             }
+            RequestData::AbortUpdate => {}
             RequestData::FinalizeUpdate => {}
             RequestData::GiveOfferExtended(_) => {
                 // Reject any extended offers

@@ -109,6 +109,7 @@ pub struct RW;
 
 /// An error that can be returned on operations for partitions.
 #[derive(Debug, PartialEq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum Error<E> {
     /// Operation went out of bounds of the partition.
     OutOfBounds,

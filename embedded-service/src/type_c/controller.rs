@@ -7,15 +7,16 @@ use embassy_sync::signal::Signal;
 use embassy_time::{Duration, with_timeout};
 use embedded_usb_pd::ucsi::lpm;
 use embedded_usb_pd::{
-    Error, GlobalPortId, PdError, PortId as LocalPortId,
+    DataRole, Error, GlobalPortId, PdError, PlugOrientation, PortId as LocalPortId, PowerRole,
+    ado::Ado,
     pdinfo::{AltMode, PowerPathStatus},
     type_c::ConnectionState,
 };
 
-use super::event::{PortEventFlags, PortEventKind};
 use super::{ControllerId, external};
 use crate::ipc::deferred;
 use crate::power::policy;
+use crate::type_c::event::{PortEvent, PortPending};
 use crate::{GlobalRawMutex, IntrusiveNode, error, intrusive_list, trace};
 
 /// Power contract
@@ -40,10 +41,18 @@ pub struct PortStatus {
     pub connection_state: Option<ConnectionState>,
     /// Port partner supports dual-power roles
     pub dual_power: bool,
+    /// plug orientation
+    pub plug_orientation: PlugOrientation,
+    /// power role
+    pub power_role: PowerRole,
+    /// data role
+    pub data_role: DataRole,
     /// Active alt-modes
     pub alt_mode: AltMode,
     /// Power path status
     pub power_path: PowerPathStatus,
+    /// EPR mode active
+    pub epr: bool,
 }
 
 impl PortStatus {
@@ -55,8 +64,12 @@ impl PortStatus {
             available_sink_contract: None,
             connection_state: None,
             dual_power: false,
+            plug_orientation: PlugOrientation::CC1,
+            power_role: PowerRole::Sink,
+            data_role: DataRole::Dfp,
             alt_mode: AltMode::none(),
             power_path: PowerPathStatus::none(),
+            epr: false,
         }
     }
 
@@ -87,7 +100,7 @@ impl Default for PortStatus {
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum PortCommandData {
     /// Get port status
-    PortStatus,
+    PortStatus(bool),
     /// Get and clear events
     ClearEvents,
     /// Get retimer fw update state
@@ -98,6 +111,10 @@ pub enum PortCommandData {
     RetimerFwUpdateClearState,
     /// Set retimer compliance
     SetRetimerCompliance,
+    /// Get oldest unhandled PD alert
+    GetPdAlert,
+    /// Set the maximum sink voltage in mV for the given port
+    SetMaxSinkVoltage(Option<u16>),
 }
 
 /// Port-specific commands
@@ -129,9 +146,11 @@ pub enum PortResponseData {
     /// Port status
     PortStatus(PortStatus),
     /// ClearEvents
-    ClearEvents(PortEventKind),
+    ClearEvents(PortEvent),
     /// Retimer Fw Update status
     RtFwUpdateStatus(RetimerFwUpdateState),
+    /// PD alert
+    PdAlert(Option<Ado>),
 }
 
 impl PortResponseData {
@@ -276,7 +295,7 @@ impl<'a> Device<'a> {
     }
 
     /// Notify that there are pending events on one or more ports
-    pub async fn notify_ports(&self, pending: PortEventFlags) {
+    pub async fn notify_ports(&self, pending: PortPending) {
         CONTEXT.get().await.notify_ports(pending);
     }
 
@@ -311,10 +330,14 @@ pub trait Controller {
     fn clear_port_events(
         &mut self,
         port: LocalPortId,
-    ) -> impl Future<Output = Result<PortEventKind, Error<Self::BusError>>>;
+    ) -> impl Future<Output = Result<PortEvent, Error<Self::BusError>>>;
     /// Returns the port status
-    fn get_port_status(&mut self, port: LocalPortId)
-    -> impl Future<Output = Result<PortStatus, Error<Self::BusError>>>;
+    fn get_port_status(
+        &mut self,
+        port: LocalPortId,
+        cached: bool,
+    ) -> impl Future<Output = Result<PortStatus, Error<Self::BusError>>>;
+
     /// Returns the retimer fw update state
     fn get_rt_fw_update_status(
         &mut self,
@@ -339,6 +362,16 @@ pub trait Controller {
     fn get_controller_status(
         &mut self,
     ) -> impl Future<Output = Result<ControllerStatus<'static>, Error<Self::BusError>>>;
+    /// Get current PD alert
+    fn get_pd_alert(&mut self, port: LocalPortId) -> impl Future<Output = Result<Option<Ado>, Error<Self::BusError>>>;
+    /// Set the maximum sink voltage for the given port
+    ///
+    /// This may trigger a renegotiation
+    fn set_max_sink_voltage(
+        &mut self,
+        port: LocalPortId,
+        voltage_mv: Option<u16>,
+    ) -> impl Future<Output = Result<(), Error<Self::BusError>>>;
 
     // TODO: remove all these once we migrate to a generic FW update trait
     // https://github.com/OpenDevicePartnership/embedded-services/issues/242
@@ -361,7 +394,7 @@ pub trait Controller {
 /// Internal context for managing PD controllers
 struct Context {
     controllers: intrusive_list::IntrusiveList,
-    port_events: Signal<GlobalRawMutex, PortEventFlags>,
+    port_events: Signal<GlobalRawMutex, PortPending>,
     /// Channel for receiving commands to the type-C service
     external_command: deferred::Channel<GlobalRawMutex, external::Command, external::Response<'static>>,
 }
@@ -377,7 +410,7 @@ impl Context {
 
     /// Notify that there are pending events on one or more ports
     /// Each bit corresponds to a global port ID
-    fn notify_ports(&self, pending: PortEventFlags) {
+    fn notify_ports(&self, pending: PortPending) {
         let raw_pending: u32 = pending.into();
         trace!("Notify ports: {:#x}", raw_pending);
         // Early exit if no events
@@ -604,12 +637,12 @@ impl ContextToken {
     }
 
     /// Get the current port events
-    pub async fn get_unhandled_events(&self) -> PortEventFlags {
+    pub async fn get_unhandled_events(&self) -> PortPending {
         CONTEXT.get().await.port_events.wait().await
     }
 
     /// Get the unhandled events for the given port
-    pub async fn get_port_event(&self, port: GlobalPortId) -> Result<PortEventKind, PdError> {
+    pub async fn get_port_event(&self, port: GlobalPortId) -> Result<PortEvent, PdError> {
         match self.send_port_command(port, PortCommandData::ClearEvents).await? {
             PortResponseData::ClearEvents(event) => Ok(event),
             r => {
@@ -620,11 +653,25 @@ impl ContextToken {
     }
 
     /// Get the current port status
-    pub async fn get_port_status(&self, port: GlobalPortId) -> Result<PortStatus, PdError> {
-        match self.send_port_command(port, PortCommandData::PortStatus).await? {
+    pub async fn get_port_status(&self, port: GlobalPortId, cached: bool) -> Result<PortStatus, PdError> {
+        match self
+            .send_port_command(port, PortCommandData::PortStatus(cached))
+            .await?
+        {
             PortResponseData::PortStatus(status) => Ok(status),
             r => {
                 error!("Invalid response: expected port status, got {:?}", r);
+                Err(PdError::InvalidResponse)
+            }
+        }
+    }
+
+    /// Get the oldest unhandled PD alert for the given port
+    pub async fn get_pd_alert(&self, port: GlobalPortId) -> Result<Option<Ado>, PdError> {
+        match self.send_port_command(port, PortCommandData::GetPdAlert).await? {
+            PortResponseData::PdAlert(alert) => Ok(alert),
+            r => {
+                error!("Invalid response: expected PD alert, got {:?}", r);
                 Err(PdError::InvalidResponse)
             }
         }
@@ -713,7 +760,7 @@ impl ContextToken {
     }
 
     /// Notify that there are pending events on one or more ports
-    pub async fn notify_ports(&self, pending: PortEventFlags) {
+    pub async fn notify_ports(&self, pending: PortPending) {
         CONTEXT.get().await.notify_ports(pending);
     }
 }

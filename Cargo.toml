@@ -12,7 +12,6 @@ members = [
     "platform-service",
     "power-button-service",
     "power-policy-service",
-    "storage-bus",
     "type-c-service",
 ]
 exclude = ["examples/*"]
@@ -22,6 +21,9 @@ version = "0.1.0"
 edition = "2024"
 license = "MIT"
 repository = "https://github.com/OpenDevicePartnership/embedded-services"
+
+[workspace.lints.rust]
+warnings = "deny"
 
 [workspace.dependencies]
 aligned = "0.4"
@@ -62,6 +64,7 @@ proc-macro2 = "1.0"
 quote = "1.0"
 rand_core = "0.6.4"
 serde = { version = "1.0.*", default-features = false }
+static_cell = "2.1.0"
 toml = { version = "0.8", default-features = false }
 syn = "2.0"
 tps6699x = { git = "https://github.com/OpenDevicePartnership/tps6699x" }

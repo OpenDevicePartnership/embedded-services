@@ -51,7 +51,7 @@ fn variant_unspecified() {
         .map(Vec::from_iter);
 
     assert_eq!(
-        format!("{:?}", result),
+        format!("{result:?}"),
         "Err(Variant 'Unspecified' not defined in manifest)"
     );
 }

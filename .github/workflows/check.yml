@@ -18,6 +18,12 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_call:
+    inputs:
+      download-lockfiles:
+        required: false
+        type: boolean
+        default: false
 # If new code is pushed to a PR branch, then cancel in progress workflows for that PR. Ensures that
 # we don't waste CI time, and returns results quicker https://github.com/jonhoo/rust-ci-conf/pull/5
 concurrency:
@@ -79,13 +85,13 @@ jobs:
     # which is required for feature unification
     # additionally, replacing `check` with `clippy` ensures all combinations of features generate no clippy warnings
     runs-on: ubuntu-latest
-    # The name is kept as 'stable / clippy' and `beta / clippy` to match required checks from repo settings
-    name: ${{ matrix.toolchain }} / clippy
+    name: ${{ matrix.toolchain }} / ${{ matrix.target }} / clippy
     strategy:
       fail-fast: false
       matrix:
         # Get early warning of new lints which are regularly introduced in beta channels.
         toolchain: [stable, beta]
+        target: [x86_64-unknown-linux-gnu, thumbv8m.main-none-eabihf]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -97,10 +103,15 @@ jobs:
           components: clippy
       - name: cargo install cargo-hack
         uses: taiki-e/install-action@cargo-hack
+      - name: Download Cargo.lock files
+        if: ${{ inputs.download-lockfiles }}
+        uses: actions/download-artifact@v4
+        with:
+          name: updated-lock-files
       # intentionally no target specifier; see https://github.com/jonhoo/rust-ci-conf/pull/4
       # --feature-powerset runs for every combination of features
       - name: cargo hack
-        run: cargo hack --feature-powerset --mutually-exclusive-features=log,defmt clippy --locked -- -Dwarnings
+        run: cargo hack --feature-powerset --mutually-exclusive-features=log,defmt clippy --locked --target ${{ matrix.target }}
 
   deny:
     # cargo-deny checks licenses, advisories, sources, and bans for
@@ -113,6 +124,11 @@ jobs:
           submodules: true
       - name: Install stable
         uses: dtolnay/rust-toolchain@stable
+      - name: Download Cargo.lock files
+        if: ${{ inputs.download-lockfiles }}
+        uses: actions/download-artifact@v4
+        with:
+          name: updated-lock-files
       - name: cargo install cargo-deny
         uses: EmbarkStudios/cargo-deny-action@v2
         with:
@@ -122,33 +138,26 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
-    name: ubuntu / stable / test / ${{ matrix.crate }}
+    name: ubuntu / stable / test
     strategy:
       fail-fast: false
-      matrix:
-        crate:
-          - battery-service
-          - cfu-service
-          - embedded-services
-          - espi-service
-          - hid-service
-          - platform-service
-          - power-button-service
-          - power-policy-service
-          - storage_bus
-          - type-c-service
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: true
       - name: Install stable
         uses: dtolnay/rust-toolchain@stable
+      - name: Download Cargo.lock files
+        if: ${{ inputs.download-lockfiles }}
+        uses: actions/download-artifact@v4
+        with:
+          name: updated-lock-files
       - name: cargo test
-        run: cargo test --locked -p ${{ matrix.crate }}
+        run: cargo test --locked
         # After ensuring tests pass, finally ensure the test code itself contains no clippy warnings
       - name: cargo clippy
         run: |
-          cargo clippy --locked --tests -p ${{ matrix.crate }} -- -Dwarnings
+          cargo clippy --locked --tests
 
   msrv:
     # check that we can build using the minimal rust version that is specified by this crate
@@ -159,7 +168,8 @@ jobs:
       fail-fast: false
       matrix:
         msrv: ["1.85"]
-    name: ubuntu / ${{ matrix.msrv }}
+        target: [x86_64-unknown-linux-gnu, thumbv8m.main-none-eabihf]
+    name: ubuntu / ${{ matrix.msrv }} / ${{ matrix.target }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -168,10 +178,15 @@ jobs:
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.msrv }}
+      - name: Download Cargo.lock files
+        if: ${{ inputs.download-lockfiles }}
+        uses: actions/download-artifact@v4
+        with:
+          name: updated-lock-files
       - name: cargo +${{ matrix.msrv }} check
         run: |
-          cargo check -F log --locked
-          cargo check -F defmt --locked
+          cargo check -F log --locked --target ${{ matrix.target }}
+          cargo check -F defmt --locked --target ${{ matrix.target }}
 
   check-arm-examples:
     runs-on: ubuntu-latest
@@ -188,10 +203,15 @@ jobs:
           submodules: true
       - name: Install stable
         uses: dtolnay/rust-toolchain@stable
+      - name: Download Cargo.lock files
+        if: ${{ inputs.download-lockfiles }}
+        uses: actions/download-artifact@v4
+        with:
+          name: updated-lock-files
       - name: cargo clippy
         working-directory: ${{ matrix.example_directory }}
         run: |
-          cargo clippy --target thumbv8m.main-none-eabihf --locked -- -Dwarnings
+          cargo clippy --target thumbv8m.main-none-eabihf --locked
 
   check-std-examples:
     runs-on: ubuntu-latest
@@ -208,7 +228,12 @@ jobs:
           submodules: true
       - name: Install stable
         uses: dtolnay/rust-toolchain@stable
+      - name: Download Cargo.lock files
+        if: ${{ inputs.download-lockfiles }}
+        uses: actions/download-artifact@v4
+        with:
+          name: updated-lock-files
       - name: cargo clippy
         working-directory: ${{ matrix.example_directory }}
         run: |
-          cargo clippy --locked -- -Dwarnings
+          cargo clippy --locked

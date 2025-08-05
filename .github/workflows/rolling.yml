@@ -1,101 +1,80 @@
-# This workflow runs every morning at midnight. It will run cargo hack
-# and a build with msrv. If any dependency breaks our crate, we will
-# know ASAP.
-#
-# - hack: cargo hack for all workspace packages
-# - msrv: check that the msrv specified in the crate is correct
-# - check-*-examples: ensures examples still compile
+# This workflow runs every morning at midnight.
+# It runs cargo update and checks that no builds or tests are broken.
+# If not, a PR is created with updated Cargo.lock files.
 permissions:
-  contents: read
+  contents: write
+  pull-requests: write
 
 on:
   schedule:
     - cron: '0 0 * * *'
+  workflow_dispatch:
 
 name: rolling
+
 jobs:
-
-  hack:
-    # cargo-hack checks combinations of feature flags to ensure that features are all additive
-    # which is required for feature unification
+  update-dependencies:
+    name: cargo-update / update-dependencies
     runs-on: ubuntu-latest
-    name: ubuntu / stable / features
-    strategy:
-      fail-fast: false
+    outputs:
+      pr-needed: ${{ steps.check-pr.outputs.changes }}
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: true
+
       - name: Install stable
         uses: dtolnay/rust-toolchain@stable
-      - name: cargo install cargo-hack
-        uses: taiki-e/install-action@cargo-hack
-      # intentionally no target specifier; see https://github.com/jonhoo/rust-ci-conf/pull/4
-      # --feature-powerset runs for every combination of features
-      - name: cargo hack
+
+      - name: Run cargo update
         run: |
           cargo update
-          cargo hack --feature-powerset --mutually-exclusive-features=log,defmt check
+          cargo update --manifest-path examples/std/Cargo.toml
+          cargo update --manifest-path examples/rt633/Cargo.toml
+          cargo update --manifest-path examples/rt685s-evk/Cargo.toml
 
-  msrv:
+      - name: Check diff
+        id: check-pr
+        run: |
+          git diff --quiet || echo "changes=true" >> $GITHUB_OUTPUT
+
+      - name: Upload Cargo.lock files
+        uses: actions/upload-artifact@v4
+        with:
+          name: updated-lock-files
+          path: |
+            **/Cargo.lock
+
+  check-build:
+    name: cargo-update / check-build
+    needs: update-dependencies
+    if: ${{ needs.update-dependencies.outputs.pr-needed == 'true' }}
+    uses: ./.github/workflows/check.yml
+    with:
+      download-lockfiles: true
+
+  pull-request:
+    name: cargo-update / pull-request
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        msrv: ["1.85"]
-    name: ubuntu / ${{ matrix.msrv }} (${{ matrix.commit }})
+    needs: [check-build, update-dependencies]
+    if: ${{ needs.update-dependencies.outputs.pr-needed == 'true' }}
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: true
-      - name: Install ${{ matrix.msrv }}
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: ${{ matrix.msrv }}
-      - name: cargo +${{ matrix.msrv }} check
-        run: |
-          cargo update
-          cargo check -F log --locked
-          cargo check -F defmt --locked
 
-  check-arm-examples:
-    runs-on: ubuntu-latest
-    # we use a matrix here just because env can't be used in job names
-    # https://docs.github.com/en/actions/learn-github-actions/contexts#context-availability
-    strategy:
-      fail-fast: false
-      matrix:
-        example_directory: ["examples/rt633", "examples/rt685s-evk"]
-    name: ubuntu / check-examples
-    steps:
-      - uses: actions/checkout@v4
+      - name: Download Cargo.lock files
+        uses: actions/download-artifact@v4
         with:
-          submodules: true
-      - name: Install stable
-        uses: dtolnay/rust-toolchain@stable
-      - name: cargo check
-        working-directory: ${{ matrix.example_directory }}
-        run: |
-          cargo update
-          cargo check --target thumbv8m.main-none-eabihf
+          name: updated-lock-files
 
-  check-std-examples:
-    runs-on: ubuntu-latest
-    # we use a matrix here just because env can't be used in job names
-    # https://docs.github.com/en/actions/learn-github-actions/contexts#context-availability
-    strategy:
-      fail-fast: false
-      matrix:
-        example_directory: ["examples/std"]
-    name: ubuntu / check-examples
-    steps:
-      - uses: actions/checkout@v4
+      - name: Create pull request
+        uses: peter-evans/create-pull-request@v5
         with:
-          submodules: true
-      - name: Install stable
-        uses: dtolnay/rust-toolchain@stable
-      - name: cargo check
-        working-directory: ${{ matrix.example_directory }}
-        run: |
-          cargo update
-          cargo check
+          commit-message: "chore: update dependencies"
+          branch: rolling/update-dependencies
+          title: "chore: update dependencies"
+          body: |
+            Update Cargo.lock files using `cargo update`. All tests and builds passed.
+          labels: dependencies
+          reviewers: ec-code-owners

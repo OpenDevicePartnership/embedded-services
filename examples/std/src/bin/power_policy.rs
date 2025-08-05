@@ -1,7 +1,10 @@
 use embassy_executor::{Executor, Spawner};
-use embassy_sync::once_lock::OnceLock;
+use embassy_sync::{blocking_mutex::raw::NoopRawMutex, once_lock::OnceLock, pubsub::PubSubChannel};
 use embassy_time::{self as _, Timer};
-use embedded_services::power::policy::{self, device, PowerCapability};
+use embedded_services::{
+    broadcaster::immediate as broadcaster,
+    power::policy::{self, ConsumerPowerCapability, PowerCapability, device, flags},
+};
 use log::*;
 use static_cell::StaticCell;
 
@@ -98,13 +101,19 @@ async fn run(spawner: Spawner) {
     // Plug in device 0, should become current consumer
     info!("Connecting device 0");
     let device0 = device0.attach().await.unwrap();
-    device0.notify_consumer_power_capability(Some(LOW_POWER)).await.unwrap();
+    device0
+        .notify_consumer_power_capability(Some(ConsumerPowerCapability {
+            capability: LOW_POWER,
+            flags: flags::Consumer::none().with_unconstrained_power(),
+        }))
+        .await
+        .unwrap();
 
     // Plug in device 1, should become current consumer
     info!("Connecting device 1");
     let device1 = device1.attach().await.unwrap();
     device1
-        .notify_consumer_power_capability(Some(HIGH_POWER))
+        .notify_consumer_power_capability(Some(HIGH_POWER.into()))
         .await
         .unwrap();
 
@@ -115,7 +124,10 @@ async fn run(spawner: Spawner) {
     // Plug in device 0, device 1 should remain current consumer
     info!("Connecting device 0");
     let device0 = device0.attach().await.unwrap();
-    device0.notify_consumer_power_capability(Some(LOW_POWER)).await.unwrap();
+    device0
+        .notify_consumer_power_capability(Some(LOW_POWER.into()))
+        .await
+        .unwrap();
 
     // Unplug device 1, device 0 should become current consumer
     info!("Unplugging device 1");
@@ -125,7 +137,7 @@ async fn run(spawner: Spawner) {
     info!("Connecting device 1");
     let device1 = device1.attach().await.unwrap();
     device1
-        .notify_consumer_power_capability(Some(HIGH_POWER))
+        .notify_consumer_power_capability(Some(HIGH_POWER.into()))
         .await
         .unwrap();
 
@@ -137,18 +149,27 @@ async fn run(spawner: Spawner) {
 
     // Switch to provider on device0
     info!("Device 0 requesting provider");
-    device0.request_provider_power_capability(LOW_POWER).await.unwrap();
+    device0
+        .request_provider_power_capability(LOW_POWER.into())
+        .await
+        .unwrap();
     Timer::after_millis(250).await;
 
     info!("Device 1 attach and requesting provider");
     let device1 = device1.attach().await.unwrap();
-    device1.request_provider_power_capability(LOW_POWER).await.unwrap();
+    device1
+        .request_provider_power_capability(LOW_POWER.into())
+        .await
+        .unwrap();
     // Wait for the provider to be connected
     Timer::after_millis(250).await;
 
     // Provider upgrade should fail because device 0 is already connected
     info!("Device 1 attempting provider upgrade");
-    device1.request_provider_power_capability(HIGH_POWER).await.unwrap();
+    device1
+        .request_provider_power_capability(HIGH_POWER.into())
+        .await
+        .unwrap();
     // Wait for the upgrade flow to complete
     Timer::after_millis(250).await;
 
@@ -160,9 +181,37 @@ async fn run(spawner: Spawner) {
 
     // Provider upgrade should succeed now
     info!("Device 1 attempting provider upgrade");
-    device1.request_provider_power_capability(HIGH_POWER).await.unwrap();
+    device1
+        .request_provider_power_capability(HIGH_POWER.into())
+        .await
+        .unwrap();
     // Wait for the upgrade flow to complete
     Timer::after_millis(250).await;
+}
+
+#[embassy_executor::task]
+async fn receiver_task() {
+    static CHANNEL: StaticCell<PubSubChannel<NoopRawMutex, policy::CommsMessage, 1, 1, 0>> = StaticCell::new();
+    let channel = CHANNEL.init(PubSubChannel::new());
+
+    let publisher = channel.dyn_immediate_publisher();
+    let mut subscriber = channel.dyn_subscriber().unwrap();
+
+    static RECEIVER: StaticCell<broadcaster::Receiver<'static, policy::CommsMessage>> = StaticCell::new();
+    let receiver = RECEIVER.init(broadcaster::Receiver::new(publisher));
+
+    policy::policy::register_message_receiver(receiver).await.unwrap();
+
+    loop {
+        match subscriber.next_message().await {
+            embassy_sync::pubsub::WaitResult::Message(msg) => {
+                info!("Received message: {msg:?}");
+            }
+            embassy_sync::pubsub::WaitResult::Lagged(count) => {
+                warn!("Lagged messages: {count}");
+            }
+        }
+    }
 }
 
 fn main() {
@@ -175,5 +224,6 @@ fn main() {
             power_policy_service::config::Config::default(),
         ));
         spawner.must_spawn(run(spawner));
+        spawner.must_spawn(receiver_task());
     });
 }

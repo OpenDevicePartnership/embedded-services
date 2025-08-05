@@ -18,12 +18,12 @@ impl<T> CriticalSectionCell<T> {
     /// for read/write conditions but does not automatically handle logical data
     /// race conditions. It is still possible for a user to read a value but have
     /// it change after they've performed the read. This just ensures data integrity:
-    /// CriticalSectionCell<T> will always contain a valid T, even if it's been read "late"
+    /// `CriticalSectionCell<T>` will always contain a valid `T`, even if it's been read "late"
     pub fn set(&self, value: T) {
         critical_section::with(|_cs| self.inner.set(value))
     }
 
-    /// Swap contents between two CriticalSectionCell's    
+    /// Swap contents between two CriticalSectionCell's
     /// # Panics
     ///
     /// This function will panic if `self` and `other` are different `Cell`s that partially overlap.
@@ -33,7 +33,7 @@ impl<T> CriticalSectionCell<T> {
         critical_section::with(|_cs| self.inner.swap(&other.inner));
     }
 
-    /// consume the CriticalSectionCell and return the inner value T
+    /// consume the `CriticalSectionCell` and return the inner value `T`
     pub fn into_inner(self) -> T {
         self.inner.into_inner()
     }
@@ -58,13 +58,13 @@ impl<T: ?Sized> CriticalSectionCell<T> {
 }
 
 impl<T: Default> CriticalSectionCell<T> {
-    /// consume the inner T, returning its value and replacing it with default()
+    /// consume the inner `T`, returning its value and replacing it with `Default::default()`
     pub fn take(&self) -> T {
         critical_section::with(|_cs| self.inner.take())
     }
 }
 
-// SAFETY: Sync is implemented here for CriticalSectionCell as T is only accessed via nestable critical sections
+// SAFETY: Sync is implemented here for `CriticalSectionCell` as `T` is only accessed via nestable critical sections
 unsafe impl<T> Sync for CriticalSectionCell<T> {}
 
 // SAFETY: Can implement send here due to critical section without T being explicitly Send
@@ -78,7 +78,7 @@ impl<T: Copy> Clone for CriticalSectionCell<T> {
 }
 
 impl<T: Default> Default for CriticalSectionCell<T> {
-    /// Creates a `Cell<T>`, with the `Default` value for T.
+    /// Creates a `Cell<T>`, with the `Default` value for `T`.
     #[inline]
     fn default() -> CriticalSectionCell<T> {
         CriticalSectionCell::new(Default::default())

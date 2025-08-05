@@ -97,6 +97,10 @@ mod mock {
                     trace!("Got FinalizeUpdate");
                     InternalResponseData::ComponentPrepared
                 }
+                RequestData::AbortUpdate => {
+                    trace!("Got AbortUpdate");
+                    InternalResponseData::ComponentPrepared
+                }
                 RequestData::PrepareComponentForUpdate => {
                     trace!("Got PrepareComponentForUpdate");
                     InternalResponseData::ComponentPrepared

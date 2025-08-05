@@ -57,7 +57,7 @@ impl PowerPolicy {
                 // Use the device's current working provider capability
                 device.provider_capability().await
             };
-            total_power_mw += target_provider_cap.map_or(0, |cap| cap.max_power_mw());
+            total_power_mw += target_provider_cap.map_or(0, |cap| cap.capability.max_power_mw());
 
             if total_power_mw > self.config.limited_power_threshold_mw {
                 state.current_provider_state.state = PowerState::Limited;
@@ -69,13 +69,20 @@ impl PowerPolicy {
         debug!("New power state: {:?}", state.current_provider_state.state);
 
         let target_power = match state.current_provider_state.state {
-            PowerState::Limited => self.config.provider_limited,
+            PowerState::Limited => ProviderPowerCapability {
+                capability: self.config.provider_limited,
+                flags: requested_power_capability.flags,
+            },
             PowerState::Unlimited => {
-                if requested_power_capability.max_power_mw() < self.config.provider_unlimited.max_power_mw() {
+                if requested_power_capability.capability.max_power_mw() < self.config.provider_unlimited.max_power_mw()
+                {
                     // Don't auto upgrade to a higher contract
                     requested_power_capability
                 } else {
-                    self.config.provider_unlimited
+                    ProviderPowerCapability {
+                        capability: self.config.provider_unlimited,
+                        flags: requested_power_capability.flags,
+                    }
                 }
             }
         };
