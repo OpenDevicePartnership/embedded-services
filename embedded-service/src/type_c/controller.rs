@@ -742,6 +742,19 @@ impl ContextToken {
         }
     }
 
+    /// Set the maximum sink voltage for the given port.
+    ///
+    /// See [`PortCommandData::SetMaxSinkVoltage`] for details on the `max_voltage_mv` parameter.
+    pub async fn set_max_sink_voltage(&self, port: GlobalPortId, max_voltage_mv: Option<u16>) -> Result<(), PdError> {
+        match self
+            .send_port_command(port, PortCommandData::SetMaxSinkVoltage(max_voltage_mv))
+            .await?
+        {
+            PortResponseData::Complete => Ok(()),
+            _ => Err(PdError::InvalidResponse),
+        }
+    }
+
     /// Get current controller status
     pub async fn get_controller_status(
         &self,

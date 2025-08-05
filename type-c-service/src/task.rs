@@ -235,6 +235,19 @@ impl<'a> Service<'a> {
         external::Response::Port(status.map(|_| external::PortResponseData::Complete))
     }
 
+    async fn process_set_max_sink_voltage(
+        &self,
+        port_id: GlobalPortId,
+        max_voltage_mv: Option<u16>,
+    ) -> external::Response<'static> {
+        let status = self.context.set_max_sink_voltage(port_id, max_voltage_mv).await;
+        if let Err(e) = status {
+            error!("Error setting max voltage: {:#?}", e);
+        }
+
+        external::Response::Port(status.map(|_| external::PortResponseData::Complete))
+    }
+
     /// Process external port commands
     async fn process_external_port_command(&self, command: &external::PortCommand) -> external::Response<'static> {
         debug!("Processing external port command: {:#?}", command);
@@ -252,6 +265,9 @@ impl<'a> Service<'a> {
                 self.process_clear_rt_fw_update_state(command.port).await
             }
             external::PortCommandData::SetRetimerCompliance => self.process_set_rt_compliance(command.port).await,
+            external::PortCommandData::SetMaxSinkVoltage { max_voltage_mv } => {
+                self.process_set_max_sink_voltage(command.port, max_voltage_mv).await
+            }
         }
     }
 

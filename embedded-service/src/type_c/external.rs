@@ -56,6 +56,12 @@ pub enum PortCommandData {
     RetimerFwUpdateClearState,
     /// Set retimer compliance
     SetRetimerCompliance,
+    /// Set max sink voltage to a specific value.
+    SetMaxSinkVoltage {
+        /// The maximum voltage to set, in millivolts.
+        /// If [`None`], the port will be set to its default maximum voltage.
+        max_voltage_mv: Option<u16>,
+    },
 }
 
 /// Port-specific commands
@@ -225,4 +231,19 @@ pub async fn sync_controller_state(id: ControllerId) -> Result<(), PdError> {
 /// Get number of ports on the system
 pub async fn get_num_ports() -> usize {
     super::controller::get_num_ports().await
+}
+
+/// Set the maximum voltage for the given port to a specific value.
+///
+/// See [`PortCommandData::SetMaxSinkVoltage::max_voltage_mv`] for details on the `max_voltage_mv` parameter.
+pub async fn set_max_sink_voltage(port: GlobalPortId, max_voltage_mv: Option<u16>) -> Result<(), PdError> {
+    match execute_external_port_command(Command::Port(PortCommand {
+        port,
+        data: PortCommandData::SetMaxSinkVoltage { max_voltage_mv },
+    }))
+    .await?
+    {
+        PortResponseData::Complete => Ok(()),
+        _ => Err(PdError::InvalidResponse),
+    }
 }
