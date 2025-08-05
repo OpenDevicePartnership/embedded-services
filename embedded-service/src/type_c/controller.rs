@@ -114,6 +114,8 @@ pub enum PortCommandData {
     RetimerFwUpdateClearState,
     /// Set retimer compliance
     SetRetimerCompliance,
+    /// Reconfigure retimer
+    ReconfigureRetimer,
     /// Get oldest unhandled PD alert
     GetPdAlert,
     /// Set the maximum sink voltage in mV for the given port
@@ -359,6 +361,9 @@ pub trait Controller {
     ) -> impl Future<Output = Result<(), Error<Self::BusError>>>;
     /// Set retimer compliance
     fn set_rt_compliance(&mut self, port: LocalPortId) -> impl Future<Output = Result<(), Error<Self::BusError>>>;
+
+    /// Reconfigure the retimer for the given port.
+    fn reconfigure_retimer(&mut self, port: LocalPortId) -> impl Future<Output = Result<(), Error<Self::BusError>>>;
 
     /// Clear the dead battery flag for the given port.
     fn clear_dead_battery_flag(&mut self, port: LocalPortId)
@@ -742,6 +747,17 @@ impl ContextToken {
     pub async fn set_rt_compliance(&self, port: GlobalPortId) -> Result<(), PdError> {
         match self
             .send_port_command(port, PortCommandData::SetRetimerCompliance)
+            .await?
+        {
+            PortResponseData::Complete => Ok(()),
+            _ => Err(PdError::InvalidResponse),
+        }
+    }
+
+    /// Reconfigure the retimer for the given port.
+    pub async fn reconfigure_retimer(&self, port: GlobalPortId) -> Result<(), PdError> {
+        match self
+            .send_port_command(port, PortCommandData::ReconfigureRetimer)
             .await?
         {
             PortResponseData::Complete => Ok(()),

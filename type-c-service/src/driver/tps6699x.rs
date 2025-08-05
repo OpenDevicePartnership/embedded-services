@@ -483,6 +483,27 @@ impl<const N: usize, M: RawMutex, B: I2c> Controller for Tps6699x<'_, N, M, B> {
         tps6699x.set_rt_compliance(port).await
     }
 
+    async fn reconfigure_retimer(&mut self, port: LocalPortId) -> Result<(), Error<Self::BusError>> {
+        let mut tps6699x = self
+            .tps6699x
+            .try_lock()
+            .expect("Driver should not have been locked before this, thus infallible");
+
+        let input = {
+            let mut input = tps6699x::command::muxr::Input(0);
+            input.set_en_retry_on_target_addr_1(true);
+            input
+        };
+
+        match tps6699x.execute_muxr(port, input).await? {
+            ReturnValue::Success => Ok(()),
+            r => {
+                debug!("Error executing MuxR on port {}: {:#?}", port.0, r);
+                Err(Error::Pd(PdError::InvalidResponse))
+            }
+        }
+    }
+
     async fn clear_dead_battery_flag(&mut self, port: LocalPortId) -> Result<(), Error<Self::BusError>> {
         let mut tps6699x = self
             .tps6699x

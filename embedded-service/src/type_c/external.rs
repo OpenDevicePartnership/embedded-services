@@ -56,6 +56,8 @@ pub enum PortCommandData {
     RetimerFwUpdateClearState,
     /// Set retimer compliance
     SetRetimerCompliance,
+    /// Reconfigure retimer
+    ReconfigureRetimer,
     /// Set max sink voltage to a specific value.
     SetMaxSinkVoltage {
         /// The maximum voltage to set, in millivolts.
@@ -255,6 +257,19 @@ pub async fn clear_dead_battery_flag(port: GlobalPortId) -> Result<(), PdError> 
     match execute_external_port_command(Command::Port(PortCommand {
         port,
         data: PortCommandData::ClearDeadBatteryFlag,
+    }))
+    .await?
+    {
+        PortResponseData::Complete => Ok(()),
+        _ => Err(PdError::InvalidResponse),
+    }
+}
+
+/// Reconfigure the retimer for the given port.
+pub async fn reconfigure_retimer(port: GlobalPortId) -> Result<(), PdError> {
+    match execute_external_port_command(Command::Port(PortCommand {
+        port,
+        data: PortCommandData::ReconfigureRetimer,
     }))
     .await?
     {

@@ -235,6 +235,15 @@ impl<'a> Service<'a> {
         external::Response::Port(status.map(|_| external::PortResponseData::Complete))
     }
 
+    async fn process_reconfigure_retimer(&self, port_id: GlobalPortId) -> external::Response<'static> {
+        let status = self.context.reconfigure_retimer(port_id).await;
+        if let Err(e) = status {
+            error!("Error reconfiguring retimer: {:#?}", e);
+        }
+
+        external::Response::Port(status.map(|_| external::PortResponseData::Complete))
+    }
+
     async fn process_set_max_sink_voltage(
         &self,
         port_id: GlobalPortId,
@@ -274,6 +283,7 @@ impl<'a> Service<'a> {
                 self.process_clear_rt_fw_update_state(command.port).await
             }
             external::PortCommandData::SetRetimerCompliance => self.process_set_rt_compliance(command.port).await,
+            external::PortCommandData::ReconfigureRetimer => self.process_reconfigure_retimer(command.port).await,
             external::PortCommandData::SetMaxSinkVoltage { max_voltage_mv } => {
                 self.process_set_max_sink_voltage(command.port, max_voltage_mv).await
             }
