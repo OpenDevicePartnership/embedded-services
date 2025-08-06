@@ -230,12 +230,12 @@ impl embedded_services::type_c::controller::Controller for Controller<'_> {
     }
 
     async fn reconfigure_retimer(&mut self, port: LocalPortId) -> Result<(), Error<Self::BusError>> {
-        debug!("reconfigure_retimer(port: {:?})", port);
+        debug!("reconfigure_retimer(port: {port:?})");
         Ok(())
     }
 
     async fn clear_dead_battery_flag(&mut self, port: LocalPortId) -> Result<(), Error<Self::BusError>> {
-        debug!("clear_dead_battery_flag(port: {:?})", port);
+        debug!("clear_dead_battery_flag(port: {port:?})");
         Ok(())
     }
 }
