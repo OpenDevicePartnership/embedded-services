@@ -248,6 +248,15 @@ impl<'a> Service<'a> {
         external::Response::Port(status.map(|_| external::PortResponseData::Complete))
     }
 
+    async fn process_clear_dead_battery_flag(&self, port_id: GlobalPortId) -> external::Response<'static> {
+        let status = self.context.clear_dead_battery_flag(port_id).await;
+        if let Err(e) = status {
+            error!("Error clearing dead battery flag: {:#?}", e);
+        }
+
+        external::Response::Port(status.map(|_| external::PortResponseData::Complete))
+    }
+
     /// Process external port commands
     async fn process_external_port_command(&self, command: &external::PortCommand) -> external::Response<'static> {
         debug!("Processing external port command: {:#?}", command);
@@ -268,6 +277,7 @@ impl<'a> Service<'a> {
             external::PortCommandData::SetMaxSinkVoltage { max_voltage_mv } => {
                 self.process_set_max_sink_voltage(command.port, max_voltage_mv).await
             }
+            external::PortCommandData::ClearDeadBatteryFlag => self.process_clear_dead_battery_flag(command.port).await,
         }
     }
 

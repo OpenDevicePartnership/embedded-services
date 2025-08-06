@@ -120,6 +120,8 @@ pub enum PortCommandData {
     SetMaxSinkVoltage(Option<u16>),
     /// Set unconstrained power
     SetUnconstrainedPower(bool),
+    /// Clear the dead battery flag for the given port
+    ClearDeadBatteryFlag,
 }
 
 /// Port-specific commands
@@ -357,6 +359,11 @@ pub trait Controller {
     ) -> impl Future<Output = Result<(), Error<Self::BusError>>>;
     /// Set retimer compliance
     fn set_rt_compliance(&mut self, port: LocalPortId) -> impl Future<Output = Result<(), Error<Self::BusError>>>;
+
+    /// Clear the dead battery flag for the given port.
+    fn clear_dead_battery_flag(&mut self, port: LocalPortId)
+    -> impl Future<Output = Result<(), Error<Self::BusError>>>;
+
     /// Enable or disable sink path
     fn enable_sink_path(
         &mut self,
@@ -748,6 +755,17 @@ impl ContextToken {
     pub async fn set_max_sink_voltage(&self, port: GlobalPortId, max_voltage_mv: Option<u16>) -> Result<(), PdError> {
         match self
             .send_port_command(port, PortCommandData::SetMaxSinkVoltage(max_voltage_mv))
+            .await?
+        {
+            PortResponseData::Complete => Ok(()),
+            _ => Err(PdError::InvalidResponse),
+        }
+    }
+
+    /// Clear the dead battery flag for the given port.
+    pub async fn clear_dead_battery_flag(&self, port: GlobalPortId) -> Result<(), PdError> {
+        match self
+            .send_port_command(port, PortCommandData::ClearDeadBatteryFlag)
             .await?
         {
             PortResponseData::Complete => Ok(()),

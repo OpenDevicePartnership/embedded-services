@@ -31,6 +31,7 @@ use tps6699x::asynchronous::fw_update::UpdateTarget;
 use tps6699x::asynchronous::fw_update::{
     disable_all_interrupts, enable_port0_interrupts, BorrowedUpdater, BorrowedUpdaterInProgress,
 };
+use tps6699x::command::ReturnValue;
 use tps6699x::fw_update::UpdateConfig as FwUpdateConfig;
 use tps6699x::Mode;
 
@@ -480,6 +481,21 @@ impl<const N: usize, M: RawMutex, B: I2c> Controller for Tps6699x<'_, N, M, B> {
             .try_lock()
             .expect("Driver should not have been locked before this, thus infallible");
         tps6699x.set_rt_compliance(port).await
+    }
+
+    async fn clear_dead_battery_flag(&mut self, port: LocalPortId) -> Result<(), Error<Self::BusError>> {
+        let mut tps6699x = self
+            .tps6699x
+            .try_lock()
+            .expect("Driver should not have been locked before this, thus infallible");
+
+        match tps6699x.execute_dbfg(port).await? {
+            ReturnValue::Success => Ok(()),
+            r => {
+                debug!("Error executing DBfg on port {}: {:#?}", port.0, r);
+                Err(Error::Pd(PdError::InvalidResponse))
+            }
+        }
     }
 
     async fn enable_sink_path(&mut self, port: LocalPortId, enable: bool) -> Result<(), Error<Self::BusError>> {

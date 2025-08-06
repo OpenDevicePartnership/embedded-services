@@ -62,6 +62,8 @@ pub enum PortCommandData {
         /// If [`None`], the port will be set to its default maximum voltage.
         max_voltage_mv: Option<u16>,
     },
+    /// Clear the dead battery flag for the given port.
+    ClearDeadBatteryFlag,
 }
 
 /// Port-specific commands
@@ -240,6 +242,19 @@ pub async fn set_max_sink_voltage(port: GlobalPortId, max_voltage_mv: Option<u16
     match execute_external_port_command(Command::Port(PortCommand {
         port,
         data: PortCommandData::SetMaxSinkVoltage { max_voltage_mv },
+    }))
+    .await?
+    {
+        PortResponseData::Complete => Ok(()),
+        _ => Err(PdError::InvalidResponse),
+    }
+}
+
+/// Clear the dead battery flag for the given port.
+pub async fn clear_dead_battery_flag(port: GlobalPortId) -> Result<(), PdError> {
+    match execute_external_port_command(Command::Port(PortCommand {
+        port,
+        data: PortCommandData::ClearDeadBatteryFlag,
     }))
     .await?
     {
