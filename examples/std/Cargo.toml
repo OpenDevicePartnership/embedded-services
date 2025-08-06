@@ -69,6 +69,10 @@ path = "src/bin/type_c/external.rs"
 name = "type-c-unconstrained"
 path = "src/bin/type_c/unconstrained.rs"
 
+[[bin]]
+name = "type-c-ucsi"
+path = "src/bin/type_c/ucsi.rs"
+
 # Needed otherwise cargo will pull from git
 [patch."https://github.com/OpenDevicePartnership/embedded-services"]
 embedded-services = { path = "../../embedded-service" }

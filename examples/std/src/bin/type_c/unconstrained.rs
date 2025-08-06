@@ -162,7 +162,7 @@ fn main() {
     let executor = EXECUTOR.init(Executor::new());
     executor.run(|spawner| {
         spawner.must_spawn(power_policy_service::task(Default::default()));
-        spawner.must_spawn(type_c_service::task());
+        spawner.must_spawn(type_c_service::task(Default::default()));
         spawner.must_spawn(task(spawner));
     });
 }

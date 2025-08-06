@@ -5,7 +5,7 @@ use core::sync::atomic::{AtomicBool, Ordering};
 use embassy_sync::once_lock::OnceLock;
 use embassy_sync::signal::Signal;
 use embassy_time::{Duration, with_timeout};
-use embedded_usb_pd::ucsi::lpm;
+use embedded_usb_pd::ucsi::{self, lpm};
 use embedded_usb_pd::{
     DataRole, Error, GlobalPortId, PdError, PlugOrientation, PortId as LocalPortId, PowerRole,
     ado::Ado,
@@ -114,12 +114,16 @@ pub enum PortCommandData {
     RetimerFwUpdateClearState,
     /// Set retimer compliance
     SetRetimerCompliance,
+    /// Reconfigure retimer
+    ReconfigureRetimer,
     /// Get oldest unhandled PD alert
     GetPdAlert,
     /// Set the maximum sink voltage in mV for the given port
     SetMaxSinkVoltage(Option<u16>),
     /// Set unconstrained power
     SetUnconstrainedPower(bool),
+    /// Clear the dead battery flag for the given port
+    ClearDeadBatteryFlag,
 }
 
 /// Port-specific commands
@@ -357,6 +361,14 @@ pub trait Controller {
     ) -> impl Future<Output = Result<(), Error<Self::BusError>>>;
     /// Set retimer compliance
     fn set_rt_compliance(&mut self, port: LocalPortId) -> impl Future<Output = Result<(), Error<Self::BusError>>>;
+
+    /// Reconfigure the retimer for the given port.
+    fn reconfigure_retimer(&mut self, port: LocalPortId) -> impl Future<Output = Result<(), Error<Self::BusError>>>;
+
+    /// Clear the dead battery flag for the given port.
+    fn clear_dead_battery_flag(&mut self, port: LocalPortId)
+    -> impl Future<Output = Result<(), Error<Self::BusError>>>;
+
     /// Enable or disable sink path
     fn enable_sink_path(
         &mut self,
@@ -742,6 +754,41 @@ impl ContextToken {
         }
     }
 
+    /// Reconfigure the retimer for the given port.
+    pub async fn reconfigure_retimer(&self, port: GlobalPortId) -> Result<(), PdError> {
+        match self
+            .send_port_command(port, PortCommandData::ReconfigureRetimer)
+            .await?
+        {
+            PortResponseData::Complete => Ok(()),
+            _ => Err(PdError::InvalidResponse),
+        }
+    }
+
+    /// Set the maximum sink voltage for the given port.
+    ///
+    /// See [`PortCommandData::SetMaxSinkVoltage`] for details on the `max_voltage_mv` parameter.
+    pub async fn set_max_sink_voltage(&self, port: GlobalPortId, max_voltage_mv: Option<u16>) -> Result<(), PdError> {
+        match self
+            .send_port_command(port, PortCommandData::SetMaxSinkVoltage(max_voltage_mv))
+            .await?
+        {
+            PortResponseData::Complete => Ok(()),
+            _ => Err(PdError::InvalidResponse),
+        }
+    }
+
+    /// Clear the dead battery flag for the given port.
+    pub async fn clear_dead_battery_flag(&self, port: GlobalPortId) -> Result<(), PdError> {
+        match self
+            .send_port_command(port, PortCommandData::ClearDeadBatteryFlag)
+            .await?
+        {
+            PortResponseData::Complete => Ok(()),
+            _ => Err(PdError::InvalidResponse),
+        }
+    }
+
     /// Get current controller status
     pub async fn get_controller_status(
         &self,
@@ -825,6 +872,18 @@ pub(super) async fn execute_external_controller_command(
         external::Response::Controller(response) => response,
         r => {
             error!("Invalid response: expected external controller, got {:?}", r);
+            Err(PdError::InvalidResponse)
+        }
+    }
+}
+
+/// Execute an external UCSI command
+pub(super) async fn execute_external_ucsi_command(command: ucsi::Command) -> Result<external::UcsiResponse, PdError> {
+    let context = CONTEXT.get().await;
+    match context.external_command.execute(external::Command::Ucsi(command)).await {
+        external::Response::Ucsi(response) => response,
+        r => {
+            error!("Invalid response: expected external UCSI, got {:?}", r);
             Err(PdError::InvalidResponse)
         }
     }

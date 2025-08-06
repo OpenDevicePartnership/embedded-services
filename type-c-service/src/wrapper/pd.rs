@@ -197,6 +197,13 @@ impl<'a, const N: usize, C: Controller, BACK: Backing<'a>, V: FwOfferValidator> 
                     Error::Pd(e) => Err(e),
                 },
             },
+            controller::PortCommandData::ReconfigureRetimer => match controller.reconfigure_retimer(local_port).await {
+                Ok(()) => Ok(controller::PortResponseData::Complete),
+                Err(e) => match e {
+                    Error::Bus(_) => Err(PdError::Failed),
+                    Error::Pd(e) => Err(e),
+                },
+            },
             controller::PortCommandData::GetPdAlert => match self.process_get_pd_alert(local_port).await {
                 Ok(alert) => Ok(controller::PortResponseData::PdAlert(alert)),
                 Err(e) => Err(e),
@@ -212,6 +219,15 @@ impl<'a, const N: usize, C: Controller, BACK: Backing<'a>, V: FwOfferValidator> 
             }
             controller::PortCommandData::SetUnconstrainedPower(unconstrained) => {
                 match controller.set_unconstrained_power(local_port, unconstrained).await {
+                    Ok(()) => Ok(controller::PortResponseData::Complete),
+                    Err(e) => match e {
+                        Error::Bus(_) => Err(PdError::Failed),
+                        Error::Pd(e) => Err(e),
+                    },
+                }
+            }
+            controller::PortCommandData::ClearDeadBatteryFlag => {
+                match controller.clear_dead_battery_flag(local_port).await {
                     Ok(()) => Ok(controller::PortResponseData::Complete),
                     Err(e) => match e {
                         Error::Bus(_) => Err(PdError::Failed),
