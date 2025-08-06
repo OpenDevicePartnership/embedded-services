@@ -216,12 +216,12 @@ impl<'a, const N: usize, M: RawMutex, B: I2c> Tps6699x<'a, N, M, B> {
             trace!("Port{} power source: {:#?}", port.0, power_path);
             port_status.power_path = match port {
                 PORT0 => PowerPathStatus::new(
-                    power_path.pa_int_vbus_sw() == PpIntVbusSw::EnabledOutput,
                     power_path.pa_ext_vbus_sw() == PpExtVbusSw::EnabledInput,
+                    power_path.pa_int_vbus_sw() == PpIntVbusSw::EnabledOutput,
                 ),
                 PORT1 => PowerPathStatus::new(
-                    power_path.pb_int_vbus_sw() == PpIntVbusSw::EnabledOutput,
                     power_path.pb_ext_vbus_sw() == PpExtVbusSw::EnabledInput,
+                    power_path.pb_int_vbus_sw() == PpIntVbusSw::EnabledOutput,
                 ),
                 _ => Err(PdError::InvalidPort)?,
             };
