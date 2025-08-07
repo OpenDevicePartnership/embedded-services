@@ -6,7 +6,7 @@ use embassy_sync::channel::Channel;
 use embedded_services::GlobalRawMutex;
 use embedded_services::{error, intrusive_list};
 
-pub(crate) struct Context {
+pub(crate) struct Context<'a> {
     // Registered temperature sensors
     sensors: intrusive_list::IntrusiveList,
     // Registered fans
@@ -14,12 +14,12 @@ pub(crate) struct Context {
     // MPTF Request Queue
     mptf: Channel<GlobalRawMutex, mptf::Request, 10>,
     // Raw MCTP Payload Queue
-    mctp: Channel<GlobalRawMutex, mctp::Payload, 10>,
+    mctp: Channel<GlobalRawMutex, mctp::AcpiMsgComms<'a>, 10>,
     // Event queue
     events: Channel<GlobalRawMutex, Event, 10>,
 }
 
-impl Context {
+impl<'a> Context<'a> {
     pub(crate) fn new() -> Self {
         Self {
             sensors: intrusive_list::IntrusiveList::new(),
@@ -105,12 +105,12 @@ impl Context {
         self.mptf.receive().await
     }
 
-    pub(crate) fn send_mctp_payload(&self, msg: mctp::Payload) -> Result<(), Error> {
+    pub(crate) fn send_mctp_payload(&self, msg: mctp::AcpiMsgComms<'a>) -> Result<(), Error> {
         self.mctp.try_send(msg).map_err(|_| Error)?;
         Ok(())
     }
 
-    pub(crate) async fn wait_mctp_payload(&self) -> mctp::Payload {
+    pub(crate) async fn wait_mctp_payload(&self) -> mctp::AcpiMsgComms<'_> {
         self.mctp.receive().await
     }
 

@@ -1,9 +1,10 @@
 use crate::mptf::*;
+use core::borrow::{Borrow, BorrowMut};
+pub use embedded_services::{comms, ec_type::message::AcpiMsgComms};
 
 pub const CURRENT_VERSION: u8 = 1;
 
-/// Raw MCTP Payload
-pub type Payload = ([u8; 69], usize);
+embedded_services::define_static_buffer!(acpi_buf, u8, [0u8; 69]);
 
 /// MCTP Payload Error
 pub struct PayloadError {
@@ -17,16 +18,18 @@ impl PayloadError {
     }
 }
 
-impl TryFrom<Payload> for Request {
+impl TryFrom<AcpiMsgComms<'_>> for Request {
     type Error = PayloadError;
-    fn try_from(payload: Payload) -> Result<Self, Self::Error> {
-        let payload_len = payload.1;
+    fn try_from(acpi: AcpiMsgComms<'_>) -> Result<Self, Self::Error> {
+        let access = acpi.payload.borrow();
+        let payload: &[u8] = access.borrow();
+
         let (version, _rsvd, _status, command, data) = (
-            payload.0[0],
-            payload.0[1],
-            payload.0[2],
-            payload.0[3],
-            &payload.0[4..payload_len],
+            payload[0],
+            payload[1],
+            payload[2],
+            payload[3],
+            &payload[4..acpi.payload_len],
         );
         if version != CURRENT_VERSION {
             return Err(PayloadError::new(command, Status::UnsupportedRevision));
@@ -109,9 +112,11 @@ impl TryFrom<Payload> for Request {
     }
 }
 
-impl From<Response> for Payload {
+impl From<Response> for AcpiMsgComms<'_> {
     fn from(response: Response) -> Self {
-        let mut payload = [0; 69];
+        let mut access = acpi_buf::get_mut().unwrap().borrow_mut();
+        let payload: &mut [u8] = access.borrow_mut();
+
         payload[0] = CURRENT_VERSION; // Version
         payload[1] = 0; // Reserved
         payload[2] = u8::from(response.status); // Status
@@ -151,17 +156,28 @@ impl From<Response> for Payload {
             }
         };
 
-        (payload, header_len + data_len)
+        AcpiMsgComms {
+            payload: acpi_buf::get(),
+            payload_len: header_len + data_len,
+            endpoint: comms::EndpointID::Internal(comms::Internal::Thermal),
+        }
     }
 }
 
-impl From<PayloadError> for Payload {
+impl From<PayloadError> for AcpiMsgComms<'_> {
     fn from(mctp_error: PayloadError) -> Self {
-        let mut payload = [0; 69];
+        let mut access = acpi_buf::get_mut().unwrap().borrow_mut();
+        let payload: &mut [u8] = access.borrow_mut();
+
         payload[0] = CURRENT_VERSION; // Version
         payload[1] = 0; // Reserved
         payload[2] = u8::from(mctp_error.error); // Status
         payload[3] = mctp_error.command; // Command
-        (payload, 4)
+
+        AcpiMsgComms {
+            payload: acpi_buf::get(),
+            payload_len: 4,
+            endpoint: comms::EndpointID::Internal(comms::Internal::Thermal),
+        }
     }
 }
