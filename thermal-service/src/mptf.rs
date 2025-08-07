@@ -362,10 +362,13 @@ pub async fn handle_requests() {
                     // Packet is OK
                     Ok(request) => {
                         let response = process_request(request).await;
-                        mctp::Payload::from(response)
+                        mctp::AcpiMsgComms::from(response)
                     }
                     // Packet is malformed
-                    Err(payload_error) => mctp::Payload::from(payload_error),
+                    Err(payload_error) => {
+                        error!("Thermal received malformed packet");
+                        mctp::AcpiMsgComms::from(payload_error)
+                    }
                 };
                 ts::send_service_msg(comms::EndpointID::External(comms::External::Host), &response).await
             }

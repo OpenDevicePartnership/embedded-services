@@ -1170,7 +1170,6 @@ dependencies = [
  "embedded-batteries-async",
  "embedded-cfu-protocol",
  "embedded-fans-async",
- "embedded-hal 1.0.0",
  "embedded-hal-async",
  "embedded-hal-mock",
  "embedded-sensors-hal-async",

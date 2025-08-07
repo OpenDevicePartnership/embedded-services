@@ -3,6 +3,7 @@
 
 use embassy_sync::once_lock::OnceLock;
 use embedded_sensors_hal_async::temperature::DegreesCelsius;
+use embedded_services::buffer::OwnedRef;
 use embedded_services::{comms, error, info, intrusive_list};
 
 mod context;
@@ -31,12 +32,12 @@ pub enum Event {
     FanFailure(fan::DeviceId, fan::Error),
 }
 
-struct Service {
-    context: context::Context,
+struct Service<'a> {
+    context: context::Context<'a>,
     endpoint: comms::Endpoint,
 }
 
-impl Service {
+impl<'a> Service<'a> {
     fn new() -> Self {
         Self {
             context: context::Context::new(),
@@ -45,12 +46,12 @@ impl Service {
     }
 }
 
-impl comms::MailboxDelegate for Service {
+impl<'a> comms::MailboxDelegate for Service<'a> {
     fn receive(&self, message: &comms::Message) -> Result<(), comms::MailboxDelegateError> {
         // Queue for later processing
-        if let Some(&msg) = message.data.get::<mctp::Payload>() {
+        if let Some(msg) = message.data.get::<mctp::AcpiMsgComms>() {
             self.context
-                .send_mctp_payload(msg)
+                .send_mctp_payload(msg.clone())
                 .map_err(|_| comms::MailboxDelegateError::BufferFull)
         } else if let Some(&msg) = message.data.get::<mptf::Request>() {
             self.context
@@ -99,8 +100,12 @@ pub async fn wait_mptf_request() -> mptf::Request {
 }
 
 /// Wait for a MCTP payload
-pub async fn wait_mctp_payload() -> mctp::Payload {
+pub async fn wait_mctp_payload<'a>() -> mctp::AcpiMsgComms<'a> {
     SERVICE.get().await.context.wait_mctp_payload().await
+}
+
+pub fn get_mctp_buf<'a>() -> &'a OwnedRef<'a, u8> {
+    SERVICE.try_get().unwrap().context.get_mctp_buf()
 }
 
 /// Send a thermal event
