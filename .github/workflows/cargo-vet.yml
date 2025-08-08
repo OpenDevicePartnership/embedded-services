@@ -3,6 +3,12 @@ permissions:
   contents: read
 on:
   pull_request:
+  workflow_call:
+    inputs:
+      download-lockfiles:
+        required: false
+        type: boolean
+        default: false
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
@@ -29,18 +35,23 @@ jobs:
       run: echo "${{ runner.tool_cache }}/cargo-vet/bin" >> $GITHUB_PATH
     - name: Ensure that the tool cache is populated with the cargo-vet binary
       run: cargo install --root ${{ runner.tool_cache }}/cargo-vet --version ${{ env.CARGO_VET_VERSION }} cargo-vet
+    - name: Download Cargo.lock files
+      if: ${{ inputs.download-lockfiles }}
+      uses: actions/download-artifact@v4
+      with:
+        name: updated-lock-files
     - name: Invoke cargo-vet
       run: cargo vet --locked
     - name: Save PR number
     # PR number is saved as an artifact so it can be used to determine the PR to comment on by the vet-pr-comment workflow
     # vet-pr-comment workflow is triggered by the workflow_run event so it runs in the context of the base branch and not the PR branch
-      if: ${{ failure() }} || ${{ success() }}
+      if: ${{ github.event_name == 'pull_request' && (failure() || success()) }}
       run: |
         mkdir -p ./pr
         echo ${{ github.event.number }} > ./pr/NR
     - uses: actions/upload-artifact@v4
     # Need to upload the artifact in both success and failure cases so comment can be updated in either case
-      if: ${{ failure() }} || ${{ success() }}
+      if: ${{ github.event_name == 'pull_request' && (failure() || success()) }}
       with:
         name: pr
         path: pr/
