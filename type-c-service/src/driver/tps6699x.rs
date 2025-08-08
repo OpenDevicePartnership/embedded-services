@@ -20,7 +20,7 @@ use embedded_services::transformers::object::{Object, RefGuard, RefMutGuard};
 use embedded_services::type_c::controller::{self, Controller, ControllerStatus, PortStatus};
 use embedded_services::type_c::event::{PortEvent, PortStatusChanged};
 use embedded_services::type_c::ControllerId;
-use embedded_services::{debug, info, trace, type_c, warn, GlobalRawMutex};
+use embedded_services::{debug, error, info, trace, type_c, warn, GlobalRawMutex};
 use embedded_usb_pd::ado::Ado;
 use embedded_usb_pd::pdinfo::PowerPathStatus;
 use embedded_usb_pd::pdo::{sink, source, Common, Rdo};
@@ -31,6 +31,7 @@ use tps6699x::asynchronous::fw_update::UpdateTarget;
 use tps6699x::asynchronous::fw_update::{
     disable_all_interrupts, enable_port0_interrupts, BorrowedUpdater, BorrowedUpdaterInProgress,
 };
+use tps6699x::command::ReturnValue;
 use tps6699x::fw_update::UpdateConfig as FwUpdateConfig;
 use tps6699x::Mode;
 
@@ -146,12 +147,28 @@ impl<'a, const N: usize, M: RawMutex, B: I2c> Tps6699x<'a, N, M, B> {
                     port_status.available_source_contract = Some(PowerCapability::from(pdo));
                     port_status.dual_power = pdo.dual_role_power();
                 } else {
+                    // active_rdo_contract doesn't contain the full picture
+                    let mut source_pdos: [source::Pdo; 1] = [source::Pdo::default()];
+                    // Read 5V fixed supply source PDO, guaranteed to be present as the first SPR PDO
+                    let (num_sprs, _) = tps6699x
+                        .lock_inner()
+                        .await
+                        .get_rx_src_caps(port, &mut source_pdos[..], &mut [])
+                        .await?;
+
+                    if num_sprs == 0 {
+                        // USB PD spec requires at least one source PDO be present, something is really wrong
+                        error!("Port{} no source PDOs found", port.0);
+                        return Err(PdError::InvalidParams.into());
+                    }
+
                     let pdo = sink::Pdo::try_from(pdo_raw).map_err(|_| Error::from(PdError::InvalidParams))?;
                     let rdo = Rdo::for_pdo(rdo_raw, pdo);
                     debug!("PDO: {:#?}", pdo);
                     debug!("RDO: {:#?}", rdo);
                     port_status.available_sink_contract = Some(PowerCapability::from(pdo));
-                    port_status.dual_power = pdo.dual_role_power();
+                    port_status.dual_power = source_pdos[0].dual_role_power();
+                    port_status.unconstrained_power = source_pdos[0].unconstrained_power();
                 }
             } else if pd_status.is_source() {
                 // Implicit source contract
@@ -200,12 +217,12 @@ impl<'a, const N: usize, M: RawMutex, B: I2c> Tps6699x<'a, N, M, B> {
             trace!("Port{} power source: {:#?}", port.0, power_path);
             port_status.power_path = match port {
                 PORT0 => PowerPathStatus::new(
-                    power_path.pa_int_vbus_sw() == PpIntVbusSw::EnabledOutput,
                     power_path.pa_ext_vbus_sw() == PpExtVbusSw::EnabledInput,
+                    power_path.pa_int_vbus_sw() == PpIntVbusSw::EnabledOutput,
                 ),
                 PORT1 => PowerPathStatus::new(
-                    power_path.pb_int_vbus_sw() == PpIntVbusSw::EnabledOutput,
                     power_path.pb_ext_vbus_sw() == PpExtVbusSw::EnabledInput,
+                    power_path.pb_int_vbus_sw() == PpIntVbusSw::EnabledOutput,
                 ),
                 _ => Err(PdError::InvalidPort)?,
             };
@@ -221,7 +238,9 @@ impl<'a, const N: usize, M: RawMutex, B: I2c> Tps6699x<'a, N, M, B> {
         &self,
         tps6699x: &mut tps6699x_drv::Tps6699x<'a, M, B>,
     ) -> Result<(), Error<B::Error>> {
-        let interrupts = tps6699x.wait_interrupt(false, |_, _| true).await;
+        let interrupts = tps6699x
+            .wait_interrupt_any(false, from_fn(|_| IntEventBus1::all()))
+            .await;
 
         for (interrupt, mutex) in zip(interrupts.iter(), self.port_events.iter()) {
             if *interrupt == IntEventBus1::new_zero() {
@@ -466,6 +485,42 @@ impl<const N: usize, M: RawMutex, B: I2c> Controller for Tps6699x<'_, N, M, B> {
         tps6699x.set_rt_compliance(port).await
     }
 
+    async fn reconfigure_retimer(&mut self, port: LocalPortId) -> Result<(), Error<Self::BusError>> {
+        let mut tps6699x = self
+            .tps6699x
+            .try_lock()
+            .expect("Driver should not have been locked before this, thus infallible");
+
+        let input = {
+            let mut input = tps6699x::command::muxr::Input(0);
+            input.set_en_retry_on_target_addr_1(true);
+            input
+        };
+
+        match tps6699x.execute_muxr(port, input).await? {
+            ReturnValue::Success => Ok(()),
+            r => {
+                debug!("Error executing MuxR on port {}: {:#?}", port.0, r);
+                Err(Error::Pd(PdError::InvalidResponse))
+            }
+        }
+    }
+
+    async fn clear_dead_battery_flag(&mut self, port: LocalPortId) -> Result<(), Error<Self::BusError>> {
+        let mut tps6699x = self
+            .tps6699x
+            .try_lock()
+            .expect("Driver should not have been locked before this, thus infallible");
+
+        match tps6699x.execute_dbfg(port).await? {
+            ReturnValue::Success => Ok(()),
+            r => {
+                debug!("Error executing DBfg on port {}: {:#?}", port.0, r);
+                Err(Error::Pd(PdError::InvalidResponse))
+            }
+        }
+    }
+
     async fn enable_sink_path(&mut self, port: LocalPortId, enable: bool) -> Result<(), Error<Self::BusError>> {
         debug!("Port{} enable sink path: {}", port.0, enable);
         let mut tps6699x = self
@@ -506,6 +561,18 @@ impl<const N: usize, M: RawMutex, B: I2c> Controller for Tps6699x<'_, N, M, B> {
             fw_version0: customer_use.ti_fw_version(),
             fw_version1: customer_use.custom_fw_version(),
         })
+    }
+
+    async fn set_unconstrained_power(
+        &mut self,
+        port: LocalPortId,
+        unconstrained: bool,
+    ) -> Result<(), Error<Self::BusError>> {
+        let mut tps6699x = self
+            .tps6699x
+            .try_lock()
+            .expect("Driver should not have been locked before this, thus infallible");
+        tps6699x.set_unconstrained_power(port, unconstrained).await
     }
 
     async fn get_active_fw_version(&self) -> Result<u32, Error<Self::BusError>> {

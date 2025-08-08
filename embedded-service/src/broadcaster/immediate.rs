@@ -23,6 +23,12 @@ impl<'a, T: Clone> Receiver<'a, T> {
     }
 }
 
+impl<'a, T: Clone> From<DynImmediatePublisher<'a, T>> for Receiver<'a, T> {
+    fn from(publisher: DynImmediatePublisher<'a, T>) -> Self {
+        Self::new(publisher)
+    }
+}
+
 impl<T: Clone> intrusive_list::NodeContainer for Receiver<'static, T> {
     fn get_node(&self) -> &intrusive_list::Node {
         &self.node

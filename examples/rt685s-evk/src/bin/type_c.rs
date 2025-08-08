@@ -148,7 +148,7 @@ async fn main(spawner: Spawner) {
     spawner.must_spawn(power_policy_service::task(Default::default()));
 
     info!("Spawining type-c service task");
-    spawner.must_spawn(type_c_service::task());
+    spawner.must_spawn(type_c_service::task(Default::default()));
 
     let int_in = Input::new(p.PIO1_7, Pull::Up, Inverter::Disabled);
     static BUS: StaticCell<Mutex<NoopRawMutex, BusMaster<'static>>> = StaticCell::new();

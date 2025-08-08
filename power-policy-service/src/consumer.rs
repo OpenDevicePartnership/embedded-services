@@ -62,6 +62,40 @@ impl PowerPolicy {
         Ok(best_consumer)
     }
 
+    /// Update unconstrained state and broadcast notifications if needed
+    async fn update_unconstrained_state(&self, state: &mut InternalState) -> Result<(), Error> {
+        // Count how many available unconstrained devices we have
+        let mut unconstrained_new = UnconstrainedState::default();
+        for node in self.context.devices().await {
+            let device = node.data::<Device>().ok_or(Error::InvalidDevice)?;
+            if let Some(capability) = device.consumer_capability().await {
+                // The device is considered unconstrained if it meets the auto unconstrained power threshold
+                let auto_unconstrained = self
+                    .config
+                    .auto_unconstrained_threshold_mw
+                    .is_some_and(|threshold| capability.capability.max_power_mw() >= threshold);
+                if capability.flags.unconstrained_power() || auto_unconstrained {
+                    unconstrained_new.available += 1;
+                }
+            }
+        }
+
+        // The overall unconstrained state is true if an unconstrained consumer is currently connected
+        unconstrained_new.unconstrained = state
+            .current_consumer_state
+            .is_some_and(|current| current.consumer_power_capability.flags.unconstrained_power());
+
+        if unconstrained_new != state.unconstrained {
+            info!("Unconstrained state changed: {:?}", unconstrained_new);
+            state.unconstrained = unconstrained_new;
+            self.comms_notify(CommsMessage {
+                data: CommsData::Unconstrained(state.unconstrained),
+            })
+            .await;
+        }
+        Ok(())
+    }
+
     /// Common logic to execute after a consumer is connected
     async fn post_consumer_connected(
         &self,
@@ -101,15 +135,6 @@ impl PowerPolicy {
             ),
         })
         .await;
-
-        if connected_consumer.consumer_power_capability.flags.unconstrained_power() != state.unconstrained {
-            state.unconstrained = connected_consumer.consumer_power_capability.flags.unconstrained_power();
-            info!("Unconstrained state changed: {}", state.unconstrained);
-            self.comms_notify(CommsMessage {
-                data: CommsData::Unconstrained(state.unconstrained),
-            })
-            .await;
-        }
 
         Ok(())
     }
@@ -174,15 +199,7 @@ impl PowerPolicy {
             })
             .await;
 
-            if state.unconstrained {
-                // Not connected to anything, can't be unconstrained
-                state.unconstrained = false;
-                info!("Unconstrained state changed: {}", false);
-                self.comms_notify(CommsMessage {
-                    data: CommsData::Unconstrained(false),
-                })
-                .await;
-            }
+            // Don't update the unconstrained here because this is a transitional state
         }
 
         info!("Device {}, connecting new consumer", new_consumer.device_id.0);
@@ -222,13 +239,22 @@ impl PowerPolicy {
         let best_consumer = self.find_best_consumer().await?;
         info!("Best consumer: {:#?}", best_consumer);
         if best_consumer.is_none() {
-            state.current_consumer_state = None;
+            // Notify disconnect if recently detached consumer was previously attached.
+            if let Some(consumer_state) = state.current_consumer_state {
+                self.comms_notify(CommsMessage {
+                    data: CommsData::ConsumerDisconnected(consumer_state.device_id),
+                })
+                .await;
+            }
             // No new consumer available
+            state.current_consumer_state = None;
+            self.update_unconstrained_state(state).await?;
             return Ok(());
         }
         let best_consumer = best_consumer.unwrap();
 
-        self.connect_new_consumer(state, best_consumer).await
+        self.connect_new_consumer(state, best_consumer).await?;
+        self.update_unconstrained_state(state).await
     }
 }
 

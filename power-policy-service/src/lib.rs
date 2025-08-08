@@ -14,23 +14,14 @@ pub mod provider;
 pub use config::Config;
 pub mod charger;
 
+#[derive(Copy, Clone, Default)]
 struct InternalState {
     /// Current consumer state, if any
     current_consumer_state: Option<consumer::AvailableConsumer>,
     /// Current provider global state
     current_provider_state: provider::State,
     /// System unconstrained power
-    unconstrained: bool,
-}
-
-impl InternalState {
-    fn new() -> Self {
-        Self {
-            current_consumer_state: None,
-            current_provider_state: provider::State::default(),
-            unconstrained: false,
-        }
-    }
+    unconstrained: UnconstrainedState,
 }
 
 /// Power policy state
@@ -50,7 +41,7 @@ impl PowerPolicy {
     pub fn create(config: config::Config) -> Option<Self> {
         Some(Self {
             context: policy::ContextToken::create()?,
-            state: Mutex::new(InternalState::new()),
+            state: Mutex::new(InternalState::default()),
             tp: comms::Endpoint::uninit(comms::EndpointID::Internal(comms::Internal::Power)),
             config,
         })

@@ -1,21 +1,27 @@
 use core::mem::offset_of;
 use core::slice;
 
+use core::borrow::{Borrow, BorrowMut};
 use embassy_sync::mutex::Mutex;
 use embassy_sync::once_lock::OnceLock;
+use embassy_sync::signal::Signal;
 use embedded_services::comms::{self, EndpointID, External, Internal};
+use embedded_services::ec_type::message::AcpiMsgComms;
+use embedded_services::ec_type::protocols::mctp::{build_mctp_header, handle_mctp_header};
 use embedded_services::{GlobalRawMutex, ec_type, error, info};
 
-pub struct Service<'a> {
+pub struct Service<'a, 'b> {
     endpoint: comms::Endpoint,
     ec_memory: Mutex<GlobalRawMutex, &'a mut ec_type::structure::ECMemory>,
+    comms_signal: Signal<GlobalRawMutex, AcpiMsgComms<'b>>,
 }
 
-impl Service<'_> {
+impl Service<'_, '_> {
     pub fn new(ec_memory: &'static mut ec_type::structure::ECMemory) -> Self {
         Service {
             endpoint: comms::Endpoint::uninit(EndpointID::External(External::Host)),
             ec_memory: Mutex::new(ec_memory),
+            comms_signal: Signal::new(),
         }
     }
 
@@ -116,22 +122,27 @@ impl Service<'_> {
     }
 }
 
-impl comms::MailboxDelegate for Service<'_> {
+impl comms::MailboxDelegate for Service<'_, '_> {
     fn receive(&self, message: &comms::Message) -> Result<(), comms::MailboxDelegateError> {
-        let mut memory_map = self
-            .ec_memory
-            .try_lock()
-            .expect("Messages handled one after another, should be infallible.");
-        if let Some(msg) = message.data.get::<ec_type::message::CapabilitiesMessage>() {
-            ec_type::update_capabilities_section(msg, &mut memory_map);
-        } else if let Some(msg) = message.data.get::<ec_type::message::BatteryMessage>() {
-            ec_type::update_battery_section(msg, &mut memory_map);
-        } else if let Some(msg) = message.data.get::<ec_type::message::ThermalMessage>() {
-            ec_type::update_thermal_section(msg, &mut memory_map);
-        } else if let Some(msg) = message.data.get::<ec_type::message::TimeAlarmMessage>() {
-            ec_type::update_time_alarm_section(msg, &mut memory_map);
+        if let Some(msg) = message.data.get::<AcpiMsgComms>() {
+            info!("Espi service: recvd acpi response");
+            self.comms_signal.signal(msg.clone());
         } else {
-            return Err(comms::MailboxDelegateError::MessageNotFound);
+            let mut memory_map = self
+                .ec_memory
+                .try_lock()
+                .expect("Messages handled one after another, should be infallible.");
+            if let Some(msg) = message.data.get::<ec_type::message::CapabilitiesMessage>() {
+                ec_type::update_capabilities_section(msg, &mut memory_map);
+            } else if let Some(msg) = message.data.get::<ec_type::message::BatteryMessage>() {
+                ec_type::update_battery_section(msg, &mut memory_map);
+            } else if let Some(msg) = message.data.get::<ec_type::message::ThermalMessage>() {
+                ec_type::update_thermal_section(msg, &mut memory_map);
+            } else if let Some(msg) = message.data.get::<ec_type::message::TimeAlarmMessage>() {
+                ec_type::update_time_alarm_section(msg, &mut memory_map);
+            } else {
+                return Err(comms::MailboxDelegateError::MessageNotFound);
+            }
         }
 
         Ok(())
@@ -168,6 +179,10 @@ pub async fn espi_service(mut espi: espi::Espi<'static>, memory_map_buffer: &'st
     comms::register_endpoint(espi_service, &espi_service.endpoint)
         .await
         .unwrap();
+
+    embedded_services::define_static_buffer!(acpi_buf, u8, [0u8; 69]);
+
+    let owned_ref = acpi_buf::get_mut().unwrap();
 
     loop {
         let event = espi.wait_for_event().await;
@@ -207,29 +222,65 @@ pub async fn espi_service(mut espi: espi::Espi<'static>, memory_map_buffer: &'st
                     #[cfg(feature = "defmt")]
                     info!("OOB message: {:02X}", &src_slice[0..]);
 
-                    let result = unsafe { espi.oob_get_write_buffer(port_event.port) };
+                    let acpi_msg: AcpiMsgComms;
 
-                    match result {
-                        Ok(dest_slice) => {
-                            dest_slice[..src_slice.len()].copy_from_slice(src_slice);
-                        }
-                        Err(_e) => {
-                            #[cfg(feature = "defmt")]
-                            error!("Failed to retrieve OOB write buffer: {}", _e);
-                            espi.complete_port(port_event.port).await;
-                            continue;
+                    {
+                        let mut access = owned_ref.borrow_mut();
+                        match handle_mctp_header(src_slice, access.borrow_mut()) {
+                            Ok((endpoint, payload_len)) => {
+                                acpi_msg = AcpiMsgComms {
+                                    payload: acpi_buf::get(),
+                                    payload_len,
+                                    endpoint,
+                                };
+                            }
+                            Err(e) => {
+                                // Packet malformed, throw it away
+                                error!("MCTP packet malformed: {:?}", e);
+                                continue;
+                            }
                         }
                     }
 
-                    // Don't complete event until we read out OOB data
-                    espi.complete_port(port_event.port).await;
+                    espi_service.endpoint.send(acpi_msg.endpoint, &acpi_msg).await.unwrap();
+                    info!("MCTP packet forwarded to service: {:?}", acpi_msg.endpoint);
 
-                    // Test code send same data on loopback
-                    let res = espi.oob_write_data(port_event.port, port_event.length as u8);
+                    let acpi_response = espi_service.comms_signal.wait().await;
 
-                    if res.is_err() {
+                    let response_len = acpi_response.payload_len;
+                    let endpoint = acpi_response.endpoint;
+                    if let Ok((final_packet, final_packet_size)) =
+                        build_mctp_header(acpi_response.payload.borrow().borrow(), response_len, endpoint)
+                    {
+                        info!("Sending MCTP response: {:?}", &final_packet[..final_packet_size]);
+
+                        let result = unsafe { espi.oob_get_write_buffer(port_event.port) };
+
+                        match result {
+                            Ok(dest_slice) => {
+                                dest_slice[..final_packet_size].copy_from_slice(&final_packet[..final_packet_size]);
+                            }
+                            Err(_e) => {
+                                #[cfg(feature = "defmt")]
+                                error!("Failed to retrieve OOB write buffer: {}", _e);
+                                espi.complete_port(port_event.port).await;
+                                continue;
+                            }
+                        }
+
+                        // Don't complete event until we read out OOB data
+                        espi.complete_port(port_event.port).await;
+
+                        // Test code send same data on loopback
+                        let res = espi.oob_write_data(port_event.port, final_packet_size as u8);
+
+                        if res.is_err() {
+                            #[cfg(feature = "defmt")]
+                            error!("eSPI OOB write failed: {}", res.err().unwrap());
+                        }
+                    } else {
                         #[cfg(feature = "defmt")]
-                        error!("eSPI OOB write failed: {}", res.err().unwrap());
+                        error!("Error building MCTP response packet from service {:?}", endpoint);
                     }
                 } else {
                     espi.complete_port(port_event.port).await;

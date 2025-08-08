@@ -21,6 +21,7 @@ embedded-hal-async.workspace = true
 embedded-hal.workspace = true
 embedded-services.workspace = true
 log = { workspace = true, optional = true }
+zerocopy.workspace = true
 
 [features]
 default = []
@@ -30,6 +31,7 @@ defmt = [
     "embassy-time/defmt",
     "embassy-sync/defmt",
     "embassy-executor/defmt",
+    "embedded-batteries-async/defmt",
 ]
 log = [
     "dep:log",

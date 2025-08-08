@@ -1,5 +1,7 @@
 //! Message definitions for external type-C commands
-use embedded_usb_pd::{GlobalPortId, PdError, PortId as LocalPortId};
+use embedded_usb_pd::{GlobalPortId, PdError, PortId as LocalPortId, ucsi};
+
+use crate::type_c::controller::execute_external_ucsi_command;
 
 use super::{
     ControllerId,
@@ -56,6 +58,16 @@ pub enum PortCommandData {
     RetimerFwUpdateClearState,
     /// Set retimer compliance
     SetRetimerCompliance,
+    /// Reconfigure retimer
+    ReconfigureRetimer,
+    /// Set max sink voltage to a specific value.
+    SetMaxSinkVoltage {
+        /// The maximum voltage to set, in millivolts.
+        /// If [`None`], the port will be set to its default maximum voltage.
+        max_voltage_mv: Option<u16>,
+    },
+    /// Clear the dead battery flag for the given port.
+    ClearDeadBatteryFlag,
 }
 
 /// Port-specific commands
@@ -91,6 +103,18 @@ pub enum Command {
     Port(PortCommand),
     /// Controller command
     Controller(ControllerCommand),
+    /// UCSI command
+    Ucsi(ucsi::Command),
+}
+
+/// UCSI command response
+#[derive(Copy, Clone, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct UcsiResponse {
+    /// Notify the OPM, the function call
+    pub notify_opm: bool,
+    /// UCSI response
+    pub response: ucsi::Response,
 }
 
 /// External command response for type-C service
@@ -101,6 +125,8 @@ pub enum Response<'a> {
     Port(PortResponse),
     /// Controller command response
     Controller(ControllerResponse<'a>),
+    /// UCSI command response
+    Ucsi(Result<UcsiResponse, PdError>),
 }
 
 /// Get the status of the given port.
@@ -220,4 +246,55 @@ pub async fn sync_controller_state(id: ControllerId) -> Result<(), PdError> {
         ControllerResponseData::Complete => Ok(()),
         _ => Err(PdError::InvalidResponse),
     }
+}
+
+/// Get number of ports on the system
+pub async fn get_num_ports() -> usize {
+    super::controller::get_num_ports().await
+}
+
+/// Set the maximum voltage for the given port to a specific value.
+///
+/// See [`PortCommandData::SetMaxSinkVoltage::max_voltage_mv`] for details on the `max_voltage_mv` parameter.
+pub async fn set_max_sink_voltage(port: GlobalPortId, max_voltage_mv: Option<u16>) -> Result<(), PdError> {
+    match execute_external_port_command(Command::Port(PortCommand {
+        port,
+        data: PortCommandData::SetMaxSinkVoltage { max_voltage_mv },
+    }))
+    .await?
+    {
+        PortResponseData::Complete => Ok(()),
+        _ => Err(PdError::InvalidResponse),
+    }
+}
+
+/// Clear the dead battery flag for the given port.
+pub async fn clear_dead_battery_flag(port: GlobalPortId) -> Result<(), PdError> {
+    match execute_external_port_command(Command::Port(PortCommand {
+        port,
+        data: PortCommandData::ClearDeadBatteryFlag,
+    }))
+    .await?
+    {
+        PortResponseData::Complete => Ok(()),
+        _ => Err(PdError::InvalidResponse),
+    }
+}
+
+/// Reconfigure the retimer for the given port.
+pub async fn reconfigure_retimer(port: GlobalPortId) -> Result<(), PdError> {
+    match execute_external_port_command(Command::Port(PortCommand {
+        port,
+        data: PortCommandData::ReconfigureRetimer,
+    }))
+    .await?
+    {
+        PortResponseData::Complete => Ok(()),
+        _ => Err(PdError::InvalidResponse),
+    }
+}
+
+/// Execute a UCSI command
+pub async fn execute_ucsi_command(command: ucsi::Command) -> Result<UcsiResponse, PdError> {
+    execute_external_ucsi_command(command).await
 }

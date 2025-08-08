@@ -4,7 +4,7 @@ use embedded_services::{
     ipc::deferred,
     power::policy::{
         device::{CommandData, InternalResponseData},
-        ProviderPowerCapability,
+        ConsumerPowerCapability, ProviderPowerCapability,
     },
 };
 use embedded_usb_pd::GlobalPortId;
@@ -44,27 +44,24 @@ impl<'a, const N: usize, C: Controller, BACK: Backing<'a>, V: FwOfferValidator> 
             }
         }
 
+        let available_sink_contract = status.available_sink_contract.map(|c| {
+            let mut c: ConsumerPowerCapability = c.into();
+            c.flags.set_unconstrained_power(status.unconstrained_power);
+            c
+        });
+
         if let Ok(state) = power.try_device_action::<action::Idle>().await {
-            if let Err(e) = state
-                .notify_consumer_power_capability(status.available_sink_contract.map(Into::into))
-                .await
-            {
+            if let Err(e) = state.notify_consumer_power_capability(available_sink_contract).await {
                 error!("Error setting power contract: {:?}", e);
                 return PdError::Failed.into();
             }
         } else if let Ok(state) = power.try_device_action::<action::ConnectedConsumer>().await {
-            if let Err(e) = state
-                .notify_consumer_power_capability(status.available_sink_contract.map(Into::into))
-                .await
-            {
+            if let Err(e) = state.notify_consumer_power_capability(available_sink_contract).await {
                 error!("Error setting power contract: {:?}", e);
                 return PdError::Failed.into();
             }
         } else if let Ok(state) = power.try_device_action::<action::ConnectedProvider>().await {
-            if let Err(e) = state
-                .notify_consumer_power_capability(status.available_sink_contract.map(Into::into))
-                .await
-            {
+            if let Err(e) = state.notify_consumer_power_capability(available_sink_contract).await {
                 error!("Error setting power contract: {:?}", e);
                 return PdError::Failed.into();
             }
