@@ -12,12 +12,15 @@ workspace = true
 
 [dependencies]
 embedded-services.workspace = true
+debug-service = { path = "../debug-service" }
 defmt = { workspace = true, optional = true }
 log = { workspace = true, optional = true }
 embassy-time.workspace = true
 embassy-sync.workspace = true
 embassy-imxrt = { workspace = true, features = ["mimxrt633s"] }
 embassy-executor.workspace = true
+embassy-futures.workspace = true
+heapless = "0.8"
 
 [target.'cfg(target_os = "none")'.dependencies]
 embassy-executor = { workspace = true, features = [

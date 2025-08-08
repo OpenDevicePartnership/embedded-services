@@ -105,3 +105,14 @@ pub enum ThermalMessage {
     Tmp1Low(u32),
     Tmp1High(u32),
 }
+
+#[allow(missing_docs)]
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum DebugMessage {
+    /// Debug data buffer with length
+    Data { offset: u32, length: u32, data: [u8; 64] },
+    /// Debug mask for capabilities
+    Mask(u16),
+    /// Debug status/events
+    Status(u32),
+}

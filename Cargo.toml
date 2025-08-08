@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "battery-service",
     "cfu-service",
+    "debug-service",
     "embedded-service",
     "espi-service",
     "hid-service",

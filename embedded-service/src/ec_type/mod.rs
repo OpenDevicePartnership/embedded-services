@@ -105,6 +105,25 @@ pub fn update_time_alarm_section(msg: &message::TimeAlarmMessage, memory_map: &m
     }
 }
 
+/// Update debug section of memory map based on debug message
+pub fn update_debug_section(msg: &message::DebugMessage, memory_map: &mut structure::ECMemory) {
+    match msg {
+        message::DebugMessage::Data { offset, length, data } => {
+            memory_map.debug.buffer_offset = *offset;
+            memory_map.debug.buffer_length = *length;
+            let copy_len = (*length as usize).min(data.len()).min(memory_map.debug.data.len());
+            memory_map.debug.data[..copy_len].copy_from_slice(&data[..copy_len]);
+        }
+        message::DebugMessage::Mask(mask) => {
+            // Update debug mask in capabilities
+            memory_map.caps.debug_mask = *mask;
+        }
+        message::DebugMessage::Status(status) => {
+            memory_map.debug.status = *status;
+        }
+    }
+}
+
 /// Helper macro to simplify the conversion of memory map to message
 macro_rules! into_message {
     ($offset:ident, $length:ident, $member:expr, $msg:expr) => {
@@ -498,6 +517,40 @@ pub fn mem_map_to_time_alarm_msg(
             memory_map.alarm.dc_time_val,
             message::TimeAlarmMessage::DcTimeVal
         );
+    } else {
+        Err(Error::InvalidLocation)
+    }
+}
+
+/// Convert from memory map offset and length to debug message
+/// Modifies offset and length
+pub fn mem_map_to_debug_msg(
+    memory_map: &structure::ECMemory,
+    offset: &mut usize,
+    length: &mut usize,
+) -> Result<message::DebugMessage, Error> {
+    let local_offset = *offset - offset_of!(structure::ECMemory, debug);
+
+    if local_offset == offset_of!(structure::Debug, status) {
+        into_message!(offset, length, memory_map.debug.status, message::DebugMessage::Status);
+    } else if local_offset >= offset_of!(structure::Debug, data)
+        && local_offset < offset_of!(structure::Debug, data) + size_of_val(&memory_map.debug.data)
+    {
+        // For debug data access, we'll return the current buffer state
+        let data_offset = memory_map.debug.buffer_offset;
+        let data_length = memory_map.debug.buffer_length;
+        let mut data = [0u8; 64];
+        let copy_len = (data_length as usize).min(data.len()).min(memory_map.debug.data.len());
+        data[..copy_len].copy_from_slice(&memory_map.debug.data[..copy_len]);
+
+        *offset += copy_len;
+        *length = (*length).saturating_sub(copy_len);
+
+        return Ok(message::DebugMessage::Data {
+            offset: data_offset,
+            length: data_length,
+            data,
+        });
     } else {
         Err(Error::InvalidLocation)
     }

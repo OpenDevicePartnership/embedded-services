@@ -112,6 +112,27 @@ pub struct Thermal {
 
 #[allow(missing_docs)]
 #[repr(C, packed)]
+#[derive(Clone, Copy, Debug)]
+pub struct Debug {
+    pub status: u32,
+    pub buffer_offset: u32,
+    pub buffer_length: u32,
+    pub data: [u8; 128],
+}
+
+impl Default for Debug {
+    fn default() -> Self {
+        Self {
+            status: 0,
+            buffer_offset: 0,
+            buffer_length: 0,
+            data: [0; 128],
+        }
+    }
+}
+
+#[allow(missing_docs)]
+#[repr(C, packed)]
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Notifications {
     pub service: u16,
@@ -128,4 +149,5 @@ pub struct ECMemory {
     pub alarm: TimeAlarm,
     pub batt: Battery,
     pub therm: Thermal,
+    pub debug: Debug,
 }

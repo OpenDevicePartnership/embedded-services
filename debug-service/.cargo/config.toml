@@ -1,0 +1,4 @@
+[test]
+# Run tests with single thread to avoid state pollution between tests
+# due to shared global static state in the debug service
+test-threads = 1
