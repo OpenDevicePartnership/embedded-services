@@ -69,3 +69,4 @@ toml = { version = "0.8", default-features = false }
 syn = "2.0"
 tps6699x = { git = "https://github.com/OpenDevicePartnership/tps6699x" }
 tokio = { version = "1.42.0" }
+zerocopy = "0.8.26"

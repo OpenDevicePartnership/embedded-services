@@ -175,6 +175,10 @@ impl<'a, C: Customization> Splitter<'a, C> {
                 trace!("Got GiveContent");
                 self.process_give_content(&content).await
             }
+            RequestData::AbortUpdate => {
+                trace!("Got AbortUpdate");
+                InternalResponseData::ComponentPrepared
+            }
             RequestData::FinalizeUpdate => {
                 trace!("Got FinalizeUpdate");
                 InternalResponseData::ComponentPrepared

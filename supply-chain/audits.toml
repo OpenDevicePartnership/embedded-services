@@ -11,6 +11,11 @@ who = "jerrysxie <jerryxie@microsoft.com>"
 criteria = "safe-to-deploy"
 version = "0.4.2"
 
+[[audits.aquamarine]]
+who = "Robert Zieba <robertzieba@microsoft.com>"
+criteria = "safe-to-deploy"
+version = "0.6.0"
+
 [[audits.as-slice]]
 who = "jerrysxie <jerryxie@microsoft.com>"
 criteria = "safe-to-deploy"
@@ -45,6 +50,12 @@ criteria = "safe-to-deploy"
 version = "0.2.0"
 notes = "ODP crates are always trusted."
 
+[[audits.embedded-batteries]]
+who = "Matteo Tullo <matteotullo@microsoft.com>"
+criteria = "safe-to-deploy"
+version = "0.2.1"
+notes = "ODP crates are always trusted."
+
 [[audits.embedded-batteries-async]]
 who = "Felipe Balbi <febalbi@microsoft.com>"
 criteria = "safe-to-deploy"
@@ -64,6 +75,12 @@ criteria = "safe-to-deploy"
 version = "0.2.0"
 notes = "ODP crates are always trusted."
 
+[[audits.embedded-batteries-async]]
+who = "Matteo Tullo <matteotullo@microsoft.com>"
+criteria = "safe-to-deploy"
+version = "0.2.1"
+notes = "ODP crates are always trusted."
+
 [[audits.gimli]]
 who = "Robert Zieba <robertzieba@microsoft.com>"
 criteria = "safe-to-run"
@@ -75,10 +92,25 @@ criteria = "safe-to-deploy"
 delta = "2.5.0 -> 2.6.0"
 notes = "Big change seems to be a change in the repo URL, but both the old and new URL resolve to the same place so it looks like the author is still in control."
 
+[[audits.include_dir]]
+who = "Robert Zieba <robertzieba@microsoft.com>"
+criteria = "safe-to-deploy"
+version = "0.7.4"
+
+[[audits.include_dir_macros]]
+who = "Robert Zieba <robertzieba@microsoft.com>"
+criteria = "safe-to-deploy"
+version = "0.7.4"
+
 [[audits.indexmap]]
 who = "jerrysxie <jerryxie@microsoft.com>"
 criteria = "safe-to-deploy"
 version = "2.9.0"
+
+[[audits.itertools]]
+who = "Robert Zieba <robertzieba@microsoft.com>"
+criteria = "safe-to-deploy"
+version = "0.10.5"
 
 [[audits.itertools]]
 who = "Felipe Balbi <febalbi@microsoft.com>"
@@ -118,6 +150,11 @@ version = "0.36.7"
 
 [[audits.portable-atomic]]
 who = "Robert Zieba <robertzieba@microsoft.com>"
+criteria = "safe-to-deploy"
+version = "1.11.1"
+
+[[audits.portable-atomic]]
+who = "Robert Zieba <robertzieba@microsoft.com>"
 criteria = "safe-to-run"
 version = "1.11.1"
 
@@ -125,6 +162,11 @@ version = "1.11.1"
 who = "jerrysxie <jerryxie@microsoft.com>"
 criteria = "safe-to-deploy"
 version = "0.6.8"
+
+[[audits.static_cell]]
+who = "Robert Zieba <robertzieba@microsoft.com>"
+criteria = "safe-to-deploy"
+version = "2.1.1"
 
 [[audits.static_cell]]
 who = "Robert Zieba <robertzieba@microsoft.com>"
@@ -210,6 +252,16 @@ version = "0.52.6"
 who = "jerrysxie <jerryxie@microsoft.com>"
 criteria = "safe-to-deploy"
 version = "0.7.10"
+
+[[audits.zerocopy]]
+who = "Matteo Tullo <matteotullo@microsoft.com>"
+criteria = "safe-to-deploy"
+version = "0.8.26"
+
+[[audits.zerocopy-derive]]
+who = "Matteo Tullo <matteotullo@microsoft.com>"
+criteria = "safe-to-deploy"
+version = "0.8.26"
 
 [[trusted.anyhow]]
 criteria = "safe-to-deploy"

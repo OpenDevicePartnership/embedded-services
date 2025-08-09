@@ -3,24 +3,27 @@
 use core::{any::Any, convert::Infallible};
 
 use context::BatteryEvent;
+use embassy_futures::select::select;
 use embassy_sync::once_lock::OnceLock;
 use embedded_services::{
     comms::{self, EndpointID},
-    error, info,
+    ec_type::message::AcpiMsgComms,
+    error, info, trace,
 };
 
+mod acpi;
 pub mod context;
 pub mod controller;
 pub mod device;
 pub mod wrapper;
 
 /// Standard Battery Service.
-pub struct Service {
+pub struct Service<'a> {
     pub endpoint: comms::Endpoint,
-    pub context: context::Context,
+    pub context: context::Context<'a>,
 }
 
-impl Service {
+impl<'a> Service<'a> {
     /// Create a new battery service instance.
     pub fn new() -> Self {
         Service {
@@ -38,24 +41,57 @@ impl Service {
     }
 
     /// Main battery service processing function.
-    pub async fn process(&self) {
-        let event = self.context.wait_event().await;
-        self.context.process(event).await;
+    pub async fn process_next(&self) {
+        let event = self.wait_next().await;
+        self.process_event(event).await
+    }
+
+    /// Wait for next event.
+    pub async fn wait_next(&self) -> Event<'a> {
+        match select(self.context.wait_event(), self.context.wait_acpi_cmd()).await {
+            embassy_futures::select::Either::First(event) => Event::StateMachine(event),
+            embassy_futures::select::Either::Second(acpi_msg) => Event::AcpiRequest(acpi_msg),
+        }
+    }
+
+    /// Process battery service event.
+    pub async fn process_event(&self, event: Event<'a>) {
+        match event {
+            Event::StateMachine(event) => {
+                trace!("Battery service: state machine event recvd {:?}", event);
+                self.context.process(event).await
+            }
+            Event::AcpiRequest(acpi_msg) => {
+                trace!("Battery service: ACPI cmd recvd");
+                self.context.process_acpi_cmd(acpi_msg).await
+            }
+        }
     }
 }
 
-impl Default for Service {
+#[derive(Clone)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum Event<'a> {
+    StateMachine(BatteryEvent),
+    AcpiRequest(AcpiMsgComms<'a>),
+}
+
+impl<'a> Default for Service<'a> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl comms::MailboxDelegate for Service {
+impl<'a> comms::MailboxDelegate for Service<'a> {
     fn receive(&self, message: &comms::Message) -> Result<(), comms::MailboxDelegateError> {
         if let Some(event) = message.data.get::<BatteryEvent>() {
             self.context.send_event_no_wait(*event).map_err(|e| match e {
                 embassy_sync::channel::TrySendError::Full(_) => comms::MailboxDelegateError::BufferFull,
             })?
+        } else if let Some(acpi_cmd) = message.data.get::<AcpiMsgComms>() {
+            self.context.send_acpi_cmd(acpi_cmd.clone());
+        } else if let Some(power_policy_msg) = message.data.get::<embedded_services::power::policy::CommsMessage>() {
+            self.context.set_power_info(&power_policy_msg.data)?;
         }
 
         Ok(())
@@ -124,6 +160,6 @@ pub async fn task() {
     }
 
     loop {
-        service.process().await;
+        service.process_next().await;
     }
 }

@@ -4,21 +4,18 @@ use embedded_services::{
     ipc::deferred,
     power::policy::{
         device::{CommandData, InternalResponseData},
-        ProviderPowerCapability,
+        ConsumerPowerCapability, ProviderPowerCapability,
     },
 };
 use embedded_usb_pd::GlobalPortId;
 
 use super::*;
 
-impl<const N: usize, C: Controller, V: FwOfferValidator> ControllerWrapper<'_, N, C, V> {
+impl<'a, const N: usize, C: Controller, BACK: Backing<'a>, V: FwOfferValidator> ControllerWrapper<'a, N, C, BACK, V> {
     /// Return the power device for the given port
-    pub(super) fn get_power_device(
-        &self,
-        port: LocalPortId,
-    ) -> Result<&policy::device::Device, Error<<C as Controller>::BusError>> {
+    pub(super) fn get_power_device(&self, port: LocalPortId) -> Result<&policy::device::Device, PdError> {
         if port.0 > N as u8 {
-            return PdError::InvalidPort.into();
+            return Err(PdError::InvalidPort);
         }
         Ok(&self.power[port.0 as usize])
     }
@@ -47,27 +44,24 @@ impl<const N: usize, C: Controller, V: FwOfferValidator> ControllerWrapper<'_, N
             }
         }
 
+        let available_sink_contract = status.available_sink_contract.map(|c| {
+            let mut c: ConsumerPowerCapability = c.into();
+            c.flags.set_unconstrained_power(status.unconstrained_power);
+            c
+        });
+
         if let Ok(state) = power.try_device_action::<action::Idle>().await {
-            if let Err(e) = state
-                .notify_consumer_power_capability(status.available_sink_contract.map(Into::into))
-                .await
-            {
+            if let Err(e) = state.notify_consumer_power_capability(available_sink_contract).await {
                 error!("Error setting power contract: {:?}", e);
                 return PdError::Failed.into();
             }
         } else if let Ok(state) = power.try_device_action::<action::ConnectedConsumer>().await {
-            if let Err(e) = state
-                .notify_consumer_power_capability(status.available_sink_contract.map(Into::into))
-                .await
-            {
+            if let Err(e) = state.notify_consumer_power_capability(available_sink_contract).await {
                 error!("Error setting power contract: {:?}", e);
                 return PdError::Failed.into();
             }
         } else if let Ok(state) = power.try_device_action::<action::ConnectedProvider>().await {
-            if let Err(e) = state
-                .notify_consumer_power_capability(status.available_sink_contract.map(Into::into))
-                .await
-            {
+            if let Err(e) = state.notify_consumer_power_capability(available_sink_contract).await {
                 error!("Error setting power contract: {:?}", e);
                 return PdError::Failed.into();
             }
@@ -193,7 +187,7 @@ impl<const N: usize, C: Controller, V: FwOfferValidator> ControllerWrapper<'_, N
     pub(super) async fn process_power_command(
         &self,
         controller: &mut C,
-        state: &mut InternalState,
+        state: &mut InternalState<N>,
         port: LocalPortId,
         command: &CommandData,
     ) -> InternalResponseData {

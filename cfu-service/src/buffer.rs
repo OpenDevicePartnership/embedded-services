@@ -128,6 +128,16 @@ impl<'a> Buffer<'a> {
         }
     }
 
+    async fn process_abort_update(&self) -> InternalResponseData {
+        match cfu::route_request(self.buffered_id, RequestData::AbortUpdate).await {
+            Ok(response) => response,
+            Err(e) => {
+                error!("Failed to abort update for device {}: {:?}", self.buffered_id, e);
+                InternalResponseData::ComponentBusy
+            }
+        }
+    }
+
     /// Process a give offer request
     async fn process_give_offer(&self, offer: &FwUpdateOffer) -> InternalResponseData {
         let mut offer = *offer;
@@ -307,6 +317,10 @@ impl<'a> Buffer<'a> {
             RequestData::GiveContent(content) => {
                 trace!("Got GiveContent");
                 self.process_give_content(state, &content).await
+            }
+            RequestData::AbortUpdate => {
+                trace!("Got AbortUpdate");
+                self.process_abort_update().await
             }
             RequestData::FinalizeUpdate => {
                 trace!("Got FinalizeUpdate");

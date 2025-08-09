@@ -57,6 +57,8 @@ impl<'a, S: Kind> Device<'a, S> {
     /// Disconnect this device
     async fn disconnect_internal(&self) -> Result<(), Error> {
         info!("Device {} disconnecting", self.device.id().0);
+        self.device.update_consumer_capability(None).await;
+        self.device.update_requested_provider_capability(None).await;
         self.device.set_state(device::State::Idle).await;
         policy::send_request(self.device.id(), policy::RequestData::NotifyDisconnect)
             .await?

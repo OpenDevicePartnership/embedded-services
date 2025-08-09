@@ -1,12 +1,18 @@
-use crate::device::Device;
 use crate::device::{self, DeviceId};
+use crate::device::{Device, FuelGaugeError};
 use embassy_sync::channel::Channel;
 use embassy_sync::channel::TrySendError;
 use embassy_sync::mutex::Mutex;
+use embassy_sync::signal::Signal;
 use embassy_time::{Duration, with_timeout};
 use embedded_services::GlobalRawMutex;
+use embedded_services::buffer::OwnedRef;
+use embedded_services::comms::MailboxDelegateError;
+use embedded_services::ec_type::message::AcpiMsgComms;
+use embedded_services::power::policy::PowerCapability;
 use embedded_services::{IntrusiveList, debug, error, info, intrusive_list, trace, warn};
 
+use core::borrow::Borrow;
 use core::ops::DerefMut;
 use core::sync::atomic::AtomicUsize;
 
@@ -89,6 +95,7 @@ pub enum ContextError {
     DeviceNotFound,
     Timeout,
     StateError(StateMachineError),
+    DriverError(FuelGaugeError),
 }
 
 /// External battery service context response.
@@ -102,14 +109,24 @@ pub struct BatteryEvent {
     pub device_id: DeviceId,
 }
 
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub(crate) struct PsuState {
+    pub psu_connected: bool,
+    pub power_capability: Option<PowerCapability>,
+}
+
 /// Battery service context, hardware agnostic state.
-pub struct Context {
+pub struct Context<'a> {
     fuel_gauges: IntrusiveList,
     state: Mutex<GlobalRawMutex, State>,
     battery_event: Channel<GlobalRawMutex, BatteryEvent, 1>,
     battery_response: Channel<GlobalRawMutex, BatteryResponse, 1>,
     no_op_retry_count: AtomicUsize,
     config: Config,
+    acpi_request: Signal<GlobalRawMutex, AcpiMsgComms<'a>>,
+    acpi_buf_owned_ref: OwnedRef<'a, u8>,
+    power_info: Mutex<GlobalRawMutex, PsuState>,
 }
 
 pub struct Config {
@@ -126,7 +143,9 @@ impl Default for Config {
     }
 }
 
-impl Context {
+embedded_services::define_static_buffer!(acpi_buf, u8, [0u8; 69]);
+
+impl<'a> Context<'a> {
     /// Create a new context instance.
     pub fn new() -> Self {
         Self {
@@ -136,6 +155,9 @@ impl Context {
             battery_response: Channel::new(),
             no_op_retry_count: AtomicUsize::new(0),
             config: Default::default(),
+            acpi_request: Signal::new(),
+            acpi_buf_owned_ref: acpi_buf::get_mut().unwrap(),
+            power_info: Mutex::new(PsuState::default()),
         }
     }
 
@@ -147,6 +169,9 @@ impl Context {
             battery_response: Channel::new(),
             no_op_retry_count: AtomicUsize::new(0),
             config,
+            acpi_request: Signal::new(),
+            acpi_buf_owned_ref: acpi_buf::get_mut().unwrap(),
+            power_info: Mutex::new(PsuState::default()),
         }
     }
 
@@ -261,20 +286,18 @@ impl Context {
         match *state {
             State::NotPresent => {
                 info!("Initializing fuel gauge with ID {:?}", event.device_id);
-                if self
+                if let Err(e) = self
                     .execute_device_command(event.device_id, device::Command::Ping)
                     .await
-                    .is_err()
                 {
-                    error!("Error pinging fuel gauge with ID {:?}", event.device_id);
+                    error!("Error pinging fuel gauge with ID {:?}, {:?}", event.device_id, e);
                     return Err(StateMachineError::DeviceError);
                 }
-                if self
+                if let Err(e) = self
                     .execute_device_command(event.device_id, device::Command::Initialize)
                     .await
-                    .is_err()
                 {
-                    error!("Error initializing fuel gauge with ID {:?}", event.device_id);
+                    error!("Error initializing fuel gauge with ID {:?}, {:?}", event.device_id, e);
                     return Err(StateMachineError::DeviceError);
                 }
 
@@ -288,14 +311,14 @@ impl Context {
                         .execute_device_command(event.device_id, device::Command::Ping)
                         .await
                     {
-                        Ok(Ok(device::InternalResponse::Complete)) => {
+                        Ok(device::InternalResponse::Complete) => {
                             info!("Fuel gauge id: {:?} re-established communication!", event.device_id);
                             *state = State::Present(PresentSubstate::Operational(OperationalSubstate::Init));
                             self.set_state_machine_retry_count(0);
                             Ok(InnerStateMachineResponse::Complete)
                             // Do not continue execution.
                         }
-                        Ok(Err(fg_err)) => {
+                        Err(ContextError::DriverError(fg_err)) => {
                             error!(
                                 "Fuel gauge {:?} failed to ping with error {:?}",
                                 event.device_id, fg_err
@@ -329,12 +352,14 @@ impl Context {
                     OperationalSubstate::Init => {
                         // Collect static data
                         trace!("Collecting fuel gauge static cache with ID {:?}", event.device_id);
-                        if self
+                        if let Err(e) = self
                             .execute_device_command(event.device_id, device::Command::UpdateStaticCache)
                             .await
-                            .is_err()
                         {
-                            error!("Error updating fuel gauge static cache with ID {:?}", event.device_id);
+                            error!(
+                                "Error updating fuel gauge static cache with ID {:?}, {:?}",
+                                event.device_id, e
+                            );
                             return Err(StateMachineError::DeviceError);
                         }
                         *state = State::Present(PresentSubstate::Operational(OperationalSubstate::Polling));
@@ -343,14 +368,13 @@ impl Context {
                     OperationalSubstate::Polling => {
                         // Collect dynamic data
                         trace!("Collecting fuel gauge dynamic cache with ID {:?}", event.device_id);
-                        if self
+                        if let Err(e) = self
                             .execute_device_command(event.device_id, device::Command::UpdateDynamicCache)
                             .await
-                            .is_err()
                         {
                             error!(
-                                "Error initializing fuel gauge dynamic cache with ID {:?}",
-                                event.device_id
+                                "Error initializing fuel gauge dynamic cache with ID {:?}, {:?}",
+                                event.device_id, e
                             );
                             return Err(StateMachineError::DeviceError);
                         }
@@ -358,6 +382,37 @@ impl Context {
                     }
                 },
             },
+        }
+    }
+
+    pub(super) async fn process_acpi_cmd(&self, acpi_msg: AcpiMsgComms<'a>) {
+        if let Some(fg) = self.get_fuel_gauge(DeviceId(0)) {
+            let payload_len = acpi_msg.payload_len;
+            let access = acpi_msg.payload.borrow();
+            let raw = access.borrow();
+            if let Ok(payload) = crate::acpi::Payload::from_raw(raw, payload_len) {
+                match payload.command {
+                    crate::acpi::AcpiCmd::GetBix => self.bix_handler(fg, &payload).await,
+                    crate::acpi::AcpiCmd::GetBst => self.bst_handler(fg, &payload).await,
+                    crate::acpi::AcpiCmd::GetPsr => self.psr_handler(fg, &payload).await,
+                    crate::acpi::AcpiCmd::GetPif => self.pif_handler(fg, &payload).await,
+                    crate::acpi::AcpiCmd::GetBps => self.bps_handler(fg, &payload).await,
+                    crate::acpi::AcpiCmd::SetBtp => self.btp_handler(fg, &payload).await,
+                    crate::acpi::AcpiCmd::SetBpt => self.bpt_handler(fg, &payload).await,
+                    crate::acpi::AcpiCmd::GetBpc => self.bpc_handler(fg, &payload).await,
+                    crate::acpi::AcpiCmd::SetBmc => self.bmc_handler(fg, &payload).await,
+                    crate::acpi::AcpiCmd::GetBmd => self.bmd_handler(fg, &payload).await,
+                    crate::acpi::AcpiCmd::GetBct => self.bct_handler(fg, &payload).await,
+                    crate::acpi::AcpiCmd::GetBtm => self.btm_handler(fg, &payload).await,
+                    crate::acpi::AcpiCmd::SetBms => self.bms_handler(fg, &payload).await,
+                    crate::acpi::AcpiCmd::SetBma => self.bma_handler(fg, &payload).await,
+                    crate::acpi::AcpiCmd::GetSta => self.sta_handler(fg, &payload).await,
+                }
+            } else {
+                error!("Battery service: malformed ACPI payload!");
+            }
+        } else {
+            error!("Battery service: FG not found when trying to process ACPI cmd!");
         }
     }
 
@@ -406,6 +461,14 @@ impl Context {
         self.battery_event.receive().await
     }
 
+    pub(super) fn send_acpi_cmd(&self, raw: AcpiMsgComms<'a>) {
+        self.acpi_request.signal(raw);
+    }
+
+    pub(super) async fn wait_acpi_cmd(&self) -> AcpiMsgComms<'a> {
+        self.acpi_request.wait().await
+    }
+
     pub async fn get_state(&self) -> State {
         *self.state.lock().await
     }
@@ -414,7 +477,7 @@ impl Context {
         &self,
         id: DeviceId,
         command: device::Command,
-    ) -> Result<device::Response, ContextError> {
+    ) -> Result<device::InternalResponse, ContextError> {
         // Get ID
         let device = match self.get_fuel_gauge(id) {
             Some(device) => device,
@@ -426,16 +489,59 @@ impl Context {
         };
 
         match with_timeout(device.get_timeout(), device.execute_command(command)).await {
-            Ok(res) => Ok(res),
+            Ok(res) => match res {
+                Ok(response) => Ok(response),
+                Err(e) => Err(ContextError::DriverError(e)),
+            },
             Err(_) => {
                 error!("Device timed out when executing command {:?}", command);
                 Err(ContextError::Timeout)
             }
         }
     }
+
+    pub(crate) fn get_acpi_buf_owned_ref(&self) -> &OwnedRef<'a, u8> {
+        &self.acpi_buf_owned_ref
+    }
+
+    pub(crate) async fn get_power_info(&self) -> PsuState {
+        *self.power_info.lock().await
+    }
+
+    pub(crate) fn set_power_info(
+        &self,
+        power_info: &embedded_services::power::policy::CommsData,
+    ) -> Result<(), MailboxDelegateError> {
+        let mut guard = self
+            .power_info
+            .try_lock()
+            .map_err(|_| MailboxDelegateError::BufferFull)?;
+
+        let psu_state = guard.deref_mut();
+
+        match power_info {
+            embedded_services::power::policy::CommsData::ConsumerDisconnected(_) => {
+                *psu_state = PsuState {
+                    psu_connected: false,
+                    power_capability: None,
+                }
+            }
+            embedded_services::power::policy::CommsData::ConsumerConnected(_device_id, power_capability) => {
+                *psu_state = PsuState {
+                    psu_connected: true,
+                    power_capability: Some(*power_capability),
+                }
+            }
+            embedded_services::power::policy::CommsData::Unconstrained(_) => { /* Don't care about Unconstrained state */
+            }
+        }
+
+        trace!("Battery: PSU state: {:?}", psu_state);
+        Ok(())
+    }
 }
 
-impl Default for Context {
+impl<'a> Default for Context<'a> {
     fn default() -> Self {
         Self::new()
     }

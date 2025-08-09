@@ -5,9 +5,10 @@ use core::sync::atomic::{AtomicBool, Ordering};
 use embassy_sync::once_lock::OnceLock;
 use embassy_sync::signal::Signal;
 use embassy_time::{Duration, with_timeout};
-use embedded_usb_pd::ucsi::lpm;
+use embedded_usb_pd::ucsi::{self, lpm};
 use embedded_usb_pd::{
     DataRole, Error, GlobalPortId, PdError, PlugOrientation, PortId as LocalPortId, PowerRole,
+    ado::Ado,
     pdinfo::{AltMode, PowerPathStatus},
     type_c::ConnectionState,
 };
@@ -50,6 +51,10 @@ pub struct PortStatus {
     pub alt_mode: AltMode,
     /// Power path status
     pub power_path: PowerPathStatus,
+    /// EPR mode active
+    pub epr: bool,
+    /// Port partner is unconstrained
+    pub unconstrained_power: bool,
 }
 
 impl PortStatus {
@@ -66,6 +71,8 @@ impl PortStatus {
             data_role: DataRole::Dfp,
             alt_mode: AltMode::none(),
             power_path: PowerPathStatus::none(),
+            epr: false,
+            unconstrained_power: false,
         }
     }
 
@@ -107,6 +114,16 @@ pub enum PortCommandData {
     RetimerFwUpdateClearState,
     /// Set retimer compliance
     SetRetimerCompliance,
+    /// Reconfigure retimer
+    ReconfigureRetimer,
+    /// Get oldest unhandled PD alert
+    GetPdAlert,
+    /// Set the maximum sink voltage in mV for the given port
+    SetMaxSinkVoltage(Option<u16>),
+    /// Set unconstrained power
+    SetUnconstrainedPower(bool),
+    /// Clear the dead battery flag for the given port
+    ClearDeadBatteryFlag,
 }
 
 /// Port-specific commands
@@ -141,6 +158,8 @@ pub enum PortResponseData {
     ClearEvents(PortEvent),
     /// Retimer Fw Update status
     RtFwUpdateStatus(RetimerFwUpdateState),
+    /// PD alert
+    PdAlert(Option<Ado>),
 }
 
 impl PortResponseData {
@@ -342,6 +361,14 @@ pub trait Controller {
     ) -> impl Future<Output = Result<(), Error<Self::BusError>>>;
     /// Set retimer compliance
     fn set_rt_compliance(&mut self, port: LocalPortId) -> impl Future<Output = Result<(), Error<Self::BusError>>>;
+
+    /// Reconfigure the retimer for the given port.
+    fn reconfigure_retimer(&mut self, port: LocalPortId) -> impl Future<Output = Result<(), Error<Self::BusError>>>;
+
+    /// Clear the dead battery flag for the given port.
+    fn clear_dead_battery_flag(&mut self, port: LocalPortId)
+    -> impl Future<Output = Result<(), Error<Self::BusError>>>;
+
     /// Enable or disable sink path
     fn enable_sink_path(
         &mut self,
@@ -352,6 +379,22 @@ pub trait Controller {
     fn get_controller_status(
         &mut self,
     ) -> impl Future<Output = Result<ControllerStatus<'static>, Error<Self::BusError>>>;
+    /// Get current PD alert
+    fn get_pd_alert(&mut self, port: LocalPortId) -> impl Future<Output = Result<Option<Ado>, Error<Self::BusError>>>;
+    /// Set the maximum sink voltage for the given port
+    ///
+    /// This may trigger a renegotiation
+    fn set_max_sink_voltage(
+        &mut self,
+        port: LocalPortId,
+        voltage_mv: Option<u16>,
+    ) -> impl Future<Output = Result<(), Error<Self::BusError>>>;
+    /// Set port unconstrained status
+    fn set_unconstrained_power(
+        &mut self,
+        port: LocalPortId,
+        unconstrained: bool,
+    ) -> impl Future<Output = Result<(), Error<Self::BusError>>>;
 
     // TODO: remove all these once we migrate to a generic FW update trait
     // https://github.com/OpenDevicePartnership/embedded-services/issues/242
@@ -432,6 +475,16 @@ pub(super) async fn lookup_controller(controller_id: ControllerId) -> Result<&'s
         .filter_map(|node| node.data::<Device>())
         .find(|controller| controller.id == controller_id)
         .ok_or(PdError::InvalidController)
+}
+
+/// Get total number of ports on the system
+pub(super) async fn get_num_ports() -> usize {
+    CONTEXT
+        .get()
+        .await
+        .controllers
+        .iter_only::<Device>()
+        .fold(0, |acc, controller| acc + controller.num_ports())
 }
 
 /// Default command timeout
@@ -646,6 +699,17 @@ impl ContextToken {
         }
     }
 
+    /// Get the oldest unhandled PD alert for the given port
+    pub async fn get_pd_alert(&self, port: GlobalPortId) -> Result<Option<Ado>, PdError> {
+        match self.send_port_command(port, PortCommandData::GetPdAlert).await? {
+            PortResponseData::PdAlert(alert) => Ok(alert),
+            r => {
+                error!("Invalid response: expected PD alert, got {:?}", r);
+                Err(PdError::InvalidResponse)
+            }
+        }
+    }
+
     /// Get the retimer fw update status
     pub async fn get_rt_fw_update_status(&self, port: GlobalPortId) -> Result<RetimerFwUpdateState, PdError> {
         match self
@@ -690,6 +754,41 @@ impl ContextToken {
         }
     }
 
+    /// Reconfigure the retimer for the given port.
+    pub async fn reconfigure_retimer(&self, port: GlobalPortId) -> Result<(), PdError> {
+        match self
+            .send_port_command(port, PortCommandData::ReconfigureRetimer)
+            .await?
+        {
+            PortResponseData::Complete => Ok(()),
+            _ => Err(PdError::InvalidResponse),
+        }
+    }
+
+    /// Set the maximum sink voltage for the given port.
+    ///
+    /// See [`PortCommandData::SetMaxSinkVoltage`] for details on the `max_voltage_mv` parameter.
+    pub async fn set_max_sink_voltage(&self, port: GlobalPortId, max_voltage_mv: Option<u16>) -> Result<(), PdError> {
+        match self
+            .send_port_command(port, PortCommandData::SetMaxSinkVoltage(max_voltage_mv))
+            .await?
+        {
+            PortResponseData::Complete => Ok(()),
+            _ => Err(PdError::InvalidResponse),
+        }
+    }
+
+    /// Clear the dead battery flag for the given port.
+    pub async fn clear_dead_battery_flag(&self, port: GlobalPortId) -> Result<(), PdError> {
+        match self
+            .send_port_command(port, PortCommandData::ClearDeadBatteryFlag)
+            .await?
+        {
+            PortResponseData::Complete => Ok(()),
+            _ => Err(PdError::InvalidResponse),
+        }
+    }
+
     /// Get current controller status
     pub async fn get_controller_status(
         &self,
@@ -704,6 +803,17 @@ impl ContextToken {
                 error!("Invalid response: expected controller status, got {:?}", r);
                 Err(PdError::InvalidResponse)
             }
+        }
+    }
+
+    /// Set unconstrained power for the given port
+    pub async fn set_unconstrained_power(&self, port: GlobalPortId, unconstrained: bool) -> Result<(), PdError> {
+        match self
+            .send_port_command(port, PortCommandData::SetUnconstrainedPower(unconstrained))
+            .await?
+        {
+            PortResponseData::Complete => Ok(()),
+            _ => Err(PdError::InvalidResponse),
         }
     }
 
@@ -732,6 +842,11 @@ impl ContextToken {
     pub async fn notify_ports(&self, pending: PortPending) {
         CONTEXT.get().await.notify_ports(pending);
     }
+
+    /// Get the number of ports on the system
+    pub async fn get_num_ports(&self) -> usize {
+        get_num_ports().await
+    }
 }
 
 /// Execute an external port command
@@ -757,6 +872,18 @@ pub(super) async fn execute_external_controller_command(
         external::Response::Controller(response) => response,
         r => {
             error!("Invalid response: expected external controller, got {:?}", r);
+            Err(PdError::InvalidResponse)
+        }
+    }
+}
+
+/// Execute an external UCSI command
+pub(super) async fn execute_external_ucsi_command(command: ucsi::Command) -> Result<external::UcsiResponse, PdError> {
+    let context = CONTEXT.get().await;
+    match context.external_command.execute(external::Command::Ucsi(command)).await {
+        external::Response::Ucsi(response) => response,
+        r => {
+            error!("Invalid response: expected external UCSI, got {:?}", r);
             Err(PdError::InvalidResponse)
         }
     }

@@ -36,7 +36,7 @@ pub enum Event {
     RecoveryTick,
 }
 
-impl<const N: usize, C: Controller, V: FwOfferValidator> ControllerWrapper<'_, N, C, V> {
+impl<'a, const N: usize, C: Controller, BACK: Backing<'a>, V: FwOfferValidator> ControllerWrapper<'a, N, C, BACK, V> {
     /// Create a new invalid FW version response
     fn create_invalid_fw_version_response(&self) -> InternalResponseData {
         let dev_inf = FwVerComponentInfo::new(FwVersion::new(0xffffffff), self.cfu_device.component_id());
@@ -99,11 +99,31 @@ impl<const N: usize, C: Controller, V: FwOfferValidator> ControllerWrapper<'_, N
         InternalResponseData::OfferResponse(self.fw_version_validator.validate(FwVersion::new(version), offer))
     }
 
+    async fn process_abort_update(&self, controller: &mut C, state: &mut InternalState<N>) -> InternalResponseData {
+        // abort the update process
+        match controller.abort_fw_update().await {
+            Ok(_) => {
+                debug!("FW update aborted successfully");
+                state.fw_update_state = FwUpdateState::Idle;
+            }
+            Err(Error::Pd(e)) => {
+                error!("Failed to abort FW update: {:?}", e);
+                state.fw_update_state = FwUpdateState::Recovery;
+            }
+            Err(Error::Bus(_)) => {
+                error!("Failed to abort FW update, bus error");
+                state.fw_update_state = FwUpdateState::Recovery;
+            }
+        }
+
+        InternalResponseData::ComponentPrepared
+    }
+
     /// Process a GiveContent command
     async fn process_give_content(
         &self,
         controller: &mut C,
-        state: &mut InternalState,
+        state: &mut InternalState<N>,
         content: &FwUpdateContentCommand,
     ) -> InternalResponseData {
         let data = &content.data[0..content.header.data_length as usize];
@@ -230,7 +250,7 @@ impl<const N: usize, C: Controller, V: FwOfferValidator> ControllerWrapper<'_, N
     }
 
     /// Process a CFU tick
-    pub async fn process_cfu_tick(&self, controller: &mut C, state: &mut InternalState) {
+    pub async fn process_cfu_tick(&self, controller: &mut C, state: &mut InternalState<N>) {
         match state.fw_update_state {
             FwUpdateState::Idle => {
                 // No FW update in progress, nothing to do
@@ -273,7 +293,7 @@ impl<const N: usize, C: Controller, V: FwOfferValidator> ControllerWrapper<'_, N
     pub async fn process_cfu_command(
         &self,
         controller: &mut C,
-        state: &mut InternalState,
+        state: &mut InternalState<N>,
         command: &RequestData,
     ) -> InternalResponseData {
         if state.fw_update_state == FwUpdateState::Recovery {
@@ -293,6 +313,10 @@ impl<const N: usize, C: Controller, V: FwOfferValidator> ControllerWrapper<'_, N
             RequestData::GiveContent(content) => {
                 debug!("Got GiveContent");
                 self.process_give_content(controller, state, content).await
+            }
+            RequestData::AbortUpdate => {
+                debug!("Got AbortUpdate");
+                self.process_abort_update(controller, state).await
             }
             RequestData::FinalizeUpdate => {
                 debug!("Got FinalizeUpdate");

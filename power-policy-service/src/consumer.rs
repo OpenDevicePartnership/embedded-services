@@ -12,9 +12,9 @@ use super::*;
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct AvailableConsumer {
     /// The ID of the currently connected consumer
-    device_id: DeviceId,
+    pub device_id: DeviceId,
     /// The power capability of the currently connected consumer
-    consumer_power_capability: ConsumerPowerCapability,
+    pub consumer_power_capability: ConsumerPowerCapability,
 }
 
 /// Compare two consumer capabilities to determine which one is better
@@ -62,6 +62,40 @@ impl PowerPolicy {
         Ok(best_consumer)
     }
 
+    /// Update unconstrained state and broadcast notifications if needed
+    async fn update_unconstrained_state(&self, state: &mut InternalState) -> Result<(), Error> {
+        // Count how many available unconstrained devices we have
+        let mut unconstrained_new = UnconstrainedState::default();
+        for node in self.context.devices().await {
+            let device = node.data::<Device>().ok_or(Error::InvalidDevice)?;
+            if let Some(capability) = device.consumer_capability().await {
+                // The device is considered unconstrained if it meets the auto unconstrained power threshold
+                let auto_unconstrained = self
+                    .config
+                    .auto_unconstrained_threshold_mw
+                    .is_some_and(|threshold| capability.capability.max_power_mw() >= threshold);
+                if capability.flags.unconstrained_power() || auto_unconstrained {
+                    unconstrained_new.available += 1;
+                }
+            }
+        }
+
+        // The overall unconstrained state is true if an unconstrained consumer is currently connected
+        unconstrained_new.unconstrained = state
+            .current_consumer_state
+            .is_some_and(|current| current.consumer_power_capability.flags.unconstrained_power());
+
+        if unconstrained_new != state.unconstrained {
+            info!("Unconstrained state changed: {:?}", unconstrained_new);
+            state.unconstrained = unconstrained_new;
+            self.comms_notify(CommsMessage {
+                data: CommsData::Unconstrained(state.unconstrained),
+            })
+            .await;
+        }
+        Ok(())
+    }
+
     /// Common logic to execute after a consumer is connected
     async fn post_consumer_connected(
         &self,
@@ -102,13 +136,22 @@ impl PowerPolicy {
         })
         .await;
 
-        if connected_consumer.consumer_power_capability.flags.unconstrained_power() != state.unconstrained {
-            state.unconstrained = connected_consumer.consumer_power_capability.flags.unconstrained_power();
-            info!("Unconstrained state changed: {}", state.unconstrained);
-            self.comms_notify(CommsMessage {
-                data: CommsData::Unconstrained(state.unconstrained),
-            })
-            .await;
+        Ok(())
+    }
+
+    /// Disconnect all chargers
+    pub(super) async fn disconnect_chargers(&self) -> Result<(), Error> {
+        for node in self.context.chargers().await {
+            let device = node.data::<ChargerDevice>().ok_or(Error::InvalidDevice)?;
+            if let embedded_services::power::policy::charger::ChargerResponseData::UnpoweredAck = device
+                .execute_command(PolicyEvent::PolicyConfiguration(PowerCapability {
+                    voltage_mv: 0,
+                    current_ma: 0,
+                }))
+                .await?
+            {
+                debug!("Charger is unpowered, continuing disconnect_chargers()...");
+            }
         }
 
         Ok(())
@@ -149,33 +192,14 @@ impl PowerPolicy {
             // Also, if chargers return UnpoweredAck, that means the charger isn't powered.
             // Further down this fn the power rails are enabled and thus the charger will get power,
             // so just continue execution.
-            for node in self.context.chargers().await {
-                let device = node.data::<ChargerDevice>().ok_or(Error::InvalidDevice)?;
-                if let embedded_services::power::policy::charger::ChargerResponseData::UnpoweredAck = device
-                    .execute_command(PolicyEvent::PolicyConfiguration(PowerCapability {
-                        voltage_mv: 0,
-                        current_ma: 0,
-                    }))
-                    .await?
-                {
-                    debug!("Charger is unpowered, continuing connect_new_consumer()...");
-                }
-            }
+            self.disconnect_chargers().await?;
 
             self.comms_notify(CommsMessage {
                 data: CommsData::ConsumerDisconnected(current_consumer.device_id),
             })
             .await;
 
-            if state.unconstrained {
-                // Not connected to anything, can't be unconstrained
-                state.unconstrained = false;
-                info!("Unconstrained state changed: {}", false);
-                self.comms_notify(CommsMessage {
-                    data: CommsData::Unconstrained(false),
-                })
-                .await;
-            }
+            // Don't update the unconstrained here because this is a transitional state
         }
 
         info!("Device {}, connecting new consumer", new_consumer.device_id.0);
@@ -215,13 +239,22 @@ impl PowerPolicy {
         let best_consumer = self.find_best_consumer().await?;
         info!("Best consumer: {:#?}", best_consumer);
         if best_consumer.is_none() {
-            state.current_consumer_state = None;
+            // Notify disconnect if recently detached consumer was previously attached.
+            if let Some(consumer_state) = state.current_consumer_state {
+                self.comms_notify(CommsMessage {
+                    data: CommsData::ConsumerDisconnected(consumer_state.device_id),
+                })
+                .await;
+            }
             // No new consumer available
+            state.current_consumer_state = None;
+            self.update_unconstrained_state(state).await?;
             return Ok(());
         }
         let best_consumer = best_consumer.unwrap();
 
-        self.connect_new_consumer(state, best_consumer).await
+        self.connect_new_consumer(state, best_consumer).await?;
+        self.update_unconstrained_state(state).await
     }
 }
 

@@ -1,7 +1,7 @@
 #![no_std]
 #![no_main]
 
-use ::tps6699x::ADDR1;
+use ::tps6699x::{ADDR1, TPS66994_NUM_PORTS};
 use embassy_embedded_hal::shared_bus::asynch::i2c::I2cDevice;
 use embassy_executor::Spawner;
 use embassy_imxrt::gpio::{Input, Inverter, Pull};
@@ -14,16 +14,17 @@ use embassy_time::Timer;
 use embassy_time::{self as _, Delay};
 use embedded_cfu_protocol::protocol_definitions::*;
 use embedded_cfu_protocol::protocol_definitions::{FwUpdateOffer, FwUpdateOfferResponse, FwVersion};
-use embedded_services::cfu;
 use embedded_services::cfu::component::InternalResponseData;
 use embedded_services::cfu::component::RequestData;
 use embedded_services::power::policy::DeviceId as PowerId;
 use embedded_services::type_c::{self, ControllerId};
+use embedded_services::{GlobalRawMutex, cfu};
 use embedded_services::{error, info};
 use embedded_usb_pd::GlobalPortId;
 use static_cell::StaticCell;
 use tps6699x::asynchronous::embassy as tps6699x;
 use type_c_service::driver::tps6699x::{self as tps6699x_drv};
+use type_c_service::wrapper::backing::{BackingDefault, BackingDefaultStorage};
 
 extern crate rt685s_evk_example;
 
@@ -42,7 +43,8 @@ impl type_c_service::wrapper::FwOfferValidator for Validator {
 
 type BusMaster<'a> = I2cMaster<'a, Async>;
 type BusDevice<'a> = I2cDevice<'a, NoopRawMutex, BusMaster<'a>>;
-type Wrapper<'a> = tps6699x_drv::Tps66994Wrapper<'a, NoopRawMutex, BusDevice<'a>, Validator>;
+type Wrapper<'a> =
+    tps6699x_drv::Tps66994Wrapper<'a, NoopRawMutex, BusDevice<'a>, BackingDefault<'a, TPS66994_NUM_PORTS>, Validator>;
 type Controller<'a> = tps6699x::controller::Controller<NoopRawMutex, BusDevice<'a>>;
 type Interrupt<'a> = tps6699x::Interrupt<'a, NoopRawMutex, BusDevice<'a>>;
 
@@ -160,7 +162,7 @@ async fn main(spawner: Spawner) {
     spawner.must_spawn(power_policy_service::task(Default::default()));
 
     info!("Spawining type-c service task");
-    spawner.must_spawn(type_c_service::task());
+    spawner.must_spawn(type_c_service::task(Default::default()));
 
     let int_in = Input::new(p.PIO1_7, Pull::Up, Inverter::Disabled);
     static BUS: StaticCell<Mutex<NoopRawMutex, BusMaster<'static>>> = StaticCell::new();
@@ -195,6 +197,9 @@ async fn main(spawner: Spawner) {
         .unwrap();
 
     static PD_PORTS: [GlobalPortId; 2] = [PORT0_ID, PORT1_ID];
+    static BACKING_STORAGE: StaticCell<BackingDefaultStorage<TPS66994_NUM_PORTS, GlobalRawMutex>> = StaticCell::new();
+    let backing_storage = BACKING_STORAGE.init(BackingDefaultStorage::new());
+    let backing = backing_storage.get_backing().expect("Failed to create backing storage");
 
     info!("Spawining PD controller task");
     static PD_CONTROLLER: StaticCell<Wrapper> = StaticCell::new();
@@ -205,6 +210,7 @@ async fn main(spawner: Spawner) {
             &PD_PORTS,
             [PORT0_PWR_ID, PORT1_PWR_ID],
             CONTROLLER0_CFU_ID,
+            backing,
             Default::default(),
             Validator,
         )

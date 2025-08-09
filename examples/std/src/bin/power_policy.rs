@@ -191,7 +191,7 @@ async fn run(spawner: Spawner) {
 
 #[embassy_executor::task]
 async fn receiver_task() {
-    static CHANNEL: StaticCell<PubSubChannel<NoopRawMutex, policy::CommsMessage, 1, 1, 0>> = StaticCell::new();
+    static CHANNEL: StaticCell<PubSubChannel<NoopRawMutex, policy::CommsMessage, 4, 1, 0>> = StaticCell::new();
     let channel = CHANNEL.init(PubSubChannel::new());
 
     let publisher = channel.dyn_immediate_publisher();

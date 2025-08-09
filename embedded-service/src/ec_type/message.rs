@@ -66,6 +66,25 @@ pub enum BatteryMessage {
     SampleTime(u32),
 }
 
+/// ACPI Message, compatible with comms system
+#[derive(Clone)]
+pub struct AcpiMsgComms<'a> {
+    /// Shared ref to a buffer
+    pub payload: crate::buffer::SharedRef<'a, u8>,
+    /// Size of payload
+    pub payload_len: usize,
+    /// Endpoint ID
+    pub endpoint: crate::comms::EndpointID,
+}
+
+/// ACPI Message, holding an owned reference to a buffer
+pub struct AcpiMsg<'a> {
+    /// Owned ref to a buffer
+    pub payload: crate::buffer::OwnedRef<'a, u8>,
+    /// Size of payload
+    pub payload_len: usize,
+}
+
 #[allow(missing_docs)]
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ThermalMessage {

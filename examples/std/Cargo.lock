@@ -30,6 +30,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e16d2d3311acee920a9eb8d33b8cbc1787ce4a264e85f964c2404b969bdcd487"
 
 [[package]]
+name = "aquamarine"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0f50776554130342de4836ba542aa85a4ddb361690d7e8df13774d7284c3d5c2"
+dependencies = [
+ "include_dir",
+ "itertools 0.10.5",
+ "proc-macro-error2",
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "arraydeque"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -89,6 +103,7 @@ dependencies = [
  "embedded-hal-async",
  "embedded-services",
  "log",
+ "zerocopy",
 ]
 
 [[package]]
@@ -327,7 +342,7 @@ dependencies = [
  "bitvec",
  "convert_case",
  "dd-manifest-tree",
- "itertools",
+ "itertools 0.14.0",
  "proc-macro2",
  "quote",
  "syn",
@@ -361,8 +376,8 @@ checksum = "48c757948c5ede0e46177b7add2e67155f70e33c07fea8284df6576da70b3719"
 
 [[package]]
 name = "embassy-executor"
-version = "0.7.0"
-source = "git+https://github.com/embassy-rs/embassy#504261a8d0bc58fcfa8b73245eaf859f88d62a94"
+version = "0.8.0"
+source = "git+https://github.com/embassy-rs/embassy#f2be66a5f94a655696407e2e7bc81c322aab3ea1"
 dependencies = [
  "critical-section",
  "document-features",
@@ -372,8 +387,8 @@ dependencies = [
 
 [[package]]
 name = "embassy-executor-macros"
-version = "0.6.2"
-source = "git+https://github.com/embassy-rs/embassy#504261a8d0bc58fcfa8b73245eaf859f88d62a94"
+version = "0.7.0"
+source = "git+https://github.com/embassy-rs/embassy#f2be66a5f94a655696407e2e7bc81c322aab3ea1"
 dependencies = [
  "darling",
  "proc-macro2",
@@ -392,7 +407,7 @@ dependencies = [
 [[package]]
 name = "embassy-sync"
 version = "0.7.0"
-source = "git+https://github.com/embassy-rs/embassy#504261a8d0bc58fcfa8b73245eaf859f88d62a94"
+source = "git+https://github.com/embassy-rs/embassy#f2be66a5f94a655696407e2e7bc81c322aab3ea1"
 dependencies = [
  "cfg-if",
  "critical-section",
@@ -406,7 +421,7 @@ dependencies = [
 [[package]]
 name = "embassy-time"
 version = "0.4.0"
-source = "git+https://github.com/embassy-rs/embassy#504261a8d0bc58fcfa8b73245eaf859f88d62a94"
+source = "git+https://github.com/embassy-rs/embassy#f2be66a5f94a655696407e2e7bc81c322aab3ea1"
 dependencies = [
  "cfg-if",
  "critical-section",
@@ -423,15 +438,15 @@ dependencies = [
 [[package]]
 name = "embassy-time-driver"
 version = "0.2.0"
-source = "git+https://github.com/embassy-rs/embassy#504261a8d0bc58fcfa8b73245eaf859f88d62a94"
+source = "git+https://github.com/embassy-rs/embassy#f2be66a5f94a655696407e2e7bc81c322aab3ea1"
 dependencies = [
  "document-features",
 ]
 
 [[package]]
 name = "embassy-time-queue-utils"
-version = "0.1.0"
-source = "git+https://github.com/embassy-rs/embassy#504261a8d0bc58fcfa8b73245eaf859f88d62a94"
+version = "0.2.0"
+source = "git+https://github.com/embassy-rs/embassy#f2be66a5f94a655696407e2e7bc81c322aab3ea1"
 dependencies = [
  "embassy-executor",
  "heapless 0.8.0",
@@ -439,20 +454,21 @@ dependencies = [
 
 [[package]]
 name = "embedded-batteries"
-version = "0.2.0"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b4be47256affdef01a03a622283ab883130af02e1fa0c786ba310bb5dac48abf"
+checksum = "31e14d288a59ef41f4e05468eae9b1c9fef6866977cea86d3f1a1ced295b6cab"
 dependencies = [
  "bitfield-struct",
  "bitflags",
  "embedded-hal 1.0.0",
+ "zerocopy",
 ]
 
 [[package]]
 name = "embedded-batteries-async"
-version = "0.2.0"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cc047df7395e547e925ec9765c21da77a1d26e086054433a426227cded8ee75a"
+checksum = "98cb543f4eea7e2c57544f345a5cf40fd90e9d3593b96cb7515f6c1d62c7fc68"
 dependencies = [
  "bitfield-struct",
  "embedded-batteries",
@@ -593,8 +609,10 @@ dependencies = [
 [[package]]
 name = "embedded-usb-pd"
 version = "0.1.0"
-source = "git+https://github.com/OpenDevicePartnership/embedded-usb-pd#9cd23ecde3937c0b172057257f320dfb37d4295b"
+source = "git+https://github.com/OpenDevicePartnership/embedded-usb-pd#e7174ab851321ef8ded9f85db738fb52afa16841"
 dependencies = [
+ "aquamarine",
+ "bincode",
  "bitfield 0.19.1",
  "embedded-hal-async",
 ]
@@ -749,6 +767,34 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b9e0384b61958566e926dc50660321d12159025e767c18e043daf26b70104c39"
 
 [[package]]
+name = "include_dir"
+version = "0.7.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "923d117408f1e49d914f1a379a309cffe4f18c05cf4e3d12e613a15fc81bd0dd"
+dependencies = [
+ "include_dir_macros",
+]
+
+[[package]]
+name = "include_dir_macros"
+version = "0.7.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7cab85a7ed0bd5f0e76d93846e0147172bed2e2d3f859bcc33a8d9699cad1a75"
+dependencies = [
+ "proc-macro2",
+ "quote",
+]
+
+[[package]]
+name = "itertools"
+version = "0.10.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b0fd2260e829bddf4cb6ea802289de2f86d6a7a690192fbe91b3f46e0f2c8473"
+dependencies = [
+ "either",
+]
+
+[[package]]
 name = "itertools"
 version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -901,6 +947,27 @@ dependencies = [
  "embassy-time",
  "embedded-services",
  "log",
+]
+
+[[package]]
+name = "proc-macro-error-attr2"
+version = "2.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "96de42df36bb9bba5542fe9f1a054b8cc87e172759a1868aa05c1f3acc89dfc5"
+dependencies = [
+ "proc-macro2",
+ "quote",
+]
+
+[[package]]
+name = "proc-macro-error2"
+version = "2.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "11ec05c52be0a07b08061f7dd003e7d7092e0472bc731b4af7bb1ef876109802"
+dependencies = [
+ "proc-macro-error-attr2",
+ "proc-macro2",
+ "quote",
 ]
 
 [[package]]
@@ -1112,7 +1179,7 @@ dependencies = [
 [[package]]
 name = "tps6699x"
 version = "0.1.0"
-source = "git+https://github.com/OpenDevicePartnership/tps6699x#edb2c0de8095ae73fcb23af711f5ac5d7a6a282a"
+source = "git+https://github.com/OpenDevicePartnership/tps6699x#dda1b74f37df6aba6fa46aa94726a2cd86139331"
 dependencies = [
  "bincode",
  "bitfield 0.19.1",
@@ -1123,6 +1190,8 @@ dependencies = [
  "embedded-hal-async",
  "embedded-io-async",
  "embedded-usb-pd",
+ "heapless 0.8.0",
+ "itertools 0.14.0",
  "log",
 ]
 
@@ -1142,6 +1211,7 @@ dependencies = [
  "embedded-services",
  "embedded-usb-pd",
  "log",
+ "static_cell",
  "tps6699x",
 ]
 
@@ -1328,18 +1398,18 @@ dependencies = [
 
 [[package]]
 name = "zerocopy"
-version = "0.8.25"
+version = "0.8.26"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a1702d9583232ddb9174e01bb7c15a2ab8fb1bc6f227aa1233858c351a3ba0cb"
+checksum = "1039dd0d3c310cf05de012d8a39ff557cb0d23087fd44cad61df08fc31907a2f"
 dependencies = [
  "zerocopy-derive",
 ]
 
 [[package]]
 name = "zerocopy-derive"
-version = "0.8.25"
+version = "0.8.26"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "28a6e20d751156648aa063f3800b706ee209a32c0b4d9f24be3d980b01be55ef"
+checksum = "9ecf5b4cc5364572d7f4c329661bcc82724222973f2cab6f050a4e5c22f75181"
 dependencies = [
  "proc-macro2",
  "quote",
