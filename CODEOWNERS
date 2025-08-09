@@ -1,4 +1,10 @@
 * @OpenDevicePartnership/ec-code-owners
+/battery-service @OpenDevicePartnership/ec-battery-team
+/cfu-service @OpenDevicePartnership/ec-cfu-team
+/espi-service @OpenDevicePartnership/ec-espi-team
+/hid-service @OpenDevicePartnership/ec-hid-team
+/power-policy-service @OpenDevicePartnership/ec-battery-team @OpenDevicePartnership/ec-usb-c-pd-team
+/type-c-service @OpenDevicePartnership/ec-usb-c-pd-team
 
 # Any changes in the supply-chain folder needs approval
 # from auditors as it relates to cargo vet
