@@ -4,7 +4,7 @@ use embassy_time::{Duration, Timer};
 use embedded_services::debug;
 use embedded_services::type_c::controller::{InternalResponseData, Response};
 use embedded_usb_pd::constants::{T_SRC_TRANS_REQ_EPR_MS, T_SRC_TRANS_REQ_SPR_MS};
-use embedded_usb_pd::ucsi::lpm;
+use embedded_usb_pd::ucsi;
 
 use super::*;
 
@@ -159,8 +159,9 @@ impl<'a, const N: usize, C: Controller, BACK: Backing<'a>, V: FwOfferValidator> 
                 }
             }
             controller::PortCommandData::ClearEvents => {
-                let event = self.active_events[0].get();
-                self.active_events[0].set(PortEvent::none());
+                let port_index = local_port.0 as usize;
+                let event = self.active_events[port_index].get();
+                self.active_events[port_index].set(PortEvent::none());
                 Ok(controller::PortResponseData::ClearEvents(event))
             }
             controller::PortCommandData::RetimerFwUpdateGetState => {
@@ -278,7 +279,10 @@ impl<'a, const N: usize, C: Controller, BACK: Backing<'a>, V: FwOfferValidator> 
             controller::Command::Controller(command) => {
                 self.process_controller_command(controller, state, command).await
             }
-            controller::Command::Lpm(_) => controller::Response::Lpm(lpm::Response::Err(PdError::UnrecognizedCommand)),
+            controller::Command::Lpm(_) => controller::Response::Ucsi(ucsi::Response {
+                cci: ucsi::cci::Cci::new_error(),
+                data: None,
+            }),
         }
     }
 }

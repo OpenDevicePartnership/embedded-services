@@ -219,7 +219,7 @@ pub enum Response<'a> {
     /// Controller response
     Controller(InternalResponse<'a>),
     /// UCSI response passthrough
-    Lpm(lpm::Response),
+    Ucsi(ucsi::Response),
     /// Port response
     Port(PortResponse),
 }
@@ -585,7 +585,7 @@ impl ContextToken {
         &self,
         port_id: GlobalPortId,
         command: lpm::CommandData,
-    ) -> Result<lpm::ResponseData, PdError> {
+    ) -> Result<ucsi::Response, PdError> {
         let node = self.find_node_by_port(port_id).await?;
 
         match node
@@ -597,7 +597,7 @@ impl ContextToken {
             }))
             .await
         {
-            Response::Lpm(response) => response,
+            Response::Ucsi(response) => Ok(response),
             r => {
                 error!("Invalid response: expected LPM, got {:?}", r);
                 Err(PdError::InvalidResponse)
@@ -610,7 +610,7 @@ impl ContextToken {
         &self,
         port_id: GlobalPortId,
         command: lpm::CommandData,
-    ) -> Result<lpm::ResponseData, PdError> {
+    ) -> Result<ucsi::Response, PdError> {
         match with_timeout(
             DEFAULT_TIMEOUT,
             self.send_port_command_ucsi_no_timeout(port_id, command),
@@ -627,7 +627,7 @@ impl ContextToken {
         &self,
         port_id: GlobalPortId,
         reset_type: lpm::ResetType,
-    ) -> Result<lpm::ResponseData, PdError> {
+    ) -> Result<ucsi::Response, PdError> {
         self.send_port_command_ucsi(port_id, lpm::CommandData::ConnectorReset(reset_type))
             .await
     }
