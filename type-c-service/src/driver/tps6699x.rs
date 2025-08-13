@@ -33,9 +33,13 @@ use tps6699x::asynchronous::fw_update::{
 };
 use tps6699x::command::ReturnValue;
 use tps6699x::fw_update::UpdateConfig as FwUpdateConfig;
+use tps6699x::registers::rx_other_vdm as Vdm;
 use tps6699x::Mode;
 
 type Updater<'a, M, B> = BorrowedUpdaterInProgress<tps6699x_drv::Tps6699x<'a, M, B>>;
+
+/// The length of the `Rx Attention Vdm` register, in bytes.
+pub const ATTN_VDM_LEN: usize = 9;
 
 /// Firmware update state
 struct FwUpdateState<'a, M: RawMutex, B: I2c> {
@@ -707,6 +711,28 @@ impl<const N: usize, M: RawMutex, B: I2c> Controller for Tps6699x<'_, N, M, B> {
             .try_lock()
             .expect("Driver should not have been locked before this, thus infallible");
         tps6699x.set_autonegotiate_sink_max_voltage(port, voltage_mv).await
+    }
+
+    async fn get_other_vdm(&mut self, port: LocalPortId) -> Result<[u8; Vdm::LEN], Error<Self::BusError>> {
+        let mut tps6699x = self
+            .tps6699x
+            .try_lock()
+            .expect("Driver should not have been locked before this, thus infallible");
+        match tps6699x.get_rx_other_vdm(port).await {
+            Ok(vdm) => Ok(vdm.into()),
+            Err(e) => return Err(e),
+        }
+    }
+
+    async fn get_attn_vdm(&mut self, port: LocalPortId) -> Result<[u8; ATTN_VDM_LEN], Error<Self::BusError>> {
+        let mut tps6699x = self
+            .tps6699x
+            .try_lock()
+            .expect("Driver should not have been locked before this, thus infallible");
+        match tps6699x.get_rx_attn_vdm(port).await {
+            Ok(vdm) => Ok(vdm.into()),
+            Err(e) => return Err(e),
+        }
     }
 }
 

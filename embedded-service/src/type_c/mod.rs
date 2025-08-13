@@ -15,6 +15,11 @@ pub mod external;
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct ControllerId(pub u8);
 
+/// Length of the Other VDM data
+pub const OTHER_VDM_LEN: usize = 29;
+/// Length of the Attention VDM data
+pub const ATTN_VDM_LEN: usize = 9;
+
 /// Returns the maximum power capability for an SPR AVS PDO
 fn spr_avs_max_power_capability(max_current_15v_ma: u16, max_current_20v_ma: u16) -> policy::PowerCapability {
     if (max_current_15v_ma as u32 * 15000) > (max_current_20v_ma as u32 * 20000) {

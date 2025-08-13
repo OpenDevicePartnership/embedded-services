@@ -69,6 +69,8 @@ pub enum Event<'a> {
     PortStatusChanged(LocalPortId, PortStatusChanged),
     /// PD alert
     PdAlert(LocalPortId, Ado),
+    /// Other port notification
+    OtherPortNotification(LocalPortId, PortNotificationSingle),
     /// Power policy command received
     PowerPolicyCommand(
         LocalPortId,
@@ -262,6 +264,57 @@ impl<'a, const N: usize, C: Controller, BACK: Backing<'a>, V: FwOfferValidator> 
         Ok(())
     }
 
+    /// Process notification
+    async fn process_other_port_notification(
+        &self,
+        port: LocalPortId,
+        notification: PortNotificationSingle,
+    ) -> Result<(), Error<<C as Controller>::BusError>> {
+        let port_index = port.0 as usize;
+        if port_index >= N {
+            error!("Invalid port {}", port_index);
+            return Err(PdError::InvalidPort.into());
+        }
+
+        debug!("process_other_port_notification {}", notification);
+
+        // Pend the notification
+        let mut event = self.active_events[port_index].get();
+        match notification {
+            PortNotificationSingle::CustomModeEntered => {
+                event.notification.set_custom_mode_entered(true);
+            }
+            PortNotificationSingle::CustomModeExited => {
+                event.notification.set_custom_mode_exited(true);
+            }
+            PortNotificationSingle::CustomModeAttentionReceived => {
+                event.notification.set_custom_mode_attention_received(true);
+            }
+            PortNotificationSingle::CustomModeOtherVdmReceived => {
+                event.notification.set_custom_mode_other_vdm_received(true);
+            }
+            PortNotificationSingle::DiscoverModeCompleted => {
+                event.notification.set_discover_mode_completed(true);
+            }
+            PortNotificationSingle::UsbMuxErrorRecovery => {
+                event.notification.set_usb_mux_error_recovery(true);
+            }
+            PortNotificationSingle::DpStatusUpdate => {
+                event.notification.set_dp_status_update(true);
+            }
+            _ => {
+                warn!("Unhandled port notification: {:?}", notification);
+            }
+        }
+        self.active_events[port_index].set(event);
+
+        // Pend this port
+        let mut pending = PortPending::none();
+        pending.pend_port(port.0 as usize);
+        self.pd_controller.notify_ports(pending).await;
+        Ok(())
+    }
+
     /// Wait for a pending port event
     async fn wait_port_pending(
         &self,
@@ -329,9 +382,9 @@ impl<'a, const N: usize, C: Controller, BACK: Backing<'a>, V: FwOfferValidator> 
                                     }
                                 }
                                 _ => {
-                                    // Other notifications currently unimplemented
-                                    trace!("Unimplemented port notification: {:?}", notification);
-                                    continue;
+                                    // Other notifications
+                                    trace!("Other notification ({:?}) on port: {:?}", notification, port_id);
+                                    return Ok(Event::OtherPortNotification(port_id, notification));
                                 }
                             },
                         }
@@ -391,6 +444,9 @@ impl<'a, const N: usize, C: Controller, BACK: Backing<'a>, V: FwOfferValidator> 
                 }
             },
             Event::PdAlert(port, alert) => self.process_pd_alert(port, alert).await,
+            Event::OtherPortNotification(port, notification) => {
+                self.process_other_port_notification(port, notification).await
+            }
         }
     }
 
