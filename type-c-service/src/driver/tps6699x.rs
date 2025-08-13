@@ -720,7 +720,7 @@ impl<const N: usize, M: RawMutex, B: I2c> Controller for Tps6699x<'_, N, M, B> {
             .expect("Driver should not have been locked before this, thus infallible");
         match tps6699x.get_rx_other_vdm(port).await {
             Ok(vdm) => Ok(vdm.into()),
-            Err(e) => return Err(e),
+            Err(e) => Err(e),
         }
     }
 
