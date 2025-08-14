@@ -43,6 +43,8 @@ impl<'a> Service<'a> {
                 self.process_set_max_sink_voltage(command.port, max_voltage_mv).await
             }
             external::PortCommandData::ClearDeadBatteryFlag => self.process_clear_dead_battery_flag(command.port).await,
+            external::PortCommandData::GetOtherVdm => self.process_get_other_vdm(command.port).await,
+            external::PortCommandData::GetAttnVdm => self.process_get_attn_vdm(command.port).await,
         }
     }
 
@@ -128,5 +130,25 @@ impl<'a> Service<'a> {
         }
 
         external::Response::Port(status.map(|_| external::PortResponseData::Complete))
+    }
+
+    /// Process get other vdm commands
+    async fn process_get_other_vdm(&self, port_id: GlobalPortId) -> external::Response<'static> {
+        let status = self.context.get_other_vdm(port_id).await;
+        if let Err(e) = status {
+            error!("Error getting other VDM data: {:#?}", e);
+        }
+
+        external::Response::Port(status.map(|vdm| external::PortResponseData::OtherVdm(vdm)))
+    }
+
+    /// Process get attention vdm commands
+    async fn process_get_attn_vdm(&self, port_id: GlobalPortId) -> external::Response<'static> {
+        let status = self.context.get_attn_vdm(port_id).await;
+        if let Err(e) = status {
+            error!("Error getting attention VDM data: {:#?}", e);
+        }
+
+        external::Response::Port(status.map(|vdm| external::PortResponseData::AttnVdm(vdm)))
     }
 }

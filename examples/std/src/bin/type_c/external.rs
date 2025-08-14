@@ -81,6 +81,14 @@ async fn task(_spawner: Spawner) {
 
     info!("Reconfiguring retimer");
     external::reconfigure_retimer(GlobalPortId(0)).await.unwrap();
+
+    info!("Getting other vdm");
+    let other_vdm = external::get_other_vdm(GlobalPortId(0)).await.unwrap();
+    info!("Get other vdm: {other_vdm:?}");
+
+    info!("Getting attention vdm");
+    let attn_vdm = external::get_attn_vdm(GlobalPortId(0)).await.unwrap();
+    info!("Get attention vdm: {attn_vdm:?}");
 }
 
 fn main() {

@@ -1,7 +1,7 @@
 //! Message definitions for external type-C commands
 use embedded_usb_pd::{GlobalPortId, PdError, PortId as LocalPortId, ucsi};
 
-use crate::type_c::controller::execute_external_ucsi_command;
+use crate::type_c::{ATTN_VDM_LEN, OTHER_VDM_LEN, controller::execute_external_ucsi_command};
 
 use super::{
     ControllerId,
@@ -68,6 +68,10 @@ pub enum PortCommandData {
     },
     /// Clear the dead battery flag for the given port.
     ClearDeadBatteryFlag,
+    /// Get other VDM data
+    GetOtherVdm,
+    /// Get attention VDM data
+    GetAttnVdm,
 }
 
 /// Port-specific commands
@@ -90,6 +94,10 @@ pub enum PortResponseData {
     PortStatus(PortStatus),
     /// Get retimer fw update status
     RetimerFwUpdateGetState(RetimerFwUpdateState),
+    /// Get other VDM data
+    OtherVdm([u8; OTHER_VDM_LEN]),
+    /// Get attention VDM data
+    AttnVdm([u8; ATTN_VDM_LEN]),
 }
 
 /// Port-specific command response
@@ -297,4 +305,30 @@ pub async fn reconfigure_retimer(port: GlobalPortId) -> Result<(), PdError> {
 /// Execute a UCSI command
 pub async fn execute_ucsi_command(command: ucsi::Command) -> Result<UcsiResponse, PdError> {
     execute_external_ucsi_command(command).await
+}
+
+/// Get the Rx Other Vdm data of the given port
+pub async fn get_other_vdm(port: GlobalPortId) -> Result<[u8; OTHER_VDM_LEN], PdError> {
+    match execute_external_port_command(Command::Port(PortCommand {
+        port,
+        data: PortCommandData::GetOtherVdm,
+    }))
+    .await?
+    {
+        PortResponseData::OtherVdm(data) => Ok(data),
+        _ => Err(PdError::InvalidResponse),
+    }
+}
+
+/// Get the Rx Attention Vdm data of the given port
+pub async fn get_attn_vdm(port: GlobalPortId) -> Result<[u8; ATTN_VDM_LEN], PdError> {
+    match execute_external_port_command(Command::Port(PortCommand {
+        port,
+        data: PortCommandData::GetAttnVdm,
+    }))
+    .await?
+    {
+        PortResponseData::AttnVdm(data) => Ok(data),
+        _ => Err(PdError::InvalidResponse),
+    }
 }

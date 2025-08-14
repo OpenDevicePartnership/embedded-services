@@ -83,6 +83,8 @@ pub enum Event<'a> {
     PortStatusChanged(GlobalPortId, PortStatusChanged, PortStatus),
     /// PD alert
     PdAlert(GlobalPortId, Ado),
+    /// Other port notification
+    OtherPortNotification(GlobalPortId, PortNotificationSingle),
     /// External command
     ExternalCommand(deferred::Request<'a, GlobalRawMutex, external::Command, external::Response<'static>>),
     /// Power policy event
@@ -207,9 +209,9 @@ impl<'a> Service<'a> {
                                     }
                                 }
                                 _ => {
-                                    // Other notifications currently unimplemented
-                                    trace!("Unimplemented port notification: {:?}", notification);
-                                    continue;
+                                    // Other notifications
+                                    trace!("Other port notification: {:?}", notification);
+                                    return Ok(Event::OtherPortNotification(port_id, notification));
                                 }
                             },
                         }
@@ -235,6 +237,11 @@ impl<'a> Service<'a> {
             Event::PdAlert(port, alert) => {
                 // Port notifications currently don't have any processing logic
                 info!("Port{}: Got PD alert: {:?}", port.0, alert);
+                Ok(())
+            }
+            Event::OtherPortNotification(port, notification) => {
+                // Other port notifications
+                info!("Port{}: Got other port notification: {:?}", port.0, notification);
                 Ok(())
             }
             Event::ExternalCommand(request) => {
