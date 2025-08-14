@@ -4,6 +4,7 @@ members = [
     "battery-service",
     "thermal-service",
     "cfu-service",
+    "debug-service",
     "embedded-service",
     "espi-service",
     "hid-service",
