@@ -9,14 +9,15 @@ use core::future::Future;
 use embassy_sync::channel::{Channel, Sender};
 use embedded_services::GlobalRawMutex;
 
-/// Maximum debug message size for OOB transmission
-const MAX_OOB_DEBUG_SIZE: usize = 64;
+/// Maximum debug frame size to forward in a single message (no chunking).
+/// Keep in sync with the logger's maximum frame size.
+pub const MAX_DEBUG_FRAME_SIZE: usize = 1024;
 
 /// Debug message for eSPI OOB transmission
 #[derive(Clone, Debug)]
 pub struct EspiDebugMessage {
     /// Debug data to send via OOB
-    pub data: heapless::Vec<u8, MAX_OOB_DEBUG_SIZE>,
+    pub data: heapless::Vec<u8, MAX_DEBUG_FRAME_SIZE>,
     /// Port number for OOB transmission (0 for debug)
     pub port: u8,
 }
@@ -63,38 +64,31 @@ impl Default for EspiTransport {
 }
 
 impl DebugTransport for EspiTransport {
-    #[allow(clippy::manual_async_fn)]
     fn send(&mut self, data: &[u8]) -> impl Future<Output = Result<(), TransportError>> {
+        // Copy into an owned vector before the async block to avoid borrowing across await
+        let mut frame: heapless::Vec<u8, MAX_DEBUG_FRAME_SIZE> = heapless::Vec::new();
+        let too_large = frame.extend_from_slice(data).is_err();
+        let len = data.len();
+
         async move {
-            defmt::debug!("eSPI transport sending {} bytes via OOB", data.len());
-
-            // Split data into OOB-sized chunks and enqueue
-            for chunk in data.chunks(MAX_OOB_DEBUG_SIZE) {
-                let mut debug_data = heapless::Vec::new();
-                if debug_data.extend_from_slice(chunk).is_err() {
-                    defmt::error!("Failed to create debug message - chunk too large");
-                    return Err(TransportError::ConnectionError);
-                }
-
-                let debug_msg = EspiDebugMessage {
-                    data: debug_data,
-                    port: 0, // Use port 0 for debug messages
-                };
-
-                // Use try_send to avoid blocking - if channel is full, drop the message
-                match DEBUG_CHANNEL.try_send(debug_msg) {
-                    Ok(()) => {
-                        defmt::debug!("Debug message queued for OOB transmission");
-                    }
-                    Err(_) => {
-                        defmt::warn!("Debug channel full, dropping message");
-                        return Err(TransportError::BufferFull);
-                    }
-                }
+            if too_large {
+                defmt::warn!("Debug frame too large for single-message handoff ({} bytes)", len);
+                return Err(TransportError::BufferFull);
             }
 
-            defmt::debug!("All debug chunks queued successfully");
-            Ok(())
+            defmt::debug!("eSPI transport enqueuing {}-byte frame without chunking", len);
+            let debug_msg = EspiDebugMessage { data: frame, port: 0 };
+
+            match DEBUG_CHANNEL.try_send(debug_msg) {
+                Ok(()) => {
+                    defmt::debug!("Debug frame queued for OOB service");
+                    Ok(())
+                }
+                Err(_) => {
+                    defmt::warn!("Debug channel full, dropping frame");
+                    Err(TransportError::BufferFull)
+                }
+            }
         }
     }
 }

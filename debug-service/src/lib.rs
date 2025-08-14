@@ -67,6 +67,7 @@ impl Service {
         defmt::debug!("Debug service: GET_DATA_BUFFER received; draining defmt buffer");
 
         use crate::get_buffer_consumer;
+        use crate::transport::espi::MAX_DEBUG_FRAME_SIZE;
         use crate::transport::espi::{EspiDebugMessage, get_debug_channel_sender};
 
         let sender = get_debug_channel_sender();
@@ -75,22 +76,27 @@ impl Service {
         let mut drained_frames: u32 = 0;
         let mut drained_bytes: usize = 0;
 
-        while let Ok(frame) = consumer.read() {
-            let mut remaining = frame.as_ref();
+        loop {
+            let frame = match consumer.read() {
+                Ok(f) => f,
+                Err(_) => break,
+            };
+            let data = frame.as_ref();
             drained_frames += 1;
-            drained_bytes += remaining.len();
+            drained_bytes += data.len();
 
-            // Chunk into OOB-sized packets (64 bytes)
-            while !remaining.is_empty() {
-                let take = remaining.len().min(64);
-                let mut data: heapless::Vec<u8, 64> = heapless::Vec::new();
-                let _ = data.extend_from_slice(&remaining[..take]);
-                remaining = &remaining[take..];
-
-                let msg = EspiDebugMessage { data, port: 0 };
+            // Send the entire frame as a single message; downstream will handle splitting
+            let mut vec: heapless::Vec<u8, { MAX_DEBUG_FRAME_SIZE }> = heapless::Vec::new();
+            if vec.extend_from_slice(data).is_ok() {
+                let msg = EspiDebugMessage { data: vec, port: 0 };
                 if sender.try_send(msg).is_err() {
-                    defmt::warn!("Mock eSPI channel full; dropping chunk");
+                    defmt::warn!("Mock eSPI channel full; dropping frame");
                 }
+            } else {
+                defmt::warn!(
+                    "Defmt frame ({} bytes) exceeds MAX_DEBUG_FRAME_SIZE; dropping",
+                    data.len()
+                );
             }
 
             frame.release();
@@ -180,6 +186,7 @@ pub async fn debug_service_data_ready_task() {
 // defmt bytes are committed to the ring buffer.
 #[embassy_executor::task]
 pub async fn send_data_ready_to_mock_espi() {
+    use crate::transport::espi::MAX_DEBUG_FRAME_SIZE;
     use crate::transport::espi::{EspiDebugMessage, get_debug_channel_sender};
 
     defmt::debug!("Starting DATA_READY forwarder to mock eSPI service");
@@ -190,7 +197,7 @@ pub async fn send_data_ready_to_mock_espi() {
         debug_data_available_signal().wait().await;
 
         // Build a small payload and try to send without blocking
-        let mut payload: heapless::Vec<u8, 64> = heapless::Vec::new();
+        let mut payload: heapless::Vec<u8, { MAX_DEBUG_FRAME_SIZE }> = heapless::Vec::new();
         let _ = payload.extend_from_slice(b"DATA_READY");
         let msg = EspiDebugMessage { data: payload, port: 0 };
 

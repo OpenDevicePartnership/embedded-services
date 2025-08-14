@@ -129,6 +129,6 @@ mod tests {
         let (_frames, bytes) = single_drain_into(&mut staging);
 
         assert!(bytes as usize <= staging.len());
-        assert!(staging.len() > 0, "expected staged data");
+        assert!(!staging.is_empty(), "expected staged data");
     }
 }

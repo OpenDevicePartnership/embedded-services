@@ -211,12 +211,12 @@ pub async fn defmt_bytes_send_task_impl<T: crate::transport::DebugTransport>(mut
         );
 
         // Send the frame data via the configured transport
-        defmt::debug!("About to send frame via OOB transport");
+        defmt::debug!("About to send frame via transport");
 
         if let Err(err) = transport.send(frame.deref()).await {
             defmt::warn!("Transport error: {:?}", defmt::Debug2Format(&err));
         } else {
-            defmt::debug!("Frame sent successfully via OOB transport");
+            defmt::debug!("Frame sent successfully via transport");
         }
 
         // Always release the frame to continue processing
@@ -238,6 +238,7 @@ pub fn debug_data_available_signal() -> &'static Signal<CriticalSectionRawMutex,
 
 /// Test-only helper to enqueue bytes into the ring buffer as a single frame.
 #[cfg(any(test, feature = "test"))]
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn enqueue_test_bytes(bytes: &[u8]) {
     critical_section::with(|_| unsafe {
         let mut remaining = bytes;
@@ -278,14 +279,9 @@ mod tests {
         let mut total = 0usize;
 
         // Drain any available frames non-blocking
-        loop {
-            match consumer.read() {
-                Ok(frame) => {
-                    total += frame.len();
-                    frame.release();
-                }
-                Err(_) => break,
-            }
+        while let Ok(frame) = consumer.read() {
+            total += frame.len();
+            frame.release();
         }
 
         // We expect that at least one frame was produced
