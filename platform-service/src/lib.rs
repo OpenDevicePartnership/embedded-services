@@ -1,8 +1,5 @@
 #![no_std]
 
-/// NVRAM platform service abstraction
-pub mod nvram;
-
 /// CRC service abstraction
 pub mod embedded_crc;
 
