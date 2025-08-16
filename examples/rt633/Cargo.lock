@@ -736,6 +736,7 @@ dependencies = [
  "cortex-m-rt",
  "defmt 0.3.100",
  "embassy-executor",
+ "embassy-futures",
  "embassy-imxrt",
  "embassy-sync",
  "embassy-time",

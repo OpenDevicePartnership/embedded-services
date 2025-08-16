@@ -388,25 +388,26 @@ impl<'a> Context<'a> {
     pub(super) async fn process_acpi_cmd(&self, acpi_msg: AcpiMsgComms<'a>) {
         if let Some(fg) = self.get_fuel_gauge(DeviceId(0)) {
             let payload_len = acpi_msg.payload_len;
+            let port_id = acpi_msg.port_id;
             let access = acpi_msg.payload.borrow();
             let raw = access.borrow();
             if let Ok(payload) = crate::acpi::Payload::from_raw(raw, payload_len) {
                 match payload.command {
-                    crate::acpi::AcpiCmd::GetBix => self.bix_handler(fg, &payload).await,
-                    crate::acpi::AcpiCmd::GetBst => self.bst_handler(fg, &payload).await,
-                    crate::acpi::AcpiCmd::GetPsr => self.psr_handler(fg, &payload).await,
-                    crate::acpi::AcpiCmd::GetPif => self.pif_handler(fg, &payload).await,
-                    crate::acpi::AcpiCmd::GetBps => self.bps_handler(fg, &payload).await,
-                    crate::acpi::AcpiCmd::SetBtp => self.btp_handler(fg, &payload).await,
-                    crate::acpi::AcpiCmd::SetBpt => self.bpt_handler(fg, &payload).await,
-                    crate::acpi::AcpiCmd::GetBpc => self.bpc_handler(fg, &payload).await,
-                    crate::acpi::AcpiCmd::SetBmc => self.bmc_handler(fg, &payload).await,
-                    crate::acpi::AcpiCmd::GetBmd => self.bmd_handler(fg, &payload).await,
-                    crate::acpi::AcpiCmd::GetBct => self.bct_handler(fg, &payload).await,
-                    crate::acpi::AcpiCmd::GetBtm => self.btm_handler(fg, &payload).await,
-                    crate::acpi::AcpiCmd::SetBms => self.bms_handler(fg, &payload).await,
-                    crate::acpi::AcpiCmd::SetBma => self.bma_handler(fg, &payload).await,
-                    crate::acpi::AcpiCmd::GetSta => self.sta_handler(fg, &payload).await,
+                    crate::acpi::AcpiCmd::GetBix => self.bix_handler(fg, &payload, port_id).await,
+                    crate::acpi::AcpiCmd::GetBst => self.bst_handler(fg, &payload, port_id).await,
+                    crate::acpi::AcpiCmd::GetPsr => self.psr_handler(fg, &payload, port_id).await,
+                    crate::acpi::AcpiCmd::GetPif => self.pif_handler(fg, &payload, port_id).await,
+                    crate::acpi::AcpiCmd::GetBps => self.bps_handler(fg, &payload, port_id).await,
+                    crate::acpi::AcpiCmd::SetBtp => self.btp_handler(fg, &payload, port_id).await,
+                    crate::acpi::AcpiCmd::SetBpt => self.bpt_handler(fg, &payload, port_id).await,
+                    crate::acpi::AcpiCmd::GetBpc => self.bpc_handler(fg, &payload, port_id).await,
+                    crate::acpi::AcpiCmd::SetBmc => self.bmc_handler(fg, &payload, port_id).await,
+                    crate::acpi::AcpiCmd::GetBmd => self.bmd_handler(fg, &payload, port_id).await,
+                    crate::acpi::AcpiCmd::GetBct => self.bct_handler(fg, &payload, port_id).await,
+                    crate::acpi::AcpiCmd::GetBtm => self.btm_handler(fg, &payload, port_id).await,
+                    crate::acpi::AcpiCmd::SetBms => self.bms_handler(fg, &payload, port_id).await,
+                    crate::acpi::AcpiCmd::SetBma => self.bma_handler(fg, &payload, port_id).await,
+                    crate::acpi::AcpiCmd::GetSta => self.sta_handler(fg, &payload, port_id).await,
                 }
             } else {
                 error!("Battery service: malformed ACPI payload!");
