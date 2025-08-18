@@ -12,7 +12,7 @@ use embedded_services::ipc::deferred;
 use embedded_services::power::policy::device::StateKind;
 use embedded_services::power::policy::{self, action};
 use embedded_services::transformers::object::{Object, RefGuard, RefMutGuard};
-use embedded_services::type_c::controller::{self, Controller, PortStatus};
+use embedded_services::type_c::controller::{self, AttnVdm, Controller, OtherVdm, PortStatus};
 use embedded_services::type_c::event::{PortEvent, PortNotificationSingle, PortPending, PortStatusChanged};
 use embedded_services::GlobalRawMutex;
 use embedded_services::SyncCell;
@@ -69,6 +69,14 @@ pub enum Event<'a> {
     PortStatusChanged(LocalPortId, PortStatusChanged),
     /// PD alert
     PdAlert(LocalPortId, Ado),
+    /// VDM entered
+    VdmEntered(LocalPortId, OtherVdm),
+    /// VDM exited
+    VdmExited(LocalPortId, OtherVdm),
+    /// VDM attention received
+    VdmAttnReceived(LocalPortId, AttnVdm),
+    /// VDM other received
+    VdmOtherReceived(LocalPortId, OtherVdm),
     /// Other port notification
     OtherPortNotification(LocalPortId, PortNotificationSingle),
     /// Power policy command received
@@ -315,6 +323,62 @@ impl<'a, const N: usize, C: Controller, BACK: Backing<'a>, V: FwOfferValidator> 
         Ok(())
     }
 
+    /// Process other vdm
+    async fn process_other_vdm(
+        &self,
+        port: LocalPortId,
+        event: Event<'_>,
+        _data: OtherVdm,
+    ) -> Result<(), Error<<C as Controller>::BusError>> {
+        let port_index = port.0 as usize;
+        if port_index >= N {
+            error!("Invalid port {}", port_index);
+            return Err(PdError::InvalidPort.into());
+        }
+
+        // Pend the notification
+        let mut port_event = self.active_events[port_index].get();
+        match event {
+            Event::VdmEntered(_port, _data) => port_event.notification.set_custom_mode_entered(true),
+            Event::VdmExited(_port, _data) => port_event.notification.set_custom_mode_exited(true),
+            Event::VdmOtherReceived(_port, _data) => port_event.notification.set_custom_mode_other_vdm_received(true),
+            _ => {
+                //debug!("event no need to handle here: {:?}", event);
+                return Ok(());
+            }
+        }
+        self.active_events[port_index].set(port_event);
+
+        // Pend this port
+        let mut pending = PortPending::none();
+        pending.pend_port(port.0 as usize);
+        self.pd_controller.notify_ports(pending).await;
+        Ok(())
+    }
+
+    async fn process_attn_vdm(
+        &self,
+        port: LocalPortId,
+        _data: AttnVdm,
+    ) -> Result<(), Error<<C as Controller>::BusError>> {
+        let port_index = port.0 as usize;
+        if port_index >= N {
+            error!("Invalid port {}", port_index);
+            return Err(PdError::InvalidPort.into());
+        }
+
+        // Pend the notification
+        let mut event = self.active_events[port_index].get();
+        event.notification.set_custom_mode_attention_received(true);
+        self.active_events[port_index].set(event);
+
+        // Pend this port
+        let mut pending = PortPending::none();
+        pending.pend_port(port.0 as usize);
+        self.pd_controller.notify_ports(pending).await;
+        Ok(())
+    }
+
     /// Wait for a pending port event
     async fn wait_port_pending(
         &self,
@@ -444,6 +508,10 @@ impl<'a, const N: usize, C: Controller, BACK: Backing<'a>, V: FwOfferValidator> 
                 }
             },
             Event::PdAlert(port, alert) => self.process_pd_alert(port, alert).await,
+            Event::VdmEntered(port, data) | Event::VdmExited(port, data) | Event::VdmOtherReceived(port, data) => {
+                self.process_other_vdm(port, event, data).await
+            }
+            Event::VdmAttnReceived(port, data) => self.process_attn_vdm(port, data).await,
             Event::OtherPortNotification(port, notification) => {
                 self.process_other_port_notification(port, notification).await
             }

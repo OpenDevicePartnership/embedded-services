@@ -1,7 +1,8 @@
 //! Message definitions for external type-C commands
 use embedded_usb_pd::{GlobalPortId, PdError, PortId as LocalPortId, ucsi};
 
-use crate::type_c::{ATTN_VDM_LEN, OTHER_VDM_LEN, controller::execute_external_ucsi_command};
+use crate::type_c::controller::execute_external_ucsi_command;
+use crate::type_c::controller::{AttnVdm, OtherVdm};
 
 use super::{
     ControllerId,
@@ -95,9 +96,9 @@ pub enum PortResponseData {
     /// Get retimer fw update status
     RetimerFwUpdateGetState(RetimerFwUpdateState),
     /// Get other VDM data
-    OtherVdm([u8; OTHER_VDM_LEN]),
+    OtherVdm(OtherVdm),
     /// Get attention VDM data
-    AttnVdm([u8; ATTN_VDM_LEN]),
+    AttnVdm(AttnVdm),
 }
 
 /// Port-specific command response
@@ -308,7 +309,7 @@ pub async fn execute_ucsi_command(command: ucsi::Command) -> Result<UcsiResponse
 }
 
 /// Get the Rx Other Vdm data of the given port
-pub async fn get_other_vdm(port: GlobalPortId) -> Result<[u8; OTHER_VDM_LEN], PdError> {
+pub async fn get_other_vdm(port: GlobalPortId) -> Result<OtherVdm, PdError> {
     match execute_external_port_command(Command::Port(PortCommand {
         port,
         data: PortCommandData::GetOtherVdm,
@@ -321,7 +322,7 @@ pub async fn get_other_vdm(port: GlobalPortId) -> Result<[u8; OTHER_VDM_LEN], Pd
 }
 
 /// Get the Rx Attention Vdm data of the given port
-pub async fn get_attn_vdm(port: GlobalPortId) -> Result<[u8; ATTN_VDM_LEN], PdError> {
+pub async fn get_attn_vdm(port: GlobalPortId) -> Result<AttnVdm, PdError> {
     match execute_external_port_command(Command::Port(PortCommand {
         port,
         data: PortCommandData::GetAttnVdm,

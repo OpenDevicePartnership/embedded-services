@@ -98,6 +98,46 @@ impl Default for PortStatus {
     }
 }
 
+/// Other Vdm data
+#[derive(Copy, Clone, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct OtherVdm {
+    /// Other VDM data
+    pub data: [u8; OTHER_VDM_LEN],
+}
+
+impl From<OtherVdm> for [u8; OTHER_VDM_LEN] {
+    fn from(vdm: OtherVdm) -> Self {
+        vdm.data
+    }
+}
+
+impl From<[u8; OTHER_VDM_LEN]> for OtherVdm {
+    fn from(data: [u8; OTHER_VDM_LEN]) -> Self {
+        Self { data }
+    }
+}
+
+/// Attention Vdm data
+#[derive(Copy, Clone, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct AttnVdm {
+    /// Attention VDM data
+    pub data: [u8; ATTN_VDM_LEN],
+}
+
+impl From<AttnVdm> for [u8; ATTN_VDM_LEN] {
+    fn from(vdm: AttnVdm) -> Self {
+        vdm.data
+    }
+}
+
+impl From<[u8; ATTN_VDM_LEN]> for AttnVdm {
+    fn from(data: [u8; ATTN_VDM_LEN]) -> Self {
+        Self { data }
+    }
+}
+
 /// Port-specific command data
 #[derive(Copy, Clone, Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
@@ -165,9 +205,9 @@ pub enum PortResponseData {
     /// PD alert
     PdAlert(Option<Ado>),
     /// Get other VDM
-    OtherVdm([u8; OTHER_VDM_LEN]),
+    OtherVdm(OtherVdm),
     /// Get attention VDM
-    AttnVdm([u8; ATTN_VDM_LEN]),
+    AttnVdm(AttnVdm),
 }
 
 impl PortResponseData {
@@ -421,15 +461,9 @@ pub trait Controller {
         data: &[u8],
     ) -> impl Future<Output = Result<(), Error<Self::BusError>>>;
     /// Get the Rx Other VDM data for the given port
-    fn get_other_vdm(
-        &mut self,
-        port: LocalPortId,
-    ) -> impl Future<Output = Result<[u8; OTHER_VDM_LEN], Error<Self::BusError>>>;
+    fn get_other_vdm(&mut self, port: LocalPortId) -> impl Future<Output = Result<OtherVdm, Error<Self::BusError>>>;
     /// Get the Rx Attention VDM data for the given port
-    fn get_attn_vdm(
-        &mut self,
-        port: LocalPortId,
-    ) -> impl Future<Output = Result<[u8; ATTN_VDM_LEN], Error<Self::BusError>>>;
+    fn get_attn_vdm(&mut self, port: LocalPortId) -> impl Future<Output = Result<AttnVdm, Error<Self::BusError>>>;
 }
 
 /// Internal context for managing PD controllers
@@ -867,7 +901,7 @@ impl ContextToken {
     }
 
     /// Get the other vdm for the given port
-    pub async fn get_other_vdm(&self, port: GlobalPortId) -> Result<[u8; OTHER_VDM_LEN], PdError> {
+    pub async fn get_other_vdm(&self, port: GlobalPortId) -> Result<OtherVdm, PdError> {
         match self.send_port_command(port, PortCommandData::GetOtherVdm).await? {
             PortResponseData::OtherVdm(vdm) => Ok(vdm),
             r => {
@@ -878,7 +912,7 @@ impl ContextToken {
     }
 
     /// Get the attention vdm for the given port
-    pub async fn get_attn_vdm(&self, port: GlobalPortId) -> Result<[u8; ATTN_VDM_LEN], PdError> {
+    pub async fn get_attn_vdm(&self, port: GlobalPortId) -> Result<AttnVdm, PdError> {
         match self.send_port_command(port, PortCommandData::GetAttnVdm).await? {
             PortResponseData::AttnVdm(vdm) => Ok(vdm),
             r => {

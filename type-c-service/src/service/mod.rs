@@ -11,7 +11,7 @@ use embedded_services::{
     trace,
     type_c::{
         self,
-        controller::PortStatus,
+        controller::{AttnVdm, OtherVdm, PortStatus},
         event::{PortNotificationSingle, PortStatusChanged},
         external,
     },
@@ -83,6 +83,14 @@ pub enum Event<'a> {
     PortStatusChanged(GlobalPortId, PortStatusChanged, PortStatus),
     /// PD alert
     PdAlert(GlobalPortId, Ado),
+    /// VDM entered
+    VdmEntered(GlobalPortId, OtherVdm),
+    /// VDM exited
+    VdmExited(GlobalPortId, OtherVdm),
+    /// VDM attention received
+    VdmAttnReceived(GlobalPortId, AttnVdm),
+    /// VDM other received
+    VdmOtherReceived(GlobalPortId, OtherVdm),
     /// Other port notification
     OtherPortNotification(GlobalPortId, PortNotificationSingle),
     /// External command
@@ -208,6 +216,50 @@ impl<'a> Service<'a> {
                                         continue;
                                     }
                                 }
+                                PortNotificationSingle::CustomModeEntered => {
+                                    match self.context.get_other_vdm(port_id).await {
+                                        Ok(other_vdm) => {
+                                            return Ok(Event::VdmEntered(port_id, other_vdm));
+                                        }
+                                        Err(e) => {
+                                            error!("Port{}: Failed to get other VDM: {:#?}", port_id.0, e);
+                                            continue;
+                                        }
+                                    }
+                                }
+                                PortNotificationSingle::CustomModeExited => {
+                                    match self.context.get_other_vdm(port_id).await {
+                                        Ok(other_vdm) => {
+                                            return Ok(Event::VdmExited(port_id, other_vdm));
+                                        }
+                                        Err(e) => {
+                                            error!("Port{}: Failed to get other VDM: {:#?}", port_id.0, e);
+                                            continue;
+                                        }
+                                    }
+                                }
+                                PortNotificationSingle::CustomModeOtherVdmReceived => {
+                                    match self.context.get_other_vdm(port_id).await {
+                                        Ok(other_vdm) => {
+                                            return Ok(Event::VdmOtherReceived(port_id, other_vdm));
+                                        }
+                                        Err(e) => {
+                                            error!("Port{}: Failed to get other VDM: {:#?}", port_id.0, e);
+                                            continue;
+                                        }
+                                    }
+                                }
+                                PortNotificationSingle::CustomModeAttentionReceived => {
+                                    match self.context.get_attn_vdm(port_id).await {
+                                        Ok(attn_vdm) => {
+                                            return Ok(Event::VdmAttnReceived(port_id, attn_vdm));
+                                        }
+                                        Err(e) => {
+                                            error!("Port{}: Failed to get attention VDM: {:#?}", port_id.0, e);
+                                            continue;
+                                        }
+                                    }
+                                }
                                 _ => {
                                     // Other notifications
                                     trace!("Other port notification: {:?}", notification);
@@ -237,6 +289,26 @@ impl<'a> Service<'a> {
             Event::PdAlert(port, alert) => {
                 // Port notifications currently don't have any processing logic
                 info!("Port{}: Got PD alert: {:?}", port.0, alert);
+                Ok(())
+            }
+            Event::VdmEntered(port, vdm) => {
+                // Port notifications currently don't have any processing logic
+                info!("Port{}: Got VDM entered: {:?}", port.0, vdm);
+                Ok(())
+            }
+            Event::VdmExited(port, vdm) => {
+                // Port notifications currently don't have any processing logic
+                info!("Port{}: Got VDM exited: {:?}", port.0, vdm);
+                Ok(())
+            }
+            Event::VdmAttnReceived(port, vdm) => {
+                // Port notifications currently don't have any processing logic
+                info!("Port{}: Got VDM attention received: {:?}", port.0, vdm);
+                Ok(())
+            }
+            Event::VdmOtherReceived(port, vdm) => {
+                // Port notifications currently don't have any processing logic
+                info!("Port{}: Got VDM other received: {:?}", port.0, vdm);
                 Ok(())
             }
             Event::OtherPortNotification(port, notification) => {
