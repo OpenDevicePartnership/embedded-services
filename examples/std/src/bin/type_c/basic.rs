@@ -2,7 +2,7 @@ use embassy_executor::{Executor, Spawner};
 use embassy_sync::once_lock::OnceLock;
 use embassy_time::Timer;
 use embedded_services::power;
-use embedded_services::type_c::{ControllerId, controller};
+use embedded_services::type_c::{Cached, ControllerId, controller};
 use embedded_usb_pd::ucsi::lpm;
 use embedded_usb_pd::{GlobalPortId, PdError as Error};
 use log::*;
@@ -86,7 +86,7 @@ mod test_controller {
             command: controller::PortCommand,
         ) -> Result<controller::PortResponseData, Error> {
             Ok(match command.data {
-                controller::PortCommandData::PortStatus(true) => {
+                controller::PortCommandData::PortStatus(Cached(true)) => {
                     info!("Port status for port {}", command.port.0);
                     controller::PortResponseData::PortStatus(PortStatus::new())
                 }
@@ -153,10 +153,10 @@ async fn task(spawner: Spawner) {
     let status = context.get_controller_status(CONTROLLER0).await.unwrap();
     info!("Controller 0 status: {status:#?}");
 
-    let status = context.get_port_status(PORT0, true).await.unwrap();
+    let status = context.get_port_status(PORT0, Cached(true)).await.unwrap();
     info!("Port 0 status: {status:#?}");
 
-    let status = context.get_port_status(PORT1, true).await.unwrap();
+    let status = context.get_port_status(PORT1, Cached(true)).await.unwrap();
     info!("Port 1 status: {status:#?}");
 }
 

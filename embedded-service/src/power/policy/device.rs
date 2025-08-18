@@ -181,6 +181,8 @@ impl Device {
     }
 
     /// Create a handler for the command channel
+    ///
+    /// DROP SAFETY: Direct call to deferred channel primitive
     pub async fn receive(&self) -> deferred::Request<'_, GlobalRawMutex, CommandData, InternalResponseData> {
         self.command.receive().await
     }

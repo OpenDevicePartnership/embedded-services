@@ -13,7 +13,7 @@ use embassy_sync::mutex::Mutex;
 use embassy_time::{self as _, Delay};
 use embedded_cfu_protocol::protocol_definitions::{FwUpdateOffer, FwUpdateOfferResponse, FwVersion, HostToken};
 use embedded_services::power::policy::DeviceId as PowerId;
-use embedded_services::type_c::{self, ControllerId};
+use embedded_services::type_c::{self, Cached, ControllerId};
 use embedded_services::{GlobalRawMutex, comms};
 use embedded_services::{error, info};
 use embedded_usb_pd::GlobalPortId;
@@ -227,9 +227,9 @@ async fn main(spawner: Spawner) {
 
     info!("Controller status: {:?}", status);
 
-    let status = type_c::external::get_port_status(PORT0_ID, true).await.unwrap();
+    let status = type_c::external::get_port_status(PORT0_ID, Cached(true)).await.unwrap();
     info!("Port status: {:?}", status);
 
-    let status = type_c::external::get_port_status(PORT1_ID, true).await.unwrap();
+    let status = type_c::external::get_port_status(PORT1_ID, Cached(true)).await.unwrap();
     info!("Port status: {:?}", status);
 }

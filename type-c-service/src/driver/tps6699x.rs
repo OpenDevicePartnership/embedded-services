@@ -7,18 +7,16 @@ use bitfield::bitfield;
 use core::array::from_fn;
 use core::future::Future;
 use core::iter::zip;
-use embassy_futures::select::select;
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use embassy_sync::mutex::Mutex;
-use embassy_sync::signal::Signal;
-use embassy_time::{with_timeout, Delay, Duration, Ticker, TimeoutError};
+use embassy_time::Delay;
 use embedded_cfu_protocol::protocol_definitions::ComponentId;
 use embedded_hal_async::i2c::I2c;
 use embedded_services::cfu::component::CfuDevice;
 use embedded_services::power::policy::{self, PowerCapability};
 use embedded_services::transformers::object::{Object, RefGuard, RefMutGuard};
 use embedded_services::type_c::controller::{self, AttnVdm, Controller, ControllerStatus, OtherVdm, PortStatus};
-use embedded_services::type_c::event::{PortEvent, PortStatusChanged};
+use embedded_services::type_c::event::PortEvent;
 use embedded_services::type_c::{ControllerId, ATTN_VDM_LEN};
 use embedded_services::{debug, error, info, trace, type_c, warn, GlobalRawMutex};
 use embedded_usb_pd::ado::Ado;
@@ -33,7 +31,6 @@ use tps6699x::asynchronous::fw_update::{
 };
 use tps6699x::command::ReturnValue;
 use tps6699x::fw_update::UpdateConfig as FwUpdateConfig;
-use tps6699x::Mode;
 
 type Updater<'a, M, B> = BorrowedUpdaterInProgress<tps6699x_drv::Tps6699x<'a, M, B>>;
 
@@ -50,8 +47,6 @@ struct FwUpdateState<'a, M: RawMutex, B: I2c> {
 
 pub struct Tps6699x<'a, const N: usize, M: RawMutex, B: I2c> {
     port_events: [Mutex<GlobalRawMutex, PortEvent>; N],
-    port_status: [Mutex<GlobalRawMutex, PortStatus>; N],
-    sw_event: Signal<M, ()>,
     tps6699x: Mutex<GlobalRawMutex, tps6699x_drv::Tps6699x<'a, M, B>>,
     update_state: Mutex<GlobalRawMutex, Option<FwUpdateState<'a, M, B>>>,
     /// Firmware update configuration
@@ -62,56 +57,153 @@ impl<'a, const N: usize, M: RawMutex, B: I2c> Tps6699x<'a, N, M, B> {
     pub fn new(tps6699x: tps6699x_drv::Tps6699x<'a, M, B>, fw_update_config: FwUpdateConfig) -> Self {
         Self {
             port_events: [const { Mutex::new(PortEvent::none()) }; N],
-            port_status: [const { Mutex::new(PortStatus::new()) }; N],
-            sw_event: Signal::new(),
             tps6699x: Mutex::new(tps6699x),
             update_state: Mutex::new(None),
             fw_update_config,
         }
     }
 
-    /// Wait for the controller to enter [`Mode::App1`], indefinitely.
-    async fn wait_app1_no_timeout(
+    /// Wait for an event on any port
+    async fn wait_interrupt_event(
         &self,
         tps6699x: &mut tps6699x_drv::Tps6699x<'a, M, B>,
-        period: Duration,
     ) -> Result<(), Error<B::Error>> {
-        let mut ticker = Ticker::every(period);
-        loop {
-            if tps6699x.get_mode().await? == Mode::App1 {
-                return Ok(());
+        let interrupts = tps6699x
+            .wait_interrupt_any(false, from_fn(|_| IntEventBus1::all()))
+            .await;
+
+        for (interrupt, mutex) in zip(interrupts.iter(), self.port_events.iter()) {
+            if *interrupt == IntEventBus1::new_zero() {
+                continue;
             }
 
-            ticker.next().await;
-        }
-    }
+            {
+                let mut event = mutex.lock().await;
+                if interrupt.plug_event() {
+                    debug!("Event: Plug event");
+                    event.status.set_plug_inserted_or_removed(true);
+                }
+                if interrupt.source_caps_received() {
+                    debug!("Event: Source Caps received");
+                    event.status.set_source_caps_received(true);
+                }
 
-    /// Wait for the controller to enter [`Mode::App1`] within `timeout`.
-    async fn wait_app1(&self, tps6699x: &mut tps6699x_drv::Tps6699x<'a, M, B>) -> Result<(), Error<B::Error>> {
-        let timeout = Duration::from_millis(800); // expected duration from power-on to APP1
-        match with_timeout(timeout, self.wait_app1_no_timeout(tps6699x, Duration::from_millis(50))).await {
-            Ok(Ok(())) => Ok(()),
-            Ok(Err(e)) => Err(e),
-            Err(TimeoutError) => {
-                debug!(
-                    "Port not in {:?} after {}ms timeout, waiting for app mode",
-                    Mode::App1,
-                    timeout.as_millis()
-                );
-                Err(Error::Pd(PdError::InvalidMode))
+                if interrupt.sink_ready() {
+                    debug!("Event: Sink ready");
+                    event.status.set_sink_ready(true);
+                }
+
+                if interrupt.new_consumer_contract() {
+                    debug!("Event: New contract as consumer, PD controller act as Sink");
+                    // Port is consumer and power negotiation is complete
+                    event.status.set_new_power_contract_as_consumer(true);
+                }
+
+                if interrupt.new_provider_contract() {
+                    debug!("Event: New contract as provider, PD controller act as source");
+                    // Port is provider and power negotiation is complete
+                    event.status.set_new_power_contract_as_provider(true);
+                }
+
+                if interrupt.power_swap_completed() {
+                    debug!("Event: power swap completed");
+                    event.status.set_power_swap_completed(true);
+                }
+
+                if interrupt.data_swap_completed() {
+                    debug!("Event: data swap completed");
+                    event.status.set_data_swap_completed(true);
+                }
+
+                if interrupt.am_entered() {
+                    debug!("Event: alt mode entered");
+                    event.status.set_alt_mode_entered(true);
+                }
+
+                if interrupt.hard_reset() {
+                    debug!("Event: hard reset");
+                    event.status.set_pd_hard_reset(true);
+                }
+
+                if interrupt.crossbar_error() {
+                    debug!("Event: crossbar error");
+                    event.notification.set_usb_mux_error_recovery(true);
+                }
+
+                if interrupt.usvid_mode_entered() {
+                    debug!("Event: user svid mode entered");
+                    event.notification.set_custom_mode_entered(true);
+                }
+
+                if interrupt.usvid_mode_exited() {
+                    debug!("Event: usvid mode exited");
+                    event.notification.set_custom_mode_exited(true);
+                }
+
+                if interrupt.usvid_attention_vdm_received() {
+                    debug!("Event: user svid attention vdm received");
+                    event.notification.set_custom_mode_attention_received(true);
+                }
+
+                if interrupt.usvid_other_vdm_received() {
+                    debug!("Event: user svid other vdm received");
+                    event.notification.set_custom_mode_other_vdm_received(true);
+                }
+
+                if interrupt.discover_mode_completed() {
+                    debug!("Event: discover mode completed");
+                    event.notification.set_discover_mode_completed(true);
+                }
+
+                if interrupt.dp_sid_status_updated() {
+                    debug!("Event: dp sid status updated");
+                    event.notification.set_dp_status_update(true);
+                }
+
+                if interrupt.alert_message_received() {
+                    debug!("Event: alert message received");
+                    event.notification.set_alert(true);
+                }
             }
         }
+        Ok(())
+    }
+}
+
+impl<const N: usize, M: RawMutex, B: I2c> Controller for Tps6699x<'_, N, M, B> {
+    type BusError = B::Error;
+
+    /// Wait for an event on any port
+    async fn wait_port_event(&mut self) -> Result<(), Error<Self::BusError>> {
+        let mut tps6699x = self
+            .tps6699x
+            .try_lock()
+            .expect("Driver should not have been locked before this, thus infallible");
+        // TODO: combine with `wait_interrupt_event` when removing the tps6699x mutex
+        self.wait_interrupt_event(&mut tps6699x).await
     }
 
-    /// Reads and caches the current status of the port, returns any detected events
-    async fn update_port_status(
-        &self,
-        tps6699x: &mut tps6699x_drv::Tps6699x<'a, M, B>,
-        port: LocalPortId,
-    ) -> Result<PortStatusChanged, Error<B::Error>> {
-        let events = PortStatusChanged::none();
+    /// Returns and clears current events for the given port
+    async fn clear_port_events(&mut self, port: LocalPortId) -> Result<PortEvent, Error<Self::BusError>> {
+        if port.0 >= self.port_events.len() as u8 {
+            return PdError::InvalidPort.into();
+        }
+        let mut guard = self.port_events[port.0 as usize].lock().await;
+        let port_events = *guard;
+        *guard = PortEvent::none();
+        Ok(port_events)
+    }
 
-        self.wait_app1(tps6699x).await?;
+    /// Returns the current status of the port
+    async fn get_port_status(&mut self, port: LocalPortId) -> Result<PortStatus, Error<Self::BusError>> {
+        if port.0 >= N as u8 {
+            return PdError::InvalidPort.into();
+        }
+
+        let mut tps6699x = self
+            .tps6699x
+            .try_lock()
+            .expect("Driver should not have been locked before this, thus infallible");
 
         let status = tps6699x.get_port_status(port).await?;
         trace!("Port{} status: {:#?}", port.0, status);
@@ -229,221 +321,7 @@ impl<'a, const N: usize, M: RawMutex, B: I2c> Tps6699x<'a, N, M, B> {
             debug!("Port{} power path: {:#?}", port.0, port_status.power_path);
         }
 
-        *self.port_status[port.0 as usize].lock().await = port_status;
-        Ok(events)
-    }
-
-    /// Wait for an event on any port
-    async fn wait_interrupt_event(
-        &self,
-        tps6699x: &mut tps6699x_drv::Tps6699x<'a, M, B>,
-    ) -> Result<(), Error<B::Error>> {
-        let interrupts = tps6699x
-            .wait_interrupt_any(false, from_fn(|_| IntEventBus1::all()))
-            .await;
-
-        for (interrupt, mutex) in zip(interrupts.iter(), self.port_events.iter()) {
-            if *interrupt == IntEventBus1::new_zero() {
-                continue;
-            }
-
-            {
-                let mut event = mutex.lock().await;
-                if interrupt.plug_event() {
-                    debug!("Event: Plug event");
-                    event.status.set_plug_inserted_or_removed(true);
-                }
-                if interrupt.source_caps_received() {
-                    debug!("Event: Source Caps received");
-                    event.status.set_source_caps_received(true);
-                }
-
-                if interrupt.sink_ready() {
-                    debug!("Event: Sink ready");
-                    event.status.set_sink_ready(true);
-                }
-
-                if interrupt.new_consumer_contract() {
-                    debug!("Event: New contract as consumer, PD controller act as Sink");
-                    // Port is consumer and power negotiation is complete
-                    event.status.set_new_power_contract_as_consumer(true);
-                }
-
-                if interrupt.new_provider_contract() {
-                    debug!("Event: New contract as provider, PD controller act as source");
-                    // Port is provider and power negotiation is complete
-                    event.status.set_new_power_contract_as_provider(true);
-                }
-
-                if interrupt.power_swap_completed() {
-                    debug!("Event: power swap completed");
-                    event.status.set_power_swap_completed(true);
-                }
-
-                if interrupt.data_swap_completed() {
-                    debug!("Event: data swap completed");
-                    event.status.set_data_swap_completed(true);
-                }
-
-                if interrupt.am_entered() {
-                    debug!("Event: alt mode entered");
-                    event.status.set_alt_mode_entered(true);
-                }
-
-                if interrupt.hard_reset() {
-                    debug!("Event: hard reset");
-                    event.status.set_pd_hard_reset(true);
-                }
-
-                if interrupt.crossbar_error() {
-                    debug!("Event: crossbar error");
-                    event.notification.set_usb_mux_error_recovery(true);
-                }
-
-                if interrupt.usvid_mode_entered() {
-                    debug!("Event: user svid mode entered");
-                    event.notification.set_custom_mode_entered(true);
-                }
-
-                if interrupt.usvid_mode_exited() {
-                    debug!("Event: usvid mode exited");
-                    event.notification.set_custom_mode_exited(true);
-                }
-
-                if interrupt.usvid_attention_vdm_received() {
-                    debug!("Event: user svid attention vdm received");
-                    event.notification.set_custom_mode_attention_received(true);
-                }
-
-                if interrupt.usvid_other_vdm_received() {
-                    debug!("Event: user svid other vdm received");
-                    event.notification.set_custom_mode_other_vdm_received(true);
-                }
-
-                if interrupt.discover_mode_completed() {
-                    debug!("Event: discover mode completed");
-                    event.notification.set_discover_mode_completed(true);
-                }
-
-                if interrupt.dp_sid_status_updated() {
-                    debug!("Event: dp sid status updated");
-                    event.notification.set_dp_status_update(true);
-                }
-
-                if interrupt.alert_message_received() {
-                    debug!("Event: alert message received");
-                    event.notification.set_alert(true);
-                }
-            }
-        }
-        Ok(())
-    }
-
-    /// Wait for a software event
-    async fn wait_sw_event(&self) {
-        self.sw_event.wait().await;
-    }
-
-    /// Signal an event on the given port
-    async fn signal_event(&self, port: LocalPortId, event: PortEvent) {
-        if port.0 >= self.port_events.len() as u8 {
-            return;
-        }
-
-        {
-            let mut guard = self.port_events[port.0 as usize].lock().await;
-            let current = *guard;
-            *guard = current.union(event);
-        }
-        self.sw_event.signal(());
-    }
-}
-
-impl<const N: usize, M: RawMutex, B: I2c> Controller for Tps6699x<'_, N, M, B> {
-    type BusError = B::Error;
-
-    /// Controller specific initialization
-    async fn sync_state(&mut self) -> Result<(), Error<Self::BusError>> {
-        for i in 0..N {
-            let port = LocalPortId(i as u8);
-            let event: PortStatusChanged;
-            {
-                let mut tps6699x = self
-                    .tps6699x
-                    .try_lock()
-                    .expect("Driver should not have been locked before this, thus infallible");
-                event = self.update_port_status(&mut tps6699x, port).await?;
-            }
-            self.signal_event(port, event.into()).await;
-        }
-
-        Ok(())
-    }
-
-    /// Wait for an event on any port
-    async fn wait_port_event(&mut self) -> Result<(), Error<Self::BusError>> {
-        let mut tps6699x = self
-            .tps6699x
-            .try_lock()
-            .expect("Driver should not have been locked before this, thus infallible");
-        let _ = select(self.wait_interrupt_event(&mut tps6699x), self.wait_sw_event()).await;
-
-        for (i, mutex) in self.port_events.iter().enumerate() {
-            let port = LocalPortId(i as u8);
-
-            let mut guard = mutex.lock().await;
-
-            let event = guard.union(self.update_port_status(&mut tps6699x, port).await?.into());
-
-            // TODO: We get interrupts for certain status changes that don't currently map to a generic port event
-            // Enable this when those get fleshed out
-            // Ignore empty events
-            /*if event == PortEventKind::NONE {
-                continue;
-            }*/
-
-            trace!("Port{} event: {:#?}", i, event);
-            *guard = event;
-        }
-        Ok(())
-    }
-
-    /// Returns and clears current events for the given port
-    async fn clear_port_events(&mut self, port: LocalPortId) -> Result<PortEvent, Error<Self::BusError>> {
-        if port.0 >= self.port_events.len() as u8 {
-            return PdError::InvalidPort.into();
-        }
-        let mut guard = self.port_events[port.0 as usize].lock().await;
-        let port_events = *guard;
-        *guard = PortEvent::none();
-        Ok(port_events)
-    }
-
-    /// Returns the current status of the port
-    async fn get_port_status(
-        &mut self,
-        port: LocalPortId,
-        cached: bool,
-    ) -> Result<type_c::controller::PortStatus, Error<Self::BusError>> {
-        if port.0 >= self.port_status.len() as u8 {
-            return PdError::InvalidPort.into();
-        }
-
-        // sync port status
-        if !cached {
-            debug!("update port status");
-
-            let mut tps6699x = self
-                .tps6699x
-                .try_lock()
-                .expect("Driver should not have been locked before this, thus infallible");
-
-            let _ = self.update_port_status(&mut tps6699x, port).await;
-        } else {
-            debug!("using cached port status");
-        }
-
-        Ok(*self.port_status[port.0 as usize].lock().await)
+        Ok(port_status)
     }
 
     async fn get_rt_fw_update_status(

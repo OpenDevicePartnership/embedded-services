@@ -3,6 +3,7 @@ use embassy_sync::pubsub::WaitResult;
 use embassy_time::{Duration, Timer};
 use embedded_services::debug;
 use embedded_services::type_c::controller::{InternalResponseData, Response};
+use embedded_services::type_c::Cached;
 use embedded_usb_pd::constants::{T_SRC_TRANS_REQ_EPR_MS, T_SRC_TRANS_REQ_SPR_MS};
 use embedded_usb_pd::ucsi;
 
@@ -46,9 +47,9 @@ impl<'a, const N: usize, C: Controller, BACK: Backing<'a>, V: FwOfferValidator> 
             return Err(PdError::InvalidPort);
         }
 
-        let deadline = &mut state.sink_ready_deadline[port.0 as usize];
+        let deadline = &mut state.port_states[port.0 as usize].sink_ready_deadline;
 
-        if new_contract {
+        if new_contract && !sink_ready {
             // Start the timeout
             let timeout_ms = if status.epr {
                 T_SRC_TRANS_REQ_EPR_MS
@@ -57,7 +58,9 @@ impl<'a, const N: usize, C: Controller, BACK: Backing<'a>, V: FwOfferValidator> 
             };
             debug!("Port{}: Sink ready timeout started for {}ms", port.0, timeout_ms);
             *deadline = Some(Instant::now() + Duration::from_millis(timeout_ms as u64));
-        } else if !status.is_connected() || status.available_sink_contract.is_none() || sink_ready {
+        } else if deadline.is_some()
+            && (!status.is_connected() || status.available_sink_contract.is_none() || sink_ready)
+        {
             // Clear the timeout
             debug!("Port{}: Sink ready timeout cleared", port.0);
             *deadline = None;
@@ -66,18 +69,21 @@ impl<'a, const N: usize, C: Controller, BACK: Backing<'a>, V: FwOfferValidator> 
     }
 
     /// Wait for a sink ready timeout and return the port that has timed out.
+    ///
+    /// DROP SAFETY: No state to restore
     pub(super) async fn wait_sink_ready_timeout(&self) -> LocalPortId {
         let futures: [_; N] = from_fn(|i| async move {
-            let deadline = self.state.lock().await.sink_ready_deadline[i];
+            let deadline = self.state.lock().await.port_states[i].sink_ready_deadline;
             if let Some(deadline) = deadline {
                 Timer::at(deadline).await;
                 debug!("Port{}: Sink ready timeout reached", i);
-                self.state.lock().await.sink_ready_deadline[i] = None;
+                self.state.lock().await.port_states[i].sink_ready_deadline = None;
             } else {
                 pending::<()>().await;
             }
         });
 
+        // DROP SAFETY: Select over drop safe futures
         let (_, port_index) = select_array(futures).await;
         LocalPortId(port_index as u8)
     }
@@ -130,6 +136,28 @@ impl<'a, const N: usize, C: Controller, BACK: Backing<'a>, V: FwOfferValidator> 
         }
     }
 
+    async fn process_get_port_status(
+        &self,
+        controller: &mut C,
+        state: &mut InternalState<N>,
+        local_port: LocalPortId,
+        cached: Cached,
+    ) -> Result<controller::PortResponseData, PdError> {
+        if cached.0 {
+            Ok(controller::PortResponseData::PortStatus(
+                state.port_states[local_port.0 as usize].status,
+            ))
+        } else {
+            match controller.get_port_status(local_port).await {
+                Ok(status) => Ok(controller::PortResponseData::PortStatus(status)),
+                Err(e) => match e {
+                    Error::Bus(_) => Err(PdError::Failed),
+                    Error::Pd(e) => Err(e),
+                },
+            }
+        }
+    }
+
     /// Handle a port command
     async fn process_port_command(
         &self,
@@ -150,18 +178,12 @@ impl<'a, const N: usize, C: Controller, BACK: Backing<'a>, V: FwOfferValidator> 
         let local_port = local_port.unwrap();
         controller::Response::Port(match command.data {
             controller::PortCommandData::PortStatus(cached) => {
-                match controller.get_port_status(local_port, cached).await {
-                    Ok(status) => Ok(controller::PortResponseData::PortStatus(status)),
-                    Err(e) => match e {
-                        Error::Bus(_) => Err(PdError::Failed),
-                        Error::Pd(e) => Err(e),
-                    },
-                }
+                self.process_get_port_status(controller, state, local_port, cached)
+                    .await
             }
             controller::PortCommandData::ClearEvents => {
                 let port_index = local_port.0 as usize;
-                let event = self.active_events[port_index].get();
-                self.active_events[port_index].set(PortEvent::none());
+                let event = core::mem::take(&mut state.port_states[port_index].pending_events);
                 Ok(controller::PortResponseData::ClearEvents(event))
             }
             controller::PortCommandData::RetimerFwUpdateGetState => {
@@ -276,7 +298,7 @@ impl<'a, const N: usize, C: Controller, BACK: Backing<'a>, V: FwOfferValidator> 
                 controller::Response::Controller(status.map(InternalResponseData::Status).map_err(|_| PdError::Failed))
             }
             controller::InternalCommandData::SyncState => {
-                let result = controller.sync_state().await;
+                let result = self.sync_state_internal(controller, state).await;
                 controller::Response::Controller(
                     result
                         .map(|_| InternalResponseData::Complete)

@@ -1,8 +1,10 @@
 //! Message definitions for external type-C commands
 use embedded_usb_pd::{GlobalPortId, PdError, PortId as LocalPortId, ucsi};
 
-use crate::type_c::controller::execute_external_ucsi_command;
-use crate::type_c::controller::{AttnVdm, OtherVdm};
+use crate::type_c::{
+    Cached,
+    controller::{AttnVdm, OtherVdm, execute_external_ucsi_command},
+};
 
 use super::{
     ControllerId,
@@ -50,7 +52,7 @@ pub type ControllerResponse<'a> = Result<ControllerResponseData<'a>, PdError>;
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum PortCommandData {
     /// Get port status. The `bool` argument indicates whether to use cached data or force a fetch of register values.
-    PortStatus(bool),
+    PortStatus(Cached),
     /// Get retimer fw update status
     RetimerFwUpdateGetState,
     /// Set retimer fw update status
@@ -141,7 +143,7 @@ pub enum Response<'a> {
 /// Get the status of the given port.
 ///
 /// Use the `cached` argument to specify whether to use cached data or force a fetch of register values.
-pub async fn get_port_status(port: GlobalPortId, cached: bool) -> Result<PortStatus, PdError> {
+pub async fn get_port_status(port: GlobalPortId, cached: Cached) -> Result<PortStatus, PdError> {
     match execute_external_port_command(Command::Port(PortCommand {
         port,
         data: PortCommandData::PortStatus(cached),
@@ -159,7 +161,7 @@ pub async fn get_port_status(port: GlobalPortId, cached: bool) -> Result<PortSta
 pub async fn get_controller_port_status(
     controller: ControllerId,
     port: LocalPortId,
-    cached: bool,
+    cached: Cached,
 ) -> Result<PortStatus, PdError> {
     let global_port = controller_port_to_global_id(controller, port).await?;
     get_port_status(global_port, cached).await

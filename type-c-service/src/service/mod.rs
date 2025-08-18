@@ -3,7 +3,6 @@ use embassy_sync::{
     mutex::Mutex,
     pubsub::{DynImmediatePublisher, DynSubscriber},
 };
-use embedded_services::power::policy as power_policy;
 use embedded_services::{
     comms::{self, EndpointID, Internal},
     debug, error, info, intrusive_list,
@@ -17,6 +16,7 @@ use embedded_services::{
     },
     GlobalRawMutex,
 };
+use embedded_services::{power::policy as power_policy, type_c::Cached};
 use embedded_usb_pd::ado::Ado;
 use embedded_usb_pd::GlobalPortId;
 use embedded_usb_pd::PdError as Error;
@@ -203,7 +203,7 @@ impl<'a> Service<'a> {
                         match event {
                             PortEventVariant::StatusChanged(status_event) => {
                                 // Return a port status changed event
-                                let status = self.context.get_port_status(port_id, true).await?;
+                                let status = self.context.get_port_status(port_id, Cached(true)).await?;
                                 return Ok(Event::PortStatusChanged(port_id, status_event, status));
                             }
                             PortEventVariant::Notification(notification) => match notification {

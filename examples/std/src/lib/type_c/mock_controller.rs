@@ -115,10 +115,6 @@ impl<'a> Controller<'a> {
 impl embedded_services::type_c::controller::Controller for Controller<'_> {
     type BusError = ();
 
-    async fn sync_state(&mut self) -> Result<(), Error<Self::BusError>> {
-        Ok(())
-    }
-
     async fn wait_port_event(&mut self) -> Result<(), Error<Self::BusError>> {
         let events = self.state.events.wait().await;
         trace!("Port event: {events:#?}");
@@ -133,11 +129,7 @@ impl embedded_services::type_c::controller::Controller for Controller<'_> {
         Ok(events)
     }
 
-    async fn get_port_status(
-        &mut self,
-        _port: LocalPortId,
-        _cached: bool,
-    ) -> Result<PortStatus, Error<Self::BusError>> {
+    async fn get_port_status(&mut self, _port: LocalPortId) -> Result<PortStatus, Error<Self::BusError>> {
         debug!("Get port status: {:#?}", *self.state.status.lock().await);
         Ok(*self.state.status.lock().await)
     }

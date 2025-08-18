@@ -11,8 +11,8 @@ use embedded_usb_pd::type_c::Current;
 use log::*;
 use static_cell::StaticCell;
 use std_examples::type_c::mock_controller;
-use type_c_service::wrapper::Event;
 use type_c_service::wrapper::backing::BackingDefaultStorage;
+use type_c_service::wrapper::message::*;
 
 const CONTROLLER0: ControllerId = ControllerId(0);
 const PORT0: GlobalPortId = GlobalPortId(0);
@@ -80,14 +80,18 @@ async fn controller_task(state: &'static mock_controller::ControllerState) {
             error!("Error waiting for event: {e:?}");
             continue;
         }
-
-        let event = event.unwrap();
-        if let Event::PdAlert(port_id, ado) = event {
-            info!("Port{}: PD alert received: {:?}", port_id.0, ado);
+        let output = wrapper.process_event(event.unwrap()).await;
+        if let Err(e) = output {
+            error!("Error processing event: {e:?}");
         }
 
-        if let Err(e) = wrapper.process_event(event).await {
-            error!("Error processing event: {e:?}");
+        let output = output.unwrap();
+        if let Output::PdAlert(OutputPdAlert { port, ado }) = &output {
+            info!("Port{}: PD alert received: {:?}", port.0, ado);
+        }
+
+        if let Err(e) = wrapper.finalize(output).await {
+            error!("Error finalizing output: {e:?}");
         }
     }
 }

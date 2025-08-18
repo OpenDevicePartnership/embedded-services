@@ -62,6 +62,8 @@ impl<M: RawMutex, C, R> Channel<M, C, R> {
     }
 
     /// Wait for an invocation
+    ///
+    /// DROP SAFETY: Call to drop safe embassy primitive
     pub async fn receive(&self) -> Request<'_, M, C, R> {
         let (command, request_id) = self.command.wait().await;
         Request {

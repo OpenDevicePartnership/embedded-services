@@ -674,6 +674,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "embedded-fans"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0e5007eb97aabfe3606c0b02823b3120e861c748ed3560756aa4fd231ef9ebf0"
+dependencies = [
+ "defmt 1.0.1",
+]
+
+[[package]]
+name = "embedded-fans-async"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bafd19dc3b6aaa5027856818e19ccbfe84ebfb094c8a0ecf84a20e75c3b8e959"
+dependencies = [
+ "defmt 1.0.1",
+ "embedded-fans",
+]
+
+[[package]]
 name = "embedded-hal"
 version = "0.2.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -724,6 +743,26 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3ff09972d4073aa8c299395be75161d582e7629cd663171d62af73c8d50dba3f"
 dependencies = [
  "embedded-io",
+]
+
+[[package]]
+name = "embedded-sensors-hal"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "971cd616a2326c63f660375e485e2f4573575b0bd293d228d7817c2b07be3475"
+dependencies = [
+ "defmt 0.3.100",
+]
+
+[[package]]
+name = "embedded-sensors-hal-async"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "51c524a78b2804eca0d9ec05154e51d9af948b40cd0a6bbcc4d5832ff7e47b5b"
+dependencies = [
+ "defmt 1.0.1",
+ "embedded-sensors-hal",
+ "paste",
 ]
 
 [[package]]
@@ -1420,6 +1459,25 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "55937e1799185b12863d447f42597ed69d9928686b8d88a1df17376a097d8369"
 
 [[package]]
+name = "thermal-service"
+version = "0.1.0"
+dependencies = [
+ "defmt 0.3.100",
+ "embassy-executor",
+ "embassy-futures",
+ "embassy-sync",
+ "embassy-time",
+ "embedded-fans-async",
+ "embedded-hal 1.0.0",
+ "embedded-hal-async",
+ "embedded-sensors-hal-async",
+ "embedded-services",
+ "heapless 0.8.0",
+ "log",
+ "uuid",
+]
+
+[[package]]
 name = "thiserror"
 version = "2.0.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1563,6 +1621,12 @@ name = "unty"
 version = "0.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6d49784317cd0d1ee7ec5c716dd598ec5b4483ea832a2dced265471cc0f690ae"
+
+[[package]]
+name = "uuid"
+version = "1.17.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3cf4199d1e5d15ddd86a694e4d0dffa9c323ce759fea589f00fef9d81cc1931d"
 
 [[package]]
 name = "vcell"

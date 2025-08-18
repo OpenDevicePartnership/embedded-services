@@ -3,7 +3,7 @@ use embassy_executor::{Executor, Spawner};
 use embassy_time::Timer;
 use embedded_services::{
     GlobalRawMutex, power,
-    type_c::{ControllerId, external},
+    type_c::{Cached, ControllerId, external},
 };
 use embedded_usb_pd::GlobalPortId;
 use log::*;
@@ -55,7 +55,7 @@ async fn task(_spawner: Spawner) {
     info!("Controller status: {controller_status:?}");
 
     info!("Getting port status");
-    let port_status = external::get_port_status(GlobalPortId(0), true).await.unwrap();
+    let port_status = external::get_port_status(GlobalPortId(0), Cached(true)).await.unwrap();
     info!("Port status: {port_status:?}");
 
     info!("Getting retimer fw update status");

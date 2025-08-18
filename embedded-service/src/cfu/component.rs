@@ -163,6 +163,8 @@ impl CfuDevice {
     }
 
     /// Wait for a request
+    ///
+    /// DROP SAFETY: Direct call to deferred channel primitive
     pub async fn wait_request(&self) -> RequestData {
         self.request.receive().await
     }

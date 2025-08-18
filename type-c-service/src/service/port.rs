@@ -52,7 +52,7 @@ impl<'a> Service<'a> {
     pub(super) async fn process_external_port_status(
         &self,
         port_id: GlobalPortId,
-        cached: bool,
+        cached: Cached,
     ) -> external::Response<'static> {
         let status = self.context.get_port_status(port_id, cached).await;
         if let Err(e) = status {

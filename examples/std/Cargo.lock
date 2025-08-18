@@ -485,6 +485,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "embedded-fans"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0e5007eb97aabfe3606c0b02823b3120e861c748ed3560756aa4fd231ef9ebf0"
+
+[[package]]
+name = "embedded-fans-async"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bafd19dc3b6aaa5027856818e19ccbfe84ebfb094c8a0ecf84a20e75c3b8e959"
+dependencies = [
+ "embedded-fans",
+]
+
+[[package]]
 name = "embedded-hal"
 version = "0.2.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -547,6 +562,22 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3ff09972d4073aa8c299395be75161d582e7629cd663171d62af73c8d50dba3f"
 dependencies = [
  "embedded-io",
+]
+
+[[package]]
+name = "embedded-sensors-hal"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "971cd616a2326c63f660375e485e2f4573575b0bd293d228d7817c2b07be3475"
+
+[[package]]
+name = "embedded-sensors-hal-async"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "51c524a78b2804eca0d9ec05154e51d9af948b40cd0a6bbcc4d5832ff7e47b5b"
+dependencies = [
+ "embedded-sensors-hal",
+ "paste",
 ]
 
 [[package]]
@@ -921,6 +952,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "42f5e15c9953c5e4ccceeb2e7382a716482c34515315f7b03532b8b4e8393d2d"
 
 [[package]]
+name = "paste"
+version = "1.0.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
+
+[[package]]
 name = "portable-atomic"
 version = "1.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1132,8 +1169,10 @@ dependencies = [
  "embassy-time-driver",
  "embedded-batteries-async",
  "embedded-cfu-protocol",
+ "embedded-fans-async",
  "embedded-hal-async",
  "embedded-hal-mock",
+ "embedded-sensors-hal-async",
  "embedded-services",
  "embedded-usb-pd",
  "env_logger",
@@ -1141,6 +1180,7 @@ dependencies = [
  "log",
  "power-policy-service",
  "static_cell",
+ "thermal-service",
  "type-c-service",
 ]
 
@@ -1177,9 +1217,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "thermal-service"
+version = "0.1.0"
+dependencies = [
+ "embassy-executor",
+ "embassy-futures",
+ "embassy-sync",
+ "embassy-time",
+ "embedded-fans-async",
+ "embedded-hal 1.0.0",
+ "embedded-hal-async",
+ "embedded-sensors-hal-async",
+ "embedded-services",
+ "heapless 0.8.0",
+ "log",
+ "uuid",
+]
+
+[[package]]
 name = "tps6699x"
 version = "0.1.0"
-source = "git+https://github.com/OpenDevicePartnership/tps6699x#dda1b74f37df6aba6fa46aa94726a2cd86139331"
+source = "git+https://github.com/OpenDevicePartnership/tps6699x#49589684f06106e6732e60675b90e1aed2dac799"
 dependencies = [
  "bincode",
  "bitfield 0.19.1",
@@ -1238,6 +1296,12 @@ name = "unty"
 version = "0.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6d49784317cd0d1ee7ec5c716dd598ec5b4483ea832a2dced265471cc0f690ae"
+
+[[package]]
+name = "uuid"
+version = "1.17.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3cf4199d1e5d15ddd86a694e4d0dffa9c323ce759fea589f00fef9d81cc1931d"
 
 [[package]]
 name = "vcell"

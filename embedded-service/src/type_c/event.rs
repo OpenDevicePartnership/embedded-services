@@ -9,7 +9,7 @@ use bitvec::BitArr;
 
 bitfield! {
     /// Raw bitfield of possible port status events
-    #[derive(Copy, Clone, PartialEq, Eq)]
+    #[derive(Copy, Clone, PartialEq, Eq, Default)]
     #[cfg_attr(feature = "defmt", derive(defmt::Format))]
     struct PortStatusChangedRaw(u16);
     impl Debug;
@@ -36,7 +36,7 @@ bitfield! {
 /// Port status change events
 /// This is a type-safe wrapper around the raw bitfield
 /// These events are related to the overall port state and typically need to be considered together.
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct PortStatusChanged(PortStatusChangedRaw);
 
@@ -348,6 +348,12 @@ impl PortEvent {
             status: self.status.union(other.status),
             notification: self.notification.union(other.notification),
         }
+    }
+}
+
+impl Default for PortEvent {
+    fn default() -> Self {
+        Self::none()
     }
 }
 

@@ -7,7 +7,6 @@ use embedded_services::{
         ConsumerPowerCapability, ProviderPowerCapability,
     },
 };
-use embedded_usb_pd::GlobalPortId;
 
 use super::*;
 
@@ -23,9 +22,7 @@ impl<'a, const N: usize, C: Controller, BACK: Backing<'a>, V: FwOfferValidator> 
     /// Handle a new contract as consumer
     pub(super) async fn process_new_consumer_contract(
         &self,
-        _controller: &mut C,
         power: &policy::device::Device,
-        _port: LocalPortId,
         status: &PortStatus,
     ) -> Result<(), Error<<C as Controller>::BusError>> {
         info!("Process new consumer contract");
@@ -76,15 +73,10 @@ impl<'a, const N: usize, C: Controller, BACK: Backing<'a>, V: FwOfferValidator> 
     /// Handle a new contract as provider
     pub(super) async fn process_new_provider_contract(
         &self,
-        port: GlobalPortId,
         power: &policy::device::Device,
         status: &PortStatus,
     ) -> Result<(), Error<<C as Controller>::BusError>> {
         info!("Process New provider contract");
-
-        if port.0 > N as u8 {
-            return PdError::InvalidPort.into();
-        }
 
         let current_state = power.state().await.kind();
         info!("current power state: {:?}", current_state);
@@ -170,6 +162,7 @@ impl<'a, const N: usize, C: Controller, BACK: Backing<'a>, V: FwOfferValidator> 
     /// Wait for a power command
     ///
     /// Returns (local port ID, deferred request)
+    /// DROP SAFETY: Call to a select over drop safe futures
     pub(super) async fn wait_power_command(
         &self,
     ) -> (
@@ -177,6 +170,7 @@ impl<'a, const N: usize, C: Controller, BACK: Backing<'a>, V: FwOfferValidator> 
         deferred::Request<'_, GlobalRawMutex, CommandData, InternalResponseData>,
     ) {
         let futures: [_; N] = from_fn(|i| self.power[i].receive());
+        // DROP SAFETY: Select over drop safe futures
         let (request, local_id) = select_array(futures).await;
         trace!("Power command: device{} {:#?}", local_id, request.command);
         (LocalPortId(local_id as u8), request)
