@@ -20,6 +20,9 @@ use crate::type_c::Cached;
 use crate::type_c::event::{PortEvent, PortPending};
 use crate::{GlobalRawMutex, IntrusiveNode, error, intrusive_list, trace};
 
+/// maximum number of data objects in a VDM
+pub const MAX_NUM_DATA_OBJECTS: usize = 7; // 7 VDOs of 4 bytes each
+
 /// Power contract
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
@@ -155,6 +158,29 @@ impl From<[u8; ATTN_VDM_LEN]> for AttnVdm {
     }
 }
 
+/// Send VDM data
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct SendVdm {
+    /// initiating a VDM sequence
+    pub initiator: bool,
+    /// VDO count
+    pub vdo_count: u8,
+    /// VDO data
+    pub vdo_data: [u32; MAX_NUM_DATA_OBJECTS],
+}
+
+impl SendVdm {
+    /// Create a new blank port status
+    pub const fn new() -> Self {
+        Self {
+            initiator: false,
+            vdo_count: 0,
+            vdo_data: [0; MAX_NUM_DATA_OBJECTS],
+        }
+    }
+}
+
 /// Port-specific command data
 #[derive(Copy, Clone, Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
@@ -185,6 +211,8 @@ pub enum PortCommandData {
     GetOtherVdm,
     /// Get attention VDM
     GetAttnVdm,
+    /// Send VDM
+    SendVdm(SendVdm),
 }
 
 /// Port-specific commands
@@ -484,6 +512,12 @@ pub trait Controller {
     fn get_other_vdm(&mut self, port: LocalPortId) -> impl Future<Output = Result<OtherVdm, Error<Self::BusError>>>;
     /// Get the Rx Attention VDM data for the given port
     fn get_attn_vdm(&mut self, port: LocalPortId) -> impl Future<Output = Result<AttnVdm, Error<Self::BusError>>>;
+    /// Send a VDM to the given port
+    fn send_vdm(
+        &mut self,
+        port: LocalPortId,
+        tx_vdm: SendVdm,
+    ) -> impl Future<Output = Result<(), Error<Self::BusError>>>;
 }
 
 /// Internal context for managing PD controllers
@@ -939,6 +973,14 @@ impl ContextToken {
                 error!("Invalid response: expected attention VDM, got {:?}", r);
                 Err(PdError::InvalidResponse)
             }
+        }
+    }
+
+    /// Send VDM to the given port
+    pub async fn send_vdm(&self, port: GlobalPortId, tx_vdm: SendVdm) -> Result<(), PdError> {
+        match self.send_port_command(port, PortCommandData::SendVdm(tx_vdm)).await? {
+            PortResponseData::Complete => Ok(()),
+            _ => Err(PdError::InvalidResponse),
         }
     }
 }
