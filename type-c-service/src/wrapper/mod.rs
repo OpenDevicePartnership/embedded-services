@@ -28,7 +28,7 @@ use embedded_services::cfu::component::CfuDevice;
 use embedded_services::power::policy::device::StateKind;
 use embedded_services::power::policy::{self, action};
 use embedded_services::transformers::object::{Object, RefGuard, RefMutGuard};
-use embedded_services::type_c::controller::{self, AttnVdm, Controller, OtherVdm, PortStatus};
+use embedded_services::type_c::controller::{self, Controller, PortStatus};
 use embedded_services::type_c::event::{PortEvent, PortNotificationSingle, PortPending, PortStatusChanged};
 use embedded_services::GlobalRawMutex;
 use embedded_services::{debug, error, info, trace, warn};
@@ -342,113 +342,6 @@ impl<'a, const N: usize, C: Controller, BACK: Backing<'a>, V: FwOfferValidator> 
         Ok(())
     }
 
-    /// Process notification
-    async fn process_other_port_notification(
-        &self,
-        port: LocalPortId,
-        notification: PortNotificationSingle,
-    ) -> Result<(), Error<<C as Controller>::BusError>> {
-        let port_index = port.0 as usize;
-        if port_index >= N {
-            error!("Invalid port {}", port_index);
-            return Err(PdError::InvalidPort.into());
-        }
-
-        debug!("process_other_port_notification {}", notification);
-
-        // Pend the notification
-        let mut event = self.active_events[port_index].get();
-        match notification {
-            PortNotificationSingle::CustomModeEntered => {
-                event.notification.set_custom_mode_entered(true);
-            }
-            PortNotificationSingle::CustomModeExited => {
-                event.notification.set_custom_mode_exited(true);
-            }
-            PortNotificationSingle::CustomModeAttentionReceived => {
-                event.notification.set_custom_mode_attention_received(true);
-            }
-            PortNotificationSingle::CustomModeOtherVdmReceived => {
-                event.notification.set_custom_mode_other_vdm_received(true);
-            }
-            PortNotificationSingle::DiscoverModeCompleted => {
-                event.notification.set_discover_mode_completed(true);
-            }
-            PortNotificationSingle::UsbMuxErrorRecovery => {
-                event.notification.set_usb_mux_error_recovery(true);
-            }
-            PortNotificationSingle::DpStatusUpdate => {
-                event.notification.set_dp_status_update(true);
-            }
-            _ => {
-                warn!("Unhandled port notification: {:?}", notification);
-            }
-        }
-        self.active_events[port_index].set(event);
-
-        // Pend this port
-        let mut pending = PortPending::none();
-        pending.pend_port(port.0 as usize);
-        self.pd_controller.notify_ports(pending).await;
-        Ok(())
-    }
-
-    /// Process other vdm
-    async fn process_other_vdm(
-        &self,
-        port: LocalPortId,
-        event: Event<'_>,
-        _data: OtherVdm,
-    ) -> Result<(), Error<<C as Controller>::BusError>> {
-        let port_index = port.0 as usize;
-        if port_index >= N {
-            error!("Invalid port {}", port_index);
-            return Err(PdError::InvalidPort.into());
-        }
-
-        // Pend the notification
-        let mut port_event = self.active_events[port_index].get();
-        match event {
-            Event::VdmEntered(_port, _data) => port_event.notification.set_custom_mode_entered(true),
-            Event::VdmExited(_port, _data) => port_event.notification.set_custom_mode_exited(true),
-            Event::VdmOtherReceived(_port, _data) => port_event.notification.set_custom_mode_other_vdm_received(true),
-            _ => {
-                //debug!("event no need to handle here: {:?}", event);
-                return Ok(());
-            }
-        }
-        self.active_events[port_index].set(port_event);
-
-        // Pend this port
-        let mut pending = PortPending::none();
-        pending.pend_port(port.0 as usize);
-        self.pd_controller.notify_ports(pending).await;
-        Ok(())
-    }
-
-    async fn process_attn_vdm(
-        &self,
-        port: LocalPortId,
-        _data: AttnVdm,
-    ) -> Result<(), Error<<C as Controller>::BusError>> {
-        let port_index = port.0 as usize;
-        if port_index >= N {
-            error!("Invalid port {}", port_index);
-            return Err(PdError::InvalidPort.into());
-        }
-
-        // Pend the notification
-        let mut event = self.active_events[port_index].get();
-        event.notification.set_custom_mode_attention_received(true);
-        self.active_events[port_index].set(event);
-
-        // Pend this port
-        let mut pending = PortPending::none();
-        pending.pend_port(port.0 as usize);
-        self.pd_controller.notify_ports(pending).await;
-        Ok(())
-    }
-
     /// Wait for a pending port event
     ///
     /// DROP SAFETY: No state that needs to be restored
@@ -618,6 +511,10 @@ impl<'a, const N: usize, C: Controller, BACK: Backing<'a>, V: FwOfferValidator> 
                     Ok(Output::CfuRecovery)
                 }
             },
+            Event::PortNotification(EventPortNotification { port, notification }) => {
+                self.process_port_notification(&mut controller, port, notification)
+                    .await
+            }
         }
     }
 
