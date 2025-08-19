@@ -12,6 +12,7 @@ warnings = "deny"
 workspace = true
 
 [dependencies]
+defmt = "0.3"
 embassy-sync = { git = "https://github.com/embassy-rs/embassy", features = [
     "log",
     "std",
@@ -53,9 +54,15 @@ embedded-hal-mock = { version = "0.11.1", features = ["embedded-hal-async"] }
 
 critical-section = { version = "1.1", features = ["std"] }
 
+debug-service = { path = "../../debug-service" }
+
 [lib]
 name = "std_examples"
 path = "src/lib/lib.rs"
+
+[[bin]]
+name = "debug"
+path = "src/bin/debug.rs"
 
 [[bin]]
 name = "type-c-basic"
