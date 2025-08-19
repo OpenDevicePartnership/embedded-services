@@ -502,7 +502,7 @@ dependencies = [
 [[package]]
 name = "embassy-sync"
 version = "0.7.1"
-source = "git+https://github.com/embassy-rs/embassy#63ade389303ab4f6fe9d34211629b02c16e9bb11"
+source = "git+https://github.com/embassy-rs/embassy#ef673c6ca310cf0a7e9b1254afb7806bd6879e94"
 dependencies = [
  "cfg-if",
  "critical-section",
@@ -516,7 +516,7 @@ dependencies = [
 [[package]]
 name = "embassy-time"
 version = "0.4.0"
-source = "git+https://github.com/embassy-rs/embassy#63ade389303ab4f6fe9d34211629b02c16e9bb11"
+source = "git+https://github.com/embassy-rs/embassy#ef673c6ca310cf0a7e9b1254afb7806bd6879e94"
 dependencies = [
  "cfg-if",
  "critical-section",
@@ -532,7 +532,7 @@ dependencies = [
 [[package]]
 name = "embassy-time-driver"
 version = "0.2.0"
-source = "git+https://github.com/embassy-rs/embassy#63ade389303ab4f6fe9d34211629b02c16e9bb11"
+source = "git+https://github.com/embassy-rs/embassy#ef673c6ca310cf0a7e9b1254afb7806bd6879e94"
 dependencies = [
  "document-features",
 ]
@@ -682,7 +682,7 @@ dependencies = [
 [[package]]
 name = "embedded-usb-pd"
 version = "0.1.0"
-source = "git+https://github.com/OpenDevicePartnership/embedded-usb-pd#ab4ea2ffae2c801312670f789ba4830ce44b279f"
+source = "git+https://github.com/OpenDevicePartnership/embedded-usb-pd#1e6248224507517d935fef513280be97aa1bdad6"
 dependencies = [
  "aquamarine",
  "bincode",
@@ -1316,7 +1316,7 @@ dependencies = [
 [[package]]
 name = "tps6699x"
 version = "0.1.0"
-source = "git+https://github.com/OpenDevicePartnership/tps6699x#dda1b74f37df6aba6fa46aa94726a2cd86139331"
+source = "git+https://github.com/OpenDevicePartnership/tps6699x#fe742443de96c797f867ea16c0fc696dcc73b344"
 dependencies = [
  "bincode",
  "bitfield 0.19.0",

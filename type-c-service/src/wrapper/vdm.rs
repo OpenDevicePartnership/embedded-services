@@ -5,7 +5,7 @@ use embedded_services::{
         event::{PortPending, VdmNotification},
     },
 };
-use embedded_usb_pd::{Error, PdError, PortId};
+use embedded_usb_pd::{Error, LocalPortId, PdError};
 
 use crate::wrapper::message::vdm::OutputKind;
 
@@ -16,7 +16,7 @@ impl<'a, const N: usize, C: Controller, BACK: Backing<'a>, V: FwOfferValidator> 
     pub(super) async fn process_vdm_event(
         &self,
         controller: &mut C,
-        port: PortId,
+        port: LocalPortId,
         event: VdmNotification,
     ) -> Result<Output, Error<<C as Controller>::BusError>> {
         trace!("Processing VDM event: {:?} on port {}", event, port.0);

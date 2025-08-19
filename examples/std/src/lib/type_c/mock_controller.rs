@@ -8,7 +8,7 @@ use embedded_services::{
         event::PortEvent,
     },
 };
-use embedded_usb_pd::PortId as LocalPortId;
+use embedded_usb_pd::LocalPortId;
 use embedded_usb_pd::type_c::ConnectionState;
 use embedded_usb_pd::type_c::Current;
 use embedded_usb_pd::{Error, ado::Ado};
