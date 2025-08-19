@@ -1,0 +1,23 @@
+[package]
+name = "debug-service"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+bbq2 = "0.4.2"
+critical-section.workspace = true
+defmt.workspace = true
+embassy-executor.workspace = true
+embassy-sync.workspace = true
+embassy-time.workspace = true
+embedded-services.workspace = true
+log.workspace = true
+rtt-target = "0.6.1"
+
+[dev-dependencies]
+futures = "0.3"
+
+[lints]
+workspace = true
