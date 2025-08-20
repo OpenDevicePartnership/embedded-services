@@ -33,6 +33,18 @@ impl<'a> Service<'a> {
         external::Response::Controller(status.map(|_| external::ControllerResponseData::Complete))
     }
 
+    /// Process external controller reset command
+    pub(super) async fn process_external_controller_reset(
+        &self,
+        controller: ControllerId,
+    ) -> external::Response<'static> {
+        let status = self.context.reset_controller(controller).await;
+        if let Err(e) = status {
+            error!("Error resetting controller: {:#?}", e);
+        }
+        external::Response::Controller(status.map(|_| external::ControllerResponseData::Complete))
+    }
+
     /// Process external controller commands
     pub(super) async fn process_external_controller_command(
         &self,
@@ -42,6 +54,7 @@ impl<'a> Service<'a> {
         match command.data {
             ControllerCommandData::ControllerStatus => self.process_external_controller_status(command.id).await,
             ControllerCommandData::SyncState => self.process_external_controller_sync_state(command.id).await,
+            ControllerCommandData::Reset => self.process_external_controller_reset(command.id).await,
         }
     }
 }

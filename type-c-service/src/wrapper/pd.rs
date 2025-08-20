@@ -285,7 +285,14 @@ impl<'a, const N: usize, C: Controller, BACK: Backing<'a>, V: FwOfferValidator> 
                         .map_err(|_| PdError::Failed),
                 )
             }
-            _ => controller::Response::Controller(Err(PdError::UnrecognizedCommand)),
+            controller::InternalCommandData::Reset => {
+                let result = controller.reset_controller().await;
+                controller::Response::Controller(
+                    result
+                        .map(|_| InternalResponseData::Complete)
+                        .map_err(|_| PdError::Failed),
+                )
+            }
         }
     }
 
