@@ -1,7 +1,7 @@
 use embassy_sync::{once_lock::OnceLock, signal::Signal};
 use embedded_services::GlobalRawMutex;
 use embedded_services::comms::{self, EndpointID, Internal};
-use embedded_services::ec_type::message::{AcpiMsgComms, HostMsg, NotificationMsg};
+use embedded_services::ec_type::message::AcpiMsgComms;
 use embedded_services::{debug, error};
 
 /// Debug service that bridges an internal endpoint to an external transport.
@@ -42,7 +42,7 @@ impl Service {
     /// Returns the `EndpointID` of the external transport used by this service.
     ///
     /// Other components should target this ID when sending messages to the host
-    /// via the debug transport.
+    /// via the debug service
     pub fn endpoint_id(&self) -> comms::EndpointID {
         self.transport.get_id()
     }
@@ -50,21 +50,7 @@ impl Service {
 
 impl comms::MailboxDelegate for Service {
     fn receive(&self, message: &comms::Message) -> Result<(), comms::MailboxDelegateError> {
-        if let Some(msg) = message.data.get::<HostMsg>() {
-            match msg {
-                HostMsg::Notification(n) => {
-                    // Host acknowledged/triggered; wake the defmt task to respond
-                    debug!(
-                        "Received host notification (offset={}) from {:?}",
-                        n.offset, message.from
-                    );
-                    notify_signal().signal(*n);
-                }
-                _ => {
-                    debug!("Received host message (non-notification)");
-                }
-            }
-        } else if let Some(acpi) = message.data.get::<AcpiMsgComms>() {
+        if let Some(acpi) = message.data.get::<AcpiMsgComms>() {
             // Host sent an ACPI/MCTP request (e.g. GetDebugBuffer). Treat this as the
             // trigger to send the staged debug buffer back to the host.
             debug!(
@@ -83,19 +69,11 @@ impl comms::MailboxDelegate for Service {
 
 static DEBUG_SERVICE: OnceLock<Service> = OnceLock::new();
 
-// Global signal used to notify the defmt forwarding task that the Host responded/acknowledged.
-static HOST_NOTIFY: OnceLock<Signal<GlobalRawMutex, NotificationMsg>> = OnceLock::new();
-
 // Global signal used to notify tasks waiting on a Host response path (e.g., ACPI response).
 // We only need a wake-up, so the payload is unit `()` to avoid lifetime coupling.
 static RESP_NOTIFY: OnceLock<Signal<GlobalRawMutex, ()>> = OnceLock::new();
 
-/// Get the global notification signal used to synchronize defmt frame responses to the host.
-pub fn notify_signal() -> &'static Signal<GlobalRawMutex, NotificationMsg> {
-    HOST_NOTIFY.get_or_init(Signal::new)
-}
-
-pub fn response_notify_signal() -> &'static Signal<GlobalRawMutex, ()> {
+pub(crate) fn response_notify_signal() -> &'static Signal<GlobalRawMutex, ()> {
     RESP_NOTIFY.get_or_init(Signal::new)
 }
 
