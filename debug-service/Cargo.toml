@@ -15,9 +15,7 @@ embassy-time.workspace = true
 embedded-services.workspace = true
 log.workspace = true
 rtt-target = "0.6.1"
-
-[dev-dependencies]
-futures = "0.3"
+static_cell.workspace = true
 
 [lints]
 workspace = true
