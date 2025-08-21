@@ -139,7 +139,7 @@ impl<'a> Service<'a> {
             error!("Error getting other VDM data: {:#?}", e);
         }
 
-        external::Response::Port(status.map(|vdm| external::PortResponseData::OtherVdm(vdm)))
+        external::Response::Port(status.map(external::PortResponseData::OtherVdm))
     }
 
     /// Process get attention vdm commands
@@ -149,6 +149,6 @@ impl<'a> Service<'a> {
             error!("Error getting attention VDM data: {:#?}", e);
         }
 
-        external::Response::Port(status.map(|vdm| external::PortResponseData::AttnVdm(vdm)))
+        external::Response::Port(status.map(external::PortResponseData::AttnVdm))
     }
 }

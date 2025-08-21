@@ -107,6 +107,14 @@ pub struct OtherVdm {
     pub data: [u8; OTHER_VDM_LEN],
 }
 
+impl Default for OtherVdm {
+    fn default() -> Self {
+        Self {
+            data: [0; OTHER_VDM_LEN],
+        }
+    }
+}
+
 impl From<OtherVdm> for [u8; OTHER_VDM_LEN] {
     fn from(vdm: OtherVdm) -> Self {
         vdm.data
@@ -125,6 +133,14 @@ impl From<[u8; OTHER_VDM_LEN]> for OtherVdm {
 pub struct AttnVdm {
     /// Attention VDM data
     pub data: [u8; ATTN_VDM_LEN],
+}
+
+impl Default for AttnVdm {
+    fn default() -> Self {
+        Self {
+            data: [0; ATTN_VDM_LEN],
+        }
+    }
 }
 
 impl From<AttnVdm> for [u8; ATTN_VDM_LEN] {
