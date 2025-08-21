@@ -71,8 +71,8 @@ impl comms::MailboxDelegate for Service {
                 "Received host ACPI request for debug buffer (len={}) from {:?}",
                 acpi.payload_len, message.from
             );
-            // We only use the signal as a wakeup; the defmt task ignores the offset value.
-            notify_signal().signal(NotificationMsg { offset: 20 });
+            // We only use the signal as a wakeup; the defmt task ignores any payload here.
+            response_notify_signal().signal(());
         } else {
             error!("Received unknown message from host");
         }
@@ -86,9 +86,17 @@ static DEBUG_SERVICE: OnceLock<Service> = OnceLock::new();
 // Global signal used to notify the defmt forwarding task that the Host responded/acknowledged.
 static HOST_NOTIFY: OnceLock<Signal<GlobalRawMutex, NotificationMsg>> = OnceLock::new();
 
+// Global signal used to notify tasks waiting on a Host response path (e.g., ACPI response).
+// We only need a wake-up, so the payload is unit `()` to avoid lifetime coupling.
+static RESP_NOTIFY: OnceLock<Signal<GlobalRawMutex, ()>> = OnceLock::new();
+
 /// Get the global notification signal used to synchronize defmt frame responses to the host.
 pub fn notify_signal() -> &'static Signal<GlobalRawMutex, NotificationMsg> {
     HOST_NOTIFY.get_or_init(Signal::new)
+}
+
+pub fn response_notify_signal() -> &'static Signal<GlobalRawMutex, ()> {
+    RESP_NOTIFY.get_or_init(Signal::new)
 }
 
 /// Returns the endpoint ID of the transport used by the debug service.

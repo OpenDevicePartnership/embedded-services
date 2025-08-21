@@ -14,13 +14,16 @@ mod espi_service {
     use embassy_sync::{once_lock::OnceLock, signal::Signal};
     use embedded_services::buffer::OwnedRef;
     use embedded_services::GlobalRawMutex;
-    use embedded_services::comms::{self, EndpointID, External};
-    use embedded_services::ec_type::message::{HostMsg, NotificationMsg};
+    use embedded_services::comms::{self, EndpointID, External, Internal};
+    use embedded_services::ec_type::message::{AcpiMsgComms, HostMsg, NotificationMsg};
+    use core::borrow::BorrowMut;
     use log::{info, trace};
 
     // Max defmt payload we expect to shuttle in this mock
     const MAX_DEFMT_BYTES: usize = 1024;
     embedded_services::define_static_buffer!(host_oob_buf, u8, [0u8; MAX_DEFMT_BYTES]);
+    // Static request buffer used to build the "GetDebugBuffer" payload
+    embedded_services::define_static_buffer!(debug_req_buf, u8, [0u8; 32]);
 
     pub struct Service {
         endpoint: comms::Endpoint,
@@ -98,27 +101,18 @@ mod espi_service {
     pub fn response_buf() -> embedded_services::buffer::SharedRef<'static, u8> {
         host_oob_buf::get()
     }
-}
 
-// Mock Host (eSPI master)
-mod host {
-    use embedded_services::comms::{self, EndpointID, External, Internal};
-    use embedded_services::ec_type::message::{AcpiMsgComms, NotificationMsg};
-    use core::borrow::BorrowMut;
-    use log::info;
-
+    // Task that reacts to host notifications by sending an OOB request/ACK to the Debug service
     #[embassy_executor::task]
-    pub async fn task() {
-        // Static request buffer used to build the "GetDebugBuffer" payload
-        embedded_services::define_static_buffer!(debug_req_buf, u8, [0u8; 32]);
-    // Acquire owned access once; subsequent get_mut() calls would return None
-    let req_owned = debug_req_buf::get_mut().unwrap();
+    pub async fn request_task() {
+        // Acquire owned access once; subsequent get_mut() calls would return None
+        let req_owned: OwnedRef<'static, u8> = debug_req_buf::get_mut().unwrap();
 
         loop {
             // Wait for a device notification via the mock eSPI transport
-            let n: NotificationMsg = super::espi_service::wait_host_notification().await;
+            let n: NotificationMsg = wait_host_notification().await;
             info!(
-                "Host: got notification (offset={}), sending OOB request/ACK to Debug",
+                "eSPI: got Host Notification (offset={}), sending OOB request/ACK to Debug",
                 n.offset
             );
 
@@ -142,16 +136,19 @@ mod host {
             )
             .await;
 
-            // Wait for the response payload staged by the mock eSPI transport
-            let len = super::espi_service::wait_response_len().await;
-            let buf = super::espi_service::response_buf();
+            // Wait for the response payload staged by the Debug service, then "forward" it to host
+            let len = wait_response_len().await;
+            let buf = response_buf();
             let access = buf.borrow();
             let slice: &[u8] = core::borrow::Borrow::borrow(&access);
             let bytes = &slice[..len.min(slice.len())];
-            // Print a compact hex dump of the first few bytes
-            let preview = bytes.iter().take(32).map(|b| format!("{b:02X}")).collect::<Vec<_>>()
+            let preview = bytes
+                .iter()
+                .take(32)
+                .map(|b| format!("{b:02X}"))
+                .collect::<Vec<_>>()
                 .join(" ");
-            info!("Host: got OOB response ({len} bytes). First 32: {preview}");
+            info!("eSPI: forwarding OOB response to host ({len} bytes). First 32: {preview}");
         }
     }
 }
@@ -173,8 +170,8 @@ async fn init_task(spawner: Spawner) {
 
     info!("init espi service");
     espi_service::init().await;
-    // Spawn mock Host (eSPI master) to drive the OOB request/response flow
-    spawner.must_spawn(host::task());
+    // Spawn eSPI request task to drive the OOB request/response flow
+    spawner.must_spawn(espi_service::request_task());
 
     info!("spawn debug service");
     spawner.must_spawn(debug_service(Endpoint::uninit(EndpointID::External(External::Host))));

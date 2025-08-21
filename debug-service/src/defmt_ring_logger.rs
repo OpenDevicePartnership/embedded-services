@@ -179,7 +179,7 @@ static DEFMT_ACPI_BUF_OWNED: StaticCell<OwnedRef<'static, u8>> = StaticCell::new
 pub async fn defmt_to_host_task() {
     defmt::info!("defmt to host task start");
     info!("defmt to host task start");
-    use crate::debug_service::{host_endpoint_id, notify_signal};
+    use crate::debug_service::{host_endpoint_id, response_notify_signal};
     use embedded_services::comms::{self, EndpointID, Internal};
     use embedded_services::ec_type::message::{AcpiMsgComms, HostMsg, NotificationMsg};
 
@@ -221,7 +221,7 @@ pub async fn defmt_to_host_task() {
         info!("released defmt frame (staged {copy_len} bytes)");
 
         // Wait for host notification/ack via the debug service
-        let _n = notify_signal().wait().await;
+        let _n = response_notify_signal().wait().await;
         defmt::info!("host ack received, sending defmt response");
         info!("host ack received, sending defmt response");
 
