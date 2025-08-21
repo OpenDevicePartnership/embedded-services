@@ -3,7 +3,7 @@ use embedded_services::{
     ipc::deferred,
     power::policy,
     type_c::{
-        controller::{self, PortStatus},
+        controller::{self, AttnVdm, OtherVdm, PortStatus},
         event::{PortNotificationSingle, PortStatusChanged},
     },
     GlobalRawMutex,
@@ -87,6 +87,46 @@ pub struct OutputPdAlert {
     pub ado: Ado,
 }
 
+/// Custom mode entered output data
+#[derive(Copy, Clone, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct OutputCustomModeEntered {
+    /// Port ID
+    pub port: LocalPortId,
+    /// VDM data
+    pub vdm: OtherVdm,
+}
+
+/// Custom mode exited output data
+#[derive(Copy, Clone, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct OutputCustomModeExited {
+    /// Port ID
+    pub port: LocalPortId,
+    /// VDM data
+    pub vdm: OtherVdm,
+}
+
+/// Custom mode other VDM received output data
+#[derive(Copy, Clone, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct OutputCustomModeRxOtherVdm {
+    /// Port ID
+    pub port: LocalPortId,
+    /// VDM data
+    pub vdm: OtherVdm,
+}
+
+/// Custom mode attention VDM received output data
+#[derive(Copy, Clone, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct OutputCustomModeRxAttnVdm {
+    /// Port ID
+    pub port: LocalPortId,
+    /// VDM data
+    pub vdm: AttnVdm,
+}
+
 /// Power policy command output data
 pub struct OutputPowerPolicyCommand<'a> {
     /// Port ID
@@ -114,6 +154,14 @@ pub enum Output<'a> {
     PortStatusChanged(OutputPortStatusChanged),
     /// PD alert
     PdAlert(OutputPdAlert),
+    /// Custom mode entered
+    CustomModeEntered(OutputCustomModeEntered),
+    /// Custom mode exited
+    CustomModeExited(OutputCustomModeExited),
+    /// Custom mode Other VDM received
+    CustomModeRxOtherVdm(OutputCustomModeRxOtherVdm),
+    /// Custom mode attention VDM received
+    CustomModeRxAttnVdm(OutputCustomModeRxAttnVdm),
     /// Power policy command received
     PowerPolicyCommand(OutputPowerPolicyCommand<'a>),
     /// TPCM command response

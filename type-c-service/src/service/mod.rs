@@ -83,14 +83,14 @@ pub enum Event<'a> {
     PortStatusChanged(GlobalPortId, PortStatusChanged, PortStatus),
     /// PD alert
     PdAlert(GlobalPortId, Ado),
-    /// VDM entered
-    VdmEntered(GlobalPortId, OtherVdm),
-    /// VDM exited
-    VdmExited(GlobalPortId, OtherVdm),
-    /// VDM attention received
-    VdmAttnReceived(GlobalPortId, AttnVdm),
-    /// VDM other received
-    VdmOtherReceived(GlobalPortId, OtherVdm),
+    /// Custom mode entered
+    CustomModeEntered(GlobalPortId, OtherVdm),
+    /// Custom mode exited
+    CustomModeExited(GlobalPortId, OtherVdm),
+    /// Custom mode attention VDM received
+    CustomModeRxAttnVdm(GlobalPortId, AttnVdm),
+    /// Custom mode other VDM received
+    CustomModeRxOtherVdm(GlobalPortId, OtherVdm),
     /// Other port notification
     OtherPortNotification(GlobalPortId, PortNotificationSingle),
     /// External command
@@ -219,7 +219,7 @@ impl<'a> Service<'a> {
                                 PortNotificationSingle::CustomModeEntered => {
                                     match self.context.get_other_vdm(port_id).await {
                                         Ok(other_vdm) => {
-                                            return Ok(Event::VdmEntered(port_id, other_vdm));
+                                            return Ok(Event::CustomModeEntered(port_id, other_vdm));
                                         }
                                         Err(e) => {
                                             error!("Port{}: Failed to get other VDM: {:#?}", port_id.0, e);
@@ -230,7 +230,7 @@ impl<'a> Service<'a> {
                                 PortNotificationSingle::CustomModeExited => {
                                     match self.context.get_other_vdm(port_id).await {
                                         Ok(other_vdm) => {
-                                            return Ok(Event::VdmExited(port_id, other_vdm));
+                                            return Ok(Event::CustomModeExited(port_id, other_vdm));
                                         }
                                         Err(e) => {
                                             error!("Port{}: Failed to get other VDM: {:#?}", port_id.0, e);
@@ -241,7 +241,7 @@ impl<'a> Service<'a> {
                                 PortNotificationSingle::CustomModeOtherVdmReceived => {
                                     match self.context.get_other_vdm(port_id).await {
                                         Ok(other_vdm) => {
-                                            return Ok(Event::VdmOtherReceived(port_id, other_vdm));
+                                            return Ok(Event::CustomModeRxOtherVdm(port_id, other_vdm));
                                         }
                                         Err(e) => {
                                             error!("Port{}: Failed to get other VDM: {:#?}", port_id.0, e);
@@ -252,7 +252,7 @@ impl<'a> Service<'a> {
                                 PortNotificationSingle::CustomModeAttentionReceived => {
                                     match self.context.get_attn_vdm(port_id).await {
                                         Ok(attn_vdm) => {
-                                            return Ok(Event::VdmAttnReceived(port_id, attn_vdm));
+                                            return Ok(Event::CustomModeRxAttnVdm(port_id, attn_vdm));
                                         }
                                         Err(e) => {
                                             error!("Port{}: Failed to get attention VDM: {:#?}", port_id.0, e);
@@ -291,24 +291,24 @@ impl<'a> Service<'a> {
                 info!("Port{}: Got PD alert: {:?}", port.0, alert);
                 Ok(())
             }
-            Event::VdmEntered(port, vdm) => {
+            Event::CustomModeEntered(port, vdm) => {
                 // Port notifications currently don't have any processing logic
-                info!("Port{}: Got VDM entered: {:?}", port.0, vdm);
+                info!("Port{}: Got custom mode entered: {:?}", port.0, vdm);
                 Ok(())
             }
-            Event::VdmExited(port, vdm) => {
+            Event::CustomModeExited(port, vdm) => {
                 // Port notifications currently don't have any processing logic
-                info!("Port{}: Got VDM exited: {:?}", port.0, vdm);
+                info!("Port{}: Got custom mode exited: {:?}", port.0, vdm);
                 Ok(())
             }
-            Event::VdmAttnReceived(port, vdm) => {
+            Event::CustomModeRxAttnVdm(port, vdm) => {
                 // Port notifications currently don't have any processing logic
-                info!("Port{}: Got VDM attention received: {:?}", port.0, vdm);
+                info!("Port{}: Got custom mode attention VDM received: {:?}", port.0, vdm);
                 Ok(())
             }
-            Event::VdmOtherReceived(port, vdm) => {
+            Event::CustomModeRxOtherVdm(port, vdm) => {
                 // Port notifications currently don't have any processing logic
-                info!("Port{}: Got VDM other received: {:?}", port.0, vdm);
+                info!("Port{}: Got custom mode other VDM received: {:?}", port.0, vdm);
                 Ok(())
             }
             Event::OtherPortNotification(port, notification) => {

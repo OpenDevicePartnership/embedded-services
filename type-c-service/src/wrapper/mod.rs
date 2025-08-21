@@ -28,7 +28,7 @@ use embedded_services::cfu::component::CfuDevice;
 use embedded_services::power::policy::device::StateKind;
 use embedded_services::power::policy::{self, action};
 use embedded_services::transformers::object::{Object, RefGuard, RefMutGuard};
-use embedded_services::type_c::controller::{self, Controller, PortStatus};
+use embedded_services::type_c::controller::{self, AttnVdm, Controller, OtherVdm, PortStatus};
 use embedded_services::type_c::event::{PortEvent, PortNotificationSingle, PortPending, PortStatusChanged};
 use embedded_services::GlobalRawMutex;
 use embedded_services::{debug, error, info, trace, warn};
@@ -342,6 +342,74 @@ impl<'a, const N: usize, C: Controller, BACK: Backing<'a>, V: FwOfferValidator> 
         Ok(())
     }
 
+    /// Finalize an Other Vdm output
+    async fn finalize_other_vdm<'b>(
+        &self,
+        state: &mut InternalState<N>,
+        local_port: LocalPortId,
+        output: Output<'b>,
+        _vdm: OtherVdm,
+    ) -> Result<(), Error<<C as Controller>::BusError>> {
+        let global_port_id = self.pd_controller.lookup_global_port(local_port).map_err(Error::Pd)?;
+        let port_index = local_port.0 as usize;
+
+        // Buffer the event
+        //let backing = self.backing.lock().await;
+        //let channel = backing.pd_alert_channel(port_index).await.ok_or(PdError::InvalidPort)?;
+        //channel.0.publish_immediate(vdm);
+
+        // Pend the event
+        match output {
+            Output::CustomModeEntered(_) => state.port_states[port_index]
+                .pending_events
+                .notification
+                .set_custom_mode_entered(true),
+            Output::CustomModeExited(_) => state.port_states[port_index]
+                .pending_events
+                .notification
+                .set_custom_mode_exited(true),
+            Output::CustomModeRxOtherVdm(_) => state.port_states[port_index]
+                .pending_events
+                .notification
+                .set_custom_mode_other_vdm_received(true),
+            _ => return Err(PdError::InvalidParams.into()),
+        }
+
+        // Pend this port
+        let mut pending = PortPending::none();
+        pending.pend_port(global_port_id.0 as usize);
+        self.pd_controller.notify_ports(pending).await;
+        Ok(())
+    }
+
+    /// Finalize an attention VDM output
+    async fn finalize_attn_vdm(
+        &self,
+        state: &mut InternalState<N>,
+        local_port: LocalPortId,
+        _vdm: AttnVdm,
+    ) -> Result<(), Error<<C as Controller>::BusError>> {
+        let global_port_id = self.pd_controller.lookup_global_port(local_port).map_err(Error::Pd)?;
+        let port_index = local_port.0 as usize;
+
+        // Buffer the event
+        //let backing = self.backing.lock().await;
+        //let channel = backing.pd_alert_channel(port_index).await.ok_or(PdError::InvalidPort)?;
+        //channel.0.publish_immediate(vdm);
+
+        // Pend the event
+        state.port_states[port_index]
+            .pending_events
+            .notification
+            .set_custom_mode_attention_received(true);
+
+        // Pend this port
+        let mut pending = PortPending::none();
+        pending.pend_port(global_port_id.0 as usize);
+        self.pd_controller.notify_ports(pending).await;
+        Ok(())
+    }
+
     /// Wait for a pending port event
     ///
     /// DROP SAFETY: No state that needs to be restored
@@ -466,6 +534,46 @@ impl<'a, const N: usize, C: Controller, BACK: Backing<'a>, V: FwOfferValidator> 
                     Ok(Output::Nop)
                 }
             }
+            PortNotificationSingle::CustomModeEntered => match controller.get_other_vdm(port).await {
+                Ok(vdm) => {
+                    trace!("Port{}: Other VDM entered: {:#?}", port.0, vdm);
+                    Ok(Output::CustomModeEntered(OutputCustomModeEntered { port, vdm }))
+                }
+                Err(_e) => {
+                    error!("Error getting other VDM");
+                    Ok(Output::Nop)
+                }
+            },
+            PortNotificationSingle::CustomModeExited => match controller.get_other_vdm(port).await {
+                Ok(vdm) => {
+                    trace!("Port{}: Other VDM exited: {:#?}", port.0, vdm);
+                    Ok(Output::CustomModeExited(OutputCustomModeExited { port, vdm }))
+                }
+                Err(_e) => {
+                    error!("Error getting other VDM");
+                    Ok(Output::Nop)
+                }
+            },
+            PortNotificationSingle::CustomModeOtherVdmReceived => match controller.get_other_vdm(port).await {
+                Ok(vdm) => {
+                    trace!("Port{}: Other VDM received: {:#?}", port.0, vdm);
+                    Ok(Output::CustomModeRxOtherVdm(OutputCustomModeRxOtherVdm { port, vdm }))
+                }
+                Err(_e) => {
+                    error!("Error getting other VDM");
+                    Ok(Output::Nop)
+                }
+            },
+            PortNotificationSingle::CustomModeAttentionReceived => match controller.get_attn_vdm(port).await {
+                Ok(vdm) => {
+                    trace!("Port{}: Attention VDM received: {:#?}", port.0, vdm);
+                    Ok(Output::CustomModeRxAttnVdm(OutputCustomModeRxAttnVdm { port, vdm }))
+                }
+                Err(_e) => {
+                    error!("Error getting attention VDM");
+                    Ok(Output::Nop)
+                }
+            },
             rest => {
                 // Nothing currently implemented for these
                 trace!("Port{}: Notification: {:#?}", port.0, rest);
@@ -533,6 +641,14 @@ impl<'a, const N: usize, C: Controller, BACK: Backing<'a>, V: FwOfferValidator> 
                     .await
             }
             Output::PdAlert(OutputPdAlert { port, ado }) => self.finalize_pd_alert(&mut state, port, ado).await,
+            Output::CustomModeEntered(OutputCustomModeEntered { port, vdm })
+            | Output::CustomModeExited(OutputCustomModeExited { port, vdm })
+            | Output::CustomModeRxOtherVdm(OutputCustomModeRxOtherVdm { port, vdm }) => {
+                self.finalize_other_vdm(&mut state, port, output, vdm).await
+            }
+            Output::CustomModeRxAttnVdm(OutputCustomModeRxAttnVdm { port, vdm }) => {
+                self.finalize_attn_vdm(&mut state, port, vdm).await
+            }
             Output::PowerPolicyCommand(OutputPowerPolicyCommand { request, response, .. }) => {
                 request.respond(response);
                 Ok(())
