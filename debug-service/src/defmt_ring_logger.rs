@@ -8,9 +8,9 @@ use core::{
     ops::{Deref, DerefMut},
     sync::atomic::{AtomicBool, Ordering},
 };
-use embassy_sync::once_lock::OnceLock;
 use embedded_services::buffer::OwnedRef;
 use log::info;
+use static_cell::StaticCell;
 
 static RTT_INITIALIZED: AtomicBool = AtomicBool::new(false);
 static mut ENCODER: defmt::Encoder = defmt::Encoder::new();
@@ -173,18 +173,20 @@ unsafe fn write(bytes: &[u8]) {
 
 // Static buffer for ACPI-style messages carrying defmt frames
 embedded_services::define_static_buffer!(defmt_acpi_buf, u8, [0u8; DEFMT_MAX_BYTES as usize]);
-static DEFMT_ACPI_BUF_OWNED: OnceLock<OwnedRef<'static, u8>> = OnceLock::new();
+static DEFMT_ACPI_BUF_OWNED: StaticCell<OwnedRef<'static, u8>> = StaticCell::new();
 
 #[embassy_executor::task]
 pub async fn defmt_to_host_task() {
     defmt::info!("defmt to host task start");
     info!("defmt to host task start");
-    use crate::debug_service::notify_signal;
-    use embedded_services::comms::{self, EndpointID, External, Internal};
+    use crate::debug_service::{host_endpoint_id, notify_signal};
+    use embedded_services::comms::{self, EndpointID, Internal};
     use embedded_services::ec_type::message::{AcpiMsgComms, HostMsg, NotificationMsg};
 
     let framed_consumer = DEFMT_BUFFER.framed_consumer();
-    let acpi_buf_owned = DEFMT_ACPI_BUF_OWNED.get_or_init(|| defmt_acpi_buf::get_mut().unwrap());
+    let acpi_buf_owned: &OwnedRef<'static, u8> = DEFMT_ACPI_BUF_OWNED.init(defmt_acpi_buf::get_mut().unwrap());
+
+    let host_ep = host_endpoint_id().await;
 
     loop {
         // Wait for a complete defmt frame to be available (do not release yet)
@@ -206,7 +208,7 @@ pub async fn defmt_to_host_task() {
         // First, notify the Host that data is available
         let _ = comms::send(
             EndpointID::Internal(Internal::Debug),
-            EndpointID::External(External::Host),
+            host_ep,
             &HostMsg::Notification(NotificationMsg { offset: 20 }),
         )
         .await;
@@ -226,16 +228,11 @@ pub async fn defmt_to_host_task() {
         // Send the staged defmt bytes frame as an ACPI-style message.
         // Scope the message so the shared borrow is dropped before we clear the buffer.
         {
-            let msg = AcpiMsgComms {
+            let msg = HostMsg::Response(AcpiMsgComms {
                 payload: defmt_acpi_buf::get(),
                 payload_len: copy_len,
-            };
-            let _ = comms::send(
-                EndpointID::Internal(Internal::Debug),
-                EndpointID::External(External::Host),
-                &msg,
-            )
-            .await;
+            });
+            let _ = comms::send(EndpointID::Internal(Internal::Debug), host_ep, &msg).await;
             defmt::info!("sent {} defmt bytes to host", copy_len);
             info!("sent {copy_len} defmt bytes to host");
         }

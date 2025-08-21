@@ -1,11 +1,33 @@
 use embassy_sync::{once_lock::OnceLock, signal::Signal};
 use embedded_services::GlobalRawMutex;
 use embedded_services::comms::{self, EndpointID, Internal};
-use embedded_services::debug;
-use embedded_services::ec_type::message::{HostMsg, NotificationMsg};
+use embedded_services::ec_type::message::{AcpiMsgComms, HostMsg, NotificationMsg};
+use embedded_services::{debug, error};
 
+/// Debug service that bridges an internal endpoint to an external transport.
+///
+/// Terminology:
+/// - Transport: The external-facing `comms::Endpoint` used to reach the host/PC.
+///   It is provided by the platform (eSPI, USB, RTT bridge, etc.) and passed to
+///   [`Service::new`]. Its ID is commonly `EndpointID::External(External::Host)`,
+///   but the service does not assume a specific value.
+/// - Endpoint: The internal endpoint owned by this service and registered under
+///   `EndpointID::Internal(Internal::Debug)`. Messages addressed to this ID are
+///   dispatched to the service via [`comms::MailboxDelegate::receive`].
+///
+/// Direction:
+/// - Device → Host: Producers (e.g., the defmt forwarding task) should send from
+///   `EndpointID::Internal(Internal::Debug)` to the transport endpoint ID exposed
+///   by [`Service::endpoint_id`] or [`host_endpoint_id`].
+/// - Host → Device: The platform transport should deliver host messages to
+///   `EndpointID::Internal(Internal::Debug)`, which this service handles in
+///   [`receive`](comms::MailboxDelegate::receive).
 pub struct Service {
+    // The service-owned internal endpoint (Internal::Debug) that is registered
+    // with the comms layer and used as the "device side" address.
     endpoint: comms::Endpoint,
+    // The external transport endpoint through which host traffic flows.
+    // This is provided by the platform and may map to eSPI/USB/etc.
     transport: comms::Endpoint,
 }
 
@@ -17,6 +39,10 @@ impl Service {
         }
     }
 
+    /// Returns the `EndpointID` of the external transport used by this service.
+    ///
+    /// Other components should target this ID when sending messages to the host
+    /// via the debug transport.
     pub fn endpoint_id(&self) -> comms::EndpointID {
         self.transport.get_id()
     }
@@ -38,8 +64,17 @@ impl comms::MailboxDelegate for Service {
                     debug!("Received host message (non-notification)");
                 }
             }
+        } else if let Some(acpi) = message.data.get::<AcpiMsgComms>() {
+            // Host sent an ACPI/MCTP request (e.g. GetDebugBuffer). Treat this as the
+            // trigger to send the staged debug buffer back to the host.
+            debug!(
+                "Received host ACPI request for debug buffer (len={}) from {:?}",
+                acpi.payload_len, message.from
+            );
+            // We only use the signal as a wakeup; the defmt task ignores the offset value.
+            notify_signal().signal(NotificationMsg { offset: 20 });
         } else {
-            debug!("Got something else");
+            error!("Received unknown message from host");
         }
 
         Ok(())
@@ -54,6 +89,12 @@ static HOST_NOTIFY: OnceLock<Signal<GlobalRawMutex, NotificationMsg>> = OnceLock
 /// Get the global notification signal used to synchronize defmt frame responses to the host.
 pub fn notify_signal() -> &'static Signal<GlobalRawMutex, NotificationMsg> {
     HOST_NOTIFY.get_or_init(Signal::new)
+}
+
+/// Returns the endpoint ID of the transport used by the debug service.
+pub async fn host_endpoint_id() -> EndpointID {
+    let svc = DEBUG_SERVICE.get().await;
+    svc.endpoint_id()
 }
 
 /// Initialize and register the global Debug service endpoint.
