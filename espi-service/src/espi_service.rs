@@ -295,7 +295,7 @@ async fn process_controller_event(
                 }
             }
 
-            espi.complete_port(port_event.port).await;
+            espi.complete_port(port_event.port);
         }
         Ok(espi::Event::OOBEvent(port_event)) => {
             info!(
@@ -325,7 +325,7 @@ async fn process_controller_event(
                         Err(e) => {
                             // Packet malformed, throw it away and respond with ACPI packet with error in reserved field.
                             error!("MCTP packet malformed: {:?}", e);
-                            espi.complete_port(port_event.port).await;
+                            espi.complete_port(port_event.port);
 
                             send_mctp_error_response(espi, port_event.port).await;
                             return;
@@ -333,11 +333,11 @@ async fn process_controller_event(
                     }
                 }
 
-                espi.complete_port(port_event.port).await;
+                espi.complete_port(port_event.port);
                 espi_service.endpoint.send(endpoint, &acpi_msg).await.unwrap();
                 info!("MCTP packet forwarded to service: {:?}", endpoint);
             } else {
-                espi.complete_port(port_event.port).await;
+                espi.complete_port(port_event.port);
             }
         }
         Ok(espi::Event::Port80) => {
