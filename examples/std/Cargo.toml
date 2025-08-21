@@ -40,6 +40,10 @@ embedded-batteries-async = "0.2.0"
 battery-service = { path = "../../battery-service", features = ["log"] }
 type-c-service = { path = "../../type-c-service", features = ["log"] }
 
+embedded-sensors-hal-async = "0.3.0"
+embedded-fans-async = "0.2.0"
+thermal-service = { path = "../../thermal-service", features = ["log"] }
+
 env_logger = "0.9.0"
 log = "0.4.14"
 heapless = "0.8.0"

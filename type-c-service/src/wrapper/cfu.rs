@@ -7,6 +7,7 @@ use embedded_services::power;
 use embedded_services::type_c::controller::Controller;
 use embedded_services::{debug, error};
 
+use super::message::EventCfu;
 use super::*;
 
 /// Current state of the firmware update process
@@ -26,14 +27,6 @@ impl FwUpdateState {
     pub fn in_progress(&self) -> bool {
         matches!(self, FwUpdateState::InProgress(_) | FwUpdateState::Recovery)
     }
-}
-
-/// CFU events
-pub enum Event {
-    /// CFU request
-    Request(RequestData),
-    /// Recovery tick
-    RecoveryTick,
 }
 
 impl<'a, const N: usize, C: Controller, BACK: Backing<'a>, V: FwOfferValidator> ControllerWrapper<'a, N, C, BACK, V> {
@@ -142,7 +135,7 @@ impl<'a, const N: usize, C: Controller, BACK: Backing<'a>, V: FwOfferValidator> 
                         error!("Controller{}: Failed to detach power device: {:?}", controller_id.0, e);
 
                         // Sync to bring the controller to a known state with all services
-                        match controller.sync_state().await {
+                        match self.sync_state_internal(controller, state).await {
                             Ok(_) => debug!(
                                 "Controller{}: Synced state after detaching power device",
                                 controller_id.0
@@ -345,13 +338,14 @@ impl<'a, const N: usize, C: Controller, BACK: Backing<'a>, V: FwOfferValidator> 
     /// Wait for a CFU command
     ///
     /// Returns None if the FW update ticker has ticked
-    pub async fn wait_cfu_command(&self) -> Event {
+    /// DROP SAFETY: No state that needs to be restored
+    pub async fn wait_cfu_command(&self) -> EventCfu {
         // Only lock long enough to grab our state
         let fw_update_state = self.state.lock().await.fw_update_state;
         match fw_update_state {
             FwUpdateState::Idle => {
                 // No FW update in progress, just wait for a command
-                Event::Request(self.cfu_device.wait_request().await)
+                EventCfu::Request(self.cfu_device.wait_request().await)
             }
             FwUpdateState::InProgress(_) => {
                 match select(
@@ -360,10 +354,10 @@ impl<'a, const N: usize, C: Controller, BACK: Backing<'a>, V: FwOfferValidator> 
                 )
                 .await
                 {
-                    Either::First(command) => Event::Request(command),
+                    Either::First(command) => EventCfu::Request(command),
                     Either::Second(_) => {
                         debug!("FW update ticker ticked");
-                        Event::RecoveryTick
+                        EventCfu::RecoveryTick
                     }
                 }
             }
@@ -371,7 +365,7 @@ impl<'a, const N: usize, C: Controller, BACK: Backing<'a>, V: FwOfferValidator> 
                 // Recovery state, wait for the next attempt to recover the device
                 self.fw_update_ticker.lock().await.next().await;
                 debug!("FW update ticker ticked");
-                Event::RecoveryTick
+                EventCfu::RecoveryTick
             }
         }
     }

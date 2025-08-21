@@ -148,3 +148,8 @@ pub const POWER_CAPABILITY_5V_3A0: policy::PowerCapability = policy::PowerCapabi
     voltage_mv: 5000,
     current_ma: 3000,
 };
+
+/// Newtype to help clarify arguments to port status commands
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct Cached(pub bool);

@@ -5,7 +5,13 @@ use embedded_batteries_async::acpi::{
     BTM_RETURN_SIZE_BYTES, Bct, BctReturnResult, BixReturn, Bma, BmcControlFlags, Btm, BtmReturnResult,
     PSR_RETURN_SIZE_BYTES, Pif, PowerSourceState, PowerUnit, PsrReturn, STA_RETURN_SIZE_BYTES,
 };
-use embedded_services::{debug, ec_type::message::AcpiMsgComms, error, info, power::policy::PowerCapability, trace};
+use embedded_services::{
+    debug,
+    ec_type::message::{AcpiMsgComms, HostMsg},
+    error, info,
+    power::policy::PowerCapability,
+    trace,
+};
 
 use crate::{
     context::PsuState,
@@ -235,25 +241,19 @@ impl<'a> crate::context::Context<'a> {
                 acpi_response = AcpiMsgComms {
                     payload: crate::context::acpi_buf::get(),
                     payload_len,
-                    endpoint: embedded_services::comms::EndpointID::Internal(
-                        embedded_services::comms::Internal::Battery,
-                    ),
                 };
             } else {
                 error!("payload to_raw error, sending empty response");
                 acpi_response = AcpiMsgComms {
                     payload: crate::context::acpi_buf::get(),
                     payload_len: 0,
-                    endpoint: embedded_services::comms::EndpointID::Internal(
-                        embedded_services::comms::Internal::Battery,
-                    ),
                 };
             }
         }
 
         super::comms_send(
             crate::EndpointID::External(embedded_services::comms::External::Host),
-            &acpi_response,
+            &HostMsg::Response(acpi_response),
         )
         .await
         .unwrap();

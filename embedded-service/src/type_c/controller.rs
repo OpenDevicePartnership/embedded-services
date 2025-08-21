@@ -16,6 +16,7 @@ use embedded_usb_pd::{
 use super::{ControllerId, external};
 use crate::ipc::deferred;
 use crate::power::policy;
+use crate::type_c::Cached;
 use crate::type_c::event::{PortEvent, PortPending};
 use crate::{GlobalRawMutex, IntrusiveNode, error, intrusive_list, trace};
 
@@ -103,7 +104,7 @@ impl Default for PortStatus {
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum PortCommandData {
     /// Get port status
-    PortStatus(bool),
+    PortStatus(Cached),
     /// Get and clear events
     ClearEvents,
     /// Get retimer fw update state
@@ -219,7 +220,7 @@ pub enum Response<'a> {
     /// Controller response
     Controller(InternalResponse<'a>),
     /// UCSI response passthrough
-    Lpm(lpm::Response),
+    Ucsi(ucsi::Response),
     /// Port response
     Port(PortResponse),
 }
@@ -299,6 +300,8 @@ impl<'a> Device<'a> {
     }
 
     /// Create a command handler for this controller
+    ///
+    /// DROP SAFETY: Direct call to deferred channel primitive
     pub async fn receive(&self) -> deferred::Request<'_, GlobalRawMutex, Command, Response<'static>> {
         self.command.receive().await
     }
@@ -331,9 +334,10 @@ pub trait Controller {
     /// Type of error returned by the bus
     type BusError;
 
-    /// Ensure software state is in sync with hardware state
-    fn sync_state(&mut self) -> impl Future<Output = Result<(), Error<Self::BusError>>>;
-    /// Returns ports with pending events
+    /// Wait for a port event to occur
+    /// # Implementation guide
+    /// This function should be drop safe.
+    /// Any intermediate side effects must be undone if the returned [`Future`] is dropped before completing.
     fn wait_port_event(&mut self) -> impl Future<Output = Result<(), Error<Self::BusError>>>;
     /// Returns and clears current events for the given port
     fn clear_port_events(
@@ -341,11 +345,11 @@ pub trait Controller {
         port: LocalPortId,
     ) -> impl Future<Output = Result<PortEvent, Error<Self::BusError>>>;
     /// Returns the port status
-    fn get_port_status(
-        &mut self,
-        port: LocalPortId,
-        cached: bool,
-    ) -> impl Future<Output = Result<PortStatus, Error<Self::BusError>>>;
+    fn get_port_status(&mut self, port: LocalPortId)
+    -> impl Future<Output = Result<PortStatus, Error<Self::BusError>>>;
+
+    /// Reset the controller
+    fn reset_controller(&mut self) -> impl Future<Output = Result<(), Error<Self::BusError>>>;
 
     /// Returns the retimer fw update state
     fn get_rt_fw_update_status(
@@ -585,7 +589,7 @@ impl ContextToken {
         &self,
         port_id: GlobalPortId,
         command: lpm::CommandData,
-    ) -> Result<lpm::ResponseData, PdError> {
+    ) -> Result<ucsi::Response, PdError> {
         let node = self.find_node_by_port(port_id).await?;
 
         match node
@@ -597,7 +601,7 @@ impl ContextToken {
             }))
             .await
         {
-            Response::Lpm(response) => response,
+            Response::Ucsi(response) => Ok(response),
             r => {
                 error!("Invalid response: expected LPM, got {:?}", r);
                 Err(PdError::InvalidResponse)
@@ -610,7 +614,7 @@ impl ContextToken {
         &self,
         port_id: GlobalPortId,
         command: lpm::CommandData,
-    ) -> Result<lpm::ResponseData, PdError> {
+    ) -> Result<ucsi::Response, PdError> {
         match with_timeout(
             DEFAULT_TIMEOUT,
             self.send_port_command_ucsi_no_timeout(port_id, command),
@@ -627,7 +631,7 @@ impl ContextToken {
         &self,
         port_id: GlobalPortId,
         reset_type: lpm::ResetType,
-    ) -> Result<lpm::ResponseData, PdError> {
+    ) -> Result<ucsi::Response, PdError> {
         self.send_port_command_ucsi(port_id, lpm::CommandData::ConnectorReset(reset_type))
             .await
     }
@@ -686,7 +690,7 @@ impl ContextToken {
     }
 
     /// Get the current port status
-    pub async fn get_port_status(&self, port: GlobalPortId, cached: bool) -> Result<PortStatus, PdError> {
+    pub async fn get_port_status(&self, port: GlobalPortId, cached: Cached) -> Result<PortStatus, PdError> {
         match self
             .send_port_command(port, PortCommandData::PortStatus(cached))
             .await?

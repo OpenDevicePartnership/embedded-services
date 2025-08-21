@@ -102,7 +102,7 @@ async fn fw_update_task() {
     info!("Got response: {:?}", offer);
 
     let fw = &[]; //include_bytes!("../../fw.bin");
-    let num_chunks = fw.len() / DEFAULT_DATA_LENGTH;
+    let num_chunks = fw.len() / DEFAULT_DATA_LENGTH + (fw.len() % DEFAULT_DATA_LENGTH != 0) as usize;
 
     for (i, chunk) in fw.chunks(DEFAULT_DATA_LENGTH).enumerate() {
         let header = FwUpdateContentHeader {
@@ -125,7 +125,7 @@ async fn fw_update_task() {
             data: chunk_data,
         };
 
-        info!("Sending chunk {} of {}", i, fw.len());
+        info!("Sending chunk {} of {}", i + 1, num_chunks);
         let response = device
             .execute_device_request(RequestData::GiveContent(request))
             .await

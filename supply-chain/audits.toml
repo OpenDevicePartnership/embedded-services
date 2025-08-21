@@ -79,6 +79,29 @@ notes = "ODP crates are always trusted."
 who = "Matteo Tullo <matteotullo@microsoft.com>"
 criteria = "safe-to-deploy"
 version = "0.2.1"
+
+[[audits.embedded-fans]]
+who = "Kurtis Dinelle <kdinelle@microsoft.com>"
+criteria = "safe-to-deploy"
+version = "0.1.0"
+notes = "ODP crates are always trusted."
+
+[[audits.embedded-fans-async]]
+who = "Kurtis Dinelle <kdinelle@microsoft.com>"
+criteria = "safe-to-deploy"
+version = "0.2.0"
+notes = "ODP crates are always trusted."
+
+[[audits.embedded-sensors-hal]]
+who = "Kurtis Dinelle <kdinelle@microsoft.com>"
+criteria = "safe-to-deploy"
+version = "0.1.0"
+notes = "ODP crates are always trusted."
+
+[[audits.embedded-sensors-hal-async]]
+who = "Kurtis Dinelle <kdinelle@microsoft.com>"
+criteria = "safe-to-deploy"
+version = "0.3.0"
 notes = "ODP crates are always trusted."
 
 [[audits.gimli]]
@@ -197,6 +220,11 @@ version = "0.6.9"
 who = "jerrysxie <jerryxie@microsoft.com>"
 criteria = "safe-to-deploy"
 version = "0.22.26"
+
+[[audits.uuid]]
+who = "Jerry Xie <jerryxie@microsoft.com>"
+criteria = "safe-to-deploy"
+version = "1.17.0"
 
 [[audits.windows-targets]]
 who = "Robert Zieba <robertzieba@microsoft.com>"
