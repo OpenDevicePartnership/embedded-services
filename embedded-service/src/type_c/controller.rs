@@ -99,6 +99,28 @@ impl Default for PortStatus {
     }
 }
 
+/// USB control configuration
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct UsbControlConfig {
+    /// Enable USB2 data path
+    pub usb2_enabled: bool,
+    /// Enable USB3 data path  
+    pub usb3_enabled: bool,
+    /// Enable USB4 data path
+    pub usb4_enabled: bool,
+}
+
+impl Default for UsbControlConfig {
+    fn default() -> Self {
+        Self {
+            usb2_enabled: true,
+            usb3_enabled: true,
+            usb4_enabled: true,
+        }
+    }
+}
+
 /// Port-specific command data
 #[derive(Copy, Clone, Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
@@ -125,6 +147,8 @@ pub enum PortCommandData {
     SetUnconstrainedPower(bool),
     /// Clear the dead battery flag for the given port
     ClearDeadBatteryFlag,
+    /// Set USB control configuration
+    SetUsbControl(UsbControlConfig),
 }
 
 /// Port-specific commands
@@ -415,6 +439,13 @@ pub trait Controller {
         &mut self,
         offset: usize,
         data: &[u8],
+    ) -> impl Future<Output = Result<(), Error<Self::BusError>>>;
+
+    /// Set USB control configuration for the given port
+    fn set_usb_control(
+        &mut self,
+        port: LocalPortId,
+        config: UsbControlConfig,
     ) -> impl Future<Output = Result<(), Error<Self::BusError>>>;
 }
 

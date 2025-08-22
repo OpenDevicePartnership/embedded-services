@@ -15,7 +15,7 @@ use embedded_hal_async::i2c::I2c;
 use embedded_services::cfu::component::CfuDevice;
 use embedded_services::power::policy::{self, PowerCapability};
 use embedded_services::transformers::object::{Object, RefGuard, RefMutGuard};
-use embedded_services::type_c::controller::{self, Controller, ControllerStatus, PortStatus};
+use embedded_services::type_c::controller::{self, Controller, ControllerStatus, PortStatus, UsbControlConfig};
 use embedded_services::type_c::event::PortEvent;
 use embedded_services::type_c::ControllerId;
 use embedded_services::{debug, error, info, trace, type_c, warn, GlobalRawMutex};
@@ -168,6 +168,26 @@ impl<'a, const N: usize, M: RawMutex, B: I2c> Tps6699x<'a, N, M, B> {
         }
         Ok(())
     }
+}
+
+bitfield! {
+    /// DFP VDO structure
+    #[derive(Clone, Copy)]
+    struct DfpVdo(u32);
+    impl Debug;
+
+    /// Port number (5 bits)
+    pub u8, port_number, set_port_number: 4, 0;
+    /// Reserved field 0 (3 bits) - Set to 0
+    pub u8, reserved0, set_reserved0: 7, 5;
+    /// Reserved field 1 (16 bits) - Set to 0
+    pub u16, reserved1, set_reserved1: 23, 8;
+    /// Host USB capability (3 bits)
+    pub u8, host_capability, set_host_capability: 26, 24;
+    /// Reserved field 2 (2 bits) - Set to 0
+    pub u8, reserved2, set_reserved2: 28, 27;
+    /// DFP VDO version (3 bits)
+    pub u8, version, set_version: 31, 29;
 }
 
 impl<const N: usize, M: RawMutex, B: I2c> Controller for Tps6699x<'_, N, M, B> {
@@ -598,6 +618,39 @@ impl<const N: usize, M: RawMutex, B: I2c> Controller for Tps6699x<'_, N, M, B> {
             .try_lock()
             .expect("Driver should not have been locked before this, thus infallible");
         tps6699x.set_autonegotiate_sink_max_voltage(port, voltage_mv).await
+    }
+
+    /// Set USB control configuration for the given port
+    async fn set_usb_control(
+        &mut self,
+        port: LocalPortId,
+        config: UsbControlConfig,
+    ) -> Result<(), Error<Self::BusError>> {
+        let mut tps6699x = self
+            .tps6699x
+            .try_lock()
+            .expect("Driver should not have been locked before this, thus infallible");
+        let mut tx_identity_value = 0;
+
+        if config.usb2_enabled {
+            tx_identity_value |= 1 << 0;
+        }
+        if config.usb3_enabled {
+            tx_identity_value |= 1 << 1;
+        }
+        if config.usb4_enabled {
+            tx_identity_value |= 1 << 2;
+        }
+
+        tps6699x
+            .modify_tx_identity(port, |identity| {
+                let mut dfp_vdo = DfpVdo(identity.dfp1_vdo());
+                dfp_vdo.set_host_capability(tx_identity_value);
+                identity.set_dfp1_vdo(dfp_vdo.0);
+                identity.clone()
+            })
+            .await?;
+        Ok(())
     }
 }
 
