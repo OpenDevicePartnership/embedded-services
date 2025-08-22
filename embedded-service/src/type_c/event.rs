@@ -518,7 +518,10 @@ mod tests {
         notification.set_custom_mode_entered(true);
 
         assert_eq!(notification.next(), Some(PortNotificationSingle::Alert));
-        assert_eq!(notification.next(), Some(PortNotificationSingle::CustomModeEntered));
+        assert_eq!(
+            notification.next(),
+            Some(PortNotificationSingle::Vdm(VdmNotification::Entered))
+        );
         assert_eq!(notification.next(), None);
     }
 
@@ -536,7 +539,10 @@ mod tests {
         let mut notification = PortNotification::none();
         notification.set_custom_mode_entered(true);
 
-        assert_eq!(notification.next(), Some(PortNotificationSingle::CustomModeEntered));
+        assert_eq!(
+            notification.next(),
+            Some(PortNotificationSingle::Vdm(VdmNotification::Entered))
+        );
         assert_eq!(notification.next(), None);
     }
 
@@ -545,7 +551,10 @@ mod tests {
         let mut notification = PortNotification::none();
         notification.set_custom_mode_exited(true);
 
-        assert_eq!(notification.next(), Some(PortNotificationSingle::CustomModeExited));
+        assert_eq!(
+            notification.next(),
+            Some(PortNotificationSingle::Vdm(VdmNotification::Exited))
+        );
         assert_eq!(notification.next(), None);
     }
 
@@ -556,7 +565,7 @@ mod tests {
 
         assert_eq!(
             notification.next(),
-            Some(PortNotificationSingle::CustomModeAttentionReceived)
+            Some(PortNotificationSingle::Vdm(VdmNotification::AttentionReceived))
         );
         assert_eq!(notification.next(), None);
     }
@@ -568,7 +577,7 @@ mod tests {
 
         assert_eq!(
             notification.next(),
-            Some(PortNotificationSingle::CustomModeOtherVdmReceived)
+            Some(PortNotificationSingle::Vdm(VdmNotification::OtherReceived))
         );
         assert_eq!(notification.next(), None);
     }
