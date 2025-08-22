@@ -78,6 +78,13 @@ mod test_controller {
                         data: None,
                     }
                 }
+                rest => {
+                    info!("UCSI command {:#?} for port {:#?}", rest, command.port);
+                    ucsi::Response {
+                        cci: ucsi::cci::Cci::new_cmd_complete(),
+                        data: None,
+                    }
+                }
             }
         }
 
