@@ -4,7 +4,7 @@ use embedded_services::{
     GlobalRawMutex,
     power::policy::PowerCapability,
     type_c::{
-        controller::{Contract, ControllerStatus, PortStatus, RetimerFwUpdateState},
+        controller::{Contract, ControllerStatus, PortStatus, RetimerFwUpdateState, UsbControlConfig},
         event::PortEvent,
     },
 };
@@ -233,6 +233,18 @@ impl embedded_services::type_c::controller::Controller for Controller<'_> {
 
     async fn clear_dead_battery_flag(&mut self, port: LocalPortId) -> Result<(), Error<Self::BusError>> {
         debug!("clear_dead_battery_flag(port: {port:?})");
+        Ok(())
+    }
+
+    async fn set_usb_control(
+        &mut self,
+        port: LocalPortId,
+        config: UsbControlConfig,
+    ) -> Result<(), Error<Self::BusError>> {
+        debug!(
+            "set_usb_control(port: {port:?}, usb2: {}, usb3: {}, usb4: {})",
+            config.usb2_enabled, config.usb3_enabled, config.usb4_enabled
+        );
         Ok(())
     }
 }
