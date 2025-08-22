@@ -3,7 +3,7 @@ use embedded_usb_pd::ucsi::ppm::set_notification_enable::NotificationEnable;
 use embedded_usb_pd::ucsi::ppm::state_machine::{
     Input as PpmInput, Output as PpmOutput, State as PpmState, StateMachine,
 };
-use embedded_usb_pd::ucsi::{ppm, Command, Response, ResponseData};
+use embedded_usb_pd::ucsi::{ppm, Command, GlobalCommand, GlobalResponse, ResponseData};
 use embedded_usb_pd::PdError;
 
 use super::*;
@@ -19,26 +19,26 @@ pub(super) struct State {
 
 impl<'a> Service<'a> {
     /// Set notification enable implementation
-    async fn process_set_notification_enable(&self, state: &mut State, enable: NotificationEnable) -> Response {
+    async fn process_set_notification_enable(&self, state: &mut State, enable: NotificationEnable) -> GlobalResponse {
         debug!("Set Notification Enable: {:?}", enable);
         state.notifications_enabled = enable;
         Cci::new_cmd_complete().into()
     }
 
     /// PPM reset implementation
-    fn process_ppm_reset(&self) -> (Response, Option<PpmInput>) {
+    fn process_ppm_reset(&self) -> (GlobalResponse, Option<PpmInput>) {
         debug!("PPM reset");
         (Cci::new_reset_complete().into(), Some(PpmInput::Reset))
     }
 
     /// PPM get capabilities implementation
-    fn process_get_capabilities(&self) -> (Response, Option<PpmInput>) {
+    fn process_get_capabilities(&self) -> (GlobalResponse, Option<PpmInput>) {
         debug!("Get PPM capabilities: {:?}", self.config.ucsi_capabilities);
         (
-            Response {
+            GlobalResponse {
                 cci: Cci::new_cmd_complete(),
                 // TODO: pull num connectors from service
-                data: Some(ResponseData::PpmResponse(ppm::Response::GetCapability(
+                data: Some(ResponseData::PpmResponse(ppm::ResponseData::GetCapability(
                     self.config.ucsi_capabilities,
                 ))),
             },
@@ -50,8 +50,8 @@ impl<'a> Service<'a> {
     async fn process_ppm_state_idle_disabled(
         &self,
         state: &mut State,
-        command: &Command,
-    ) -> Result<(Response, Option<PpmInput>), PdError> {
+        command: &GlobalCommand,
+    ) -> Result<(GlobalResponse, Option<PpmInput>), PdError> {
         match command {
             Command::PpmCommand(ppm::Command::PpmReset) => Ok(self.process_ppm_reset()),
             Command::PpmCommand(ppm::Command::SetNotificationEnable(enable)) => Ok((
@@ -67,8 +67,8 @@ impl<'a> Service<'a> {
     async fn process_ppm_state_idle_enabled(
         &self,
         state: &mut State,
-        command: &Command,
-    ) -> Result<(Response, Option<PpmInput>), PdError> {
+        command: &GlobalCommand,
+    ) -> Result<(GlobalResponse, Option<PpmInput>), PdError> {
         match command {
             Command::PpmCommand(ppm::Command::PpmReset) => Ok(self.process_ppm_reset()),
             Command::PpmCommand(ppm::Command::SetNotificationEnable(enable)) => Ok((
@@ -83,7 +83,10 @@ impl<'a> Service<'a> {
     }
 
     /// Process a command when the PPM state machine is busy
-    async fn process_ppm_state_busy(&self, command: &Command) -> Result<(Response, Option<PpmInput>), PdError> {
+    async fn process_ppm_state_busy(
+        &self,
+        command: &GlobalCommand,
+    ) -> Result<(GlobalResponse, Option<PpmInput>), PdError> {
         match command {
             // Reset is the only command that can be processed in busy state
             Command::PpmCommand(ppm::Command::PpmReset) => Ok(self.process_ppm_reset()),
@@ -94,8 +97,8 @@ impl<'a> Service<'a> {
     /// Process a command when the PPM state machine is processing a command
     async fn process_ppm_state_processing_command(
         &self,
-        command: &Command,
-    ) -> Result<(Response, Option<PpmInput>), PdError> {
+        command: &GlobalCommand,
+    ) -> Result<(GlobalResponse, Option<PpmInput>), PdError> {
         match command {
             Command::PpmCommand(ppm::Command::PpmReset) => Ok(self.process_ppm_reset()),
             // Cancel the current command
@@ -107,8 +110,8 @@ impl<'a> Service<'a> {
     /// Process a command when the PPM state machine is waiting for a command complete ack
     async fn process_ppm_state_wait_for_command_complete_ack(
         &self,
-        command: &Command,
-    ) -> Result<(Response, Option<PpmInput>), PdError> {
+        command: &GlobalCommand,
+    ) -> Result<(GlobalResponse, Option<PpmInput>), PdError> {
         match command {
             Command::PpmCommand(ppm::Command::PpmReset) => Ok(self.process_ppm_reset()),
             Command::PpmCommand(ppm::Command::AckCcCi(args)) => {
@@ -127,8 +130,8 @@ impl<'a> Service<'a> {
     /// Process a command when the PPM state machine is waiting for an async event ack
     async fn process_ppm_state_wait_for_async_event_ack(
         &self,
-        command: &Command,
-    ) -> Result<(Response, Option<PpmInput>), PdError> {
+        command: &GlobalCommand,
+    ) -> Result<(GlobalResponse, Option<PpmInput>), PdError> {
         match command {
             Command::PpmCommand(ppm::Command::PpmReset) => Ok(self.process_ppm_reset()),
             Command::PpmCommand(ppm::Command::AckCcCi(args)) => {
@@ -145,7 +148,10 @@ impl<'a> Service<'a> {
     }
 
     /// Process an external UCSI command
-    pub(super) async fn process_ucsi_command(&self, command: &Command) -> Result<external::UcsiResponse, PdError> {
+    pub(super) async fn process_ucsi_command(
+        &self,
+        command: &GlobalCommand,
+    ) -> Result<external::UcsiResponse, PdError> {
         let state = &mut self.state.lock().await.ucsi;
         let (mut response, ppm_input) = match state.ppm_state_machine.state() {
             PpmState::Idle(false) => self.process_ppm_state_idle_disabled(state, command).await,
@@ -182,7 +188,7 @@ impl<'a> Service<'a> {
                     PpmOutput::OpmNotifyAsyncEvent => {
                         notify_opm = state.notifications_enabled.connect_change();
                         // TODO: use real port
-                        response.cci.set_connector_change(0);
+                        response.cci.set_connector_change(GlobalPortId(0));
                     }
                 }
             }

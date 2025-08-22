@@ -33,7 +33,7 @@ use embedded_services::type_c::event::{PortEvent, PortNotificationSingle, PortPe
 use embedded_services::GlobalRawMutex;
 use embedded_services::{debug, error, info, trace, warn};
 use embedded_usb_pd::ado::Ado;
-use embedded_usb_pd::{Error, PdError, PortId as LocalPortId};
+use embedded_usb_pd::{Error, LocalPortId, PdError};
 
 use crate::wrapper::backing::Backing;
 use crate::wrapper::message::*;
