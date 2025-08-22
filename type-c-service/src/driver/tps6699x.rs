@@ -178,14 +178,8 @@ bitfield! {
 
     /// Port number (5 bits)
     pub u8, port_number, set_port_number: 4, 0;
-    /// Reserved field 0 (3 bits) - Set to 0
-    pub u8, reserved0, set_reserved0: 7, 5;
-    /// Reserved field 1 (16 bits) - Set to 0
-    pub u16, reserved1, set_reserved1: 23, 8;
     /// Host USB capability (3 bits)
     pub u8, host_capability, set_host_capability: 26, 24;
-    /// Reserved field 2 (2 bits) - Set to 0
-    pub u8, reserved2, set_reserved2: 28, 27;
     /// DFP VDO version (3 bits)
     pub u8, version, set_version: 31, 29;
 }
