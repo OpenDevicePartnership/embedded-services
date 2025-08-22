@@ -18,6 +18,7 @@ embassy-time.workspace = true
 embassy-sync.workspace = true
 embassy-imxrt = { workspace = true, features = ["mimxrt633s"] }
 embassy-executor.workspace = true
+embassy-futures.workspace = true
 
 [target.'cfg(target_os = "none")'.dependencies]
 embassy-executor = { workspace = true, features = [

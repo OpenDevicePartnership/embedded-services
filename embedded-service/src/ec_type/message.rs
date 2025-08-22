@@ -73,8 +73,6 @@ pub struct AcpiMsgComms<'a> {
     pub payload: crate::buffer::SharedRef<'a, u8>,
     /// Size of payload
     pub payload_len: usize,
-    /// Endpoint ID
-    pub endpoint: crate::comms::EndpointID,
 }
 
 /// ACPI Message, holding an owned reference to a buffer
@@ -83,6 +81,13 @@ pub struct AcpiMsg<'a> {
     pub payload: crate::buffer::OwnedRef<'a, u8>,
     /// Size of payload
     pub payload_len: usize,
+}
+
+/// Notification type to be sent to Host
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct NotificationMsg {
+    /// Interrupt offset
+    pub offset: u8,
 }
 
 #[allow(missing_docs)]
@@ -104,4 +109,14 @@ pub enum ThermalMessage {
     Tmp1Timeout(u32),
     Tmp1Low(u32),
     Tmp1High(u32),
+}
+
+/// Message type that services can send to communicate with the Host.
+#[derive(Clone)]
+pub enum HostMsg<'a> {
+    /// Notification without data. After receivng a notification,
+    /// typically the host will request some data from the EC
+    Notification(NotificationMsg),
+    /// Response to Host request.
+    Response(AcpiMsgComms<'a>),
 }

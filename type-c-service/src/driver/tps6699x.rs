@@ -173,6 +173,19 @@ impl<'a, const N: usize, M: RawMutex, B: I2c> Tps6699x<'a, N, M, B> {
 impl<const N: usize, M: RawMutex, B: I2c> Controller for Tps6699x<'_, N, M, B> {
     type BusError = B::Error;
 
+    /// Controller reset
+    async fn reset_controller(&mut self) -> Result<(), Error<Self::BusError>> {
+        let mut tps6699x = self
+            .tps6699x
+            .try_lock()
+            .expect("Driver should not have been locked before this, thus infallible");
+
+        let mut delay = Delay;
+        tps6699x.reset(&mut delay).await?;
+
+        Ok(())
+    }
+
     /// Wait for an event on any port
     async fn wait_port_event(&mut self) -> Result<(), Error<Self::BusError>> {
         let mut tps6699x = self

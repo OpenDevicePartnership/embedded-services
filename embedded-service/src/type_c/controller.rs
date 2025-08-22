@@ -412,6 +412,9 @@ pub trait Controller {
     fn get_port_status(&mut self, port: LocalPortId)
     -> impl Future<Output = Result<PortStatus, Error<Self::BusError>>>;
 
+    /// Reset the controller
+    fn reset_controller(&mut self) -> impl Future<Output = Result<(), Error<Self::BusError>>>;
+
     /// Returns the retimer fw update state
     fn get_rt_fw_update_status(
         &mut self,

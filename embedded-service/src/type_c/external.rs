@@ -19,6 +19,8 @@ pub enum ControllerCommandData {
     ControllerStatus,
     /// Sync controller state
     SyncState,
+    /// Controller reset
+    Reset,
 }
 
 /// Controller-specific commands
@@ -154,6 +156,19 @@ pub async fn get_controller_port_status(
 ) -> Result<PortStatus, PdError> {
     let global_port = controller_port_to_global_id(controller, port).await?;
     get_port_status(global_port, cached).await
+}
+
+/// Reset the given controller.
+pub async fn reset_controller(controller_id: ControllerId) -> Result<(), PdError> {
+    match execute_external_controller_command(Command::Controller(ControllerCommand {
+        id: controller_id,
+        data: ControllerCommandData::Reset,
+    }))
+    .await?
+    {
+        ControllerResponseData::Complete => Ok(()),
+        _ => Err(PdError::InvalidResponse),
+    }
 }
 
 /// Get the status of the given controller

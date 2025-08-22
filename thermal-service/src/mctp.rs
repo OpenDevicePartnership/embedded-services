@@ -157,7 +157,6 @@ impl From<Response> for AcpiMsgComms<'_> {
         AcpiMsgComms {
             payload: crate::context::mctp_buf::get(),
             payload_len: header_len + data_len,
-            endpoint: comms::EndpointID::Internal(comms::Internal::Thermal),
         }
     }
 }
@@ -175,7 +174,6 @@ impl From<PayloadError> for AcpiMsgComms<'_> {
         AcpiMsgComms {
             payload: crate::context::mctp_buf::get(),
             payload_len: 4,
-            endpoint: comms::EndpointID::Internal(comms::Internal::Thermal),
         }
     }
 }

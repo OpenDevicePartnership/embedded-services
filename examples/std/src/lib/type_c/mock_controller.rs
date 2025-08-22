@@ -149,6 +149,11 @@ impl embedded_services::type_c::controller::Controller for Controller<'_> {
         })
     }
 
+    async fn reset_controller(&mut self) -> Result<(), Error<Self::BusError>> {
+        debug!("Reset controller");
+        Ok(())
+    }
+
     async fn get_rt_fw_update_status(
         &mut self,
         _port: LocalPortId,

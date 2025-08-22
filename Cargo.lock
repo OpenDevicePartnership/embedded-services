@@ -495,7 +495,7 @@ checksum = "48c757948c5ede0e46177b7add2e67155f70e33c07fea8284df6576da70b3719"
 [[package]]
 name = "embassy-embedded-hal"
 version = "0.4.0"
-source = "git+https://github.com/embassy-rs/embassy#f2be66a5f94a655696407e2e7bc81c322aab3ea1"
+source = "git+https://github.com/embassy-rs/embassy#63ade389303ab4f6fe9d34211629b02c16e9bb11"
 dependencies = [
  "embassy-futures",
  "embassy-hal-internal",
@@ -512,7 +512,7 @@ dependencies = [
 [[package]]
 name = "embassy-executor"
 version = "0.8.0"
-source = "git+https://github.com/embassy-rs/embassy#f2be66a5f94a655696407e2e7bc81c322aab3ea1"
+source = "git+https://github.com/embassy-rs/embassy#63ade389303ab4f6fe9d34211629b02c16e9bb11"
 dependencies = [
  "cortex-m",
  "critical-section",
@@ -525,7 +525,7 @@ dependencies = [
 [[package]]
 name = "embassy-executor-macros"
 version = "0.7.0"
-source = "git+https://github.com/embassy-rs/embassy#f2be66a5f94a655696407e2e7bc81c322aab3ea1"
+source = "git+https://github.com/embassy-rs/embassy#63ade389303ab4f6fe9d34211629b02c16e9bb11"
 dependencies = [
  "darling",
  "proc-macro2",
@@ -536,7 +536,7 @@ dependencies = [
 [[package]]
 name = "embassy-futures"
 version = "0.1.1"
-source = "git+https://github.com/embassy-rs/embassy#f2be66a5f94a655696407e2e7bc81c322aab3ea1"
+source = "git+https://github.com/embassy-rs/embassy#63ade389303ab4f6fe9d34211629b02c16e9bb11"
 dependencies = [
  "defmt 1.0.1",
  "log",
@@ -545,7 +545,7 @@ dependencies = [
 [[package]]
 name = "embassy-hal-internal"
 version = "0.3.0"
-source = "git+https://github.com/embassy-rs/embassy#f2be66a5f94a655696407e2e7bc81c322aab3ea1"
+source = "git+https://github.com/embassy-rs/embassy#63ade389303ab4f6fe9d34211629b02c16e9bb11"
 dependencies = [
  "cortex-m",
  "critical-section",
@@ -556,7 +556,7 @@ dependencies = [
 [[package]]
 name = "embassy-imxrt"
 version = "0.1.0"
-source = "git+https://github.com/OpenDevicePartnership/embassy-imxrt#ce3db77e1364d9fdfee639ec94f4c7f3b3a870b1"
+source = "git+https://github.com/OpenDevicePartnership/embassy-imxrt#e129941ddf98b67b8cdb1e1a811073e714e4f2c8"
 dependencies = [
  "cfg-if",
  "cortex-m",
@@ -590,8 +590,8 @@ dependencies = [
 
 [[package]]
 name = "embassy-sync"
-version = "0.7.0"
-source = "git+https://github.com/embassy-rs/embassy#f2be66a5f94a655696407e2e7bc81c322aab3ea1"
+version = "0.7.1"
+source = "git+https://github.com/embassy-rs/embassy#63ade389303ab4f6fe9d34211629b02c16e9bb11"
 dependencies = [
  "cfg-if",
  "critical-section",
@@ -606,7 +606,7 @@ dependencies = [
 [[package]]
 name = "embassy-time"
 version = "0.4.0"
-source = "git+https://github.com/embassy-rs/embassy#f2be66a5f94a655696407e2e7bc81c322aab3ea1"
+source = "git+https://github.com/embassy-rs/embassy#63ade389303ab4f6fe9d34211629b02c16e9bb11"
 dependencies = [
  "cfg-if",
  "critical-section",
@@ -624,7 +624,7 @@ dependencies = [
 [[package]]
 name = "embassy-time-driver"
 version = "0.2.0"
-source = "git+https://github.com/embassy-rs/embassy#f2be66a5f94a655696407e2e7bc81c322aab3ea1"
+source = "git+https://github.com/embassy-rs/embassy#63ade389303ab4f6fe9d34211629b02c16e9bb11"
 dependencies = [
  "document-features",
 ]
@@ -632,7 +632,7 @@ dependencies = [
 [[package]]
 name = "embassy-time-queue-utils"
 version = "0.2.0"
-source = "git+https://github.com/embassy-rs/embassy#f2be66a5f94a655696407e2e7bc81c322aab3ea1"
+source = "git+https://github.com/embassy-rs/embassy#63ade389303ab4f6fe9d34211629b02c16e9bb11"
 dependencies = [
  "embassy-executor",
  "heapless 0.8.0",
@@ -853,6 +853,7 @@ dependencies = [
  "cortex-m-rt",
  "defmt 0.3.100",
  "embassy-executor",
+ "embassy-futures",
  "embassy-imxrt",
  "embassy-sync",
  "embassy-time",
@@ -1433,7 +1434,7 @@ dependencies = [
 [[package]]
 name = "storage_bus"
 version = "0.1.0"
-source = "git+https://github.com/OpenDevicePartnership/embedded-mcu#004ccaa45d341a56073360b0764d2a538d46780d"
+source = "git+https://github.com/OpenDevicePartnership/embedded-mcu#146fda33807af6aeabcade513914da95c926fbc9"
 
 [[package]]
 name = "strsim"
