@@ -5,7 +5,7 @@ use embedded_services::{
     power::policy::PowerCapability,
     type_c::{
         controller::{
-            AttnVdm, Contract, ControllerStatus, OtherVdm, PortStatus, RetimerFwUpdateState, UsbControlConfig,
+            AttnVdm, Contract, ControllerStatus, OtherVdm, PortStatus, RetimerFwUpdateState, SendVdm, UsbControlConfig,
         },
         event::PortEvent,
     },
@@ -246,6 +246,11 @@ impl embedded_services::type_c::controller::Controller for Controller<'_> {
     async fn get_attn_vdm(&mut self, port: LocalPortId) -> Result<AttnVdm, Error<Self::BusError>> {
         debug!("Get attention VDM for port {port:?}");
         Ok(AttnVdm::default())
+    }
+
+    async fn send_vdm(&mut self, port: LocalPortId, tx_vdm: SendVdm) -> Result<(), Error<Self::BusError>> {
+        debug!("Send VDM for port {port:?}: {tx_vdm:?}");
+        Ok(())
     }
 
     async fn set_usb_control(

@@ -6,7 +6,7 @@ use crate::type_c::{Cached, controller::execute_external_ucsi_command};
 use super::{
     ControllerId,
     controller::{
-        ControllerStatus, PortStatus, RetimerFwUpdateState, execute_external_controller_command,
+        ControllerStatus, PortStatus, RetimerFwUpdateState, SendVdm, execute_external_controller_command,
         execute_external_port_command, lookup_controller,
     },
 };
@@ -70,6 +70,8 @@ pub enum PortCommandData {
     },
     /// Clear the dead battery flag for the given port.
     ClearDeadBatteryFlag,
+    /// Send VDM
+    SendVdm(SendVdm),
 }
 
 /// Port-specific commands
@@ -312,4 +314,17 @@ pub async fn reconfigure_retimer(port: GlobalPortId) -> Result<(), PdError> {
 /// Execute a UCSI command
 pub async fn execute_ucsi_command(command: ucsi::GlobalCommand) -> Result<UcsiResponse, PdError> {
     execute_external_ucsi_command(command).await
+}
+
+/// Send vdm to the given port
+pub async fn send_vdm(port: GlobalPortId, tx_vdm: SendVdm) -> Result<(), PdError> {
+    match execute_external_port_command(Command::Port(PortCommand {
+        port,
+        data: PortCommandData::SendVdm(tx_vdm),
+    }))
+    .await?
+    {
+        PortResponseData::Complete => Ok(()),
+        _ => Err(PdError::InvalidResponse),
+    }
 }

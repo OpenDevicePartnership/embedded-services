@@ -16,7 +16,9 @@ use embedded_services::cfu::component::CfuDevice;
 use embedded_services::power::policy::{self, PowerCapability};
 use embedded_services::transformers::object::{Object, RefGuard, RefMutGuard};
 use embedded_services::type_c::controller::{
-    self, AttnVdm, Controller, ControllerStatus, OtherVdm, PortStatus, UsbControlConfig,
+    
+    self, AttnVdm, Controller, ControllerStatus, OtherVdm, PortStatus, SendVdm,
+, UsbControlConfig,
 };
 use embedded_services::type_c::event::PortEvent;
 use embedded_services::type_c::{ControllerId, ATTN_VDM_LEN};
@@ -31,7 +33,10 @@ use tps6699x::asynchronous::fw_update::UpdateTarget;
 use tps6699x::asynchronous::fw_update::{
     disable_all_interrupts, enable_port0_interrupts, BorrowedUpdater, BorrowedUpdaterInProgress,
 };
-use tps6699x::command::ReturnValue;
+use tps6699x::command::{
+    vdms::{Version, INITIATOR_WAIT_TIME_MS, MAX_NUM_DATA_OBJECTS},
+    ReturnValue,
+};
 use tps6699x::fw_update::UpdateConfig as FwUpdateConfig;
 
 type Updater<'a, M, B> = BorrowedUpdaterInProgress<tps6699x_drv::Tps6699x<'a, M, B>>;
@@ -639,6 +644,40 @@ impl<const N: usize, M: RawMutex, B: I2c> Controller for Tps6699x<'_, N, M, B> {
                 Ok(attn_vdm)
             }
             Err(e) => Err(e),
+        }
+    }
+
+    async fn send_vdm(&mut self, port: LocalPortId, tx_vdm: SendVdm) -> Result<(), Error<Self::BusError>> {
+        let mut tps6699x = self
+            .tps6699x
+            .try_lock()
+            .expect("Driver should not have been locked before this, thus infallible");
+
+        let input = {
+            let mut input = tps6699x::command::vdms::Input::default();
+            input.set_num_vdo(tx_vdm.vdo_count);
+            input.set_version(Version::Two);
+            input.set_initiator(tx_vdm.initiator);
+            if tx_vdm.initiator {
+                input.set_initiator_wait_timer(INITIATOR_WAIT_TIME_MS);
+            }
+
+            for (index, vdo) in tx_vdm.vdo_data.iter().take(tx_vdm.vdo_count as usize).enumerate() {
+                if index >= MAX_NUM_DATA_OBJECTS {
+                    warn!("VDM data exceeds available VDO slots, truncating");
+                    break; // Prevent out-of-bounds access
+                }
+                input.set_vdo(index, *vdo);
+            }
+            input
+        };
+
+        match tps6699x.send_vdms(port, input).await? {
+            ReturnValue::Success => Ok(()),
+            r => {
+                debug!("Error executing VDMs on port {}: {:#?}", port.0, r);
+                Err(Error::Pd(PdError::InvalidResponse))
+            }
         }
     }
 
