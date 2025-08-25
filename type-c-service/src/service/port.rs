@@ -4,6 +4,8 @@ use embedded_usb_pd::GlobalPortId;
 use super::*;
 use crate::PortEventStreamer;
 
+use embedded_services::type_c::controller::SendVdm;
+
 impl<'a> Service<'a> {
     /// Wait for port flags
     pub(super) async fn wait_port_flags(&self) -> PortEventStreamer {
@@ -43,6 +45,7 @@ impl<'a> Service<'a> {
                 self.process_set_max_sink_voltage(command.port, max_voltage_mv).await
             }
             external::PortCommandData::ClearDeadBatteryFlag => self.process_clear_dead_battery_flag(command.port).await,
+            external::PortCommandData::SendVdm(tx_vdm) => self.process_send_vdm(command.port, tx_vdm).await,
         }
     }
 
@@ -125,6 +128,16 @@ impl<'a> Service<'a> {
         let status = self.context.clear_dead_battery_flag(port_id).await;
         if let Err(e) = status {
             error!("Error clearing dead battery flag: {:#?}", e);
+        }
+
+        external::Response::Port(status.map(|_| external::PortResponseData::Complete))
+    }
+
+    /// Process send vdm commands
+    async fn process_send_vdm(&self, port_id: GlobalPortId, tx_vdm: SendVdm) -> external::Response<'static> {
+        let status = self.context.send_vdm(port_id, tx_vdm).await;
+        if let Err(e) = status {
+            error!("Error sending VDM data: {:#?}", e);
         }
 
         external::Response::Port(status.map(|_| external::PortResponseData::Complete))
