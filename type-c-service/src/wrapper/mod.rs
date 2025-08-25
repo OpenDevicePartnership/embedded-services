@@ -44,6 +44,7 @@ mod cfu;
 pub mod message;
 mod pd;
 mod power;
+mod vdm;
 
 /// Base interval for checking for FW update timeouts and recovery attempts
 pub const DEFAULT_FW_UPDATE_TICK_INTERVAL_MS: u64 = 5000;
@@ -466,6 +467,9 @@ impl<'a, const N: usize, C: Controller, BACK: Backing<'a>, V: FwOfferValidator> 
                     Ok(Output::Nop)
                 }
             }
+            PortNotificationSingle::Vdm(event) => {
+                self.process_vdm_event(controller, port, event).await.map(Output::Vdm)
+            }
             rest => {
                 // Nothing currently implemented for these
                 trace!("Port{}: Notification: {:#?}", port.0, rest);
@@ -533,6 +537,7 @@ impl<'a, const N: usize, C: Controller, BACK: Backing<'a>, V: FwOfferValidator> 
                     .await
             }
             Output::PdAlert(OutputPdAlert { port, ado }) => self.finalize_pd_alert(&mut state, port, ado).await,
+            Output::Vdm(vdm) => self.finalize_vdm(&mut state, vdm).await.map_err(Error::Pd),
             Output::PowerPolicyCommand(OutputPowerPolicyCommand { request, response, .. }) => {
                 request.respond(response);
                 Ok(())

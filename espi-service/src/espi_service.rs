@@ -1,3 +1,4 @@
+use core::cmp::min;
 use core::mem::offset_of;
 use core::slice;
 
@@ -10,7 +11,7 @@ use embedded_services::buffer::OwnedRef;
 use embedded_services::comms::{self, EndpointID, External, Internal};
 use embedded_services::ec_type::message::{AcpiMsgComms, HostMsg, NotificationMsg};
 use embedded_services::ec_type::protocols::mctp::{build_mctp_header, handle_mctp_header};
-use embedded_services::{GlobalRawMutex, debug, ec_type, error, info};
+use embedded_services::{GlobalRawMutex, debug, ec_type, error, info, trace};
 
 const HOST_TX_QUEUE_SIZE: usize = 5;
 
@@ -139,7 +140,7 @@ impl Service<'_, '_> {
         self.host_tx_queue.receive().await
     }
 
-    async fn process_subsystem_msg(&self, espi: &mut espi::Espi<'_>, host_msg: HostMsgInternal<'_>) {
+    async fn process_subsystem_msg(&self, espi: &mut espi::Espi<'static>, host_msg: HostMsgInternal<'_>) {
         let (endpoint, host_msg) = host_msg;
         match host_msg {
             HostMsg::Notification(notification_msg) => self.process_notification_to_host(espi, &notification_msg).await,
@@ -154,42 +155,73 @@ impl Service<'_, '_> {
 
     async fn process_response_to_host(
         &self,
-        espi: &mut espi::Espi<'_>,
+        espi: &mut espi::Espi<'static>,
         acpi_response: &AcpiMsgComms<'_>,
         endpoint: EndpointID,
     ) {
         let response_len = acpi_response.payload_len;
-        if let Ok((final_packet, final_packet_size)) =
-            build_mctp_header(acpi_response.payload.borrow().borrow(), response_len, endpoint)
-        {
-            debug!("Sending MCTP response: {:?}", &final_packet[..final_packet_size]);
+        let num_pkts = ((acpi_response.payload_len - 1) / 64) + 1;
+        let access = acpi_response.payload.borrow();
+        let acpi_pkt: &[u8] = access.borrow();
 
-            // SAFETY: Safe as the access to espi is protected by a mut reference.
-            let result = unsafe { espi.oob_get_write_buffer(OOB_PORT_ID) };
+        for i in 0..num_pkts {
+            let pkt_start_index = 64 * i;
+            let pkt_end_index = min(response_len, pkt_start_index + 64);
+            let mctp_pkt_len = pkt_end_index - pkt_start_index;
+            trace!(
+                "start: {}, end: {}, len: {}",
+                pkt_start_index, pkt_end_index, mctp_pkt_len
+            );
+            let som = i == 0;
+            let eom = i == num_pkts - 1;
 
-            match result {
-                Ok(dest_slice) => {
-                    dest_slice[..final_packet_size].copy_from_slice(&final_packet[..final_packet_size]);
+            if let Ok((final_packet, final_packet_size)) =
+                // take into account response_len
+                build_mctp_header(
+                    &acpi_pkt[pkt_start_index..pkt_end_index],
+                    mctp_pkt_len,
+                    endpoint,
+                    som,
+                    eom,
+                )
+            {
+                info!("Sending MCTP response: {:?}", &final_packet[..final_packet_size]);
+
+                // SAFETY: Safe as the access to espi is protected by a mut reference.
+                let result = unsafe { espi.oob_get_write_buffer(OOB_PORT_ID) };
+
+                match result {
+                    Ok(dest_slice) => {
+                        dest_slice[..final_packet_size].copy_from_slice(&final_packet[..final_packet_size]);
+                    }
+                    Err(_e) => {
+                        #[cfg(feature = "defmt")]
+                        error!("Failed to retrieve OOB write buffer: {}", _e);
+                        // TODO: Ask if we need to send a response if the request is malformed
+                        return;
+                    }
                 }
-                Err(_e) => {
+
+                // Write response over OOB
+                let res = espi.oob_write_data(OOB_PORT_ID, final_packet_size as u8);
+
+                if res.is_err() {
                     #[cfg(feature = "defmt")]
-                    error!("Failed to retrieve OOB write buffer: {}", _e);
-                    // TODO: Ask if we need to send a response if the request is malformed
+                    error!("eSPI OOB write failed: {}", res.err().unwrap());
                     return;
                 }
+            } else {
+                // Packet malformed, throw it away and respond with ACPI packet with error in reserved field.
+                error!("Error building MCTP response packet from service {:?}", endpoint);
+                send_mctp_error_response(espi, OOB_PORT_ID);
+                return;
             }
 
-            // Write response over OOB
-            let res = espi.oob_write_data(OOB_PORT_ID, final_packet_size as u8);
-
-            if res.is_err() {
-                #[cfg(feature = "defmt")]
-                error!("eSPI OOB write failed: {}", res.err().unwrap());
-            }
-        } else {
-            // Packet malformed, throw it away and respond with ACPI packet with error in reserved field.
-            error!("Error building MCTP response packet from service {:?}", endpoint);
-            send_mctp_error_response(espi, OOB_PORT_ID).await;
+            // Immediately service the packet with the ESPI HAL
+            // REVISIT: Can i just do espi.complete_port(OOB_PORT_ID);
+            // or is there more business logic in wait_for_event();
+            let event = espi.wait_for_event().await;
+            process_controller_event(espi, self, event).await;
         }
     }
 }
@@ -327,7 +359,7 @@ async fn process_controller_event(
                             error!("MCTP packet malformed: {:?}", e);
                             espi.complete_port(port_event.port);
 
-                            send_mctp_error_response(espi, port_event.port).await;
+                            send_mctp_error_response(espi, port_event.port);
                             return;
                         }
                     }
@@ -352,11 +384,12 @@ async fn process_controller_event(
     }
 }
 
-async fn send_mctp_error_response(espi: &mut espi::Espi<'_>, port_id: usize) {
+fn send_mctp_error_response(espi: &mut espi::Espi<'_>, port_id: usize) {
     // SAFETY: Unwrap is safe here as battery will always be supported.
     // Data is ACPI payload [version, instance, reserved (error status), command]
     let (final_packet, final_packet_size) =
-        build_mctp_header(&[1, 1, 1, 0], 4, EndpointID::Internal(Internal::Battery)).unwrap();
+        build_mctp_header(&[1, 1, 1, 0], 4, EndpointID::Internal(Internal::Battery), true, true)
+            .expect("Unexpected error building MCTP header");
 
     let result = unsafe { espi.oob_get_write_buffer(port_id) };
     match result {

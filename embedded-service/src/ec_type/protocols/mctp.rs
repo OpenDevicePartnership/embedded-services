@@ -110,6 +110,8 @@ pub fn build_mctp_header(
     data: &[u8],
     data_len: usize,
     src_endpoint: crate::comms::EndpointID,
+    start_of_msg: bool,
+    end_of_msg: bool,
 ) -> Result<([u8; MAX_MCTP_PACKET_LEN], usize), MctpError> {
     let mut ret = [0u8; MAX_MCTP_PACKET_LEN];
     let padding = [0u8; 3];
@@ -139,8 +141,14 @@ pub fn build_mctp_header(
         _ => return Err(MctpError::InvalidDestinationEndpoint),
     }
 
-    // SOM + EOM + Seq num 1 + Msg tag 3
-    ret[7] = 0xD3;
+    // Seq num 1 + Msg tag 3
+    ret[7] = 0x13;
+    if start_of_msg {
+        ret[7] |= 1 << 7;
+    }
+    if end_of_msg {
+        ret[7] |= 1 << 6;
+    }
 
     // True packet size must be a multple of 4. Header is 8 bytes which is already a multiple of 4,
     // so we don't need to include it here.

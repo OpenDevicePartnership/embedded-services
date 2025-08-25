@@ -370,7 +370,11 @@ pub async fn handle_requests() {
                         mctp::AcpiMsgComms::from(payload_error)
                     }
                 };
-                ts::send_service_msg(comms::EndpointID::External(comms::External::Host), &response).await
+                ts::send_service_msg(
+                    comms::EndpointID::External(comms::External::Host),
+                    &embedded_services::ec_type::message::HostMsg::Response(response),
+                )
+                .await
             }
         };
 

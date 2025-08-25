@@ -30,8 +30,10 @@ pub(crate) struct Payload<'a> {
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub(crate) enum PayloadError {
     MalformedPayload,
-    BufTooSmall,
+    BufTooSmall(usize),
 }
+
+const ACPI_HEADER_SIZE: usize = 4;
 
 impl<'a> Payload<'a> {
     pub(crate) fn from_raw(raw: &'a [u8], size: usize) -> Result<Self, PayloadError> {
@@ -45,14 +47,17 @@ impl<'a> Payload<'a> {
     }
 
     pub(crate) fn to_raw(&self, buf: &mut [u8]) -> Result<usize, PayloadError> {
-        if buf.len() < self.data.len() + 4 {
-            return Err(PayloadError::BufTooSmall);
-        }
-
         buf[0] = self.version;
         buf[1] = self.instance;
         buf[2] = self.reserved;
         buf[3] = self.command as u8;
+
+        if buf.len() < self.data.len() + 4 {
+            // 1 in the reserved field is an error to the host
+            buf[2] = 1;
+            return Err(PayloadError::BufTooSmall(ACPI_HEADER_SIZE));
+        }
+
         buf[4..self.data.len() + 4].copy_from_slice(self.data);
 
         Ok(self.data.len() + 4)
@@ -232,24 +237,28 @@ pub(crate) fn compute_pif<'a>(psu_state: &PsuState) -> Pif<'a> {
 
 impl<'a> crate::context::Context<'a> {
     async fn send_acpi_response(&self, payload: &crate::acpi::Payload<'_>) {
-        let acpi_response: AcpiMsgComms;
+        let payload_len: usize;
 
         {
             let mut buf_access = self.get_acpi_buf_owned_ref().borrow_mut();
 
-            if let Ok(payload_len) = payload.to_raw(buf_access.borrow_mut()) {
-                acpi_response = AcpiMsgComms {
-                    payload: crate::context::acpi_buf::get(),
-                    payload_len,
-                };
-            } else {
-                error!("payload to_raw error, sending empty response");
-                acpi_response = AcpiMsgComms {
-                    payload: crate::context::acpi_buf::get(),
-                    payload_len: 0,
-                };
+            match payload.to_raw(buf_access.borrow_mut()) {
+                Ok(payload_len_raw) => payload_len = payload_len_raw,
+                Err(PayloadError::BufTooSmall(payload_len_raw)) => {
+                    error!("payload to_raw error, buffer too small");
+                    payload_len = payload_len_raw;
+                }
+                Err(PayloadError::MalformedPayload) => {
+                    error!("payload to_raw error, sending empty response");
+                    payload_len = 0;
+                }
             }
         }
+
+        let acpi_response = AcpiMsgComms {
+            payload: crate::context::acpi_buf::get(),
+            payload_len,
+        };
 
         super::comms_send(
             crate::EndpointID::External(embedded_services::comms::External::Host),

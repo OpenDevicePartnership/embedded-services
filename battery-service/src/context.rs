@@ -143,7 +143,7 @@ impl Default for Config {
     }
 }
 
-embedded_services::define_static_buffer!(acpi_buf, u8, [0u8; 69]);
+embedded_services::define_static_buffer!(acpi_buf, u8, [0u8; 133]);
 
 impl<'a> Context<'a> {
     /// Create a new context instance.

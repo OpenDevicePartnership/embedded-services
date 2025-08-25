@@ -17,7 +17,6 @@ use embedded_services::{
     GlobalRawMutex,
 };
 use embedded_services::{power::policy as power_policy, type_c::Cached};
-use embedded_usb_pd::ado::Ado;
 use embedded_usb_pd::GlobalPortId;
 use embedded_usb_pd::PdError as Error;
 
@@ -25,9 +24,11 @@ use crate::{PortEventStreamer, PortEventVariant};
 
 pub mod config;
 mod controller;
+pub mod pd;
 mod port;
 mod power;
 mod ucsi;
+pub mod vdm;
 
 const MAX_SUPPORTED_PORTS: usize = 4;
 
@@ -81,8 +82,8 @@ pub enum PowerPolicyEvent {
 pub enum Event<'a> {
     /// Port event
     PortStatusChanged(GlobalPortId, PortStatusChanged, PortStatus),
-    /// PD alert
-    PdAlert(GlobalPortId, Ado),
+    /// A controller notified of an event that occurred.
+    PortNotification(GlobalPortId, PortNotificationSingle),
     /// External command
     ExternalCommand(deferred::Request<'a, GlobalRawMutex, external::Command, external::Response<'static>>),
     /// Power policy event
@@ -196,22 +197,11 @@ impl<'a> Service<'a> {
                                 let status = self.context.get_port_status(port_id, Cached(true)).await?;
                                 return Ok(Event::PortStatusChanged(port_id, status_event, status));
                             }
-                            PortEventVariant::Notification(notification) => match notification {
-                                PortNotificationSingle::Alert => {
-                                    if let Some(ado) = self.context.get_pd_alert(port_id).await? {
-                                        // Return a PD alert event
-                                        return Ok(Event::PdAlert(port_id, ado));
-                                    } else {
-                                        // Didn't get an ADO, wait for next event
-                                        continue;
-                                    }
-                                }
-                                _ => {
-                                    // Other notifications currently unimplemented
-                                    trace!("Unimplemented port notification: {:?}", notification);
-                                    continue;
-                                }
-                            },
+                            PortEventVariant::Notification(notification) => {
+                                // Other notifications
+                                trace!("Port notification: {:?}", notification);
+                                return Ok(Event::PortNotification(port_id, notification));
+                            }
                         }
                     } else {
                         self.state.lock().await.port_event_streaming_state = None;
@@ -232,9 +222,9 @@ impl<'a> Service<'a> {
                 trace!("Port{}: Processing port status changed", port.0);
                 self.process_port_event(port, event_kind, status).await
             }
-            Event::PdAlert(port, alert) => {
-                // Port notifications currently don't have any processing logic
-                info!("Port{}: Got PD alert: {:?}", port.0, alert);
+            Event::PortNotification(port, notification) => {
+                // Other port notifications
+                info!("Port{}: Got port notification: {:?}", port.0, notification);
                 Ok(())
             }
             Event::ExternalCommand(request) => {
