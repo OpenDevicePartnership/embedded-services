@@ -15,9 +15,11 @@ use embedded_hal_async::i2c::I2c;
 use embedded_services::cfu::component::CfuDevice;
 use embedded_services::power::policy::{self, PowerCapability};
 use embedded_services::transformers::object::{Object, RefGuard, RefMutGuard};
-use embedded_services::type_c::controller::{self, Controller, ControllerStatus, PortStatus, UsbControlConfig};
+use embedded_services::type_c::controller::{
+    self, AttnVdm, Controller, ControllerStatus, OtherVdm, PortStatus, UsbControlConfig,
+};
 use embedded_services::type_c::event::PortEvent;
-use embedded_services::type_c::ControllerId;
+use embedded_services::type_c::{ControllerId, ATTN_VDM_LEN};
 use embedded_services::{debug, error, info, trace, type_c, warn, GlobalRawMutex};
 use embedded_usb_pd::ado::Ado;
 use embedded_usb_pd::pdinfo::PowerPathStatus;
@@ -612,6 +614,32 @@ impl<const N: usize, M: RawMutex, B: I2c> Controller for Tps6699x<'_, N, M, B> {
             .try_lock()
             .expect("Driver should not have been locked before this, thus infallible");
         tps6699x.set_autonegotiate_sink_max_voltage(port, voltage_mv).await
+    }
+
+    async fn get_other_vdm(&mut self, port: LocalPortId) -> Result<OtherVdm, Error<Self::BusError>> {
+        let mut tps6699x = self
+            .tps6699x
+            .try_lock()
+            .expect("Driver should not have been locked before this, thus infallible");
+        match tps6699x.get_rx_other_vdm(port).await {
+            Ok(vdm) => Ok((*vdm.as_bytes()).into()),
+            Err(e) => Err(e),
+        }
+    }
+
+    async fn get_attn_vdm(&mut self, port: LocalPortId) -> Result<AttnVdm, Error<Self::BusError>> {
+        let mut tps6699x = self
+            .tps6699x
+            .try_lock()
+            .expect("Driver should not have been locked before this, thus infallible");
+        match tps6699x.get_rx_attn_vdm(port).await {
+            Ok(vdm) => {
+                let buf: [u8; ATTN_VDM_LEN] = vdm.into();
+                let attn_vdm: AttnVdm = buf.into();
+                Ok(attn_vdm)
+            }
+            Err(e) => Err(e),
+        }
     }
 
     /// Set USB control configuration for the given port

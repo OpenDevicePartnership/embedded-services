@@ -267,20 +267,28 @@ impl PortNotification {
     }
 }
 
+/// Individual VDM notifications
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum VdmNotification {
+    /// Custom mode entered
+    Entered,
+    /// Custom mode exited
+    Exited,
+    /// Attention VDM was received.
+    AttentionReceived,
+    /// Other VDM was received.
+    OtherReceived,
+}
+
 /// Individual port notifications
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum PortNotificationSingle {
     /// PD alert
     Alert,
-    /// Custom mode entered
-    CustomModeEntered,
-    /// Custom mode exited
-    CustomModeExited,
-    /// Custom mode attention received
-    CustomModeAttentionReceived,
-    /// Custom mode other VDM received
-    CustomModeOtherVdmReceived,
+    /// VDM
+    Vdm(VdmNotification),
     /// Discover mode completed
     DiscoverModeCompleted,
     /// USB mux error recovery
@@ -298,16 +306,16 @@ impl Iterator for PortNotification {
             Some(PortNotificationSingle::Alert)
         } else if self.custom_mode_entered() {
             self.set_custom_mode_entered(false);
-            Some(PortNotificationSingle::CustomModeEntered)
+            Some(PortNotificationSingle::Vdm(VdmNotification::Entered))
         } else if self.custom_mode_exited() {
             self.set_custom_mode_exited(false);
-            Some(PortNotificationSingle::CustomModeExited)
+            Some(PortNotificationSingle::Vdm(VdmNotification::Exited))
         } else if self.custom_mode_attention_received() {
             self.set_custom_mode_attention_received(false);
-            Some(PortNotificationSingle::CustomModeAttentionReceived)
+            Some(PortNotificationSingle::Vdm(VdmNotification::AttentionReceived))
         } else if self.custom_mode_other_vdm_received() {
             self.set_custom_mode_other_vdm_received(false);
-            Some(PortNotificationSingle::CustomModeOtherVdmReceived)
+            Some(PortNotificationSingle::Vdm(VdmNotification::OtherReceived))
         } else if self.discover_mode_completed() {
             self.set_discover_mode_completed(false);
             Some(PortNotificationSingle::DiscoverModeCompleted)
@@ -510,7 +518,10 @@ mod tests {
         notification.set_custom_mode_entered(true);
 
         assert_eq!(notification.next(), Some(PortNotificationSingle::Alert));
-        assert_eq!(notification.next(), Some(PortNotificationSingle::CustomModeEntered));
+        assert_eq!(
+            notification.next(),
+            Some(PortNotificationSingle::Vdm(VdmNotification::Entered))
+        );
         assert_eq!(notification.next(), None);
     }
 
@@ -528,7 +539,10 @@ mod tests {
         let mut notification = PortNotification::none();
         notification.set_custom_mode_entered(true);
 
-        assert_eq!(notification.next(), Some(PortNotificationSingle::CustomModeEntered));
+        assert_eq!(
+            notification.next(),
+            Some(PortNotificationSingle::Vdm(VdmNotification::Entered))
+        );
         assert_eq!(notification.next(), None);
     }
 
@@ -537,7 +551,10 @@ mod tests {
         let mut notification = PortNotification::none();
         notification.set_custom_mode_exited(true);
 
-        assert_eq!(notification.next(), Some(PortNotificationSingle::CustomModeExited));
+        assert_eq!(
+            notification.next(),
+            Some(PortNotificationSingle::Vdm(VdmNotification::Exited))
+        );
         assert_eq!(notification.next(), None);
     }
 
@@ -548,7 +565,7 @@ mod tests {
 
         assert_eq!(
             notification.next(),
-            Some(PortNotificationSingle::CustomModeAttentionReceived)
+            Some(PortNotificationSingle::Vdm(VdmNotification::AttentionReceived))
         );
         assert_eq!(notification.next(), None);
     }
@@ -560,7 +577,7 @@ mod tests {
 
         assert_eq!(
             notification.next(),
-            Some(PortNotificationSingle::CustomModeOtherVdmReceived)
+            Some(PortNotificationSingle::Vdm(VdmNotification::OtherReceived))
         );
         assert_eq!(notification.next(), None);
     }

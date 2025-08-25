@@ -13,7 +13,7 @@ use embedded_usb_pd::{
     type_c::ConnectionState,
 };
 
-use super::{ControllerId, external};
+use super::{ATTN_VDM_LEN, ControllerId, OTHER_VDM_LEN, external};
 use crate::ipc::deferred;
 use crate::power::policy;
 use crate::type_c::Cached;
@@ -99,6 +99,62 @@ impl Default for PortStatus {
     }
 }
 
+/// Other Vdm data
+#[derive(Copy, Clone, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct OtherVdm {
+    /// Other VDM data
+    pub data: [u8; OTHER_VDM_LEN],
+}
+
+impl Default for OtherVdm {
+    fn default() -> Self {
+        Self {
+            data: [0; OTHER_VDM_LEN],
+        }
+    }
+}
+
+impl From<OtherVdm> for [u8; OTHER_VDM_LEN] {
+    fn from(vdm: OtherVdm) -> Self {
+        vdm.data
+    }
+}
+
+impl From<[u8; OTHER_VDM_LEN]> for OtherVdm {
+    fn from(data: [u8; OTHER_VDM_LEN]) -> Self {
+        Self { data }
+    }
+}
+
+/// Attention Vdm data
+#[derive(Copy, Clone, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct AttnVdm {
+    /// Attention VDM data
+    pub data: [u8; ATTN_VDM_LEN],
+}
+
+impl Default for AttnVdm {
+    fn default() -> Self {
+        Self {
+            data: [0; ATTN_VDM_LEN],
+        }
+    }
+}
+
+impl From<AttnVdm> for [u8; ATTN_VDM_LEN] {
+    fn from(vdm: AttnVdm) -> Self {
+        vdm.data
+    }
+}
+
+impl From<[u8; ATTN_VDM_LEN]> for AttnVdm {
+    fn from(data: [u8; ATTN_VDM_LEN]) -> Self {
+        Self { data }
+    }
+}
+
 /// USB control configuration
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -147,6 +203,10 @@ pub enum PortCommandData {
     SetUnconstrainedPower(bool),
     /// Clear the dead battery flag for the given port
     ClearDeadBatteryFlag,
+    /// Get other VDM
+    GetOtherVdm,
+    /// Get attention VDM
+    GetAttnVdm,
     /// Set USB control configuration
     SetUsbControl(UsbControlConfig),
 }
@@ -185,6 +245,10 @@ pub enum PortResponseData {
     RtFwUpdateStatus(RetimerFwUpdateState),
     /// PD alert
     PdAlert(Option<Ado>),
+    /// Get other VDM
+    OtherVdm(OtherVdm),
+    /// Get attention VDM
+    AttnVdm(AttnVdm),
 }
 
 impl PortResponseData {
@@ -440,6 +504,10 @@ pub trait Controller {
         offset: usize,
         data: &[u8],
     ) -> impl Future<Output = Result<(), Error<Self::BusError>>>;
+    /// Get the Rx Other VDM data for the given port
+    fn get_other_vdm(&mut self, port: LocalPortId) -> impl Future<Output = Result<OtherVdm, Error<Self::BusError>>>;
+    /// Get the Rx Attention VDM data for the given port
+    fn get_attn_vdm(&mut self, port: LocalPortId) -> impl Future<Output = Result<AttnVdm, Error<Self::BusError>>>;
 
     /// Set USB control configuration for the given port
     fn set_usb_control(
@@ -881,6 +949,28 @@ impl ContextToken {
     /// Get the number of ports on the system
     pub async fn get_num_ports(&self) -> usize {
         get_num_ports().await
+    }
+
+    /// Get the other vdm for the given port
+    pub async fn get_other_vdm(&self, port: GlobalPortId) -> Result<OtherVdm, PdError> {
+        match self.send_port_command(port, PortCommandData::GetOtherVdm).await? {
+            PortResponseData::OtherVdm(vdm) => Ok(vdm),
+            r => {
+                error!("Invalid response: expected other VDM, got {:?}", r);
+                Err(PdError::InvalidResponse)
+            }
+        }
+    }
+
+    /// Get the attention vdm for the given port
+    pub async fn get_attn_vdm(&self, port: GlobalPortId) -> Result<AttnVdm, PdError> {
+        match self.send_port_command(port, PortCommandData::GetAttnVdm).await? {
+            PortResponseData::AttnVdm(vdm) => Ok(vdm),
+            r => {
+                error!("Invalid response: expected attention VDM, got {:?}", r);
+                Err(PdError::InvalidResponse)
+            }
+        }
     }
 }
 
