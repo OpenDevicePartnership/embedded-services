@@ -171,9 +171,8 @@ unsafe fn write(bytes: &[u8]) {
     }
 }
 
-// Static buffer for ACPI-style messages carrying defmt frames
-embedded_services::define_static_buffer!(defmt_acpi_buf, u8, [0u8; DEFMT_MAX_BYTES as usize]);
-static DEFMT_ACPI_BUF_OWNED: StaticCell<OwnedRef<'static, u8>> = StaticCell::new();
+    // Static buffer for ACPI-style messages carrying defmt frames
+    embedded_services::define_static_buffer!(defmt_acpi_buf, u8, [0u8; DEFMT_MAX_BYTES as usize]);
 
 #[embassy_executor::task]
 pub async fn defmt_to_host_task() {
@@ -183,8 +182,7 @@ pub async fn defmt_to_host_task() {
     use embedded_services::comms::{self, EndpointID, Internal};
     use embedded_services::ec_type::message::{AcpiMsgComms, HostMsg, NotificationMsg};
 
-    let framed_consumer = DEFMT_BUFFER.framed_consumer();
-    let acpi_buf_owned: &OwnedRef<'static, u8> = DEFMT_ACPI_BUF_OWNED.init(defmt_acpi_buf::get_mut().unwrap());
+        let framed_consumer = DEFMT_BUFFER.framed_consumer();
 
     let host_ep = host_endpoint_id().await;
 
@@ -194,16 +192,12 @@ pub async fn defmt_to_host_task() {
         info!("waiting for defmt frame");
         let frame = framed_consumer.wait_read().await;
 
-        // Copy frame bytes into the static ACPI buffer
-        let bytes = frame.deref();
-        let mut buf_access = acpi_buf_owned.borrow_mut();
-        let buf: &mut [u8] = BorrowMut::borrow_mut(&mut buf_access);
-        let copy_len = core::cmp::min(bytes.len(), buf.len());
-        buf[..copy_len].copy_from_slice(&bytes[..copy_len]);
-        // Drop the mutable borrow before any await or shared borrow to avoid overlap
-        drop(buf_access);
-        defmt::info!("got frame: bytes={}, copy_len={}", bytes.len(), copy_len);
-        info!("got frame: bytes={}, copy_len={}", bytes.len(), copy_len);
+            // Copy frame bytes into the static ACPI buffer
+            let bytes = frame.deref();
+            let acpi_buf = defmt_acpi_buf::get_mut().unwrap();
+            let copy_len = core::cmp::min(bytes.len(), acpi_buf.len());
+            acpi_buf[..copy_len].copy_from_slice(&bytes[..copy_len]);
+            info!("got frame: bytes={}, copy_len={}", bytes.len(), copy_len);
 
         // First, notify the Host that data is available
         let _ = comms::send(
@@ -237,9 +231,14 @@ pub async fn defmt_to_host_task() {
             info!("sent {copy_len} defmt bytes to host");
         }
 
-        // Clear the staged portion of the buffer
-        let mut buf_access = acpi_buf_owned.borrow_mut();
-        let buf: &mut [u8] = BorrowMut::borrow_mut(&mut buf_access);
-        buf[..copy_len].fill(0);
+            // Clear the staged portion of the buffer
+            let acpi_buf = defmt_acpi_buf::get_mut().unwrap();
+            acpi_buf[..copy_len].fill(0);
+        }
     }
 }
+
+// Re-export the task when defmt is enabled so other modules can call it as before.
+#[cfg(feature = "defmt")]
+pub use defmt_impl::defmt_to_host_task;
+
