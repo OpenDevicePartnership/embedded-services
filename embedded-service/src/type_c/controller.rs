@@ -155,6 +155,28 @@ impl From<[u8; ATTN_VDM_LEN]> for AttnVdm {
     }
 }
 
+/// USB control configuration
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct UsbControlConfig {
+    /// Enable USB2 data path
+    pub usb2_enabled: bool,
+    /// Enable USB3 data path  
+    pub usb3_enabled: bool,
+    /// Enable USB4 data path
+    pub usb4_enabled: bool,
+}
+
+impl Default for UsbControlConfig {
+    fn default() -> Self {
+        Self {
+            usb2_enabled: true,
+            usb3_enabled: true,
+            usb4_enabled: true,
+        }
+    }
+}
+
 /// Port-specific command data
 #[derive(Copy, Clone, Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
@@ -185,6 +207,8 @@ pub enum PortCommandData {
     GetOtherVdm,
     /// Get attention VDM
     GetAttnVdm,
+    /// Set USB control configuration
+    SetUsbControl(UsbControlConfig),
 }
 
 /// Port-specific commands
@@ -484,6 +508,13 @@ pub trait Controller {
     fn get_other_vdm(&mut self, port: LocalPortId) -> impl Future<Output = Result<OtherVdm, Error<Self::BusError>>>;
     /// Get the Rx Attention VDM data for the given port
     fn get_attn_vdm(&mut self, port: LocalPortId) -> impl Future<Output = Result<AttnVdm, Error<Self::BusError>>>;
+
+    /// Set USB control configuration for the given port
+    fn set_usb_control(
+        &mut self,
+        port: LocalPortId,
+        config: UsbControlConfig,
+    ) -> impl Future<Output = Result<(), Error<Self::BusError>>>;
 }
 
 /// Internal context for managing PD controllers

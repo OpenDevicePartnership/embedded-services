@@ -4,7 +4,9 @@ use embedded_services::{
     GlobalRawMutex,
     power::policy::PowerCapability,
     type_c::{
-        controller::{AttnVdm, Contract, ControllerStatus, OtherVdm, PortStatus, RetimerFwUpdateState},
+        controller::{
+            AttnVdm, Contract, ControllerStatus, OtherVdm, PortStatus, RetimerFwUpdateState, UsbControlConfig,
+        },
         event::PortEvent,
     },
 };
@@ -244,6 +246,18 @@ impl embedded_services::type_c::controller::Controller for Controller<'_> {
     async fn get_attn_vdm(&mut self, port: LocalPortId) -> Result<AttnVdm, Error<Self::BusError>> {
         debug!("Get attention VDM for port {port:?}");
         Ok(AttnVdm::default())
+    }
+
+    async fn set_usb_control(
+        &mut self,
+        port: LocalPortId,
+        config: UsbControlConfig,
+    ) -> Result<(), Error<Self::BusError>> {
+        debug!(
+            "set_usb_control(port: {port:?}, usb2: {}, usb3: {}, usb4: {})",
+            config.usb2_enabled, config.usb3_enabled, config.usb4_enabled
+        );
+        Ok(())
     }
 }
 
