@@ -181,6 +181,12 @@ impl SendVdm {
     }
 }
 
+impl Default for SendVdm {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Port-specific command data
 #[derive(Copy, Clone, Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
