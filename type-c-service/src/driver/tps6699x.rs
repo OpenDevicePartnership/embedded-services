@@ -16,9 +16,7 @@ use embedded_services::cfu::component::CfuDevice;
 use embedded_services::power::policy::{self, PowerCapability};
 use embedded_services::transformers::object::{Object, RefGuard, RefMutGuard};
 use embedded_services::type_c::controller::{
-    
-    self, AttnVdm, Controller, ControllerStatus, OtherVdm, PortStatus, SendVdm,
-, UsbControlConfig,
+    self, AttnVdm, Controller, ControllerStatus, OtherVdm, PortStatus, SendVdm, UsbControlConfig,
 };
 use embedded_services::type_c::event::PortEvent;
 use embedded_services::type_c::{ControllerId, ATTN_VDM_LEN};
