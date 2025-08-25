@@ -4,7 +4,7 @@ use embedded_services::{
     GlobalRawMutex,
     power::policy::PowerCapability,
     type_c::{
-        controller::{AttnVdm, Contract, ControllerStatus, OtherVdm, PortStatus, RetimerFwUpdateState},
+        controller::{AttnVdm, Contract, ControllerStatus, OtherVdm, PortStatus, RetimerFwUpdateState, SendVdm},
         event::PortEvent,
     },
 };
@@ -246,11 +246,7 @@ impl embedded_services::type_c::controller::Controller for Controller<'_> {
         Ok(AttnVdm::default())
     }
 
-    fn send_vdm(
-        &mut self,
-        port: LocalPortId,
-        tx_vdm: SendVdm,
-    ) -> impl Future<Output = Result<(), Error<Self::BusError>>> {
+    async fn send_vdm(&mut self, port: LocalPortId, tx_vdm: SendVdm) -> Result<(), Error<Self::BusError>> {
         debug!("Send VDM for port {port:?}: {tx_vdm:?}");
         Ok(())
     }
