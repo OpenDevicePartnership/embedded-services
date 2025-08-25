@@ -1,5 +1,5 @@
 //! Message definitions for external type-C commands
-use embedded_usb_pd::{GlobalPortId, PdError, PortId as LocalPortId, ucsi};
+use embedded_usb_pd::{GlobalPortId, LocalPortId, PdError, ucsi};
 
 use crate::type_c::{Cached, controller::execute_external_ucsi_command};
 
@@ -106,7 +106,7 @@ pub enum Command {
     /// Controller command
     Controller(ControllerCommand),
     /// UCSI command
-    Ucsi(ucsi::Command),
+    Ucsi(ucsi::GlobalCommand),
 }
 
 /// UCSI command response
@@ -116,7 +116,7 @@ pub struct UcsiResponse {
     /// Notify the OPM, the function call
     pub notify_opm: bool,
     /// UCSI response
-    pub response: ucsi::Response,
+    pub response: ucsi::GlobalResponse,
 }
 
 /// External command response for type-C service
@@ -310,6 +310,6 @@ pub async fn reconfigure_retimer(port: GlobalPortId) -> Result<(), PdError> {
 }
 
 /// Execute a UCSI command
-pub async fn execute_ucsi_command(command: ucsi::Command) -> Result<UcsiResponse, PdError> {
+pub async fn execute_ucsi_command(command: ucsi::GlobalCommand) -> Result<UcsiResponse, PdError> {
     execute_external_ucsi_command(command).await
 }

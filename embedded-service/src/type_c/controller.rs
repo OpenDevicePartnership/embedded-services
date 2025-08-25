@@ -7,7 +7,7 @@ use embassy_sync::signal::Signal;
 use embassy_time::{Duration, with_timeout};
 use embedded_usb_pd::ucsi::{self, lpm};
 use embedded_usb_pd::{
-    DataRole, Error, GlobalPortId, PdError, PlugOrientation, PortId as LocalPortId, PowerRole,
+    DataRole, Error, GlobalPortId, LocalPortId, PdError, PlugOrientation, PowerRole,
     ado::Ado,
     pdinfo::{AltMode, PowerPathStatus},
     type_c::ConnectionState,
@@ -285,7 +285,7 @@ pub enum Command {
     /// Port command
     Port(PortCommand),
     /// UCSI command passthrough
-    Lpm(lpm::Command),
+    Lpm(lpm::GlobalCommand),
 }
 
 /// Controller-specific response data
@@ -308,7 +308,7 @@ pub enum Response<'a> {
     /// Controller response
     Controller(InternalResponse<'a>),
     /// UCSI response passthrough
-    Ucsi(ucsi::Response),
+    Ucsi(ucsi::GlobalResponse),
     /// Port response
     Port(PortResponse),
 }
@@ -688,7 +688,7 @@ impl ContextToken {
         &self,
         port_id: GlobalPortId,
         command: lpm::CommandData,
-    ) -> Result<ucsi::Response, PdError> {
+    ) -> Result<ucsi::GlobalResponse, PdError> {
         let node = self.find_node_by_port(port_id).await?;
 
         match node
@@ -713,7 +713,7 @@ impl ContextToken {
         &self,
         port_id: GlobalPortId,
         command: lpm::CommandData,
-    ) -> Result<ucsi::Response, PdError> {
+    ) -> Result<ucsi::GlobalResponse, PdError> {
         match with_timeout(
             DEFAULT_TIMEOUT,
             self.send_port_command_ucsi_no_timeout(port_id, command),
@@ -730,7 +730,7 @@ impl ContextToken {
         &self,
         port_id: GlobalPortId,
         reset_type: lpm::ResetType,
-    ) -> Result<ucsi::Response, PdError> {
+    ) -> Result<ucsi::GlobalResponse, PdError> {
         self.send_port_command_ucsi(port_id, lpm::CommandData::ConnectorReset(reset_type))
             .await
     }
@@ -1003,7 +1003,9 @@ pub(super) async fn execute_external_controller_command(
 }
 
 /// Execute an external UCSI command
-pub(super) async fn execute_external_ucsi_command(command: ucsi::Command) -> Result<external::UcsiResponse, PdError> {
+pub(super) async fn execute_external_ucsi_command(
+    command: ucsi::GlobalCommand,
+) -> Result<external::UcsiResponse, PdError> {
     let context = CONTEXT.get().await;
     match context.external_command.execute(external::Command::Ucsi(command)).await {
         external::Response::Ucsi(response) => response,

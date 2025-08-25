@@ -8,7 +8,7 @@ use embedded_services::{
     },
     GlobalRawMutex,
 };
-use embedded_usb_pd::{ado::Ado, PortId as LocalPortId};
+use embedded_usb_pd::{ado::Ado, LocalPortId};
 
 /// Port status changed event data
 #[derive(Copy, Clone, Debug)]
@@ -108,9 +108,8 @@ pub struct OutputControllerCommand<'a> {
 
 pub mod vdm {
     //! Events and output for vendor-defined messaging.
-
+    use super::LocalPortId;
     use embedded_services::type_c::controller::{AttnVdm, OtherVdm};
-    use embedded_usb_pd::PortId;
 
     /// The kind of output from processing a vendor-defined message.
     #[derive(Copy, Clone, Debug)]
@@ -131,7 +130,7 @@ pub mod vdm {
     #[cfg_attr(feature = "defmt", derive(defmt::Format))]
     pub struct Output {
         /// The port that the VDM message is associated with.
-        pub port: PortId,
+        pub port: LocalPortId,
 
         /// The kind of VDM output.
         pub kind: OutputKind,
