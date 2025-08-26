@@ -11,12 +11,12 @@ defmt::timestamp!("{=u64}", { 0u64 });
 
 // Mock eSPI transport service
 mod espi_service {
+    use core::borrow::BorrowMut;
     use embassy_sync::{once_lock::OnceLock, signal::Signal};
-    use embedded_services::buffer::OwnedRef;
     use embedded_services::GlobalRawMutex;
+    use embedded_services::buffer::OwnedRef;
     use embedded_services::comms::{self, EndpointID, External, Internal};
     use embedded_services::ec_type::message::{AcpiMsgComms, HostMsg, NotificationMsg};
-    use core::borrow::BorrowMut;
     use log::{info, trace};
 
     // Max defmt payload we expect to shuttle in this mock
