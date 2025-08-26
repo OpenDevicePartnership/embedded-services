@@ -203,20 +203,17 @@ pub async fn defmt_to_host_task() {
         }
         info!("got frame: bytes={}, copy_len={}", bytes.len(), copy_len);
 
-        // First, notify the Host that data is available
+        frame.release();
+        defmt::info!("released defmt frame (staged {} bytes)", copy_len);
+        info!("released defmt frame (staged {copy_len} bytes)");
+
+        // Notify the host that data is available
         let _ = comms::send(
             EndpointID::Internal(Internal::Debug),
             host_ep,
             &HostMsg::Notification(NotificationMsg { offset: 20 }),
         )
         .await;
-        defmt::info!("host notified of defmt availability");
-        info!("host notified of defmt availability");
-
-        // Release the frame now so the buffer can keep filling while we wait for host ACK
-        frame.release();
-        defmt::info!("released defmt frame (staged {} bytes)", copy_len);
-        info!("released defmt frame (staged {copy_len} bytes)");
 
         // Wait for host notification/ack via the debug service
         let _n = response_notify_signal().wait().await;
