@@ -5,7 +5,7 @@ use bbq2::{
 };
 use core::{
     borrow::BorrowMut,
-    ops::{Deref, DerefMut},
+    ops::DerefMut,
     sync::atomic::{AtomicBool, Ordering},
 };
 use log::info;
@@ -194,14 +194,13 @@ pub async fn defmt_to_host_task() {
         let frame = framed_consumer.wait_read().await;
 
         // Copy frame bytes into the static ACPI buffer
-        let bytes = frame.deref();
-        let copy_len = core::cmp::min(bytes.len(), acpi_owned.len());
+        let copy_len = core::cmp::min(frame.len(), acpi_owned.len());
         {
             let mut access = acpi_owned.borrow_mut();
             let buf: &mut [u8] = BorrowMut::borrow_mut(&mut access);
-            buf[..copy_len].copy_from_slice(&bytes[..copy_len]);
+            buf[..copy_len].copy_from_slice(&frame[..copy_len]);
         }
-        info!("got frame: bytes={}, copy_len={}", bytes.len(), copy_len);
+        info!("got frame: bytes={}, copy_len={}", frame.len(), copy_len);
 
         frame.release();
         defmt::info!("released defmt frame (staged {} bytes)", copy_len);
