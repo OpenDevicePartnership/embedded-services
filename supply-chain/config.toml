@@ -7,11 +7,17 @@ version = "0.10"
 [imports.OpenDevicePartnership]
 url = "https://raw.githubusercontent.com/OpenDevicePartnership/rust-crate-audits/main/audits.toml"
 
+[imports.bytecode-alliance]
+url = "https://raw.githubusercontent.com/bytecodealliance/wasmtime/main/supply-chain/audits.toml"
+
 [imports.google]
 url = "https://raw.githubusercontent.com/google/rust-crate-audits/main/audits.toml"
 
 [imports.mozilla]
 url = "https://raw.githubusercontent.com/mozilla/supply-chain/main/audits.toml"
+
+[imports.zcash]
+url = "https://raw.githubusercontent.com/zcash/rust-ecosystem/main/supply-chain/audits.toml"
 
 [policy.embassy-embedded-hal]
 audit-as-crates-io = false
@@ -47,10 +53,6 @@ audit-as-crates-io = false
 version = "0.8.11"
 criteria = "safe-to-deploy"
 
-[[exemptions.arraydeque]]
-version = "0.5.1"
-criteria = "safe-to-deploy"
-
 [[exemptions.atomic-polyfill]]
 version = "1.0.3"
 criteria = "safe-to-deploy"
@@ -61,6 +63,10 @@ criteria = "safe-to-deploy"
 
 [[exemptions.bare-metal]]
 version = "0.2.5"
+criteria = "safe-to-deploy"
+
+[[exemptions.bbq2]]
+version = "0.4.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.bincode]]
@@ -103,12 +109,12 @@ criteria = "safe-to-deploy"
 version = "0.4.40"
 criteria = "safe-to-deploy"
 
-[[exemptions.cobs]]
-version = "0.2.3"
-criteria = "safe-to-deploy"
-
 [[exemptions.convert_case]]
 version = "0.6.0"
+criteria = "safe-to-deploy"
+
+[[exemptions.cordyceps]]
+version = "0.3.4"
 criteria = "safe-to-deploy"
 
 [[exemptions.cortex-m]]
@@ -219,20 +225,8 @@ criteria = "safe-to-deploy"
 version = "2.0.0"
 criteria = "safe-to-deploy"
 
-[[exemptions.futures-core]]
-version = "0.3.31"
-criteria = "safe-to-deploy"
-
-[[exemptions.futures-sink]]
-version = "0.3.31"
-criteria = "safe-to-deploy"
-
-[[exemptions.futures-task]]
-version = "0.3.31"
-criteria = "safe-to-deploy"
-
-[[exemptions.futures-util]]
-version = "0.3.31"
+[[exemptions.generator]]
+version = "0.8.5"
 criteria = "safe-to-deploy"
 
 [[exemptions.hash32]]
@@ -267,20 +261,12 @@ criteria = "safe-to-deploy"
 version = "1.0.1"
 criteria = "safe-to-deploy"
 
-[[exemptions.itertools]]
-version = "0.14.0"
-criteria = "safe-to-deploy"
-
 [[exemptions.lock_api]]
 version = "0.4.12"
 criteria = "safe-to-deploy"
 
-[[exemptions.log]]
-version = "0.4.27"
-criteria = "safe-to-deploy"
-
-[[exemptions.memchr]]
-version = "2.7.4"
+[[exemptions.maitake-sync]]
+version = "0.2.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.mimxrt600-fcb]]
@@ -291,16 +277,20 @@ criteria = "safe-to-deploy"
 version = "0.4.0"
 criteria = "safe-to-deploy"
 
+[[exemptions.mycelium-bitfield]]
+version = "0.1.5"
+criteria = "safe-to-deploy"
+
 [[exemptions.once_cell]]
 version = "1.21.3"
 criteria = "safe-to-deploy"
 
-[[exemptions.paste]]
-version = "1.0.15"
+[[exemptions.pin-project]]
+version = "1.1.10"
 criteria = "safe-to-deploy"
 
-[[exemptions.pin-utils]]
-version = "0.1.0"
+[[exemptions.pin-project-internal]]
+version = "1.1.10"
 criteria = "safe-to-deploy"
 
 [[exemptions.postcard]]
@@ -315,20 +305,16 @@ criteria = "safe-to-deploy"
 version = "2.0.1"
 criteria = "safe-to-deploy"
 
-[[exemptions.proc-macro2]]
-version = "1.0.95"
-criteria = "safe-to-deploy"
-
 [[exemptions.radium]]
 version = "0.7.0"
 criteria = "safe-to-deploy"
 
-[[exemptions.rustc_version]]
-version = "0.2.3"
+[[exemptions.rtt-target]]
+version = "0.6.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.rustc_version]]
-version = "0.4.1"
+version = "0.2.3"
 criteria = "safe-to-deploy"
 
 [[exemptions.scopeguard]]
@@ -339,10 +325,6 @@ criteria = "safe-to-deploy"
 version = "0.9.0"
 criteria = "safe-to-deploy"
 
-[[exemptions.semver]]
-version = "1.0.26"
-criteria = "safe-to-deploy"
-
 [[exemptions.semver-parser]]
 version = "0.7.0"
 criteria = "safe-to-deploy"
@@ -351,20 +333,8 @@ criteria = "safe-to-deploy"
 version = "0.9.8"
 criteria = "safe-to-deploy"
 
-[[exemptions.syn]]
-version = "2.0.100"
-criteria = "safe-to-deploy"
-
 [[exemptions.tap]]
 version = "1.0.1"
-criteria = "safe-to-deploy"
-
-[[exemptions.thiserror]]
-version = "2.0.12"
-criteria = "safe-to-deploy"
-
-[[exemptions.thiserror-impl]]
-version = "2.0.12"
 criteria = "safe-to-deploy"
 
 [[exemptions.typenum]]
@@ -389,6 +359,18 @@ criteria = "safe-to-deploy"
 
 [[exemptions.volatile-register]]
 version = "0.2.2"
+criteria = "safe-to-deploy"
+
+[[exemptions.winapi]]
+version = "0.3.9"
+criteria = "safe-to-deploy"
+
+[[exemptions.winapi-i686-pc-windows-gnu]]
+version = "0.4.0"
+criteria = "safe-to-deploy"
+
+[[exemptions.winapi-x86_64-pc-windows-gnu]]
+version = "0.4.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.wyz]]

@@ -31,17 +31,15 @@ who = "jerrysxie <jerryxie@microsoft.com>"
 criteria = "safe-to-deploy"
 version = "0.2.0"
 
-[[audits.embedded-batteries]]
-who = "Felipe Balbi <febalbi@microsoft.com>"
+[[audits.const-init]]
+who = "Jerry Xie <jerryxie@microsoft.com>"
 criteria = "safe-to-deploy"
-version = "0.1.0"
-notes = "ODP crates are always trusted."
+version = "1.0.0"
 
 [[audits.embedded-batteries]]
 who = "Felipe Balbi <febalbi@microsoft.com>"
 criteria = "safe-to-deploy"
-version = "0.1.0@git:410e2482d54b58c205a425c70d2ccf062e3ee3f3"
-importable = false
+version = "0.1.0"
 notes = "ODP crates are always trusted."
 
 [[audits.embedded-batteries]]
@@ -60,13 +58,6 @@ notes = "ODP crates are always trusted."
 who = "Felipe Balbi <febalbi@microsoft.com>"
 criteria = "safe-to-deploy"
 version = "0.1.0"
-notes = "ODP crates are always trusted."
-
-[[audits.embedded-batteries-async]]
-who = "Felipe Balbi <febalbi@microsoft.com>"
-criteria = "safe-to-deploy"
-version = "0.1.0@git:410e2482d54b58c205a425c70d2ccf062e3ee3f3"
-importable = false
 notes = "ODP crates are always trusted."
 
 [[audits.embedded-batteries-async]]
@@ -166,6 +157,11 @@ who = "Robert Zieba <robertzieba@microsoft.com>"
 criteria = "safe-to-run"
 version = "0.8.8"
 
+[[audits.mutex-traits]]
+who = "Jerry Xie <jerryxie@microsoft.com>"
+criteria = "safe-to-deploy"
+version = "1.0.1"
+
 [[audits.object]]
 who = "Robert Zieba <robertzieba@microsoft.com>"
 criteria = "safe-to-run"
@@ -220,6 +216,26 @@ version = "0.6.9"
 who = "jerrysxie <jerryxie@microsoft.com>"
 criteria = "safe-to-deploy"
 version = "0.22.26"
+
+[[audits.tracing-attributes]]
+who = "Jerry Xie <jerryxie@microsoft.com>"
+criteria = "safe-to-deploy"
+delta = "0.1.28 -> 0.1.30"
+
+[[audits.tracing-core]]
+who = "Jerry Xie <jerryxie@microsoft.com>"
+criteria = "safe-to-deploy"
+delta = "0.1.33 -> 0.1.34"
+
+[[audits.tracing-log]]
+who = "Jerry Xie <jerryxie@microsoft.com>"
+criteria = "safe-to-deploy"
+delta = "0.1.3 -> 0.2.0"
+
+[[audits.ufmt-write]]
+who = "Jerry Xie <jerryxie@microsoft.com>"
+criteria = "safe-to-deploy"
+version = "0.1.0"
 
 [[audits.uuid]]
 who = "Jerry Xie <jerryxie@microsoft.com>"
@@ -291,8 +307,170 @@ who = "Matteo Tullo <matteotullo@microsoft.com>"
 criteria = "safe-to-deploy"
 version = "0.8.26"
 
+[[trusted.aho-corasick]]
+criteria = "safe-to-deploy"
+user-id = 189 # Andrew Gallant (BurntSushi)
+start = "2019-03-28"
+end = "2026-08-21"
+
 [[trusted.anyhow]]
 criteria = "safe-to-deploy"
 user-id = 3618 # David Tolnay (dtolnay)
 start = "2019-10-05"
 end = "2026-04-16"
+
+[[trusted.cc]]
+criteria = "safe-to-deploy"
+user-id = 55123 # rust-lang-owner
+start = "2022-10-29"
+end = "2026-08-21"
+
+[[trusted.libc]]
+criteria = "safe-to-deploy"
+user-id = 55123 # rust-lang-owner
+start = "2024-08-15"
+end = "2026-08-21"
+
+[[trusted.loom]]
+criteria = "safe-to-deploy"
+user-id = 6741 # Alice Ryhl (Darksonn)
+start = "2021-04-12"
+end = "2026-08-21"
+
+[[trusted.memchr]]
+criteria = "safe-to-deploy"
+user-id = 189 # Andrew Gallant (BurntSushi)
+start = "2019-07-07"
+end = "2026-08-21"
+
+[[trusted.paste]]
+criteria = "safe-to-deploy"
+user-id = 3618 # David Tolnay (dtolnay)
+start = "2019-03-19"
+end = "2026-08-21"
+
+[[trusted.regex]]
+criteria = "safe-to-deploy"
+user-id = 189 # Andrew Gallant (BurntSushi)
+start = "2019-02-27"
+end = "2026-08-21"
+
+[[trusted.regex-automata]]
+criteria = "safe-to-deploy"
+user-id = 189 # Andrew Gallant (BurntSushi)
+start = "2019-02-25"
+end = "2026-08-21"
+
+[[trusted.regex-syntax]]
+criteria = "safe-to-deploy"
+user-id = 189 # Andrew Gallant (BurntSushi)
+start = "2019-03-30"
+end = "2026-08-21"
+
+[[trusted.rustversion]]
+criteria = "safe-to-deploy"
+user-id = 3618 # David Tolnay (dtolnay)
+start = "2019-07-08"
+end = "2026-08-21"
+
+[[trusted.scoped-tls]]
+criteria = "safe-to-deploy"
+user-id = 1 # Alex Crichton (alexcrichton)
+start = "2019-02-26"
+end = "2026-08-21"
+
+[[trusted.smallvec]]
+criteria = "safe-to-deploy"
+user-id = 2017 # Matt Brubeck (mbrubeck)
+start = "2019-10-28"
+end = "2026-08-21"
+
+[[trusted.syn]]
+criteria = "safe-to-deploy"
+user-id = 3618 # David Tolnay (dtolnay)
+start = "2019-03-01"
+end = "2026-08-21"
+
+[[trusted.thiserror]]
+criteria = "safe-to-deploy"
+user-id = 3618 # David Tolnay (dtolnay)
+start = "2019-10-09"
+end = "2026-08-21"
+
+[[trusted.thiserror-impl]]
+criteria = "safe-to-deploy"
+user-id = 3618 # David Tolnay (dtolnay)
+start = "2019-10-09"
+end = "2026-08-21"
+
+[[trusted.valuable]]
+criteria = "safe-to-deploy"
+user-id = 10 # Carl Lerche (carllerche)
+start = "2022-01-03"
+end = "2026-08-21"
+
+[[trusted.windows]]
+criteria = "safe-to-deploy"
+user-id = 64539 # Kenny Kerr (kennykerr)
+start = "2021-01-15"
+end = "2026-08-21"
+
+[[trusted.windows-collections]]
+criteria = "safe-to-deploy"
+user-id = 64539 # Kenny Kerr (kennykerr)
+start = "2025-02-06"
+end = "2026-08-21"
+
+[[trusted.windows-core]]
+criteria = "safe-to-deploy"
+user-id = 64539 # Kenny Kerr (kennykerr)
+start = "2021-11-15"
+end = "2026-08-21"
+
+[[trusted.windows-future]]
+criteria = "safe-to-deploy"
+user-id = 64539 # Kenny Kerr (kennykerr)
+start = "2025-02-10"
+end = "2026-08-21"
+
+[[trusted.windows-implement]]
+criteria = "safe-to-deploy"
+user-id = 64539 # Kenny Kerr (kennykerr)
+start = "2022-01-27"
+end = "2026-08-21"
+
+[[trusted.windows-interface]]
+criteria = "safe-to-deploy"
+user-id = 64539 # Kenny Kerr (kennykerr)
+start = "2022-02-18"
+end = "2026-08-21"
+
+[[trusted.windows-link]]
+criteria = "safe-to-deploy"
+user-id = 64539 # Kenny Kerr (kennykerr)
+start = "2024-07-17"
+end = "2026-08-21"
+
+[[trusted.windows-numerics]]
+criteria = "safe-to-deploy"
+user-id = 64539 # Kenny Kerr (kennykerr)
+start = "2023-05-15"
+end = "2026-08-21"
+
+[[trusted.windows-result]]
+criteria = "safe-to-deploy"
+user-id = 64539 # Kenny Kerr (kennykerr)
+start = "2024-02-02"
+end = "2026-08-21"
+
+[[trusted.windows-strings]]
+criteria = "safe-to-deploy"
+user-id = 64539 # Kenny Kerr (kennykerr)
+start = "2024-02-02"
+end = "2026-08-21"
+
+[[trusted.windows-threading]]
+criteria = "safe-to-deploy"
+user-id = 64539 # Kenny Kerr (kennykerr)
+start = "2025-04-29"
+end = "2026-08-21"
