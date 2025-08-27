@@ -8,7 +8,6 @@ use core::{
     ops::DerefMut,
     sync::atomic::{AtomicBool, Ordering},
 };
-use log::info;
 
 static RTT_INITIALIZED: AtomicBool = AtomicBool::new(false);
 static mut ENCODER: defmt::Encoder = defmt::Encoder::new();
@@ -174,8 +173,7 @@ embedded_services::define_static_buffer!(defmt_acpi_buf, u8, [0u8; DEFMT_MAX_BYT
 
 #[embassy_executor::task]
 pub async fn defmt_to_host_task() {
-    defmt::info!("defmt to host task start");
-    info!("defmt to host task start");
+    embedded_services::info!("defmt to host task start");
     use crate::debug_service::{host_endpoint_id, response_notify_signal};
     use embedded_services::comms::{self, EndpointID, Internal};
     use embedded_services::ec_type::message::{AcpiMsgComms, HostMsg, NotificationMsg};
@@ -189,8 +187,7 @@ pub async fn defmt_to_host_task() {
 
     loop {
         // Wait for a complete defmt frame to be available (do not release yet)
-        defmt::info!("waiting for defmt frame");
-        info!("waiting for defmt frame");
+        embedded_services::info!("waiting for defmt frame");
         let frame = framed_consumer.wait_read().await;
 
         // Copy frame bytes into the static ACPI buffer
@@ -200,11 +197,10 @@ pub async fn defmt_to_host_task() {
             let buf: &mut [u8] = BorrowMut::borrow_mut(&mut access);
             buf[..copy_len].copy_from_slice(&frame[..copy_len]);
         }
-        info!("got frame: bytes={}, copy_len={}", frame.len(), copy_len);
+        embedded_services::info!("got frame: bytes={}, copy_len={}", frame.len(), copy_len);
 
         frame.release();
-        defmt::info!("released defmt frame (staged {} bytes)", copy_len);
-        info!("released defmt frame (staged {copy_len} bytes)");
+        embedded_services::info!("released defmt frame (staged {} bytes)", copy_len);
 
         // Notify the host that data is available
         let _ = comms::send(
@@ -216,8 +212,7 @@ pub async fn defmt_to_host_task() {
 
         // Wait for host notification/ack via the debug service
         let _n = response_notify_signal().wait().await;
-        defmt::info!("host ack received, sending defmt response");
-        info!("host ack received, sending defmt response");
+        embedded_services::info!("host ack received, sending defmt response");
 
         // Send the staged defmt bytes frame as an ACPI-style message.
         // Scope the message so the shared borrow is dropped before we clear the buffer.
@@ -227,8 +222,7 @@ pub async fn defmt_to_host_task() {
                 payload_len: copy_len,
             });
             let _ = comms::send(EndpointID::Internal(Internal::Debug), host_ep, &msg).await;
-            defmt::info!("sent {} defmt bytes to host", copy_len);
-            info!("sent {copy_len} defmt bytes to host");
+            embedded_services::info!("sent {} defmt bytes to host", copy_len);
         }
 
         // Clear the staged portion of the buffer
