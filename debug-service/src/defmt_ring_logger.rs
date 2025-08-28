@@ -17,6 +17,14 @@ type Queue = BBQueue<Inline<4096>, AtomicCoord, MaiNotSpsc>;
 
 // Maximum number of bytes to request per defmt frame write grant.
 // This decouples the logger from any external protocol-specific size constants.
+// Each BBQueue "frame" is created by requesting a framed write grant of at most
+// DEFMT_MAX_BYTES and then committing it atomically. A commit publishes the frame
+// in one shot to the consumer; there is no concept of a "partial" frame being
+// visible. This guarantees:
+// - Per-frame upper bound: at most 1024 bytes are ever committed in a single frame.
+// - No partial publication: a frame is either not yet committed or fully committed.
+// If a defmt log event were to exceed this size, it will be split across multiple
+// BBQueue frames (each ≤ 1024). The consumer always observes complete frames.
 const DEFMT_MAX_BYTES: u16 = 1024;
 
 static DEFMT_BUFFER: Queue = Queue::new();
@@ -190,7 +198,10 @@ pub async fn defmt_to_host_task() {
         embedded_services::info!("waiting for defmt frame");
         let frame = framed_consumer.wait_read().await;
 
-        // Copy frame bytes into the static ACPI buffer
+        // Copy frame bytes into the static ACPI buffer.
+        // Producer commits frames atomically with size ≤ DEFMT_MAX_BYTES (1024),
+        // so the consumer never sees a partial frame. We still clamp to the
+        // destination length to be robust if the staging buffer size changes.
         let copy_len = core::cmp::min(frame.len(), acpi_owned.len());
         {
             let mut access = acpi_owned.borrow_mut();
