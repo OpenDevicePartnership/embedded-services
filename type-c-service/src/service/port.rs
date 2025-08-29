@@ -1,6 +1,9 @@
 use embedded_services::{
     debug, error,
-    type_c::{controller::DpConfig, external},
+    type_c::{
+        controller::{DpConfig, UsbControlConfig},
+        external,
+    },
 };
 use embedded_usb_pd::GlobalPortId;
 
@@ -49,6 +52,9 @@ impl<'a> Service<'a> {
             }
             external::PortCommandData::ClearDeadBatteryFlag => self.process_clear_dead_battery_flag(command.port).await,
             external::PortCommandData::SendVdm(tx_vdm) => self.process_send_vdm(command.port, tx_vdm).await,
+            external::PortCommandData::SetUsbControl(config) => {
+                self.process_set_usb_control(command.port, config).await
+            }
             external::PortCommandData::GetDpStatus => self.process_get_dp_status(command.port).await,
             external::PortCommandData::SetDpConfig(config) => self.process_set_dp_config(command.port, config).await,
             external::PortCommandData::ExecuteDrst => self.process_execute_drst(command.port).await,
@@ -144,6 +150,20 @@ impl<'a> Service<'a> {
         let status = self.context.send_vdm(port_id, tx_vdm).await;
         if let Err(e) = status {
             error!("Error sending VDM data: {:#?}", e);
+        }
+
+        external::Response::Port(status.map(|_| external::PortResponseData::Complete))
+    }
+
+    /// Process set USB control commands
+    async fn process_set_usb_control(
+        &self,
+        port_id: GlobalPortId,
+        config: UsbControlConfig,
+    ) -> external::Response<'static> {
+        let status = self.context.set_usb_control(port_id, config).await;
+        if let Err(e) = status {
+            error!("Error setting USB control: {:#?}", e);
         }
 
         external::Response::Port(status.map(|_| external::PortResponseData::Complete))

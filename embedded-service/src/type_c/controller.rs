@@ -1074,6 +1074,17 @@ impl ContextToken {
         }
     }
 
+    /// Set USB control configuration for the given port
+    pub async fn set_usb_control(&self, port: GlobalPortId, config: UsbControlConfig) -> Result<(), PdError> {
+        match self
+            .send_port_command(port, PortCommandData::SetUsbControl(config))
+            .await?
+        {
+            PortResponseData::Complete => Ok(()),
+            _ => Err(PdError::InvalidResponse),
+        }
+    }
+
     /// Get DisplayPort status for the given port
     pub async fn get_dp_status(&self, port: GlobalPortId) -> Result<DpStatus, PdError> {
         match self.send_port_command(port, PortCommandData::GetDpStatus).await? {

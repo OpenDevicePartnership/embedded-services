@@ -1,7 +1,10 @@
 //! Message definitions for external type-C commands
 use embedded_usb_pd::{GlobalPortId, LocalPortId, PdError, ucsi};
 
-use crate::type_c::{Cached, controller::execute_external_ucsi_command};
+use crate::type_c::{
+    Cached,
+    controller::{UsbControlConfig, execute_external_ucsi_command},
+};
 
 use super::{
     ControllerId,
@@ -70,6 +73,8 @@ pub enum PortCommandData {
     },
     /// Clear the dead battery flag for the given port.
     ClearDeadBatteryFlag,
+    /// Set USB control
+    SetUsbControl(UsbControlConfig),
     /// Send VDM
     SendVdm(SendVdm),
     /// Get DisplayPort status
@@ -329,6 +334,19 @@ pub async fn send_vdm(port: GlobalPortId, tx_vdm: SendVdm) -> Result<(), PdError
     match execute_external_port_command(Command::Port(PortCommand {
         port,
         data: PortCommandData::SendVdm(tx_vdm),
+    }))
+    .await?
+    {
+        PortResponseData::Complete => Ok(()),
+        _ => Err(PdError::InvalidResponse),
+    }
+}
+
+/// Set USB control configuration
+pub async fn set_usb_control(port: GlobalPortId, config: UsbControlConfig) -> Result<(), PdError> {
+    match execute_external_port_command(Command::Port(PortCommand {
+        port,
+        data: PortCommandData::SetUsbControl(config),
     }))
     .await?
     {
