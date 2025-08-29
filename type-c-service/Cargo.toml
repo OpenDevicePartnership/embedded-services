@@ -12,6 +12,7 @@ workspace = true
 
 [dependencies]
 bitfield.workspace = true
+bitflags = { workspace = true }
 defmt = { workspace = true, optional = true }
 embedded-cfu-protocol.workspace = true
 embassy-executor.workspace = true

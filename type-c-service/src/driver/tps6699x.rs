@@ -4,6 +4,7 @@ use ::tps6699x::registers::field_sets::IntEventBus1;
 use ::tps6699x::registers::{PdCcPullUp, PpExtVbusSw, PpIntVbusSw};
 use ::tps6699x::{PORT0, PORT1, TPS66993_NUM_PORTS, TPS66994_NUM_PORTS};
 use bitfield::bitfield;
+use bitflags::bitflags;
 use core::array::from_fn;
 use core::future::Future;
 use core::iter::zip;
@@ -189,50 +190,50 @@ bitfield! {
     pub u8, version, set_version: 31, 29;
 }
 
-#[derive(Clone, Copy, Debug)]
-#[repr(u8)]
-enum PdDpPinConfig {
-    /// De-select pin assignment
-    None = 0,
-    /// 4L DP connection using USBC-USBC cable
-    C = 0x4,
-    /// 2L USB + 2L DP connection using USBC-USBC cable
-    D = 0x8,
-    /// 4L DP connection using USBC-DP cable
-    E = 0x10,
+bitflags! {
+    /// DisplayPort Pin Configuration bitmap
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub struct PdDpPinConfig: u8 {
+        /// No pin assignment
+        const NONE = 0x00;
+        /// 4L DP connection using USBC-USBC cable (Pin Assignment C)
+        const C = 0x04;
+        /// 2L USB + 2L DP connection using USBC-USBC cable (Pin Assignment D)
+        const D = 0x08;
+        /// 4L DP connection using USBC-DP cable (Pin Assignment E)
+        const E = 0x10;
+    }
 }
 
 impl From<u8> for PdDpPinConfig {
     fn from(value: u8) -> Self {
-        match value {
-            0 => PdDpPinConfig::None,
-            0x4 => PdDpPinConfig::C,
-            0x8 => PdDpPinConfig::D,
-            0x10 => PdDpPinConfig::E,
-            _ => PdDpPinConfig::None,
-        }
+        PdDpPinConfig::from_bits_truncate(value)
     }
 }
 
-impl From<controller::DpPinConfig> for PdDpPinConfig {
-    fn from(value: DpPinConfig) -> Self {
-        match value {
-            DpPinConfig::None => Self::None,
-            DpPinConfig::C => Self::C,
-            DpPinConfig::D => Self::D,
-            DpPinConfig::E => Self::E,
-        }
-    }
-}
-
-impl From<PdDpPinConfig> for controller::DpPinConfig {
+impl From<PdDpPinConfig> for DpPinConfig {
     fn from(value: PdDpPinConfig) -> Self {
-        match value {
-            PdDpPinConfig::None => Self::None,
-            PdDpPinConfig::C => Self::C,
-            PdDpPinConfig::D => Self::D,
-            PdDpPinConfig::E => Self::E,
+        Self {
+            pin_c: value.contains(PdDpPinConfig::C),
+            pin_d: value.contains(PdDpPinConfig::D),
+            pin_e: value.contains(PdDpPinConfig::E),
         }
+    }
+}
+
+impl From<DpPinConfig> for PdDpPinConfig {
+    fn from(value: DpPinConfig) -> Self {
+        let mut config = PdDpPinConfig::NONE;
+        if value.pin_c {
+            config |= PdDpPinConfig::C;
+        }
+        if value.pin_d {
+            config |= PdDpPinConfig::D;
+        }
+        if value.pin_e {
+            config |= PdDpPinConfig::E;
+        }
+        config
     }
 }
 
@@ -791,8 +792,8 @@ impl<const N: usize, M: RawMutex, B: I2c> Controller for Tps6699x<'_, N, M, B> {
 
         // Get the DP configure message which contains pin configuration
         let dp_config = PdDpAltConfig(dp_status.dp_configure_message());
-        let pin_config: PdDpPinConfig = dp_config.config_pin().into();
-        let pin_config: DpPinConfig = pin_config.into();
+        let cfg_raw: PdDpPinConfig = dp_config.config_pin().into();
+        let pin_config: DpPinConfig = cfg_raw.into();
 
         Ok(controller::DpStatus {
             alt_mode_entered,
@@ -818,8 +819,8 @@ impl<const N: usize, M: RawMutex, B: I2c> Controller for Tps6699x<'_, N, M, B> {
         debug!("Current DP config: {:#?}", dp_config_reg);
 
         dp_config_reg.set_enable_dp_mode(config.enable);
-        let pin_cfg: PdDpPinConfig = config.dfp_d_pin_cfg.into();
-        dp_config_reg.set_dfpd_pin_assignment(pin_cfg as u8);
+        let cfg_raw: PdDpPinConfig = config.dfp_d_pin_cfg.into();
+        dp_config_reg.set_dfpd_pin_assignment(cfg_raw.bits());
 
         tps6699x.set_dp_config(port, dp_config_reg).await?;
         Ok(())
