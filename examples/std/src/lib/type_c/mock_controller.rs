@@ -5,7 +5,8 @@ use embedded_services::{
     power::policy::PowerCapability,
     type_c::{
         controller::{
-            AttnVdm, Contract, ControllerStatus, OtherVdm, PortStatus, RetimerFwUpdateState, SendVdm, UsbControlConfig,
+            AttnVdm, Contract, ControllerStatus, DpConfig, DpPinConfig, DpStatus, OtherVdm, PortStatus,
+            RetimerFwUpdateState, SendVdm, UsbControlConfig,
         },
         event::PortEvent,
     },
@@ -262,6 +263,27 @@ impl embedded_services::type_c::controller::Controller for Controller<'_> {
             "set_usb_control(port: {port:?}, usb2: {}, usb3: {}, usb4: {})",
             config.usb2_enabled, config.usb3_enabled, config.usb4_enabled
         );
+        Ok(())
+    }
+
+    async fn get_dp_status(&mut self, port: LocalPortId) -> Result<DpStatus, Error<Self::BusError>> {
+        debug!("Get DisplayPort status for port {port:?}");
+        Ok(DpStatus {
+            alt_mode_entered: false,
+            dfp_d_pin_cfg: DpPinConfig::None,
+        })
+    }
+
+    async fn set_dp_config(&mut self, port: LocalPortId, config: DpConfig) -> Result<(), Error<Self::BusError>> {
+        debug!(
+            "Set DisplayPort config for port {port:?}: enable={}, pin_cfg={:?}",
+            config.enable, config.dfp_d_pin_cfg
+        );
+        Ok(())
+    }
+
+    async fn execute_drst(&mut self, port: LocalPortId) -> Result<(), Error<Self::BusError>> {
+        debug!("Execute PD Data Reset for port {port:?}");
         Ok(())
     }
 }
