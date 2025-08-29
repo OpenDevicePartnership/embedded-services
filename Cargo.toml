@@ -44,8 +44,8 @@ embassy-executor = "0.9.0"
 embassy-futures = "0.1.2"
 embassy-imxrt = { git = "https://github.com/OpenDevicePartnership/embassy-imxrt" }
 embassy-sync = "0.7.2"
-embassy-time = "0.5.0"
-embassy-time-driver = "0.2.1"
+embassy-time = "0.4.0"
+embassy-time-driver = "0.2.0"
 embedded-batteries-async = "0.2.0"
 embedded-cfu-protocol = { git = "https://github.com/OpenDevicePartnership/embedded-cfu" }
 embedded-hal = "1.0"
