@@ -1,9 +1,10 @@
 use embedded_usb_pd::ucsi::cci::Cci;
+use embedded_usb_pd::ucsi::lpm::get_connector_capability::OperationModeFlags;
 use embedded_usb_pd::ucsi::ppm::set_notification_enable::NotificationEnable;
 use embedded_usb_pd::ucsi::ppm::state_machine::{
     Input as PpmInput, Output as PpmOutput, State as PpmState, StateMachine,
 };
-use embedded_usb_pd::ucsi::{ppm, Command, GlobalCommand, GlobalResponse, ResponseData};
+use embedded_usb_pd::ucsi::{lpm, ppm, Command, GlobalCommand, GlobalResponse, ResponseData};
 use embedded_usb_pd::PdError;
 
 use super::*;
@@ -32,14 +33,15 @@ impl<'a> Service<'a> {
     }
 
     /// PPM get capabilities implementation
-    fn process_get_capabilities(&self) -> (GlobalResponse, Option<PpmInput>) {
+    async fn process_get_capabilities(&self) -> (GlobalResponse, Option<PpmInput>) {
         debug!("Get PPM capabilities: {:?}", self.config.ucsi_capabilities);
+        let mut capabilities = self.config.ucsi_capabilities;
+        capabilities.num_connectors = external::get_num_ports().await as u8;
         (
             GlobalResponse {
                 cci: Cci::new_cmd_complete(),
-                // TODO: pull num connectors from service
                 data: Some(ResponseData::PpmResponse(ppm::ResponseData::GetCapability(
-                    self.config.ucsi_capabilities,
+                    capabilities,
                 ))),
             },
             Some(PpmInput::CommandImmediate),
@@ -76,9 +78,50 @@ impl<'a> Service<'a> {
                     .await,
                 Some(PpmInput::CommandImmediate),
             )),
-            Command::PpmCommand(ppm::Command::GetCapability) => Ok(self.process_get_capabilities()),
+            Command::PpmCommand(ppm::Command::GetCapability) => Ok(self.process_get_capabilities().await),
+            Command::LpmCommand(lpm::GlobalCommand { port: _, operation }) => match operation {
+                lpm::CommandData::GetConnectorCapability => Ok((
+                    //TODO: Send command to controller
+                    GlobalResponse {
+                        cci: Cci::new_cmd_complete(),
+                        data: Some(ResponseData::LpmResponse(lpm::ResponseData::GetConnectorCapability(
+                            *lpm::get_connector_capability::ResponseData::default()
+                                .set_operation_mode(
+                                    *OperationModeFlags::default()
+                                        .set_drp(true)
+                                        .set_usb2(true)
+                                        .set_usb3(true),
+                                )
+                                .set_consumer(true)
+                                .set_provider(true)
+                                .set_swap_to_dfp(true)
+                                .set_swap_to_snk(true)
+                                .set_swap_to_src(true),
+                        ))),
+                    },
+                    Some(PpmInput::CommandImmediate),
+                )),
+                lpm::CommandData::GetConnectorStatus => Ok((
+                    //TODO: Send command to controller
+                    GlobalResponse {
+                        cci: Cci::new_cmd_complete(),
+                        data: Some(ResponseData::LpmResponse(lpm::ResponseData::GetConnectorStatus(
+                            lpm::get_connector_status::ResponseData::default(),
+                        ))),
+                    },
+                    Some(PpmInput::CommandImmediate),
+                )),
+                // TODO: implement all other LPM commands
+                rest => {
+                    error!("Unsupported command received: {:?}", rest);
+                    Err(PdError::UnrecognizedCommand)
+                }
+            },
             // TODO: implement other commands
-            _ => Err(PdError::UnrecognizedCommand),
+            _ => {
+                error!("Invalid command received: {:?}", command);
+                Err(PdError::InvalidMode)
+            }
         }
     }
 
@@ -90,7 +133,10 @@ impl<'a> Service<'a> {
         match command {
             // Reset is the only command that can be processed in busy state
             Command::PpmCommand(ppm::Command::PpmReset) => Ok(self.process_ppm_reset()),
-            _ => Err(PdError::InvalidMode),
+            _ => {
+                error!("Invalid command received while busy: {:?}", command);
+                Err(PdError::InvalidMode)
+            }
         }
     }
 
@@ -103,7 +149,10 @@ impl<'a> Service<'a> {
             Command::PpmCommand(ppm::Command::PpmReset) => Ok(self.process_ppm_reset()),
             // Cancel the current command
             Command::PpmCommand(ppm::Command::Cancel) => Ok((Cci::new_cmd_complete().into(), Some(PpmInput::Cancel))),
-            _ => Err(PdError::InvalidMode),
+            _ => {
+                error!("Invalid command received while processing command: {:?}", command);
+                Err(PdError::InvalidMode)
+            }
         }
     }
 
@@ -116,14 +165,23 @@ impl<'a> Service<'a> {
             Command::PpmCommand(ppm::Command::PpmReset) => Ok(self.process_ppm_reset()),
             Command::PpmCommand(ppm::Command::AckCcCi(args)) => {
                 if args.ack.command_complete() {
-                    Ok((Cci::new_cmd_complete().into(), Some(PpmInput::CommandCompleteAck)))
+                    Ok((
+                        (*Cci::default().set_ack_command(true)).into(),
+                        Some(PpmInput::CommandCompleteAck),
+                    ))
                 } else {
                     // Still waiting for ack
                     Ok((Cci::default().into(), None))
                 }
             }
             // All other commands are invalid in this state
-            _ => Err(PdError::InvalidMode),
+            _ => {
+                error!(
+                    "Invalid command received while waiting for command complete ack: {:?}",
+                    command
+                );
+                Err(PdError::InvalidMode)
+            }
         }
     }
 
@@ -143,7 +201,13 @@ impl<'a> Service<'a> {
                 }
             }
             // All other commands are invalid in this state
-            _ => Err(PdError::InvalidMode),
+            _ => {
+                error!(
+                    "Invalid command received while waiting for async event ack: {:?}",
+                    command
+                );
+                Err(PdError::InvalidMode)
+            }
         }
     }
 
@@ -175,9 +239,12 @@ impl<'a> Service<'a> {
                         notify_opm = state.notifications_enabled.cmd_complete();
                         response.cci.set_cmd_complete(true);
                     }
+                    PpmOutput::OpmNotifyAckComplete => {
+                        // This is really a command complete, but it's signaled differently in the CCI
+                        notify_opm = state.notifications_enabled.cmd_complete();
+                        response.cci.set_ack_command(true);
+                    }
                     PpmOutput::OpmNotifyReset => {
-                        // Always notify OPM on reset
-                        notify_opm = true;
                         response.cci.set_reset_complete(true);
                     }
                     PpmOutput::OpmNotifyBusy => {

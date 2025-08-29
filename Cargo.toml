@@ -40,12 +40,12 @@ cortex-m-rt = "0.7.5"
 critical-section = "1.1"
 defmt = "0.3"
 document-features = "0.2.7"
-embassy-executor = { git = "https://github.com/embassy-rs/embassy" }
-embassy-futures = { git = "https://github.com/embassy-rs/embassy" }
+embassy-executor = "0.9.0"
+embassy-futures = "0.1.2"
 embassy-imxrt = { git = "https://github.com/OpenDevicePartnership/embassy-imxrt" }
-embassy-sync = { git = "https://github.com/embassy-rs/embassy" }
-embassy-time = { git = "https://github.com/embassy-rs/embassy" }
-embassy-time-driver = { git = "https://github.com/embassy-rs/embassy" }
+embassy-sync = "0.7.2"
+embassy-time = "0.4.0"
+embassy-time-driver = "0.2.0"
 embedded-batteries-async = "0.2.0"
 embedded-cfu-protocol = { git = "https://github.com/OpenDevicePartnership/embedded-cfu" }
 embedded-hal = "1.0"
