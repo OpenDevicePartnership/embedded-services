@@ -41,6 +41,7 @@ use crate::{PortEventStreamer, PortEventVariant};
 
 pub mod backing;
 mod cfu;
+mod dp;
 pub mod message;
 mod pd;
 mod power;
@@ -470,6 +471,10 @@ impl<'a, const N: usize, C: Controller, BACK: Backing<'a>, V: FwOfferValidator> 
             PortNotificationSingle::Vdm(event) => {
                 self.process_vdm_event(controller, port, event).await.map(Output::Vdm)
             }
+            PortNotificationSingle::DpStatusUpdate => self
+                .process_dp_status_update(controller, port)
+                .await
+                .map(Output::DpStatusUpdate),
             rest => {
                 // Nothing currently implemented for these
                 trace!("Port{}: Notification: {:#?}", port.0, rest);
@@ -552,6 +557,10 @@ impl<'a, const N: usize, C: Controller, BACK: Backing<'a>, V: FwOfferValidator> 
             }
             Output::CfuResponse(response) => {
                 self.send_cfu_response(response).await;
+                Ok(())
+            }
+            Output::DpStatusUpdate(_) => {
+                // Nothing to do here
                 Ok(())
             }
         }
