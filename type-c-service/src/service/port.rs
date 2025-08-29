@@ -176,7 +176,7 @@ impl<'a> Service<'a> {
             error!("Error getting DP status: {:#?}", e);
         }
 
-        external::Response::Port(status.map(|dp_status| external::PortResponseData::GetDpStatus(dp_status)))
+        external::Response::Port(status.map(external::PortResponseData::GetDpStatus))
     }
 
     /// Process set DisplayPort config commands
