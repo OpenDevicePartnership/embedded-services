@@ -4,7 +4,7 @@ use embedded_services::{trace, type_c::controller::Controller};
 use embedded_usb_pd::{Error, LocalPortId};
 
 impl<'a, const N: usize, C: Controller, BACK: Backing<'a>, V: FwOfferValidator> ControllerWrapper<'a, N, C, BACK, V> {
-    /// Process a VDM event by retrieving the relevant VDM data from the `controller` for the appropriate `port`.
+    /// Process a DisplayPort status update by retrieving the current DP status from the `controller` for the appropriate `port`.
     pub(super) async fn process_dp_status_update(
         &self,
         controller: &mut C,
