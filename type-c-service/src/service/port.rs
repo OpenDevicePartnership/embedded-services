@@ -1,4 +1,7 @@
-use embedded_services::{debug, error, type_c::external};
+use embedded_services::{
+    debug, error,
+    type_c::{controller::DpConfig, external},
+};
 use embedded_usb_pd::GlobalPortId;
 
 use super::*;
@@ -46,6 +49,9 @@ impl<'a> Service<'a> {
             }
             external::PortCommandData::ClearDeadBatteryFlag => self.process_clear_dead_battery_flag(command.port).await,
             external::PortCommandData::SendVdm(tx_vdm) => self.process_send_vdm(command.port, tx_vdm).await,
+            external::PortCommandData::GetDpStatus => self.process_get_dp_status(command.port).await,
+            external::PortCommandData::SetDpConfig(config) => self.process_set_dp_config(command.port, config).await,
+            external::PortCommandData::ExecuteDrst => self.process_execute_drst(command.port).await,
         }
     }
 
@@ -138,6 +144,36 @@ impl<'a> Service<'a> {
         let status = self.context.send_vdm(port_id, tx_vdm).await;
         if let Err(e) = status {
             error!("Error sending VDM data: {:#?}", e);
+        }
+
+        external::Response::Port(status.map(|_| external::PortResponseData::Complete))
+    }
+
+    /// Process get DisplayPort status commands
+    async fn process_get_dp_status(&self, port_id: GlobalPortId) -> external::Response<'static> {
+        let status = self.context.get_dp_status(port_id).await;
+        if let Err(e) = status {
+            error!("Error getting DP status: {:#?}", e);
+        }
+
+        external::Response::Port(status.map(|dp_status| external::PortResponseData::GetDpStatus(dp_status)))
+    }
+
+    /// Process set DisplayPort config commands
+    async fn process_set_dp_config(&self, port_id: GlobalPortId, config: DpConfig) -> external::Response<'static> {
+        let status = self.context.set_dp_config(port_id, config).await;
+        if let Err(e) = status {
+            error!("Error setting DP config: {:#?}", e);
+        }
+
+        external::Response::Port(status.map(|_| external::PortResponseData::Complete))
+    }
+
+    /// Process execute DisplayPort reset commands
+    async fn process_execute_drst(&self, port_id: GlobalPortId) -> external::Response<'static> {
+        let status = self.context.execute_drst(port_id).await;
+        if let Err(e) = status {
+            error!("Error executing DP reset: {:#?}", e);
         }
 
         external::Response::Port(status.map(|_| external::PortResponseData::Complete))
