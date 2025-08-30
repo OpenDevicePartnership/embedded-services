@@ -270,7 +270,7 @@ impl embedded_services::type_c::controller::Controller for Controller<'_> {
         debug!("Get DisplayPort status for port {port:?}");
         Ok(DpStatus {
             alt_mode_entered: false,
-            dfp_d_pin_cfg: DpPinConfig::None,
+            dfp_d_pin_cfg: DpPinConfig::default(),
         })
     }
 
