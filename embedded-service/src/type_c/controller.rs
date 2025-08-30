@@ -139,17 +139,15 @@ pub struct AttnVdm {
 }
 
 /// DisplayPort pin configuration
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub enum DpPinConfig {
-    /// De-select pin assignment
-    None,
-    /// 4L DP connection using USBC-USBC cable
-    C,
-    /// 2L USB + 2L DP connection using USBC-USBC cable
-    D,
-    /// 4L DP connection using USBC-DP cable
-    E,
+pub struct DpPinConfig {
+    /// 4L DP connection using USBC-USBC cable (Pin Assignment C)
+    pub pin_c: bool,
+    /// 2L USB + 2L DP connection using USBC-USBC cable (Pin Assignment D)
+    pub pin_d: bool,
+    /// 4L DP connection using USBC-DP cable (Pin Assignment E)
+    pub pin_e: bool,
 }
 
 /// DisplayPort status data

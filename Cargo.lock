@@ -1897,6 +1897,7 @@ name = "type-c-service"
 version = "0.1.0"
 dependencies = [
  "bitfield 0.17.0",
+ "bitflags 2.9.3",
  "critical-section",
  "defmt 0.3.100",
  "embassy-executor 0.9.0",
