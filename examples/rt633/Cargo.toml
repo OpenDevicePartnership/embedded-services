@@ -32,7 +32,7 @@ embassy-imxrt = { git = "https://github.com/OpenDevicePartnership/embassy-imxrt"
 embassy-sync = { version = "0.7.2", features = [
     "defmt",
 ] }
-embassy-executor = { version = "0.9.0", features = [
+embassy-executor = { version = "0.7.0", features = [
     "arch-cortex-m",
     "executor-thread",
     "executor-interrupt",

@@ -112,7 +112,7 @@ name = "battery-service"
 version = "0.1.0"
 dependencies = [
  "defmt 0.3.100",
- "embassy-executor 0.9.0",
+ "embassy-executor",
  "embassy-futures",
  "embassy-sync",
  "embassy-time 0.4.0",
@@ -483,23 +483,11 @@ version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "90327bcc66333a507f89ecc4e2d911b265c45f5c9bc241f98eee076752d35ac6"
 dependencies = [
- "critical-section",
- "document-features",
- "embassy-executor-macros 0.6.2",
-]
-
-[[package]]
-name = "embassy-executor"
-version = "0.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d0c80c92a31c7f6b02a938f10feea17ea3cc0e8d33bcac7f3fe8cede3723bb56"
-dependencies = [
  "cortex-m",
  "critical-section",
- "defmt 1.0.1",
+ "defmt 0.3.100",
  "document-features",
- "embassy-executor-macros 0.7.0",
- "embassy-executor-timer-queue",
+ "embassy-executor-macros",
 ]
 
 [[package]]
@@ -513,24 +501,6 @@ dependencies = [
  "quote",
  "syn",
 ]
-
-[[package]]
-name = "embassy-executor-macros"
-version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dfdddc3a04226828316bf31393b6903ee162238576b1584ee2669af215d55472"
-dependencies = [
- "darling",
- "proc-macro2",
- "quote",
- "syn",
-]
-
-[[package]]
-name = "embassy-executor-timer-queue"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2fc328bf943af66b80b98755db9106bf7e7471b0cf47dc8559cd9a6be504cc9c"
 
 [[package]]
 name = "embassy-futures"
@@ -653,7 +623,7 @@ version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dc55c748d16908a65b166d09ce976575fb8852cf60ccd06174092b41064d8f83"
 dependencies = [
- "embassy-executor 0.7.0",
+ "embassy-executor",
  "heapless 0.8.0",
 ]
 
@@ -762,7 +732,7 @@ dependencies = [
  "critical-section",
  "defmt 0.3.100",
  "document-features",
- "embassy-executor 0.9.0",
+ "embassy-executor",
  "embassy-futures",
  "embassy-sync",
  "embassy-time 0.4.0",
@@ -825,7 +795,7 @@ dependencies = [
  "cortex-m",
  "cortex-m-rt",
  "defmt 0.3.100",
- "embassy-executor 0.9.0",
+ "embassy-executor",
  "embassy-futures",
  "embassy-imxrt",
  "embassy-sync",
@@ -1367,7 +1337,7 @@ dependencies = [
  "defmt 0.3.100",
  "defmt-rtt",
  "embassy-embedded-hal",
- "embassy-executor 0.9.0",
+ "embassy-executor",
  "embassy-futures",
  "embassy-imxrt",
  "embassy-sync",

@@ -40,7 +40,7 @@ cortex-m-rt = "0.7.5"
 critical-section = "1.1"
 defmt = "0.3"
 document-features = "0.2.7"
-embassy-executor = "0.9.0"
+embassy-executor = "0.7.0"
 embassy-futures = "0.1.2"
 embassy-imxrt = { git = "https://github.com/OpenDevicePartnership/embassy-imxrt" }
 embassy-sync = "0.7.2"
