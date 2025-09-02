@@ -206,7 +206,13 @@ pub async fn defmt_to_host_task() {
         {
             let mut access = acpi_owned.borrow_mut();
             let buf: &mut [u8] = BorrowMut::borrow_mut(&mut access);
-            buf[..copy_len].copy_from_slice(&frame[..copy_len]);
+
+            // Prepend 4 byte header
+            buf[0] = 1;
+            buf[1] = 0;
+            buf[2] = 0;
+            buf[3] = 1;
+            buf[4..copy_len + 4].copy_from_slice(&frame[..copy_len]);
         }
         embedded_services::info!("got frame: bytes={}, copy_len={}", frame.len(), copy_len);
 
