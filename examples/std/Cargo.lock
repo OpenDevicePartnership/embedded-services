@@ -1635,6 +1635,7 @@ dependencies = [
  "cfu-service",
  "critical-section",
  "debug-service",
+ "defmt 0.3.100",
  "embassy-executor 0.9.1",
  "embassy-futures",
  "embassy-sync",
