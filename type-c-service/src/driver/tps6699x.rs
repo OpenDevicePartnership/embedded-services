@@ -247,8 +247,6 @@ bitfield! {
     pub u8, select_config, set_select_config: 1, 0;
     /// Signaling (4 bits)
     pub u8, signaling, set_signaling: 5, 2;
-    /// Reserved field 0 (2 bits)
-    pub u8, reserved0, set_reserved0: 7, 6;
     /// Pin configuration (8 bits)
     pub u8, config_pin, set_config_pin: 15, 8;
     /// Reserved field 1 (16 bits)
