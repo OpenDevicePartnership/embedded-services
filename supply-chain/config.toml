@@ -10,18 +10,20 @@ url = "https://raw.githubusercontent.com/OpenDevicePartnership/rust-crate-audits
 [imports.bytecode-alliance]
 url = "https://raw.githubusercontent.com/bytecodealliance/wasmtime/main/supply-chain/audits.toml"
 
+[imports.embark-studios]
+url = "https://raw.githubusercontent.com/EmbarkStudios/rust-ecosystem/main/audits.toml"
+
 [imports.google]
 url = "https://raw.githubusercontent.com/google/rust-crate-audits/main/audits.toml"
 
 [imports.mozilla]
 url = "https://raw.githubusercontent.com/mozilla/supply-chain/main/audits.toml"
 
+[imports.zcash]
+url = "https://raw.githubusercontent.com/zcash/rust-ecosystem/main/supply-chain/audits.toml"
+
 [policy.embassy-imxrt]
 audit-as-crates-io = false
-
-[[exemptions.adler2]]
-version = "2.0.1"
-criteria = "safe-to-run"
 
 [[exemptions.ahash]]
 version = "0.8.12"
@@ -41,10 +43,6 @@ criteria = "safe-to-deploy"
 
 [[exemptions.atomic-polyfill]]
 version = "1.0.3"
-criteria = "safe-to-deploy"
-
-[[exemptions.autocfg]]
-version = "1.5.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.az]]
@@ -145,10 +143,6 @@ criteria = "safe-to-deploy"
 
 [[exemptions.critical-section]]
 version = "1.2.0"
-criteria = "safe-to-deploy"
-
-[[exemptions.crunchy]]
-version = "0.2.4"
 criteria = "safe-to-deploy"
 
 [[exemptions.darling]]
@@ -319,10 +313,6 @@ criteria = "safe-to-deploy"
 version = "0.8.0"
 criteria = "safe-to-deploy"
 
-[[exemptions.ident_case]]
-version = "1.0.1"
-criteria = "safe-to-deploy"
-
 [[exemptions.indexmap]]
 version = "2.11.0"
 criteria = "safe-to-deploy"
@@ -331,17 +321,9 @@ criteria = "safe-to-deploy"
 version = "0.7.10"
 criteria = "safe-to-run"
 
-[[exemptions.itertools]]
-version = "0.14.0"
-criteria = "safe-to-deploy"
-
 [[exemptions.kdl]]
 version = "6.3.4"
 criteria = "safe-to-deploy"
-
-[[exemptions.libc]]
-version = "0.2.175"
-criteria = "safe-to-run"
 
 [[exemptions.litrs]]
 version = "0.4.2"
@@ -349,14 +331,6 @@ criteria = "safe-to-deploy"
 
 [[exemptions.lock_api]]
 version = "0.4.13"
-criteria = "safe-to-deploy"
-
-[[exemptions.log]]
-version = "0.4.27"
-criteria = "safe-to-deploy"
-
-[[exemptions.memchr]]
-version = "2.7.5"
 criteria = "safe-to-deploy"
 
 [[exemptions.miette]]
@@ -374,10 +348,6 @@ criteria = "safe-to-deploy"
 [[exemptions.mimxrt685s-pac]]
 version = "0.4.0"
 criteria = "safe-to-deploy"
-
-[[exemptions.miniz_oxide]]
-version = "0.8.9"
-criteria = "safe-to-run"
 
 [[exemptions.mio]]
 version = "1.0.4"
@@ -403,10 +373,6 @@ criteria = "safe-to-deploy"
 version = "1.21.3"
 criteria = "safe-to-deploy"
 
-[[exemptions.paste]]
-version = "1.0.15"
-criteria = "safe-to-deploy"
-
 [[exemptions.percent-encoding]]
 version = "2.3.2"
 criteria = "safe-to-deploy"
@@ -427,10 +393,6 @@ criteria = "safe-to-deploy"
 version = "2.0.1"
 criteria = "safe-to-deploy"
 
-[[exemptions.proc-macro2]]
-version = "1.0.101"
-criteria = "safe-to-deploy"
-
 [[exemptions.radium]]
 version = "0.7.0"
 criteria = "safe-to-deploy"
@@ -441,14 +403,6 @@ criteria = "safe-to-run"
 
 [[exemptions.rustc_version]]
 version = "0.2.3"
-criteria = "safe-to-deploy"
-
-[[exemptions.rustc_version]]
-version = "0.4.1"
-criteria = "safe-to-deploy"
-
-[[exemptions.ryu]]
-version = "1.0.20"
 criteria = "safe-to-deploy"
 
 [[exemptions.scopeguard]]
@@ -463,10 +417,6 @@ criteria = "safe-to-deploy"
 version = "0.7.0"
 criteria = "safe-to-deploy"
 
-[[exemptions.serde_json]]
-version = "1.0.143"
-criteria = "safe-to-deploy"
-
 [[exemptions.serde_spanned]]
 version = "0.6.9"
 criteria = "safe-to-deploy"
@@ -477,30 +427,6 @@ criteria = "safe-to-run"
 
 [[exemptions.spin]]
 version = "0.9.8"
-criteria = "safe-to-deploy"
-
-[[exemptions.syn]]
-version = "2.0.106"
-criteria = "safe-to-deploy"
-
-[[exemptions.tap]]
-version = "1.0.1"
-criteria = "safe-to-deploy"
-
-[[exemptions.thiserror]]
-version = "1.0.43"
-criteria = "safe-to-deploy"
-
-[[exemptions.thiserror]]
-version = "2.0.16"
-criteria = "safe-to-deploy"
-
-[[exemptions.thiserror-impl]]
-version = "1.0.43"
-criteria = "safe-to-deploy"
-
-[[exemptions.thiserror-impl]]
-version = "2.0.16"
 criteria = "safe-to-deploy"
 
 [[exemptions.tokio]]
@@ -545,10 +471,6 @@ criteria = "safe-to-deploy"
 
 [[exemptions.wasi]]
 version = "0.11.1+wasi-snapshot-preview1"
-criteria = "safe-to-run"
-
-[[exemptions.windows-sys]]
-version = "0.59.0"
 criteria = "safe-to-run"
 
 [[exemptions.winnow]]
