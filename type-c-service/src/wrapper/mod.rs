@@ -400,15 +400,17 @@ impl<'a, const N: usize, C: Controller, BACK: Backing<'a>, V: FwOfferValidator> 
                     if let Some((port_index, event)) = stream
                         .next::<Error<<C as Controller>::BusError>, _, _>(async |port_index| {
                             // Combine the event read from the controller with any software generated events
-                            let sw_event: PortEvent =
-                                self.state.lock().await.port_states[port_index].sw_status_event.into();
-                            let hw_event = self
-                                .controller
-                                .lock()
-                                .await
-                                .clear_port_events(LocalPortId(port_index as u8))
-                                .await?;
-                            Ok(hw_event.union(sw_event))
+                            // Acquire the locks first to centralize the awaits here
+                            let mut controller = self.controller.lock().await;
+                            let mut state = self.state.lock().await;
+                            let hw_event = controller.clear_port_events(LocalPortId(port_index as u8)).await?;
+
+                            // No more awaits, modify state here for drop safety
+                            let sw_event = core::mem::replace(
+                                &mut state.port_states[port_index].sw_status_event,
+                                PortStatusChanged::none(),
+                            );
+                            Ok(hw_event.union(sw_event.into()))
                         })
                         .await?
                     {
