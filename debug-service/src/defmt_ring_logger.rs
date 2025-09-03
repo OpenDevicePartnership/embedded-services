@@ -236,7 +236,7 @@ pub async fn defmt_to_host_task() {
         {
             let msg = HostMsg::Response(AcpiMsgComms {
                 payload: defmt_acpi_buf::get(),
-                payload_len: copy_len,
+                payload_len: copy_len + 4,
             });
             let _ = comms::send(EndpointID::Internal(Internal::Debug), host_ep, &msg).await;
             embedded_services::info!("sent {} defmt bytes to host", copy_len);
