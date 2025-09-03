@@ -85,7 +85,7 @@ version = "0.10.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.bitflags]]
-version = "2.9.3"
+version = "2.9.4"
 criteria = "safe-to-deploy"
 
 [[exemptions.bitvec]]
@@ -189,15 +189,7 @@ version = "0.5.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.embassy-executor]]
-version = "0.7.0"
-criteria = "safe-to-deploy"
-
-[[exemptions.embassy-executor]]
-version = "0.9.0"
-criteria = "safe-to-deploy"
-
-[[exemptions.embassy-executor-macros]]
-version = "0.6.2"
+version = "0.9.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.embassy-executor-macros]]
@@ -221,10 +213,6 @@ version = "0.7.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.embassy-time]]
-version = "0.4.0"
-criteria = "safe-to-deploy"
-
-[[exemptions.embassy-time]]
 version = "0.5.0"
 criteria = "safe-to-deploy"
 
@@ -233,7 +221,7 @@ version = "0.2.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.embassy-time-queue-utils]]
-version = "0.1.0"
+version = "0.3.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.embedded-hal]]
@@ -281,14 +269,6 @@ version = "0.3.31"
 criteria = "safe-to-deploy"
 
 [[exemptions.futures-sink]]
-version = "0.3.31"
-criteria = "safe-to-deploy"
-
-[[exemptions.futures-task]]
-version = "0.3.31"
-criteria = "safe-to-deploy"
-
-[[exemptions.futures-util]]
 version = "0.3.31"
 criteria = "safe-to-deploy"
 
@@ -353,7 +333,7 @@ version = "0.4.13"
 criteria = "safe-to-deploy"
 
 [[exemptions.log]]
-version = "0.4.27"
+version = "0.4.28"
 criteria = "safe-to-deploy"
 
 [[exemptions.memchr]]
@@ -410,10 +390,6 @@ criteria = "safe-to-deploy"
 
 [[exemptions.percent-encoding]]
 version = "2.3.2"
-criteria = "safe-to-deploy"
-
-[[exemptions.pin-utils]]
-version = "0.1.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.postcard]]
