@@ -31,6 +31,11 @@ who = "jerrysxie <jerryxie@microsoft.com>"
 criteria = "safe-to-deploy"
 version = "0.2.0"
 
+[[audits.embassy-time-queue-utils]]
+who = "Felipe Balbi <febalbi@microsoft.com>"
+criteria = "safe-to-deploy"
+version = "0.3.0"
+
 [[audits.embedded-batteries]]
 who = "Felipe Balbi <febalbi@microsoft.com>"
 criteria = "safe-to-deploy"

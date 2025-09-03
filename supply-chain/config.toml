@@ -232,10 +232,6 @@ criteria = "safe-to-deploy"
 version = "0.2.1"
 criteria = "safe-to-deploy"
 
-[[exemptions.embassy-time-queue-utils]]
-version = "0.1.0"
-criteria = "safe-to-deploy"
-
 [[exemptions.embedded-hal]]
 version = "0.2.7"
 criteria = "safe-to-deploy"
