@@ -258,6 +258,42 @@ impl<'a, const N: usize, C: Controller, BACK: Backing<'a>, V: FwOfferValidator> 
                     },
                 }
             }
+            controller::PortCommandData::GetOtherVdm => match controller.get_other_vdm(local_port).await {
+                Ok(vdm) => {
+                    debug!("Port{}: Other VDM: {:?}", local_port.0, vdm);
+                    Ok(controller::PortResponseData::OtherVdm(vdm))
+                }
+                Err(e) => match e {
+                    Error::Bus(_) => Err(PdError::Failed),
+                    Error::Pd(e) => Err(e),
+                },
+            },
+            controller::PortCommandData::GetAttnVdm => match controller.get_attn_vdm(local_port).await {
+                Ok(vdm) => {
+                    debug!("Port{}: Attention VDM: {:?}", local_port.0, vdm);
+                    Ok(controller::PortResponseData::AttnVdm(vdm))
+                }
+                Err(e) => match e {
+                    Error::Bus(_) => Err(PdError::Failed),
+                    Error::Pd(e) => Err(e),
+                },
+            },
+            controller::PortCommandData::SendVdm(tx_vdm) => match controller.send_vdm(local_port, tx_vdm).await {
+                Ok(()) => Ok(controller::PortResponseData::Complete),
+                Err(e) => match e {
+                    Error::Bus(_) => Err(PdError::Failed),
+                    Error::Pd(e) => Err(e),
+                },
+            },
+            controller::PortCommandData::SetUsbControl(config) => {
+                match controller.set_usb_control(local_port, config).await {
+                    Ok(()) => Ok(controller::PortResponseData::Complete),
+                    Err(e) => match e {
+                        Error::Bus(_) => Err(PdError::Failed),
+                        Error::Pd(e) => Err(e),
+                    },
+                }
+            }
         })
     }
 

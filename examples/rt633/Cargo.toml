@@ -29,17 +29,17 @@ embassy-imxrt = { git = "https://github.com/OpenDevicePartnership/embassy-imxrt"
     "unstable-pac",
 ] }
 
-embassy-sync = { git = "https://github.com/embassy-rs/embassy", features = [
+embassy-sync = { version = "0.7.2", features = [
     "defmt",
 ] }
-embassy-executor = { git = "https://github.com/embassy-rs/embassy", features = [
+embassy-executor = { version = "0.9.1", features = [
     "arch-cortex-m",
     "executor-thread",
     "executor-interrupt",
     "defmt",
 ] }
-embassy-futures = { git = "https://github.com/embassy-rs/embassy" }
-embassy-time = { git = "https://github.com/embassy-rs/embassy", features = [
+embassy-futures = "0.1.2"
+embassy-time = { version = "0.5.0", features = [
     "defmt",
     "defmt-timestamp-uptime",
 ] }
@@ -57,7 +57,7 @@ bq25773 = { git = "https://github.com/OpenDevicePartnership/bq25773" }
 battery-service = { path = "../../battery-service", features = ["defmt"] }
 bq40z50-rx = { version = "0.1", features = ["r5"] }
 static_cell = "2.1.0"
-embassy-embedded-hal = { git = "https://github.com/embassy-rs/embassy", default-features = false }
+embassy-embedded-hal = { version = "0.5.0", default-features = false }
 
 # Needed otherwise cargo will pull from git
 [patch."https://github.com/OpenDevicePartnership/embedded-services"]

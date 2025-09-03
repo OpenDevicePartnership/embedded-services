@@ -8,7 +8,7 @@ use embedded_services::{
     },
     GlobalRawMutex,
 };
-use embedded_usb_pd::{ado::Ado, PortId as LocalPortId};
+use embedded_usb_pd::{ado::Ado, LocalPortId};
 
 /// Port status changed event data
 #[derive(Copy, Clone, Debug)]
@@ -106,6 +106,37 @@ pub struct OutputControllerCommand<'a> {
     pub response: controller::Response<'static>,
 }
 
+pub mod vdm {
+    //! Events and output for vendor-defined messaging.
+    use super::LocalPortId;
+    use embedded_services::type_c::controller::{AttnVdm, OtherVdm};
+
+    /// The kind of output from processing a vendor-defined message.
+    #[derive(Copy, Clone, Debug)]
+    #[cfg_attr(feature = "defmt", derive(defmt::Format))]
+    pub enum OutputKind {
+        /// Entered custom mode
+        Entered(OtherVdm),
+        /// Exited custom mode
+        Exited(OtherVdm),
+        /// Received a vendor-defined other message
+        ReceivedOther(OtherVdm),
+        /// Received a vendor-defined attention message
+        ReceivedAttn(AttnVdm),
+    }
+
+    /// Output from processing a vendor-defined message.
+    #[derive(Copy, Clone, Debug)]
+    #[cfg_attr(feature = "defmt", derive(defmt::Format))]
+    pub struct Output {
+        /// The port that the VDM message is associated with.
+        pub port: LocalPortId,
+
+        /// The kind of VDM output.
+        pub kind: OutputKind,
+    }
+}
+
 /// [`crate::wrapper::ControllerWrapper`] output
 pub enum Output<'a> {
     /// No-op when nothing specific is needed
@@ -114,6 +145,8 @@ pub enum Output<'a> {
     PortStatusChanged(OutputPortStatusChanged),
     /// PD alert
     PdAlert(OutputPdAlert),
+    /// Vendor-defined messaging.
+    Vdm(vdm::Output),
     /// Power policy command received
     PowerPolicyCommand(OutputPowerPolicyCommand<'a>),
     /// TPCM command response

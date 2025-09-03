@@ -7,18 +7,21 @@ use embassy_sync::signal::Signal;
 use embassy_time::{Duration, with_timeout};
 use embedded_usb_pd::ucsi::{self, lpm};
 use embedded_usb_pd::{
-    DataRole, Error, GlobalPortId, PdError, PlugOrientation, PortId as LocalPortId, PowerRole,
+    DataRole, Error, GlobalPortId, LocalPortId, PdError, PlugOrientation, PowerRole,
     ado::Ado,
     pdinfo::{AltMode, PowerPathStatus},
     type_c::ConnectionState,
 };
 
-use super::{ControllerId, external};
+use super::{ATTN_VDM_LEN, ControllerId, OTHER_VDM_LEN, external};
 use crate::ipc::deferred;
 use crate::power::policy;
 use crate::type_c::Cached;
 use crate::type_c::event::{PortEvent, PortPending};
 use crate::{GlobalRawMutex, IntrusiveNode, error, intrusive_list, trace};
+
+/// maximum number of data objects in a VDM
+pub const MAX_NUM_DATA_OBJECTS: usize = 7; // 7 VDOs of 4 bytes each
 
 /// Power contract
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -99,6 +102,113 @@ impl Default for PortStatus {
     }
 }
 
+/// Other Vdm data
+#[derive(Copy, Clone, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct OtherVdm {
+    /// Other VDM data
+    pub data: [u8; OTHER_VDM_LEN],
+}
+
+impl Default for OtherVdm {
+    fn default() -> Self {
+        Self {
+            data: [0; OTHER_VDM_LEN],
+        }
+    }
+}
+
+impl From<OtherVdm> for [u8; OTHER_VDM_LEN] {
+    fn from(vdm: OtherVdm) -> Self {
+        vdm.data
+    }
+}
+
+impl From<[u8; OTHER_VDM_LEN]> for OtherVdm {
+    fn from(data: [u8; OTHER_VDM_LEN]) -> Self {
+        Self { data }
+    }
+}
+
+/// Attention Vdm data
+#[derive(Copy, Clone, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct AttnVdm {
+    /// Attention VDM data
+    pub data: [u8; ATTN_VDM_LEN],
+}
+
+impl Default for AttnVdm {
+    fn default() -> Self {
+        Self {
+            data: [0; ATTN_VDM_LEN],
+        }
+    }
+}
+
+impl From<AttnVdm> for [u8; ATTN_VDM_LEN] {
+    fn from(vdm: AttnVdm) -> Self {
+        vdm.data
+    }
+}
+
+impl From<[u8; ATTN_VDM_LEN]> for AttnVdm {
+    fn from(data: [u8; ATTN_VDM_LEN]) -> Self {
+        Self { data }
+    }
+}
+
+/// Send VDM data
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct SendVdm {
+    /// initiating a VDM sequence
+    pub initiator: bool,
+    /// VDO count
+    pub vdo_count: u8,
+    /// VDO data
+    pub vdo_data: [u32; MAX_NUM_DATA_OBJECTS],
+}
+
+impl SendVdm {
+    /// Create a new blank port status
+    pub const fn new() -> Self {
+        Self {
+            initiator: false,
+            vdo_count: 0,
+            vdo_data: [0; MAX_NUM_DATA_OBJECTS],
+        }
+    }
+}
+
+impl Default for SendVdm {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// USB control configuration
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct UsbControlConfig {
+    /// Enable USB2 data path
+    pub usb2_enabled: bool,
+    /// Enable USB3 data path  
+    pub usb3_enabled: bool,
+    /// Enable USB4 data path
+    pub usb4_enabled: bool,
+}
+
+impl Default for UsbControlConfig {
+    fn default() -> Self {
+        Self {
+            usb2_enabled: true,
+            usb3_enabled: true,
+            usb4_enabled: true,
+        }
+    }
+}
+
 /// Port-specific command data
 #[derive(Copy, Clone, Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
@@ -125,6 +235,14 @@ pub enum PortCommandData {
     SetUnconstrainedPower(bool),
     /// Clear the dead battery flag for the given port
     ClearDeadBatteryFlag,
+    /// Get other VDM
+    GetOtherVdm,
+    /// Get attention VDM
+    GetAttnVdm,
+    /// Send VDM
+    SendVdm(SendVdm),
+    /// Set USB control configuration
+    SetUsbControl(UsbControlConfig),
 }
 
 /// Port-specific commands
@@ -161,6 +279,10 @@ pub enum PortResponseData {
     RtFwUpdateStatus(RetimerFwUpdateState),
     /// PD alert
     PdAlert(Option<Ado>),
+    /// Get other VDM
+    OtherVdm(OtherVdm),
+    /// Get attention VDM
+    AttnVdm(AttnVdm),
 }
 
 impl PortResponseData {
@@ -197,7 +319,7 @@ pub enum Command {
     /// Port command
     Port(PortCommand),
     /// UCSI command passthrough
-    Lpm(lpm::Command),
+    Lpm(lpm::GlobalCommand),
 }
 
 /// Controller-specific response data
@@ -220,7 +342,7 @@ pub enum Response<'a> {
     /// Controller response
     Controller(InternalResponse<'a>),
     /// UCSI response passthrough
-    Ucsi(ucsi::Response),
+    Ucsi(ucsi::GlobalResponse),
     /// Port response
     Port(PortResponse),
 }
@@ -340,6 +462,9 @@ pub trait Controller {
     /// Any intermediate side effects must be undone if the returned [`Future`] is dropped before completing.
     fn wait_port_event(&mut self) -> impl Future<Output = Result<(), Error<Self::BusError>>>;
     /// Returns and clears current events for the given port
+    /// # Implementation guide
+    /// This function should be drop safe.
+    /// Any intermediate side effects must be undone if the returned [`Future`] is dropped before completing.
     fn clear_port_events(
         &mut self,
         port: LocalPortId,
@@ -415,6 +540,23 @@ pub trait Controller {
         &mut self,
         offset: usize,
         data: &[u8],
+    ) -> impl Future<Output = Result<(), Error<Self::BusError>>>;
+    /// Get the Rx Other VDM data for the given port
+    fn get_other_vdm(&mut self, port: LocalPortId) -> impl Future<Output = Result<OtherVdm, Error<Self::BusError>>>;
+    /// Get the Rx Attention VDM data for the given port
+    fn get_attn_vdm(&mut self, port: LocalPortId) -> impl Future<Output = Result<AttnVdm, Error<Self::BusError>>>;
+    /// Send a VDM to the given port
+    fn send_vdm(
+        &mut self,
+        port: LocalPortId,
+        tx_vdm: SendVdm,
+    ) -> impl Future<Output = Result<(), Error<Self::BusError>>>;
+
+    /// Set USB control configuration for the given port
+    fn set_usb_control(
+        &mut self,
+        port: LocalPortId,
+        config: UsbControlConfig,
     ) -> impl Future<Output = Result<(), Error<Self::BusError>>>;
 }
 
@@ -589,7 +731,7 @@ impl ContextToken {
         &self,
         port_id: GlobalPortId,
         command: lpm::CommandData,
-    ) -> Result<ucsi::Response, PdError> {
+    ) -> Result<ucsi::GlobalResponse, PdError> {
         let node = self.find_node_by_port(port_id).await?;
 
         match node
@@ -614,7 +756,7 @@ impl ContextToken {
         &self,
         port_id: GlobalPortId,
         command: lpm::CommandData,
-    ) -> Result<ucsi::Response, PdError> {
+    ) -> Result<ucsi::GlobalResponse, PdError> {
         match with_timeout(
             DEFAULT_TIMEOUT,
             self.send_port_command_ucsi_no_timeout(port_id, command),
@@ -631,7 +773,7 @@ impl ContextToken {
         &self,
         port_id: GlobalPortId,
         reset_type: lpm::ResetType,
-    ) -> Result<ucsi::Response, PdError> {
+    ) -> Result<ucsi::GlobalResponse, PdError> {
         self.send_port_command_ucsi(port_id, lpm::CommandData::ConnectorReset(reset_type))
             .await
     }
@@ -851,6 +993,36 @@ impl ContextToken {
     pub async fn get_num_ports(&self) -> usize {
         get_num_ports().await
     }
+
+    /// Get the other vdm for the given port
+    pub async fn get_other_vdm(&self, port: GlobalPortId) -> Result<OtherVdm, PdError> {
+        match self.send_port_command(port, PortCommandData::GetOtherVdm).await? {
+            PortResponseData::OtherVdm(vdm) => Ok(vdm),
+            r => {
+                error!("Invalid response: expected other VDM, got {:?}", r);
+                Err(PdError::InvalidResponse)
+            }
+        }
+    }
+
+    /// Get the attention vdm for the given port
+    pub async fn get_attn_vdm(&self, port: GlobalPortId) -> Result<AttnVdm, PdError> {
+        match self.send_port_command(port, PortCommandData::GetAttnVdm).await? {
+            PortResponseData::AttnVdm(vdm) => Ok(vdm),
+            r => {
+                error!("Invalid response: expected attention VDM, got {:?}", r);
+                Err(PdError::InvalidResponse)
+            }
+        }
+    }
+
+    /// Send VDM to the given port
+    pub async fn send_vdm(&self, port: GlobalPortId, tx_vdm: SendVdm) -> Result<(), PdError> {
+        match self.send_port_command(port, PortCommandData::SendVdm(tx_vdm)).await? {
+            PortResponseData::Complete => Ok(()),
+            _ => Err(PdError::InvalidResponse),
+        }
+    }
 }
 
 /// Execute an external port command
@@ -882,7 +1054,9 @@ pub(super) async fn execute_external_controller_command(
 }
 
 /// Execute an external UCSI command
-pub(super) async fn execute_external_ucsi_command(command: ucsi::Command) -> Result<external::UcsiResponse, PdError> {
+pub(super) async fn execute_external_ucsi_command(
+    command: ucsi::GlobalCommand,
+) -> Result<external::UcsiResponse, PdError> {
     let context = CONTEXT.get().await;
     match context.external_command.execute(external::Command::Ucsi(command)).await {
         external::Response::Ucsi(response) => response,

@@ -33,7 +33,7 @@ use embedded_services::type_c::event::{PortEvent, PortNotificationSingle, PortPe
 use embedded_services::GlobalRawMutex;
 use embedded_services::{debug, error, info, trace, warn};
 use embedded_usb_pd::ado::Ado;
-use embedded_usb_pd::{Error, PdError, PortId as LocalPortId};
+use embedded_usb_pd::{Error, LocalPortId, PdError};
 
 use crate::wrapper::backing::Backing;
 use crate::wrapper::message::*;
@@ -44,6 +44,7 @@ mod cfu;
 pub mod message;
 mod pd;
 mod power;
+mod vdm;
 
 /// Base interval for checking for FW update timeouts and recovery attempts
 pub const DEFAULT_FW_UPDATE_TICK_INTERVAL_MS: u64 = 5000;
@@ -399,15 +400,17 @@ impl<'a, const N: usize, C: Controller, BACK: Backing<'a>, V: FwOfferValidator> 
                     if let Some((port_index, event)) = stream
                         .next::<Error<<C as Controller>::BusError>, _, _>(async |port_index| {
                             // Combine the event read from the controller with any software generated events
-                            let sw_event: PortEvent =
-                                self.state.lock().await.port_states[port_index].sw_status_event.into();
-                            let hw_event = self
-                                .controller
-                                .lock()
-                                .await
-                                .clear_port_events(LocalPortId(port_index as u8))
-                                .await?;
-                            Ok(hw_event.union(sw_event))
+                            // Acquire the locks first to centralize the awaits here
+                            let mut controller = self.controller.lock().await;
+                            let mut state = self.state.lock().await;
+                            let hw_event = controller.clear_port_events(LocalPortId(port_index as u8)).await?;
+
+                            // No more awaits, modify state here for drop safety
+                            let sw_event = core::mem::replace(
+                                &mut state.port_states[port_index].sw_status_event,
+                                PortStatusChanged::none(),
+                            );
+                            Ok(hw_event.union(sw_event.into()))
                         })
                         .await?
                     {
@@ -465,6 +468,9 @@ impl<'a, const N: usize, C: Controller, BACK: Backing<'a>, V: FwOfferValidator> 
                     // For some reason we didn't read an alert, nothing to do
                     Ok(Output::Nop)
                 }
+            }
+            PortNotificationSingle::Vdm(event) => {
+                self.process_vdm_event(controller, port, event).await.map(Output::Vdm)
             }
             rest => {
                 // Nothing currently implemented for these
@@ -533,6 +539,7 @@ impl<'a, const N: usize, C: Controller, BACK: Backing<'a>, V: FwOfferValidator> 
                     .await
             }
             Output::PdAlert(OutputPdAlert { port, ado }) => self.finalize_pd_alert(&mut state, port, ado).await,
+            Output::Vdm(vdm) => self.finalize_vdm(&mut state, vdm).await.map_err(Error::Pd),
             Output::PowerPolicyCommand(OutputPowerPolicyCommand { request, response, .. }) => {
                 request.respond(response);
                 Ok(())

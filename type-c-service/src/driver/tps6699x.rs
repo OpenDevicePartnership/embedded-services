@@ -15,21 +15,26 @@ use embedded_hal_async::i2c::I2c;
 use embedded_services::cfu::component::CfuDevice;
 use embedded_services::power::policy::{self, PowerCapability};
 use embedded_services::transformers::object::{Object, RefGuard, RefMutGuard};
-use embedded_services::type_c::controller::{self, Controller, ControllerStatus, PortStatus};
+use embedded_services::type_c::controller::{
+    self, AttnVdm, Controller, ControllerStatus, OtherVdm, PortStatus, SendVdm, UsbControlConfig,
+};
 use embedded_services::type_c::event::PortEvent;
-use embedded_services::type_c::ControllerId;
+use embedded_services::type_c::{ControllerId, ATTN_VDM_LEN};
 use embedded_services::{debug, error, info, trace, type_c, warn, GlobalRawMutex};
 use embedded_usb_pd::ado::Ado;
 use embedded_usb_pd::pdinfo::PowerPathStatus;
 use embedded_usb_pd::pdo::{sink, source, Common, Rdo};
 use embedded_usb_pd::type_c::Current as TypecCurrent;
-use embedded_usb_pd::{DataRole, Error, GlobalPortId, PdError, PlugOrientation, PortId as LocalPortId, PowerRole};
+use embedded_usb_pd::{DataRole, Error, GlobalPortId, LocalPortId, PdError, PlugOrientation, PowerRole};
 use tps6699x::asynchronous::embassy as tps6699x_drv;
 use tps6699x::asynchronous::fw_update::UpdateTarget;
 use tps6699x::asynchronous::fw_update::{
     disable_all_interrupts, enable_port0_interrupts, BorrowedUpdater, BorrowedUpdaterInProgress,
 };
-use tps6699x::command::ReturnValue;
+use tps6699x::command::{
+    vdms::{Version, INITIATOR_WAIT_TIME_MS, MAX_NUM_DATA_OBJECTS},
+    ReturnValue,
+};
 use tps6699x::fw_update::UpdateConfig as FwUpdateConfig;
 
 type Updater<'a, M, B> = BorrowedUpdaterInProgress<tps6699x_drv::Tps6699x<'a, M, B>>;
@@ -170,6 +175,20 @@ impl<'a, const N: usize, M: RawMutex, B: I2c> Tps6699x<'a, N, M, B> {
     }
 }
 
+bitfield! {
+    /// DFP VDO structure
+    #[derive(Clone, Copy)]
+    struct DfpVdo(u32);
+    impl Debug;
+
+    /// Port number (5 bits)
+    pub u8, port_number, set_port_number: 4, 0;
+    /// Host USB capability (3 bits)
+    pub u8, host_capability, set_host_capability: 26, 24;
+    /// DFP VDO version (3 bits)
+    pub u8, version, set_version: 31, 29;
+}
+
 impl<const N: usize, M: RawMutex, B: I2c> Controller for Tps6699x<'_, N, M, B> {
     type BusError = B::Error;
 
@@ -197,6 +216,8 @@ impl<const N: usize, M: RawMutex, B: I2c> Controller for Tps6699x<'_, N, M, B> {
     }
 
     /// Returns and clears current events for the given port
+    ///
+    /// Drop safety: All state changes happen after await point
     async fn clear_port_events(&mut self, port: LocalPortId) -> Result<PortEvent, Error<Self::BusError>> {
         if port.0 >= self.port_events.len() as u8 {
             return PdError::InvalidPort.into();
@@ -598,6 +619,99 @@ impl<const N: usize, M: RawMutex, B: I2c> Controller for Tps6699x<'_, N, M, B> {
             .try_lock()
             .expect("Driver should not have been locked before this, thus infallible");
         tps6699x.set_autonegotiate_sink_max_voltage(port, voltage_mv).await
+    }
+
+    async fn get_other_vdm(&mut self, port: LocalPortId) -> Result<OtherVdm, Error<Self::BusError>> {
+        let mut tps6699x = self
+            .tps6699x
+            .try_lock()
+            .expect("Driver should not have been locked before this, thus infallible");
+        match tps6699x.get_rx_other_vdm(port).await {
+            Ok(vdm) => Ok((*vdm.as_bytes()).into()),
+            Err(e) => Err(e),
+        }
+    }
+
+    async fn get_attn_vdm(&mut self, port: LocalPortId) -> Result<AttnVdm, Error<Self::BusError>> {
+        let mut tps6699x = self
+            .tps6699x
+            .try_lock()
+            .expect("Driver should not have been locked before this, thus infallible");
+        match tps6699x.get_rx_attn_vdm(port).await {
+            Ok(vdm) => {
+                let buf: [u8; ATTN_VDM_LEN] = vdm.into();
+                let attn_vdm: AttnVdm = buf.into();
+                Ok(attn_vdm)
+            }
+            Err(e) => Err(e),
+        }
+    }
+
+    async fn send_vdm(&mut self, port: LocalPortId, tx_vdm: SendVdm) -> Result<(), Error<Self::BusError>> {
+        let mut tps6699x = self
+            .tps6699x
+            .try_lock()
+            .expect("Driver should not have been locked before this, thus infallible");
+
+        let input = {
+            let mut input = tps6699x::command::vdms::Input::default();
+            input.set_num_vdo(tx_vdm.vdo_count);
+            input.set_version(Version::Two);
+            input.set_initiator(tx_vdm.initiator);
+            if tx_vdm.initiator {
+                input.set_initiator_wait_timer(INITIATOR_WAIT_TIME_MS);
+            }
+
+            for (index, vdo) in tx_vdm.vdo_data.iter().take(tx_vdm.vdo_count as usize).enumerate() {
+                if index >= MAX_NUM_DATA_OBJECTS {
+                    warn!("VDM data exceeds available VDO slots, truncating");
+                    break; // Prevent out-of-bounds access
+                }
+                input.set_vdo(index, *vdo);
+            }
+            input
+        };
+
+        match tps6699x.send_vdms(port, input).await? {
+            ReturnValue::Success => Ok(()),
+            r => {
+                debug!("Error executing VDMs on port {}: {:#?}", port.0, r);
+                Err(Error::Pd(PdError::InvalidResponse))
+            }
+        }
+    }
+
+    /// Set USB control configuration for the given port
+    async fn set_usb_control(
+        &mut self,
+        port: LocalPortId,
+        config: UsbControlConfig,
+    ) -> Result<(), Error<Self::BusError>> {
+        let mut tps6699x = self
+            .tps6699x
+            .try_lock()
+            .expect("Driver should not have been locked before this, thus infallible");
+        let mut tx_identity_value = 0;
+
+        if config.usb2_enabled {
+            tx_identity_value |= 1 << 0;
+        }
+        if config.usb3_enabled {
+            tx_identity_value |= 1 << 1;
+        }
+        if config.usb4_enabled {
+            tx_identity_value |= 1 << 2;
+        }
+
+        tps6699x
+            .modify_tx_identity(port, |identity| {
+                let mut dfp_vdo = DfpVdo(identity.dfp1_vdo());
+                dfp_vdo.set_host_capability(tx_identity_value);
+                identity.set_dfp1_vdo(dfp_vdo.0);
+                identity.clone()
+            })
+            .await?;
+        Ok(())
     }
 }
 
