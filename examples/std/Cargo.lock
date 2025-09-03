@@ -94,10 +94,10 @@ dependencies = [
 name = "battery-service"
 version = "0.1.0"
 dependencies = [
- "embassy-executor 0.9.0",
+ "embassy-executor",
  "embassy-futures",
  "embassy-sync",
- "embassy-time",
+ "embassy-time 0.5.0",
  "embedded-batteries-async",
  "embedded-hal 1.0.0",
  "embedded-hal-async",
@@ -208,10 +208,10 @@ checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 name = "cfu-service"
 version = "0.1.0"
 dependencies = [
- "embassy-executor 0.9.0",
+ "embassy-executor",
  "embassy-futures",
  "embassy-sync",
- "embassy-time",
+ "embassy-time 0.5.0",
  "embedded-cfu-protocol",
  "embedded-services",
  "heapless 0.8.0",
@@ -376,38 +376,15 @@ checksum = "48c757948c5ede0e46177b7add2e67155f70e33c07fea8284df6576da70b3719"
 
 [[package]]
 name = "embassy-executor"
-version = "0.7.0"
+version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "90327bcc66333a507f89ecc4e2d911b265c45f5c9bc241f98eee076752d35ac6"
+checksum = "06070468370195e0e86f241c8e5004356d696590a678d47d6676795b2e439c6b"
 dependencies = [
  "critical-section",
  "document-features",
- "embassy-executor-macros 0.6.2",
-]
-
-[[package]]
-name = "embassy-executor"
-version = "0.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d0c80c92a31c7f6b02a938f10feea17ea3cc0e8d33bcac7f3fe8cede3723bb56"
-dependencies = [
- "critical-section",
- "document-features",
- "embassy-executor-macros 0.7.0",
+ "embassy-executor-macros",
  "embassy-executor-timer-queue",
  "log",
-]
-
-[[package]]
-name = "embassy-executor-macros"
-version = "0.6.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3577b1e9446f61381179a330fc5324b01d511624c55f25e3c66c9e3c626dbecf"
-dependencies = [
- "darling",
- "proc-macro2",
- "quote",
- "syn",
 ]
 
 [[package]]
@@ -462,11 +439,27 @@ dependencies = [
  "critical-section",
  "document-features",
  "embassy-time-driver",
- "embassy-time-queue-utils",
  "embedded-hal 0.2.7",
  "embedded-hal 1.0.0",
  "embedded-hal-async",
  "futures-util",
+]
+
+[[package]]
+name = "embassy-time"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f4fa65b9284d974dad7a23bb72835c4ec85c0b540d86af7fc4098c88cff51d65"
+dependencies = [
+ "cfg-if",
+ "critical-section",
+ "document-features",
+ "embassy-time-driver",
+ "embassy-time-queue-utils",
+ "embedded-hal 0.2.7",
+ "embedded-hal 1.0.0",
+ "embedded-hal-async",
+ "futures-core",
  "log",
 ]
 
@@ -481,11 +474,11 @@ dependencies = [
 
 [[package]]
 name = "embassy-time-queue-utils"
-version = "0.1.0"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dc55c748d16908a65b166d09ce976575fb8852cf60ccd06174092b41064d8f83"
+checksum = "80e2ee86063bd028a420a5fb5898c18c87a8898026da1d4c852af2c443d0a454"
 dependencies = [
- "embassy-executor 0.7.0",
+ "embassy-executor-timer-queue",
  "heapless 0.8.0",
 ]
 
@@ -629,10 +622,10 @@ dependencies = [
  "cortex-m-rt",
  "critical-section",
  "document-features",
- "embassy-executor 0.9.0",
+ "embassy-executor",
  "embassy-futures",
  "embassy-sync",
- "embassy-time",
+ "embassy-time 0.5.0",
  "embedded-batteries-async",
  "embedded-cfu-protocol",
  "embedded-hal-async",
@@ -1045,10 +1038,10 @@ dependencies = [
 name = "power-policy-service"
 version = "0.1.0"
 dependencies = [
- "embassy-executor 0.9.0",
+ "embassy-executor",
  "embassy-futures",
  "embassy-sync",
- "embassy-time",
+ "embassy-time 0.5.0",
  "embedded-services",
  "log",
 ]
@@ -1229,10 +1222,10 @@ dependencies = [
  "battery-service",
  "cfu-service",
  "critical-section",
- "embassy-executor 0.9.0",
+ "embassy-executor",
  "embassy-futures",
  "embassy-sync",
- "embassy-time",
+ "embassy-time 0.5.0",
  "embassy-time-driver",
  "embedded-batteries-async",
  "embedded-cfu-protocol",
@@ -1287,10 +1280,10 @@ dependencies = [
 name = "thermal-service"
 version = "0.1.0"
 dependencies = [
- "embassy-executor 0.9.0",
+ "embassy-executor",
  "embassy-futures",
  "embassy-sync",
- "embassy-time",
+ "embassy-time 0.5.0",
  "embedded-fans-async",
  "embedded-hal 1.0.0",
  "embedded-hal-async",
@@ -1310,7 +1303,7 @@ dependencies = [
  "bitfield 0.19.1",
  "device-driver",
  "embassy-sync",
- "embassy-time",
+ "embassy-time 0.4.0",
  "embedded-hal 1.0.0",
  "embedded-hal-async",
  "embedded-io-async",
@@ -1325,10 +1318,10 @@ name = "type-c-service"
 version = "0.1.0"
 dependencies = [
  "bitfield 0.17.0",
- "embassy-executor 0.9.0",
+ "embassy-executor",
  "embassy-futures",
  "embassy-sync",
- "embassy-time",
+ "embassy-time 0.5.0",
  "embedded-cfu-protocol",
  "embedded-hal 1.0.0",
  "embedded-hal-async",
