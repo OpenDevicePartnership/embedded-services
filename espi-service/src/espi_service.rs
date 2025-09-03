@@ -159,62 +159,65 @@ impl Service<'_, '_> {
         acpi_response: &AcpiMsgComms<'_>,
         endpoint: EndpointID,
     ) {
-        let response_len = acpi_response.payload_len;
-        let num_pkts = ((acpi_response.payload_len - 1) / 64) + 1;
-        let access = acpi_response.payload.borrow();
-        let acpi_pkt: &[u8] = access.borrow();
+        // Scoped so payload borrow is dropped before await point
+        {
+            let response_len = acpi_response.payload_len;
+            let num_pkts = ((acpi_response.payload_len - 1) / 64) + 1;
+            let access = acpi_response.payload.borrow();
+            let acpi_pkt: &[u8] = access.borrow();
 
-        for i in 0..num_pkts {
-            let pkt_start_index = 64 * i;
-            let pkt_end_index = min(response_len, pkt_start_index + 64);
-            let mctp_pkt_len = pkt_end_index - pkt_start_index;
-            trace!(
-                "start: {}, end: {}, len: {}",
-                pkt_start_index, pkt_end_index, mctp_pkt_len
-            );
-            let som = i == 0;
-            let eom = i == num_pkts - 1;
+            for i in 0..num_pkts {
+                let pkt_start_index = 64 * i;
+                let pkt_end_index = min(response_len, pkt_start_index + 64);
+                let mctp_pkt_len = pkt_end_index - pkt_start_index;
+                trace!(
+                    "start: {}, end: {}, len: {}",
+                    pkt_start_index, pkt_end_index, mctp_pkt_len
+                );
+                let som = i == 0;
+                let eom = i == num_pkts - 1;
 
-            if let Ok((final_packet, final_packet_size)) =
-                // take into account response_len
-                build_mctp_header(
-                    &acpi_pkt[pkt_start_index..pkt_end_index],
-                    mctp_pkt_len,
-                    endpoint,
-                    som,
-                    eom,
-                )
-            {
-                info!("Sending MCTP response: {:?}", &final_packet[..final_packet_size]);
+                if let Ok((final_packet, final_packet_size)) =
+                    // take into account response_len
+                    build_mctp_header(
+                        &acpi_pkt[pkt_start_index..pkt_end_index],
+                        mctp_pkt_len,
+                        endpoint,
+                        som,
+                        eom,
+                    )
+                {
+                    info!("Sending MCTP response: {:?}", &final_packet[..final_packet_size]);
 
-                // SAFETY: Safe as the access to espi is protected by a mut reference.
-                let result = unsafe { espi.oob_get_write_buffer(OOB_PORT_ID) };
+                    // SAFETY: Safe as the access to espi is protected by a mut reference.
+                    let result = unsafe { espi.oob_get_write_buffer(OOB_PORT_ID) };
 
-                match result {
-                    Ok(dest_slice) => {
-                        dest_slice[..final_packet_size].copy_from_slice(&final_packet[..final_packet_size]);
+                    match result {
+                        Ok(dest_slice) => {
+                            dest_slice[..final_packet_size].copy_from_slice(&final_packet[..final_packet_size]);
+                        }
+                        Err(_e) => {
+                            #[cfg(feature = "defmt")]
+                            error!("Failed to retrieve OOB write buffer: {}", _e);
+                            // TODO: Ask if we need to send a response if the request is malformed
+                            return;
+                        }
                     }
-                    Err(_e) => {
+
+                    // Write response over OOB
+                    let res = espi.oob_write_data(OOB_PORT_ID, final_packet_size as u8);
+
+                    if res.is_err() {
                         #[cfg(feature = "defmt")]
-                        error!("Failed to retrieve OOB write buffer: {}", _e);
-                        // TODO: Ask if we need to send a response if the request is malformed
+                        error!("eSPI OOB write failed: {}", res.err().unwrap());
                         return;
                     }
-                }
-
-                // Write response over OOB
-                let res = espi.oob_write_data(OOB_PORT_ID, final_packet_size as u8);
-
-                if res.is_err() {
-                    #[cfg(feature = "defmt")]
-                    error!("eSPI OOB write failed: {}", res.err().unwrap());
+                } else {
+                    // Packet malformed, throw it away and respond with ACPI packet with error in reserved field.
+                    error!("Error building MCTP response packet from service {:?}", endpoint);
+                    send_mctp_error_response(espi, OOB_PORT_ID);
                     return;
                 }
-            } else {
-                // Packet malformed, throw it away and respond with ACPI packet with error in reserved field.
-                error!("Error building MCTP response packet from service {:?}", endpoint);
-                send_mctp_error_response(espi, OOB_PORT_ID);
-                return;
             }
 
             // Immediately service the packet with the ESPI HAL
