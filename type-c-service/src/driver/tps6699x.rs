@@ -280,6 +280,8 @@ impl<const N: usize, M: RawMutex, B: I2c> Controller for Tps6699x<'_, N, M, B> {
     }
 
     /// Returns and clears current events for the given port
+    ///
+    /// Drop safety: All state changes happen after await point
     async fn clear_port_events(&mut self, port: LocalPortId) -> Result<PortEvent, Error<Self::BusError>> {
         if port.0 >= self.port_events.len() as u8 {
             return PdError::InvalidPort.into();
