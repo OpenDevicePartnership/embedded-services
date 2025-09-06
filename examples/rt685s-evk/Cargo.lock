@@ -521,7 +521,7 @@ dependencies = [
 [[package]]
 name = "embassy-imxrt"
 version = "0.1.0"
-source = "git+https://github.com/OpenDevicePartnership/embassy-imxrt#581f66e68ceaefb77e35f230dfb114322912dd6b"
+source = "git+https://github.com/OpenDevicePartnership/embassy-imxrt#eb90546b67d5bbe96a579708605af6f564b0a246"
 dependencies = [
  "cfg-if",
  "cortex-m",
@@ -750,7 +750,7 @@ dependencies = [
 [[package]]
 name = "embedded-usb-pd"
 version = "0.1.0"
-source = "git+https://github.com/OpenDevicePartnership/embedded-usb-pd#b9fd1dbfdca9a384810f7c702a2962974483ce6f"
+source = "git+https://github.com/OpenDevicePartnership/embedded-usb-pd#239b35717f86a675983614fff74721ac0886bdec"
 dependencies = [
  "aquamarine",
  "bincode",
