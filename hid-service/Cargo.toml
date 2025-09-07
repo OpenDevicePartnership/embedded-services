@@ -25,7 +25,7 @@ defmt = [
     "dep:defmt",
     "embedded-services/defmt",
     "embassy-time/defmt",
-    "embassy-time/defmt-timestamp-uptime",
     "embassy-sync/defmt",
 ]
+defmt-timestamp-uptime = ["embassy-time/defmt-timestamp-uptime"]
 log = ["dep:log", "embedded-services/log", "embassy-time/log"]
