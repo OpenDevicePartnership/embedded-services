@@ -75,10 +75,11 @@ pub fn handle_mctp_header(
         return Err(MctpError::InvalidHeaderVersion);
     }
 
-    // Only subsystem supported currently is battery (0x02) and thermal (0x03).
+    // Subsystems supported currently are battery (0x02), thermal (0x03), and debug (0x04).
     let endpoint_id = match mctp_msg[5] {
         2 => crate::comms::EndpointID::Internal(crate::comms::Internal::Battery),
         3 => crate::comms::EndpointID::Internal(crate::comms::Internal::Thermal),
+        4 => crate::comms::EndpointID::Internal(crate::comms::Internal::Debug),
         _ => return Err(MctpError::InvalidDestinationEndpoint),
     };
 
@@ -134,10 +135,11 @@ pub fn build_mctp_header(
     // Destination endpoint ID is Host (0x01)
     ret[5] = 1;
 
-    // Only subsystem supported currently is battery (0x02) and thermal (0x03).
+    // Subsystems supported currently are battery (0x02), thermal (0x03), and debug (0x04).
     match src_endpoint {
         crate::comms::EndpointID::Internal(crate::comms::Internal::Battery) => ret[6] = 2,
         crate::comms::EndpointID::Internal(crate::comms::Internal::Thermal) => ret[6] = 3,
+        crate::comms::EndpointID::Internal(crate::comms::Internal::Debug) => ret[6] = 4,
         _ => return Err(MctpError::InvalidDestinationEndpoint),
     }
 

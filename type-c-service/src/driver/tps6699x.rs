@@ -4,6 +4,7 @@ use ::tps6699x::registers::field_sets::IntEventBus1;
 use ::tps6699x::registers::{PdCcPullUp, PpExtVbusSw, PpIntVbusSw};
 use ::tps6699x::{PORT0, PORT1, TPS66993_NUM_PORTS, TPS66994_NUM_PORTS};
 use bitfield::bitfield;
+use bitflags::bitflags;
 use core::array::from_fn;
 use core::future::Future;
 use core::iter::zip;
@@ -16,7 +17,7 @@ use embedded_services::cfu::component::CfuDevice;
 use embedded_services::power::policy::{self, PowerCapability};
 use embedded_services::transformers::object::{Object, RefGuard, RefMutGuard};
 use embedded_services::type_c::controller::{
-    self, AttnVdm, Controller, ControllerStatus, OtherVdm, PortStatus, SendVdm, UsbControlConfig,
+    self, AttnVdm, Controller, ControllerStatus, DpPinConfig, OtherVdm, PortStatus, SendVdm, UsbControlConfig,
 };
 use embedded_services::type_c::event::PortEvent;
 use embedded_services::type_c::{ControllerId, ATTN_VDM_LEN};
@@ -187,6 +188,69 @@ bitfield! {
     pub u8, host_capability, set_host_capability: 26, 24;
     /// DFP VDO version (3 bits)
     pub u8, version, set_version: 31, 29;
+}
+
+bitflags! {
+    /// DisplayPort Pin Configuration bitmap
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub struct PdDpPinConfig: u8 {
+        /// No pin assignment
+        const NONE = 0x00;
+        /// 4L DP connection using USBC-USBC cable (Pin Assignment C)
+        const C = 0x04;
+        /// 2L USB + 2L DP connection using USBC-USBC cable (Pin Assignment D)
+        const D = 0x08;
+        /// 4L DP connection using USBC-DP cable (Pin Assignment E)
+        const E = 0x10;
+    }
+}
+
+impl From<u8> for PdDpPinConfig {
+    fn from(value: u8) -> Self {
+        PdDpPinConfig::from_bits_truncate(value)
+    }
+}
+
+impl From<PdDpPinConfig> for DpPinConfig {
+    fn from(value: PdDpPinConfig) -> Self {
+        Self {
+            pin_c: value.contains(PdDpPinConfig::C),
+            pin_d: value.contains(PdDpPinConfig::D),
+            pin_e: value.contains(PdDpPinConfig::E),
+        }
+    }
+}
+
+impl From<DpPinConfig> for PdDpPinConfig {
+    fn from(value: DpPinConfig) -> Self {
+        let mut config = PdDpPinConfig::NONE;
+        if value.pin_c {
+            config |= PdDpPinConfig::C;
+        }
+        if value.pin_d {
+            config |= PdDpPinConfig::D;
+        }
+        if value.pin_e {
+            config |= PdDpPinConfig::E;
+        }
+        config
+    }
+}
+
+bitfield! {
+    /// DisplayPort Alt Mode Configure structure
+    /// Corresponds to ExtPDAltDpConfig_t in C
+    #[derive(Clone, Copy, Debug)]
+    pub struct PdDpAltConfig(u32);
+
+    /// Select configuration (2 bits)
+    pub u8, select_config, set_select_config: 1, 0;
+    /// Signaling (4 bits)
+    pub u8, signaling, set_signaling: 5, 2;
+    /// Pin configuration (8 bits)
+    pub u8, config_pin, set_config_pin: 15, 8;
+    /// Reserved field 1 (16 bits)
+    pub u16, reserved1, set_reserved1: 31, 16;
 }
 
 impl<const N: usize, M: RawMutex, B: I2c> Controller for Tps6699x<'_, N, M, B> {
@@ -712,6 +776,69 @@ impl<const N: usize, M: RawMutex, B: I2c> Controller for Tps6699x<'_, N, M, B> {
             })
             .await?;
         Ok(())
+    }
+
+    async fn get_dp_status(&mut self, port: LocalPortId) -> Result<controller::DpStatus, Error<Self::BusError>> {
+        let mut tps6699x = self
+            .tps6699x
+            .try_lock()
+            .expect("Driver should not have been locked before this, thus infallible");
+
+        let dp_status = tps6699x.get_dp_status(port).await?;
+        debug!("Port{} DP status: {:#?}", port.0, dp_status);
+
+        // Extract DisplayPort mode active status
+        let alt_mode_entered = dp_status.dp_mode_active() != 0;
+
+        // Get the DP configure message which contains pin configuration
+        let dp_config = PdDpAltConfig(dp_status.dp_configure_message());
+        let cfg_raw: PdDpPinConfig = dp_config.config_pin().into();
+        let pin_config: DpPinConfig = cfg_raw.into();
+
+        Ok(controller::DpStatus {
+            alt_mode_entered,
+            dfp_d_pin_cfg: pin_config,
+        })
+    }
+
+    async fn set_dp_config(
+        &mut self,
+        port: LocalPortId,
+        config: controller::DpConfig,
+    ) -> Result<(), Error<Self::BusError>> {
+        let mut tps6699x = self
+            .tps6699x
+            .try_lock()
+            .expect("Driver should not have been locked before this, thus infallible");
+
+        debug!("Port{} setting DP config: {:#?}", port.0, config);
+
+        // Read current config first
+        let mut dp_config_reg = tps6699x.get_dp_config(port).await?;
+
+        debug!("Current DP config: {:#?}", dp_config_reg);
+
+        dp_config_reg.set_enable_dp_mode(config.enable);
+        let cfg_raw: PdDpPinConfig = config.dfp_d_pin_cfg.into();
+        dp_config_reg.set_dfpd_pin_assignment(cfg_raw.bits());
+
+        tps6699x.set_dp_config(port, dp_config_reg).await?;
+        Ok(())
+    }
+
+    async fn execute_drst(&mut self, port: LocalPortId) -> Result<(), Error<Self::BusError>> {
+        let mut tps6699x = self
+            .tps6699x
+            .try_lock()
+            .expect("Driver should not have been locked before this, thus infallible");
+
+        match tps6699x.execute_drst(port).await? {
+            ReturnValue::Success => Ok(()),
+            r => {
+                debug!("Error executing DRST on port {}: {:#?}", port.0, r);
+                Err(Error::Pd(PdError::InvalidResponse))
+            }
+        }
     }
 }
 

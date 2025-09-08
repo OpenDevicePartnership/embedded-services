@@ -294,6 +294,32 @@ impl<'a, const N: usize, C: Controller, BACK: Backing<'a>, V: FwOfferValidator> 
                     },
                 }
             }
+            controller::PortCommandData::GetDpStatus => match controller.get_dp_status(local_port).await {
+                Ok(status) => {
+                    debug!("Port{}: DP Status: {:?}", local_port.0, status);
+                    Ok(controller::PortResponseData::DpStatus(status))
+                }
+                Err(e) => match e {
+                    Error::Bus(_) => Err(PdError::Failed),
+                    Error::Pd(e) => Err(e),
+                },
+            },
+            controller::PortCommandData::SetDpConfig(config) => {
+                match controller.set_dp_config(local_port, config).await {
+                    Ok(()) => Ok(controller::PortResponseData::Complete),
+                    Err(e) => match e {
+                        Error::Bus(_) => Err(PdError::Failed),
+                        Error::Pd(e) => Err(e),
+                    },
+                }
+            }
+            controller::PortCommandData::ExecuteDrst => match controller.execute_drst(local_port).await {
+                Ok(()) => Ok(controller::PortResponseData::Complete),
+                Err(e) => match e {
+                    Error::Bus(_) => Err(PdError::Failed),
+                    Error::Pd(e) => Err(e),
+                },
+            },
         })
     }
 

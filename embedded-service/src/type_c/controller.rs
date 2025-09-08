@@ -138,6 +138,38 @@ pub struct AttnVdm {
     pub data: [u8; ATTN_VDM_LEN],
 }
 
+/// DisplayPort pin configuration
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct DpPinConfig {
+    /// 4L DP connection using USBC-USBC cable (Pin Assignment C)
+    pub pin_c: bool,
+    /// 2L USB + 2L DP connection using USBC-USBC cable (Pin Assignment D)
+    pub pin_d: bool,
+    /// 4L DP connection using USBC-DP cable (Pin Assignment E)
+    pub pin_e: bool,
+}
+
+/// DisplayPort status data
+#[derive(Copy, Clone, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct DpStatus {
+    /// DP alt-mode entered
+    pub alt_mode_entered: bool,
+    /// Get DP DFP pin config
+    pub dfp_d_pin_cfg: DpPinConfig,
+}
+
+/// DisplayPort configuration data
+#[derive(Copy, Clone, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct DpConfig {
+    /// DP alt-mode enabled
+    pub enable: bool,
+    /// Set DP DFP pin config
+    pub dfp_d_pin_cfg: DpPinConfig,
+}
+
 impl Default for AttnVdm {
     fn default() -> Self {
         Self {
@@ -243,6 +275,12 @@ pub enum PortCommandData {
     SendVdm(SendVdm),
     /// Set USB control configuration
     SetUsbControl(UsbControlConfig),
+    /// Get DisplayPort status
+    GetDpStatus,
+    /// Set DisplayPort configuration
+    SetDpConfig(DpConfig),
+    /// Execute DisplayPort reset
+    ExecuteDrst,
 }
 
 /// Port-specific commands
@@ -283,6 +321,8 @@ pub enum PortResponseData {
     OtherVdm(OtherVdm),
     /// Get attention VDM
     AttnVdm(AttnVdm),
+    /// Get DisplayPort status
+    DpStatus(DpStatus),
 }
 
 impl PortResponseData {
@@ -558,6 +598,17 @@ pub trait Controller {
         port: LocalPortId,
         config: UsbControlConfig,
     ) -> impl Future<Output = Result<(), Error<Self::BusError>>>;
+
+    /// Get DisplayPort status for the given port
+    fn get_dp_status(&mut self, port: LocalPortId) -> impl Future<Output = Result<DpStatus, Error<Self::BusError>>>;
+    /// Set DisplayPort configuration for the given port
+    fn set_dp_config(
+        &mut self,
+        port: LocalPortId,
+        config: DpConfig,
+    ) -> impl Future<Output = Result<(), Error<Self::BusError>>>;
+    /// Execute PD Data Reset for the given port
+    fn execute_drst(&mut self, port: LocalPortId) -> impl Future<Output = Result<(), Error<Self::BusError>>>;
 }
 
 /// Internal context for managing PD controllers
@@ -1019,6 +1070,47 @@ impl ContextToken {
     /// Send VDM to the given port
     pub async fn send_vdm(&self, port: GlobalPortId, tx_vdm: SendVdm) -> Result<(), PdError> {
         match self.send_port_command(port, PortCommandData::SendVdm(tx_vdm)).await? {
+            PortResponseData::Complete => Ok(()),
+            _ => Err(PdError::InvalidResponse),
+        }
+    }
+
+    /// Set USB control configuration for the given port
+    pub async fn set_usb_control(&self, port: GlobalPortId, config: UsbControlConfig) -> Result<(), PdError> {
+        match self
+            .send_port_command(port, PortCommandData::SetUsbControl(config))
+            .await?
+        {
+            PortResponseData::Complete => Ok(()),
+            _ => Err(PdError::InvalidResponse),
+        }
+    }
+
+    /// Get DisplayPort status for the given port
+    pub async fn get_dp_status(&self, port: GlobalPortId) -> Result<DpStatus, PdError> {
+        match self.send_port_command(port, PortCommandData::GetDpStatus).await? {
+            PortResponseData::DpStatus(status) => Ok(status),
+            r => {
+                error!("Invalid response: expected DP status, got {:?}", r);
+                Err(PdError::InvalidResponse)
+            }
+        }
+    }
+
+    /// Set DisplayPort configuration for the given port
+    pub async fn set_dp_config(&self, port: GlobalPortId, config: DpConfig) -> Result<(), PdError> {
+        match self
+            .send_port_command(port, PortCommandData::SetDpConfig(config))
+            .await?
+        {
+            PortResponseData::Complete => Ok(()),
+            _ => Err(PdError::InvalidResponse),
+        }
+    }
+
+    /// Execute PD Data Reset for the given port
+    pub async fn execute_drst(&self, port: GlobalPortId) -> Result<(), PdError> {
+        match self.send_port_command(port, PortCommandData::ExecuteDrst).await? {
             PortResponseData::Complete => Ok(()),
             _ => Err(PdError::InvalidResponse),
         }
