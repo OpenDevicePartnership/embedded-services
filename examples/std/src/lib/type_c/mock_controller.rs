@@ -17,7 +17,6 @@ use embedded_usb_pd::type_c::Current;
 use embedded_usb_pd::{Error, ado::Ado};
 use log::{debug, info, trace};
 use std::cell::Cell;
-use type_c_service::wrapper::backing::BackingDefault;
 
 pub struct ControllerState {
     events: Signal<GlobalRawMutex, PortEvent>,
@@ -306,5 +305,4 @@ impl type_c_service::wrapper::FwOfferValidator for Validator {
     }
 }
 
-pub type Wrapper<'a> =
-    type_c_service::wrapper::ControllerWrapper<'a, 1, Controller<'a>, BackingDefault<'a, 1>, Validator>;
+pub type Wrapper<'a> = type_c_service::wrapper::ControllerWrapper<'a, GlobalRawMutex, Controller<'a>, Validator>;

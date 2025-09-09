@@ -1,4 +1,6 @@
 //! Module contain power-policy related message handling
+use core::future;
+
 use embedded_services::{
     debug,
     ipc::deferred,
@@ -10,13 +12,10 @@ use embedded_services::{
 
 use super::*;
 
-impl<'a, const N: usize, C: Controller, BACK: Backing<'a>, V: FwOfferValidator> ControllerWrapper<'a, N, C, BACK, V> {
+impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, M, C, V> {
     /// Return the power device for the given port
-    pub(super) fn get_power_device(&self, port: LocalPortId) -> Result<&policy::device::Device, PdError> {
-        if port.0 > N as u8 {
-            return Err(PdError::InvalidPort);
-        }
-        Ok(&self.power[port.0 as usize])
+    pub fn get_power_device(&self, port: LocalPortId) -> Option<&policy::device::Device> {
+        self.registration.power_devices.get(port.0 as usize)
     }
 
     /// Handle a new contract as consumer
@@ -169,7 +168,13 @@ impl<'a, const N: usize, C: Controller, BACK: Backing<'a>, V: FwOfferValidator> 
         LocalPortId,
         deferred::Request<'_, GlobalRawMutex, CommandData, InternalResponseData>,
     ) {
-        let futures: [_; N] = from_fn(|i| self.power[i].receive());
+        let futures: [_; MAX_SUPPORTED_PORTS] = from_fn(|i| async move {
+            if let Some(device) = self.registration.power_devices.get(i) {
+                device.receive().await
+            } else {
+                future::pending().await
+            }
+        });
         // DROP SAFETY: Select over drop safe futures
         let (request, local_id) = select_array(futures).await;
         trace!("Power command: device{} {:#?}", local_id, request.command);
@@ -181,19 +186,19 @@ impl<'a, const N: usize, C: Controller, BACK: Backing<'a>, V: FwOfferValidator> 
     pub(super) async fn process_power_command(
         &self,
         controller: &mut C,
-        state: &mut InternalState<N>,
+        state: &mut dyn DynPortState<'_>,
         port: LocalPortId,
         command: &CommandData,
     ) -> InternalResponseData {
         trace!("Processing power command: device{} {:#?}", port.0, command);
-        if state.fw_update_state.in_progress() {
+        if state.controller_state().fw_update_state.in_progress() {
             debug!("Port{}: Firmware update in progress", port.0);
             return Err(policy::Error::Busy);
         }
 
         let power = match self.get_power_device(port) {
-            Ok(power) => power,
-            Err(_) => {
+            Some(power) => power,
+            None => {
                 error!("Port{}: Error getting power device for port", port.0);
                 return Err(policy::Error::InvalidDevice);
             }
