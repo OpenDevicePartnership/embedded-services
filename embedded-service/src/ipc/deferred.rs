@@ -1,10 +1,6 @@
 //! Definitions for deferred execution of commands
-#[cfg(target_has_atomic = "ptr")]
-use core::sync::atomic::AtomicUsize;
-#[cfg(not(target_has_atomic = "ptr"))]
-use portable_atomic::AtomicUsize;
-
-use core::sync::atomic::Ordering;
+use crate::GlobalAtomicOrdering as Ordering;
+use crate::GlobalAtomicUsize as AtomicUsize;
 
 use crate::debug;
 use embassy_sync::{blocking_mutex::raw::RawMutex, mutex::Mutex, signal::Signal};
