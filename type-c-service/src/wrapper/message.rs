@@ -3,7 +3,7 @@ use embedded_services::{
     ipc::deferred,
     power::policy,
     type_c::{
-        controller::{self, PortStatus},
+        controller::{self, DpStatus, PortStatus},
         event::{PortNotificationSingle, PortStatusChanged},
     },
     GlobalRawMutex,
@@ -137,6 +137,16 @@ pub mod vdm {
     }
 }
 
+/// DP status changed output data
+#[derive(Copy, Clone, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct OutputDpStatusChanged {
+    /// Port ID
+    pub port: LocalPortId,
+    /// Port status
+    pub status: DpStatus,
+}
+
 /// [`crate::wrapper::ControllerWrapper`] output
 pub enum Output<'a> {
     /// No-op when nothing specific is needed
@@ -155,4 +165,6 @@ pub enum Output<'a> {
     CfuRecovery,
     /// CFU response
     CfuResponse(embedded_services::cfu::component::InternalResponseData),
+    /// Dp status update
+    DpStatusUpdate(OutputDpStatusChanged),
 }

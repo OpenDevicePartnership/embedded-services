@@ -4,6 +4,7 @@ use ::tps6699x::registers::field_sets::IntEventBus1;
 use ::tps6699x::registers::{PdCcPullUp, PpExtVbusSw, PpIntVbusSw};
 use ::tps6699x::{PORT0, PORT1, TPS66993_NUM_PORTS, TPS66994_NUM_PORTS};
 use bitfield::bitfield;
+use bitflags::bitflags;
 use core::array::from_fn;
 use core::future::Future;
 use core::iter::zip;
@@ -16,7 +17,7 @@ use embedded_services::cfu::component::CfuDevice;
 use embedded_services::power::policy::{self, PowerCapability};
 use embedded_services::transformers::object::{Object, RefGuard, RefMutGuard};
 use embedded_services::type_c::controller::{
-    self, AttnVdm, Controller, ControllerStatus, OtherVdm, PortStatus, SendVdm, UsbControlConfig,
+    self, AttnVdm, Controller, ControllerStatus, DpPinConfig, OtherVdm, PortStatus, SendVdm, UsbControlConfig,
 };
 use embedded_services::type_c::event::PortEvent;
 use embedded_services::type_c::{ControllerId, ATTN_VDM_LEN};
@@ -36,6 +37,7 @@ use tps6699x::command::{
     ReturnValue,
 };
 use tps6699x::fw_update::UpdateConfig as FwUpdateConfig;
+use tps6699x::MAX_SUPPORTED_PORTS;
 
 type Updater<'a, M, B> = BorrowedUpdaterInProgress<tps6699x_drv::Tps6699x<'a, M, B>>;
 
@@ -47,24 +49,37 @@ struct FwUpdateState<'a, M: RawMutex, B: I2c> {
     ///
     /// This value is never read, only used to keep the interrupt guard alive
     #[allow(dead_code)]
-    guards: [Option<tps6699x_drv::InterruptGuard<'a, M, B>>; 2],
+    guards: [Option<tps6699x_drv::InterruptGuard<'a, M, B>>; MAX_SUPPORTED_PORTS],
 }
 
-pub struct Tps6699x<'a, const N: usize, M: RawMutex, B: I2c> {
-    port_events: [Mutex<GlobalRawMutex, PortEvent>; N],
+pub struct Tps6699x<'a, M: RawMutex, B: I2c> {
+    port_events: [Mutex<GlobalRawMutex, PortEvent>; MAX_SUPPORTED_PORTS],
+    num_ports: usize,
     tps6699x: Mutex<GlobalRawMutex, tps6699x_drv::Tps6699x<'a, M, B>>,
     update_state: Mutex<GlobalRawMutex, Option<FwUpdateState<'a, M, B>>>,
     /// Firmware update configuration
     fw_update_config: FwUpdateConfig,
 }
 
-impl<'a, const N: usize, M: RawMutex, B: I2c> Tps6699x<'a, N, M, B> {
-    pub fn new(tps6699x: tps6699x_drv::Tps6699x<'a, M, B>, fw_update_config: FwUpdateConfig) -> Self {
-        Self {
-            port_events: [const { Mutex::new(PortEvent::none()) }; N],
-            tps6699x: Mutex::new(tps6699x),
-            update_state: Mutex::new(None),
-            fw_update_config,
+impl<'a, M: RawMutex, B: I2c> Tps6699x<'a, M, B> {
+    /// Create a new TPS6699x instance
+    ///
+    /// Returns `None` if the number of ports is invalid.
+    pub fn try_new(
+        tps6699x: tps6699x_drv::Tps6699x<'a, M, B>,
+        num_ports: usize,
+        fw_update_config: FwUpdateConfig,
+    ) -> Option<Self> {
+        if num_ports == 0 || num_ports > MAX_SUPPORTED_PORTS {
+            None
+        } else {
+            Some(Self {
+                port_events: [const { Mutex::new(PortEvent::none()) }; MAX_SUPPORTED_PORTS],
+                num_ports,
+                tps6699x: Mutex::new(tps6699x),
+                update_state: Mutex::new(None),
+                fw_update_config,
+            })
         }
     }
 
@@ -189,7 +204,70 @@ bitfield! {
     pub u8, version, set_version: 31, 29;
 }
 
-impl<const N: usize, M: RawMutex, B: I2c> Controller for Tps6699x<'_, N, M, B> {
+bitflags! {
+    /// DisplayPort Pin Configuration bitmap
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub struct PdDpPinConfig: u8 {
+        /// No pin assignment
+        const NONE = 0x00;
+        /// 4L DP connection using USBC-USBC cable (Pin Assignment C)
+        const C = 0x04;
+        /// 2L USB + 2L DP connection using USBC-USBC cable (Pin Assignment D)
+        const D = 0x08;
+        /// 4L DP connection using USBC-DP cable (Pin Assignment E)
+        const E = 0x10;
+    }
+}
+
+impl From<u8> for PdDpPinConfig {
+    fn from(value: u8) -> Self {
+        PdDpPinConfig::from_bits_truncate(value)
+    }
+}
+
+impl From<PdDpPinConfig> for DpPinConfig {
+    fn from(value: PdDpPinConfig) -> Self {
+        Self {
+            pin_c: value.contains(PdDpPinConfig::C),
+            pin_d: value.contains(PdDpPinConfig::D),
+            pin_e: value.contains(PdDpPinConfig::E),
+        }
+    }
+}
+
+impl From<DpPinConfig> for PdDpPinConfig {
+    fn from(value: DpPinConfig) -> Self {
+        let mut config = PdDpPinConfig::NONE;
+        if value.pin_c {
+            config |= PdDpPinConfig::C;
+        }
+        if value.pin_d {
+            config |= PdDpPinConfig::D;
+        }
+        if value.pin_e {
+            config |= PdDpPinConfig::E;
+        }
+        config
+    }
+}
+
+bitfield! {
+    /// DisplayPort Alt Mode Configure structure
+    /// Corresponds to ExtPDAltDpConfig_t in C
+    #[derive(Clone, Copy, Debug)]
+    pub struct PdDpAltConfig(u32);
+
+    /// Select configuration (2 bits)
+    pub u8, select_config, set_select_config: 1, 0;
+    /// Signaling (4 bits)
+    pub u8, signaling, set_signaling: 5, 2;
+    /// Pin configuration (8 bits)
+    pub u8, config_pin, set_config_pin: 15, 8;
+    /// Reserved field 1 (16 bits)
+    pub u16, reserved1, set_reserved1: 31, 16;
+}
+
+impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
     type BusError = B::Error;
 
     /// Controller reset
@@ -230,7 +308,7 @@ impl<const N: usize, M: RawMutex, B: I2c> Controller for Tps6699x<'_, N, M, B> {
 
     /// Returns the current status of the port
     async fn get_port_status(&mut self, port: LocalPortId) -> Result<PortStatus, Error<Self::BusError>> {
-        if port.0 >= N as u8 {
+        if port.0 >= self.num_ports as u8 {
             return PdError::InvalidPort.into();
         }
 
@@ -713,9 +791,72 @@ impl<const N: usize, M: RawMutex, B: I2c> Controller for Tps6699x<'_, N, M, B> {
             .await?;
         Ok(())
     }
+
+    async fn get_dp_status(&mut self, port: LocalPortId) -> Result<controller::DpStatus, Error<Self::BusError>> {
+        let mut tps6699x = self
+            .tps6699x
+            .try_lock()
+            .expect("Driver should not have been locked before this, thus infallible");
+
+        let dp_status = tps6699x.get_dp_status(port).await?;
+        debug!("Port{} DP status: {:#?}", port.0, dp_status);
+
+        // Extract DisplayPort mode active status
+        let alt_mode_entered = dp_status.dp_mode_active() != 0;
+
+        // Get the DP configure message which contains pin configuration
+        let dp_config = PdDpAltConfig(dp_status.dp_configure_message());
+        let cfg_raw: PdDpPinConfig = dp_config.config_pin().into();
+        let pin_config: DpPinConfig = cfg_raw.into();
+
+        Ok(controller::DpStatus {
+            alt_mode_entered,
+            dfp_d_pin_cfg: pin_config,
+        })
+    }
+
+    async fn set_dp_config(
+        &mut self,
+        port: LocalPortId,
+        config: controller::DpConfig,
+    ) -> Result<(), Error<Self::BusError>> {
+        let mut tps6699x = self
+            .tps6699x
+            .try_lock()
+            .expect("Driver should not have been locked before this, thus infallible");
+
+        debug!("Port{} setting DP config: {:#?}", port.0, config);
+
+        // Read current config first
+        let mut dp_config_reg = tps6699x.get_dp_config(port).await?;
+
+        debug!("Current DP config: {:#?}", dp_config_reg);
+
+        dp_config_reg.set_enable_dp_mode(config.enable);
+        let cfg_raw: PdDpPinConfig = config.dfp_d_pin_cfg.into();
+        dp_config_reg.set_dfpd_pin_assignment(cfg_raw.bits());
+
+        tps6699x.set_dp_config(port, dp_config_reg).await?;
+        Ok(())
+    }
+
+    async fn execute_drst(&mut self, port: LocalPortId) -> Result<(), Error<Self::BusError>> {
+        let mut tps6699x = self
+            .tps6699x
+            .try_lock()
+            .expect("Driver should not have been locked before this, thus infallible");
+
+        match tps6699x.execute_drst(port).await? {
+            ReturnValue::Success => Ok(()),
+            r => {
+                debug!("Error executing DRST on port {}: {:#?}", port.0, r);
+                Err(Error::Pd(PdError::InvalidResponse))
+            }
+        }
+    }
 }
 
-impl<'a, const N: usize, M: RawMutex, B: I2c> Object<tps6699x_drv::Tps6699x<'a, M, B>> for Tps6699x<'a, N, M, B> {
+impl<'a, M: RawMutex, B: I2c> Object<tps6699x_drv::Tps6699x<'a, M, B>> for Tps6699x<'a, M, B> {
     fn get_inner(&self) -> impl Future<Output = impl RefGuard<tps6699x_drv::Tps6699x<'a, M, B>>> {
         self.tps6699x.lock()
     }
@@ -727,11 +868,11 @@ impl<'a, const N: usize, M: RawMutex, B: I2c> Object<tps6699x_drv::Tps6699x<'a, 
 
 /// TPS66994 controller wrapper
 pub type Tps66994Wrapper<'a, M, BUS, BACK, V> =
-    ControllerWrapper<'a, TPS66994_NUM_PORTS, Tps6699x<'a, TPS66994_NUM_PORTS, M, BUS>, BACK, V>;
+    ControllerWrapper<'a, TPS66994_NUM_PORTS, Tps6699x<'a, M, BUS>, BACK, V>;
 
 /// TPS66993 controller wrapper
 pub type Tps66993Wrapper<'a, M, BUS, BACK, V> =
-    ControllerWrapper<'a, TPS66993_NUM_PORTS, Tps6699x<'a, TPS66993_NUM_PORTS, M, BUS>, BACK, V>;
+    ControllerWrapper<'a, TPS66993_NUM_PORTS, Tps6699x<'a, M, BUS>, BACK, V>;
 
 /// Create a TPS66994 controller wrapper
 // TODO: combine and trim down the number of parameters
@@ -750,12 +891,17 @@ pub fn tps66994<'a, M: RawMutex, BUS: I2c, BACK: Backing<'a>, V: FwOfferValidato
         return Err(PdError::InvalidParams);
     }
 
+    const _: () = assert!(
+        TPS66994_NUM_PORTS > 0 && TPS66994_NUM_PORTS <= MAX_SUPPORTED_PORTS,
+        "Number of ports exceeds maximum supported"
+    );
     Ok(ControllerWrapper::new(
         controller::Device::new(controller_id, port_ids),
         from_fn(|i| policy::device::Device::new(power_ids[i])),
         CfuDevice::new(cfu_id),
         backing,
-        Tps6699x::new(controller, fw_update_config),
+        // Statically checked above
+        Tps6699x::try_new(controller, TPS66994_NUM_PORTS, fw_update_config).unwrap(),
         fw_version_validator,
     ))
 }
@@ -777,12 +923,17 @@ pub fn tps66993<'a, M: RawMutex, BUS: I2c, BACK: Backing<'a>, V: FwOfferValidato
         return Err(PdError::InvalidParams);
     }
 
+    const _: () = assert!(
+        TPS66993_NUM_PORTS > 0 && TPS66993_NUM_PORTS <= MAX_SUPPORTED_PORTS,
+        "Number of ports exceeds maximum supported"
+    );
     Ok(ControllerWrapper::new(
         controller::Device::new(controller_id, port_ids),
         from_fn(|i| policy::device::Device::new(power_ids[i])),
         CfuDevice::new(cfu_id),
         backing,
-        Tps6699x::new(controller, fw_update_config),
+        // Statically checked above
+        Tps6699x::try_new(controller, TPS66993_NUM_PORTS, fw_update_config).unwrap(),
         fw_version_validator,
     ))
 }

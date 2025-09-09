@@ -12,21 +12,17 @@ warnings = "deny"
 workspace = true
 
 [dependencies]
-embassy-sync = { version = "0.7.2", features = [
-    "log",
-    "std",
-] }
+embassy-sync = { version = "0.7.2", features = ["log", "std"] }
 embassy-time-driver = { version = "0.2.1", optional = true }
-embassy-time = { version = "0.5.0", features = [
-    "log",
-    "std",
-] }
+embassy-time = { version = "0.5.0", features = ["log", "std"] }
 embassy-futures = "0.1.2"
 embassy-executor = { version = "0.9.1", features = [
     "arch-std",
     "executor-thread",
     "log",
 ] }
+
+defmt = "0.3"
 
 embedded-usb-pd = { git = "https://github.com/OpenDevicePartnership/embedded-usb-pd" }
 embedded-services = { path = "../../embedded-service", features = ["log"] }
@@ -53,9 +49,15 @@ embedded-hal-mock = { version = "0.11.1", features = ["embedded-hal-async"] }
 
 critical-section = { version = "1.1", features = ["std"] }
 
+debug-service = { path = "../../debug-service" }
+
 [lib]
 name = "std_examples"
 path = "src/lib/lib.rs"
+
+[[bin]]
+name = "debug"
+path = "src/bin/debug.rs"
 
 [[bin]]
 name = "type-c-basic"

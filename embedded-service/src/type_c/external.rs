@@ -1,13 +1,16 @@
 //! Message definitions for external type-C commands
 use embedded_usb_pd::{GlobalPortId, LocalPortId, PdError, ucsi};
 
-use crate::type_c::{Cached, controller::execute_external_ucsi_command};
+use crate::type_c::{
+    Cached,
+    controller::{UsbControlConfig, execute_external_ucsi_command},
+};
 
 use super::{
     ControllerId,
     controller::{
-        ControllerStatus, PortStatus, RetimerFwUpdateState, SendVdm, execute_external_controller_command,
-        execute_external_port_command, lookup_controller,
+        ControllerStatus, DpConfig, DpStatus, PortStatus, RetimerFwUpdateState, SendVdm,
+        execute_external_controller_command, execute_external_port_command, lookup_controller,
     },
 };
 
@@ -70,8 +73,16 @@ pub enum PortCommandData {
     },
     /// Clear the dead battery flag for the given port.
     ClearDeadBatteryFlag,
+    /// Set USB control
+    SetUsbControl(UsbControlConfig),
     /// Send VDM
     SendVdm(SendVdm),
+    /// Get DisplayPort status
+    GetDpStatus,
+    /// Set DisplayPort configuration
+    SetDpConfig(DpConfig),
+    /// Execute DisplayPort reset
+    ExecuteDrst,
 }
 
 /// Port-specific commands
@@ -94,6 +105,8 @@ pub enum PortResponseData {
     PortStatus(PortStatus),
     /// Get retimer fw update status
     RetimerFwUpdateGetState(RetimerFwUpdateState),
+    /// Get DisplayPort status
+    GetDpStatus(DpStatus),
 }
 
 /// Port-specific command response
@@ -321,6 +334,58 @@ pub async fn send_vdm(port: GlobalPortId, tx_vdm: SendVdm) -> Result<(), PdError
     match execute_external_port_command(Command::Port(PortCommand {
         port,
         data: PortCommandData::SendVdm(tx_vdm),
+    }))
+    .await?
+    {
+        PortResponseData::Complete => Ok(()),
+        _ => Err(PdError::InvalidResponse),
+    }
+}
+
+/// Set USB control configuration
+pub async fn set_usb_control(port: GlobalPortId, config: UsbControlConfig) -> Result<(), PdError> {
+    match execute_external_port_command(Command::Port(PortCommand {
+        port,
+        data: PortCommandData::SetUsbControl(config),
+    }))
+    .await?
+    {
+        PortResponseData::Complete => Ok(()),
+        _ => Err(PdError::InvalidResponse),
+    }
+}
+
+/// Get DisplayPort status for the given port
+pub async fn get_dp_status(port: GlobalPortId) -> Result<DpStatus, PdError> {
+    match execute_external_port_command(Command::Port(PortCommand {
+        port,
+        data: PortCommandData::GetDpStatus,
+    }))
+    .await?
+    {
+        PortResponseData::GetDpStatus(status) => Ok(status),
+        _ => Err(PdError::InvalidResponse),
+    }
+}
+
+/// Set DisplayPort configuration for the given port
+pub async fn set_dp_config(port: GlobalPortId, config: DpConfig) -> Result<(), PdError> {
+    match execute_external_port_command(Command::Port(PortCommand {
+        port,
+        data: PortCommandData::SetDpConfig(config),
+    }))
+    .await?
+    {
+        PortResponseData::Complete => Ok(()),
+        _ => Err(PdError::InvalidResponse),
+    }
+}
+
+/// Execute DisplayPort reset for the given port
+pub async fn execute_drst(port: GlobalPortId) -> Result<(), PdError> {
+    match execute_external_port_command(Command::Port(PortCommand {
+        port,
+        data: PortCommandData::ExecuteDrst,
     }))
     .await?
     {
