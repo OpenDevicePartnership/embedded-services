@@ -74,10 +74,10 @@ impl<A: AddressMode + Copy, B: I2c<A>> Device<A, B> {
 
     pub async fn read_report_descriptor(&self) -> Result<SharedRef<'static, u8>, Error<B::Error>> {
         info!("Sending report descriptor");
+        let desc = self.get_hid_descriptor().await?;
 
         let mut borrow = self.buffer.borrow_mut();
         let buf: &mut [u8] = borrow.borrow_mut();
-        let desc = self.get_hid_descriptor().await?;
         let reg = desc.w_report_desc_register.to_le_bytes();
         let len = desc.w_report_desc_length as usize;
 
