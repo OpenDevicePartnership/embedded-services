@@ -24,6 +24,7 @@ embedded-hal.workspace = true
 embedded-io-async.workspace = true
 embedded-services.workspace = true
 embedded-usb-pd.workspace = true
+heapless.workspace = true
 log = { workspace = true, optional = true }
 static_cell = { workspace = true }
 tps6699x = { workspace = true, features = ["embassy"] }

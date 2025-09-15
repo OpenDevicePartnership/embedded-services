@@ -750,7 +750,7 @@ dependencies = [
 [[package]]
 name = "embedded-usb-pd"
 version = "0.1.0"
-source = "git+https://github.com/OpenDevicePartnership/embedded-usb-pd#b9fd1dbfdca9a384810f7c702a2962974483ce6f"
+source = "git+https://github.com/OpenDevicePartnership/embedded-usb-pd#f3146077052ade1dbe95aca5596fc51251611189"
 dependencies = [
  "aquamarine",
  "bincode",
@@ -1577,6 +1577,7 @@ dependencies = [
  "embedded-io-async",
  "embedded-services",
  "embedded-usb-pd",
+ "heapless 0.8.0",
  "static_cell",
  "tps6699x",
 ]

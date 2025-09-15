@@ -1,9 +1,11 @@
 use embassy_executor::{Executor, Spawner};
 use embedded_services::type_c::controller;
-use embedded_services::type_c::external::execute_ucsi_command;
+use embedded_services::type_c::external::{UcsiResponseResult, execute_ucsi_command};
+use embedded_usb_pd::GlobalPortId;
+use embedded_usb_pd::ucsi::ppm::ack_cc_ci::Ack;
 use embedded_usb_pd::ucsi::ppm::get_capability::ResponseData as UcsiCapabilities;
 use embedded_usb_pd::ucsi::ppm::set_notification_enable::NotificationEnable;
-use embedded_usb_pd::ucsi::{Command, ppm};
+use embedded_usb_pd::ucsi::{Command, lpm, ppm};
 use log::*;
 use static_cell::StaticCell;
 use type_c_service::service::config::Config;
@@ -15,11 +17,12 @@ async fn task(_spawner: Spawner) {
     controller::init();
 
     info!("Resetting PPM...");
-    let response = execute_ucsi_command(Command::PpmCommand(ppm::Command::PpmReset))
+    let response: UcsiResponseResult = execute_ucsi_command(Command::PpmCommand(ppm::Command::PpmReset))
         .await
-        .unwrap();
-    if !response.response.cci.reset_complete() || response.response.cci.error() {
-        error!("PPM reset failed: {:?}", response.response.cci);
+        .into();
+    let response = response.unwrap();
+    if !response.cci.reset_complete() || response.cci.error() {
+        error!("PPM reset failed: {:?}", response.cci);
     } else {
         info!("PPM reset successful");
     }
@@ -27,27 +30,85 @@ async fn task(_spawner: Spawner) {
     info!("Set Notification enable...");
     let mut notifications = NotificationEnable::default();
     notifications.set_cmd_complete(true);
-    let response = execute_ucsi_command(Command::PpmCommand(ppm::Command::SetNotificationEnable(
+    let response: UcsiResponseResult = execute_ucsi_command(Command::PpmCommand(ppm::Command::SetNotificationEnable(
         ppm::set_notification_enable::Args {
             notification_enable: notifications,
         },
     )))
     .await
-    .unwrap();
-    if !response.response.cci.cmd_complete() || response.response.cci.error() {
-        error!("Set Notification enable failed: {:?}", response.response.cci);
+    .into();
+    let response = response.unwrap();
+    if !response.cci.cmd_complete() || response.cci.error() {
+        error!("Set Notification enable failed: {:?}", response.cci);
     } else {
         info!("Set Notification enable successful");
     }
 
-    info!("Get PPM capabilities...");
-    let response = execute_ucsi_command(Command::PpmCommand(ppm::Command::GetCapability))
+    info!("Sending command complete ack...");
+    let response: UcsiResponseResult =
+        execute_ucsi_command(Command::PpmCommand(ppm::Command::AckCcCi(ppm::ack_cc_ci::Args {
+            ack: *Ack::default().set_command_complete(true),
+        })))
         .await
-        .unwrap();
-    if !response.response.cci.cmd_complete() || response.response.cci.error() {
+        .into();
+    let response = response.unwrap();
+    if !response.cci.ack_command() || response.cci.error() {
+        error!("Sending command complete ack failed: {:?}", response.cci);
+    } else {
+        info!("Sending command complete ack successful");
+    }
+
+    info!("Get PPM capabilities...");
+    let response: UcsiResponseResult = execute_ucsi_command(Command::PpmCommand(ppm::Command::GetCapability))
+        .await
+        .into();
+    let response = response.unwrap();
+    if !response.cci.cmd_complete() || response.cci.error() {
         error!("Get PPM capabilities failed: {response:?}");
     } else {
-        info!("Get PPM capabilities successful: {:?}", response.response.data);
+        info!("Get PPM capabilities successful: {:?}", response.data);
+    }
+
+    info!("Sending command complete ack...");
+    let response: UcsiResponseResult =
+        execute_ucsi_command(Command::PpmCommand(ppm::Command::AckCcCi(ppm::ack_cc_ci::Args {
+            ack: *Ack::default().set_command_complete(true),
+        })))
+        .await
+        .into();
+    let response = response.unwrap();
+    if !response.cci.ack_command() || response.cci.error() {
+        error!("Sending command complete ack failed: {:?}", response.cci);
+    } else {
+        info!("Sending command complete ack successful");
+    }
+
+    info!("Get connector status...");
+    let response: UcsiResponseResult = execute_ucsi_command(Command::LpmCommand(lpm::GlobalCommand {
+        port: GlobalPortId(0),
+        operation: lpm::CommandData::GetConnectorStatus,
+    }))
+    .await
+    .into();
+    let response = response.unwrap();
+    if !response.cci.cmd_complete() || response.cci.error() {
+        error!("Get connector status failed: {:?}", response.cci);
+    } else {
+        info!("Get connector status successful: {:?}", response.data);
+    }
+
+    info!("Sending command complete ack...");
+    let response: UcsiResponseResult =
+        execute_ucsi_command(Command::PpmCommand(ppm::Command::AckCcCi(ppm::ack_cc_ci::Args {
+            ack: *Ack::default().set_command_complete(true),
+        })))
+        .await
+        .into();
+    let response = response.unwrap();
+    if !response.cci.ack_command() || response.cci.error() {
+        error!("Sending command complete ack failed: {:?}", response.cci);
+    } else {
+        info!("Sending command complete ack successful");
     }
 }
 

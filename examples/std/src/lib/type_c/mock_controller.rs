@@ -6,7 +6,7 @@ use embedded_services::{
     type_c::{
         controller::{
             AttnVdm, Contract, ControllerStatus, DpConfig, DpPinConfig, DpStatus, OtherVdm, PortStatus,
-            RetimerFwUpdateState, SendVdm, UsbControlConfig,
+            RetimerFwUpdateState, SendVdm, TbtConfig, UsbControlConfig,
         },
         event::PortEvent,
     },
@@ -200,7 +200,7 @@ impl embedded_services::type_c::controller::Controller for Controller<'_> {
         Ok(())
     }
 
-    async fn get_active_fw_version(&self) -> Result<u32, Error<Self::BusError>> {
+    async fn get_active_fw_version(&mut self) -> Result<u32, Error<Self::BusError>> {
         Ok(0)
     }
 
@@ -284,6 +284,11 @@ impl embedded_services::type_c::controller::Controller for Controller<'_> {
 
     async fn execute_drst(&mut self, port: LocalPortId) -> Result<(), Error<Self::BusError>> {
         debug!("Execute PD Data Reset for port {port:?}");
+        Ok(())
+    }
+
+    async fn set_tbt_config(&mut self, port: LocalPortId, config: TbtConfig) -> Result<(), Error<Self::BusError>> {
+        debug!("Set Thunderbolt config for port {port:?}: {config:?}");
         Ok(())
     }
 }

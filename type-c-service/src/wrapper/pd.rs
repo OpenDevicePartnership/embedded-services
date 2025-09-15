@@ -320,6 +320,15 @@ impl<'a, const N: usize, C: Controller, BACK: Backing<'a>, V: FwOfferValidator> 
                     Error::Pd(e) => Err(e),
                 },
             },
+            controller::PortCommandData::SetTbtConfig(config) => {
+                match controller.set_tbt_config(local_port, config).await {
+                    Ok(()) => Ok(controller::PortResponseData::Complete),
+                    Err(e) => match e {
+                        Error::Bus(_) => Err(PdError::Failed),
+                        Error::Pd(e) => Err(e),
+                    },
+                }
+            }
         })
     }
 

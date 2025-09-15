@@ -1,7 +1,7 @@
 use embedded_services::{
     debug, error,
     type_c::{
-        controller::{DpConfig, UsbControlConfig},
+        controller::{DpConfig, TbtConfig, UsbControlConfig},
         external,
     },
 };
@@ -58,6 +58,7 @@ impl<'a> Service<'a> {
             external::PortCommandData::GetDpStatus => self.process_get_dp_status(command.port).await,
             external::PortCommandData::SetDpConfig(config) => self.process_set_dp_config(command.port, config).await,
             external::PortCommandData::ExecuteDrst => self.process_execute_drst(command.port).await,
+            external::PortCommandData::SetTbtConfig(config) => self.process_set_tbt_config(command.port, config).await,
         }
     }
 
@@ -194,6 +195,16 @@ impl<'a> Service<'a> {
         let status = self.context.execute_drst(port_id).await;
         if let Err(e) = status {
             error!("Error executing DP reset: {:#?}", e);
+        }
+
+        external::Response::Port(status.map(|_| external::PortResponseData::Complete))
+    }
+
+    /// Process set Thunderbolt configuration command
+    async fn process_set_tbt_config(&self, port_id: GlobalPortId, config: TbtConfig) -> external::Response<'static> {
+        let status = self.context.set_tbt_config(port_id, config).await;
+        if let Err(e) = status {
+            error!("Error setting TBT config: {:#?}", e);
         }
 
         external::Response::Port(status.map(|_| external::PortResponseData::Complete))

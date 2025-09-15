@@ -241,6 +241,14 @@ impl Default for UsbControlConfig {
     }
 }
 
+/// Thunderbolt control configuration
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[derive(Debug, Clone, Default, Copy, PartialEq)]
+pub struct TbtConfig {
+    /// Enable Thunderbolt
+    pub tbt_enabled: bool,
+}
+
 /// Port-specific command data
 #[derive(Copy, Clone, Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
@@ -281,6 +289,8 @@ pub enum PortCommandData {
     SetDpConfig(DpConfig),
     /// Execute DisplayPort reset
     ExecuteDrst,
+    /// Set Thunderbolt configuration
+    SetTbtConfig(TbtConfig),
 }
 
 /// Port-specific commands
@@ -568,7 +578,7 @@ pub trait Controller {
     // TODO: remove all these once we migrate to a generic FW update trait
     // https://github.com/OpenDevicePartnership/embedded-services/issues/242
     /// Get current FW version
-    fn get_active_fw_version(&self) -> impl Future<Output = Result<u32, Error<Self::BusError>>>;
+    fn get_active_fw_version(&mut self) -> impl Future<Output = Result<u32, Error<Self::BusError>>>;
     /// Start a firmware update
     fn start_fw_update(&mut self) -> impl Future<Output = Result<(), Error<Self::BusError>>>;
     /// Abort a firmware update
@@ -609,6 +619,13 @@ pub trait Controller {
     ) -> impl Future<Output = Result<(), Error<Self::BusError>>>;
     /// Execute PD Data Reset for the given port
     fn execute_drst(&mut self, port: LocalPortId) -> impl Future<Output = Result<(), Error<Self::BusError>>>;
+
+    /// Set Thunderbolt configuration for the given port
+    fn set_tbt_config(
+        &mut self,
+        port: LocalPortId,
+        config: TbtConfig,
+    ) -> impl Future<Output = Result<(), Error<Self::BusError>>>;
 }
 
 /// Internal context for managing PD controllers
@@ -1115,6 +1132,17 @@ impl ContextToken {
             _ => Err(PdError::InvalidResponse),
         }
     }
+
+    /// Set Thunderbolt configuration for the given port
+    pub async fn set_tbt_config(&self, port: GlobalPortId, config: TbtConfig) -> Result<(), PdError> {
+        match self
+            .send_port_command(port, PortCommandData::SetTbtConfig(config))
+            .await?
+        {
+            PortResponseData::Complete => Ok(()),
+            _ => Err(PdError::InvalidResponse),
+        }
+    }
 }
 
 /// Execute an external port command
@@ -1146,15 +1174,18 @@ pub(super) async fn execute_external_controller_command(
 }
 
 /// Execute an external UCSI command
-pub(super) async fn execute_external_ucsi_command(
-    command: ucsi::GlobalCommand,
-) -> Result<external::UcsiResponse, PdError> {
+pub(super) async fn execute_external_ucsi_command(command: ucsi::GlobalCommand) -> external::UcsiResponse {
     let context = CONTEXT.get().await;
     match context.external_command.execute(external::Command::Ucsi(command)).await {
         external::Response::Ucsi(response) => response,
         r => {
             error!("Invalid response: expected external UCSI, got {:?}", r);
-            Err(PdError::InvalidResponse)
+            external::UcsiResponse {
+                // Always notify OPM of an error
+                notify_opm: true,
+                cci: ucsi::cci::GlobalCci::new_error(),
+                data: Err(PdError::InvalidResponse),
+            }
         }
     }
 }

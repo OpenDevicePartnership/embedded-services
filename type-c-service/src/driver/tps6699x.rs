@@ -9,19 +9,18 @@ use core::array::from_fn;
 use core::future::Future;
 use core::iter::zip;
 use embassy_sync::blocking_mutex::raw::RawMutex;
-use embassy_sync::mutex::Mutex;
 use embassy_time::Delay;
 use embedded_cfu_protocol::protocol_definitions::ComponentId;
 use embedded_hal_async::i2c::I2c;
 use embedded_services::cfu::component::CfuDevice;
 use embedded_services::power::policy::{self, PowerCapability};
-use embedded_services::transformers::object::{Object, RefGuard, RefMutGuard};
 use embedded_services::type_c::controller::{
-    self, AttnVdm, Controller, ControllerStatus, DpPinConfig, OtherVdm, PortStatus, SendVdm, UsbControlConfig,
+    self, AttnVdm, Controller, ControllerStatus, DpPinConfig, OtherVdm, PortStatus, SendVdm, TbtConfig,
+    UsbControlConfig,
 };
 use embedded_services::type_c::event::PortEvent;
 use embedded_services::type_c::{ControllerId, ATTN_VDM_LEN};
-use embedded_services::{debug, error, info, trace, type_c, warn, GlobalRawMutex};
+use embedded_services::{debug, error, info, trace, type_c, warn};
 use embedded_usb_pd::ado::Ado;
 use embedded_usb_pd::pdinfo::PowerPathStatus;
 use embedded_usb_pd::pdo::{sink, source, Common, Rdo};
@@ -53,10 +52,9 @@ struct FwUpdateState<'a, M: RawMutex, B: I2c> {
 }
 
 pub struct Tps6699x<'a, M: RawMutex, B: I2c> {
-    port_events: [Mutex<GlobalRawMutex, PortEvent>; MAX_SUPPORTED_PORTS],
-    num_ports: usize,
-    tps6699x: Mutex<GlobalRawMutex, tps6699x_drv::Tps6699x<'a, M, B>>,
-    update_state: Mutex<GlobalRawMutex, Option<FwUpdateState<'a, M, B>>>,
+    port_events: heapless::Vec<PortEvent, MAX_SUPPORTED_PORTS>,
+    tps6699x: tps6699x_drv::Tps6699x<'a, M, B>,
+    update_state: Option<FwUpdateState<'a, M, B>>,
     /// Firmware update configuration
     fw_update_config: FwUpdateConfig,
 }
@@ -74,31 +72,117 @@ impl<'a, M: RawMutex, B: I2c> Tps6699x<'a, M, B> {
             None
         } else {
             Some(Self {
-                port_events: [const { Mutex::new(PortEvent::none()) }; MAX_SUPPORTED_PORTS],
-                num_ports,
-                tps6699x: Mutex::new(tps6699x),
-                update_state: Mutex::new(None),
+                // num_ports validated by branch
+                port_events: heapless::Vec::from_iter((0..num_ports).map(|_| PortEvent::none())),
+                tps6699x,
+                update_state: None,
                 fw_update_config,
             })
         }
     }
+}
+
+bitfield! {
+    /// DFP VDO structure
+    #[derive(Clone, Copy)]
+    struct DfpVdo(u32);
+    impl Debug;
+
+    /// Port number (5 bits)
+    pub u8, port_number, set_port_number: 4, 0;
+    /// Host USB capability (3 bits)
+    pub u8, host_capability, set_host_capability: 26, 24;
+    /// DFP VDO version (3 bits)
+    pub u8, version, set_version: 31, 29;
+}
+
+bitflags! {
+    /// DisplayPort Pin Configuration bitmap
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub struct PdDpPinConfig: u8 {
+        /// No pin assignment
+        const NONE = 0x00;
+        /// 4L DP connection using USBC-USBC cable (Pin Assignment C)
+        const C = 0x04;
+        /// 2L USB + 2L DP connection using USBC-USBC cable (Pin Assignment D)
+        const D = 0x08;
+        /// 4L DP connection using USBC-DP cable (Pin Assignment E)
+        const E = 0x10;
+    }
+}
+
+impl From<u8> for PdDpPinConfig {
+    fn from(value: u8) -> Self {
+        PdDpPinConfig::from_bits_truncate(value)
+    }
+}
+
+impl From<PdDpPinConfig> for DpPinConfig {
+    fn from(value: PdDpPinConfig) -> Self {
+        Self {
+            pin_c: value.contains(PdDpPinConfig::C),
+            pin_d: value.contains(PdDpPinConfig::D),
+            pin_e: value.contains(PdDpPinConfig::E),
+        }
+    }
+}
+
+impl From<DpPinConfig> for PdDpPinConfig {
+    fn from(value: DpPinConfig) -> Self {
+        let mut config = PdDpPinConfig::NONE;
+        if value.pin_c {
+            config |= PdDpPinConfig::C;
+        }
+        if value.pin_d {
+            config |= PdDpPinConfig::D;
+        }
+        if value.pin_e {
+            config |= PdDpPinConfig::E;
+        }
+        config
+    }
+}
+
+bitfield! {
+    /// DisplayPort Alt Mode Configure structure
+    /// Corresponds to ExtPDAltDpConfig_t in C
+    #[derive(Clone, Copy, Debug)]
+    pub struct PdDpAltConfig(u32);
+
+    /// Select configuration (2 bits)
+    pub u8, select_config, set_select_config: 1, 0;
+    /// Signaling (4 bits)
+    pub u8, signaling, set_signaling: 5, 2;
+    /// Pin configuration (8 bits)
+    pub u8, config_pin, set_config_pin: 15, 8;
+    /// Reserved field 1 (16 bits)
+    pub u16, reserved1, set_reserved1: 31, 16;
+}
+
+impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
+    type BusError = B::Error;
+
+    /// Controller reset
+    async fn reset_controller(&mut self) -> Result<(), Error<Self::BusError>> {
+        let mut delay = Delay;
+        self.tps6699x.reset(&mut delay).await?;
+
+        Ok(())
+    }
 
     /// Wait for an event on any port
-    async fn wait_interrupt_event(
-        &self,
-        tps6699x: &mut tps6699x_drv::Tps6699x<'a, M, B>,
-    ) -> Result<(), Error<B::Error>> {
-        let interrupts = tps6699x
+    async fn wait_port_event(&mut self) -> Result<(), Error<Self::BusError>> {
+        let interrupts = self
+            .tps6699x
             .wait_interrupt_any(false, from_fn(|_| IntEventBus1::all()))
             .await;
 
-        for (interrupt, mutex) in zip(interrupts.iter(), self.port_events.iter()) {
+        for (interrupt, event) in zip(interrupts.iter(), self.port_events.iter_mut()) {
             if *interrupt == IntEventBus1::new_zero() {
                 continue;
             }
 
             {
-                let mut event = mutex.lock().await;
                 if interrupt.plug_event() {
                     debug!("Event: Plug event");
                     event.status.set_plug_inserted_or_removed(true);
@@ -188,110 +272,6 @@ impl<'a, M: RawMutex, B: I2c> Tps6699x<'a, M, B> {
         }
         Ok(())
     }
-}
-
-bitfield! {
-    /// DFP VDO structure
-    #[derive(Clone, Copy)]
-    struct DfpVdo(u32);
-    impl Debug;
-
-    /// Port number (5 bits)
-    pub u8, port_number, set_port_number: 4, 0;
-    /// Host USB capability (3 bits)
-    pub u8, host_capability, set_host_capability: 26, 24;
-    /// DFP VDO version (3 bits)
-    pub u8, version, set_version: 31, 29;
-}
-
-bitflags! {
-    /// DisplayPort Pin Configuration bitmap
-    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-    pub struct PdDpPinConfig: u8 {
-        /// No pin assignment
-        const NONE = 0x00;
-        /// 4L DP connection using USBC-USBC cable (Pin Assignment C)
-        const C = 0x04;
-        /// 2L USB + 2L DP connection using USBC-USBC cable (Pin Assignment D)
-        const D = 0x08;
-        /// 4L DP connection using USBC-DP cable (Pin Assignment E)
-        const E = 0x10;
-    }
-}
-
-impl From<u8> for PdDpPinConfig {
-    fn from(value: u8) -> Self {
-        PdDpPinConfig::from_bits_truncate(value)
-    }
-}
-
-impl From<PdDpPinConfig> for DpPinConfig {
-    fn from(value: PdDpPinConfig) -> Self {
-        Self {
-            pin_c: value.contains(PdDpPinConfig::C),
-            pin_d: value.contains(PdDpPinConfig::D),
-            pin_e: value.contains(PdDpPinConfig::E),
-        }
-    }
-}
-
-impl From<DpPinConfig> for PdDpPinConfig {
-    fn from(value: DpPinConfig) -> Self {
-        let mut config = PdDpPinConfig::NONE;
-        if value.pin_c {
-            config |= PdDpPinConfig::C;
-        }
-        if value.pin_d {
-            config |= PdDpPinConfig::D;
-        }
-        if value.pin_e {
-            config |= PdDpPinConfig::E;
-        }
-        config
-    }
-}
-
-bitfield! {
-    /// DisplayPort Alt Mode Configure structure
-    /// Corresponds to ExtPDAltDpConfig_t in C
-    #[derive(Clone, Copy, Debug)]
-    pub struct PdDpAltConfig(u32);
-
-    /// Select configuration (2 bits)
-    pub u8, select_config, set_select_config: 1, 0;
-    /// Signaling (4 bits)
-    pub u8, signaling, set_signaling: 5, 2;
-    /// Pin configuration (8 bits)
-    pub u8, config_pin, set_config_pin: 15, 8;
-    /// Reserved field 1 (16 bits)
-    pub u16, reserved1, set_reserved1: 31, 16;
-}
-
-impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
-    type BusError = B::Error;
-
-    /// Controller reset
-    async fn reset_controller(&mut self) -> Result<(), Error<Self::BusError>> {
-        let mut tps6699x = self
-            .tps6699x
-            .try_lock()
-            .expect("Driver should not have been locked before this, thus infallible");
-
-        let mut delay = Delay;
-        tps6699x.reset(&mut delay).await?;
-
-        Ok(())
-    }
-
-    /// Wait for an event on any port
-    async fn wait_port_event(&mut self) -> Result<(), Error<Self::BusError>> {
-        let mut tps6699x = self
-            .tps6699x
-            .try_lock()
-            .expect("Driver should not have been locked before this, thus infallible");
-        // TODO: combine with `wait_interrupt_event` when removing the tps6699x mutex
-        self.wait_interrupt_event(&mut tps6699x).await
-    }
 
     /// Returns and clears current events for the given port
     ///
@@ -300,30 +280,26 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
         if port.0 >= self.port_events.len() as u8 {
             return PdError::InvalidPort.into();
         }
-        let mut guard = self.port_events[port.0 as usize].lock().await;
-        let port_events = *guard;
-        *guard = PortEvent::none();
-        Ok(port_events)
+
+        Ok(core::mem::replace(
+            &mut self.port_events[port.0 as usize],
+            PortEvent::none(),
+        ))
     }
 
     /// Returns the current status of the port
     async fn get_port_status(&mut self, port: LocalPortId) -> Result<PortStatus, Error<Self::BusError>> {
-        if port.0 >= self.num_ports as u8 {
+        if port.0 >= self.port_events.len() as u8 {
             return PdError::InvalidPort.into();
         }
 
-        let mut tps6699x = self
-            .tps6699x
-            .try_lock()
-            .expect("Driver should not have been locked before this, thus infallible");
-
-        let status = tps6699x.get_port_status(port).await?;
+        let status = self.tps6699x.get_port_status(port).await?;
         trace!("Port{} status: {:#?}", port.0, status);
 
-        let pd_status = tps6699x.get_pd_status(port).await?;
+        let pd_status = self.tps6699x.get_pd_status(port).await?;
         trace!("Port{} PD status: {:#?}", port.0, pd_status);
 
-        let port_control = tps6699x.get_port_control(port).await?;
+        let port_control = self.tps6699x.get_port_control(port).await?;
         trace!("Port{} control: {:#?}", port.0, port_control);
 
         let mut port_status = PortStatus::default();
@@ -336,9 +312,9 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
 
         if port_status.is_connected() {
             // Determine current contract if any
-            let pdo_raw = tps6699x.get_active_pdo_contract(port).await?.active_pdo();
+            let pdo_raw = self.tps6699x.get_active_pdo_contract(port).await?.active_pdo();
             trace!("Raw PDO: {:#X}", pdo_raw);
-            let rdo_raw = tps6699x.get_active_rdo_contract(port).await?.active_rdo();
+            let rdo_raw = self.tps6699x.get_active_rdo_contract(port).await?.active_rdo();
             trace!("Raw RDO: {:#X}", rdo_raw);
 
             if pdo_raw != 0 && rdo_raw != 0 {
@@ -354,7 +330,8 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
                     // active_rdo_contract doesn't contain the full picture
                     let mut source_pdos: [source::Pdo; 1] = [source::Pdo::default()];
                     // Read 5V fixed supply source PDO, guaranteed to be present as the first SPR PDO
-                    let (num_sprs, _) = tps6699x
+                    let (num_sprs, _) = self
+                        .tps6699x
                         .lock_inner()
                         .await
                         .get_rx_src_caps(port, &mut source_pdos[..], &mut [])
@@ -412,12 +389,12 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
             };
 
             // Update alt-mode status
-            let alt_mode = tps6699x.get_alt_mode_status(port).await?;
+            let alt_mode = self.tps6699x.get_alt_mode_status(port).await?;
             debug!("Port{} alt mode: {:#?}", port.0, alt_mode);
             port_status.alt_mode = alt_mode;
 
             // Update power path status
-            let power_path = tps6699x.get_power_path_status(port).await?;
+            let power_path = self.tps6699x.get_power_path_status(port).await?;
             trace!("Port{} power source: {:#?}", port.0, power_path);
             port_status.power_path = match port {
                 PORT0 => PowerPathStatus::new(
@@ -440,11 +417,7 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
         &mut self,
         port: LocalPortId,
     ) -> Result<type_c::controller::RetimerFwUpdateState, Error<Self::BusError>> {
-        let mut tps6699x = self
-            .tps6699x
-            .try_lock()
-            .expect("Driver should not have been locked before this, thus infallible");
-        match tps6699x.get_rt_fw_update_status(port).await {
+        match self.tps6699x.get_rt_fw_update_status(port).await {
             Ok(true) => Ok(type_c::controller::RetimerFwUpdateState::Active),
             Ok(false) => Ok(type_c::controller::RetimerFwUpdateState::Inactive),
             Err(e) => Err(e),
@@ -452,42 +425,28 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
     }
 
     async fn set_rt_fw_update_state(&mut self, port: LocalPortId) -> Result<(), Error<Self::BusError>> {
-        let mut tps6699x = self
-            .tps6699x
-            .try_lock()
-            .expect("Driver should not have been locked before this, thus infallible");
-        tps6699x.set_rt_fw_update_state(port).await
+        self.tps6699x.set_rt_fw_update_state(port).await
     }
 
-    async fn clear_rt_fw_update_state(&mut self, port: LocalPortId) -> Result<(), Error<Self::BusError>> {
-        let mut tps6699x = self
-            .tps6699x
-            .try_lock()
-            .expect("Driver should not have been locked before this, thus infallible");
-        tps6699x.clear_rt_fw_update_state(port).await
+    fn clear_rt_fw_update_state(
+        &mut self,
+        port: LocalPortId,
+    ) -> impl Future<Output = Result<(), Error<Self::BusError>>> {
+        self.tps6699x.clear_rt_fw_update_state(port)
     }
 
     async fn set_rt_compliance(&mut self, port: LocalPortId) -> Result<(), Error<Self::BusError>> {
-        let mut tps6699x = self
-            .tps6699x
-            .try_lock()
-            .expect("Driver should not have been locked before this, thus infallible");
-        tps6699x.set_rt_compliance(port).await
+        self.tps6699x.set_rt_compliance(port).await
     }
 
     async fn reconfigure_retimer(&mut self, port: LocalPortId) -> Result<(), Error<Self::BusError>> {
-        let mut tps6699x = self
-            .tps6699x
-            .try_lock()
-            .expect("Driver should not have been locked before this, thus infallible");
-
         let input = {
             let mut input = tps6699x::command::muxr::Input(0);
             input.set_en_retry_on_target_addr_1(true);
             input
         };
 
-        match tps6699x.execute_muxr(port, input).await? {
+        match self.tps6699x.execute_muxr(port, input).await? {
             ReturnValue::Success => Ok(()),
             r => {
                 debug!("Error executing MuxR on port {}: {:#?}", port.0, r);
@@ -497,12 +456,7 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
     }
 
     async fn clear_dead_battery_flag(&mut self, port: LocalPortId) -> Result<(), Error<Self::BusError>> {
-        let mut tps6699x = self
-            .tps6699x
-            .try_lock()
-            .expect("Driver should not have been locked before this, thus infallible");
-
-        match tps6699x.execute_dbfg(port).await? {
+        match self.tps6699x.execute_dbfg(port).await? {
             ReturnValue::Success => Ok(()),
             r => {
                 debug!("Error executing DBfg on port {}: {:#?}", port.0, r);
@@ -513,11 +467,7 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
 
     async fn enable_sink_path(&mut self, port: LocalPortId, enable: bool) -> Result<(), Error<Self::BusError>> {
         debug!("Port{} enable sink path: {}", port.0, enable);
-        let mut tps6699x = self
-            .tps6699x
-            .try_lock()
-            .expect("Driver should not have been locked before this, thus infallible");
-        match tps6699x.enable_sink_path(port, enable).await {
+        match self.tps6699x.enable_sink_path(port, enable).await {
             // Temporary workaround for autofet rejection
             // Tracking bug: https://github.com/OpenDevicePartnership/embedded-services/issues/268
             Err(Error::Pd(PdError::Rejected)) | Err(Error::Pd(PdError::Timeout)) => {
@@ -529,23 +479,15 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
     }
 
     async fn get_pd_alert(&mut self, port: LocalPortId) -> Result<Option<Ado>, Error<Self::BusError>> {
-        let mut tps6699x = self
-            .tps6699x
-            .try_lock()
-            .expect("Driver should not have been locked before this, thus infallible");
-        tps6699x.get_rx_ado(port).await.map_err(Error::from)
+        self.tps6699x.get_rx_ado(port).await.map_err(Error::from)
     }
 
     async fn get_controller_status(&mut self) -> Result<ControllerStatus<'static>, Error<Self::BusError>> {
-        let mut tps6699x = self
-            .tps6699x
-            .try_lock()
-            .expect("Driver should not have been locked before this, thus infallible");
-        let boot_flags = tps6699x.get_boot_flags().await?;
-        let customer_use = CustomerUse(tps6699x.get_customer_use().await?);
+        let boot_flags = self.tps6699x.get_boot_flags().await?;
+        let customer_use = CustomerUse(self.tps6699x.get_customer_use().await?);
 
         Ok(ControllerStatus {
-            mode: tps6699x.get_mode().await?.into(),
+            mode: self.tps6699x.get_mode().await?.into(),
             valid_fw_bank: (boot_flags.active_bank() == 0 && boot_flags.bank0_valid() != 0)
                 || (boot_flags.active_bank() == 1 && boot_flags.bank1_valid() != 0),
             fw_version0: customer_use.ti_fw_version(),
@@ -553,58 +495,41 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
         })
     }
 
-    async fn set_unconstrained_power(
+    fn set_unconstrained_power(
         &mut self,
         port: LocalPortId,
         unconstrained: bool,
-    ) -> Result<(), Error<Self::BusError>> {
-        let mut tps6699x = self
-            .tps6699x
-            .try_lock()
-            .expect("Driver should not have been locked before this, thus infallible");
-        tps6699x.set_unconstrained_power(port, unconstrained).await
+    ) -> impl Future<Output = Result<(), Error<Self::BusError>>> {
+        self.tps6699x.set_unconstrained_power(port, unconstrained)
     }
 
-    async fn get_active_fw_version(&self) -> Result<u32, Error<Self::BusError>> {
-        let mut tps6699x = self
-            .tps6699x
-            .try_lock()
-            .expect("Driver should not have been locked before this, thus infallible");
-        let customer_use = CustomerUse(tps6699x.get_customer_use().await?);
+    async fn get_active_fw_version(&mut self) -> Result<u32, Error<Self::BusError>> {
+        let customer_use = CustomerUse(self.tps6699x.get_customer_use().await?);
         Ok(customer_use.custom_fw_version())
     }
 
     async fn start_fw_update(&mut self) -> Result<(), Error<Self::BusError>> {
-        let mut tps6699x = self
-            .tps6699x
-            .try_lock()
-            .expect("Driver should not have been locked before this, thus infallible");
         let mut delay = Delay;
         let mut updater: BorrowedUpdater<tps6699x_drv::Tps6699x<'_, M, B>> =
             BorrowedUpdater::with_config(self.fw_update_config.clone());
 
         // Abandon any previous in-progress update
-        if let Some(update) = self
-            .update_state
-            .try_lock()
-            .expect("Update state should not have been locked before this, thus infallible")
-            .take()
-        {
+        if let Some(update) = self.update_state.take() {
             warn!("Abandoning in-progress update");
-            update.updater.abort_fw_update(&mut [&mut tps6699x], &mut delay).await;
+            update
+                .updater
+                .abort_fw_update(&mut [&mut self.tps6699x], &mut delay)
+                .await;
         }
 
-        let mut guards = [const { None }; 2];
+        let mut guards = [const { None }; MAX_SUPPORTED_PORTS];
         // Disable all interrupts on both ports, use guards[1] to ensure that this set of guards is dropped last
-        disable_all_interrupts::<tps6699x_drv::Tps6699x<'_, M, B>>(&mut [&mut tps6699x], &mut guards[1..]).await?;
-        let in_progress = updater.start_fw_update(&mut [&mut tps6699x], &mut delay).await?;
+        disable_all_interrupts::<tps6699x_drv::Tps6699x<'_, M, B>>(&mut [&mut self.tps6699x], &mut guards[1..]).await?;
+        let in_progress = updater.start_fw_update(&mut [&mut self.tps6699x], &mut delay).await?;
         // Re-enable interrupts on port 0 only
-        enable_port0_interrupts::<tps6699x_drv::Tps6699x<'_, M, B>>(&mut [&mut tps6699x], &mut guards[0..1]).await?;
-        let mut state = self
-            .update_state
-            .try_lock()
-            .expect("Update state should not have been locked before this, thus infallible");
-        *state = Some(FwUpdateState {
+        enable_port0_interrupts::<tps6699x_drv::Tps6699x<'_, M, B>>(&mut [&mut self.tps6699x], &mut guards[0..1])
+            .await?;
+        self.update_state = Some(FwUpdateState {
             updater: in_progress,
             guards,
         });
@@ -615,26 +540,20 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
     ///
     /// This can reset the controller
     async fn abort_fw_update(&mut self) -> Result<(), Error<Self::BusError>> {
-        let mut tps6699x = self
-            .tps6699x
-            .try_lock()
-            .expect("Driver should not have been locked before this, thus infallible");
         // Check if we're still in firmware update mode
-        if tps6699x.get_mode().await? == tps6699x::Mode::F211 {
+        if self.tps6699x.get_mode().await? == tps6699x::Mode::F211 {
             let mut delay = Delay;
 
-            if let Some(update) = self
-                .update_state
-                .try_lock()
-                .expect("Update state should not have been locked before this, thus infallible")
-                .take()
-            {
+            if let Some(update) = self.update_state.take() {
                 // Attempt to abort the firmware update by consuming our update object
-                update.updater.abort_fw_update(&mut [&mut tps6699x], &mut delay).await;
+                update
+                    .updater
+                    .abort_fw_update(&mut [&mut self.tps6699x], &mut delay)
+                    .await;
                 Ok(())
             } else {
                 // Bypass our update object since we've gotten into a state where we don't have one
-                tps6699x.fw_update_mode_exit(&mut delay).await
+                self.tps6699x.fw_update_mode_exit(&mut delay).await
             }
         } else {
             // Not in FW update mode, don't need to do anything
@@ -646,20 +565,11 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
     ///
     /// This will reset the controller
     async fn finalize_fw_update(&mut self) -> Result<(), Error<Self::BusError>> {
-        let mut tps6699x = self
-            .tps6699x
-            .try_lock()
-            .expect("Driver should not have been locked before this, thus infallible");
-        if let Some(update) = self
-            .update_state
-            .try_lock()
-            .expect("Update state should not have been locked before this, thus infallible")
-            .take()
-        {
+        if let Some(update) = self.update_state.take() {
             let mut delay = Delay;
             update
                 .updater
-                .complete_fw_update(&mut [&mut tps6699x], &mut delay)
+                .complete_fw_update(&mut [&mut self.tps6699x], &mut delay)
                 .await
         } else {
             Err(PdError::InvalidMode.into())
@@ -667,19 +577,11 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
     }
 
     async fn write_fw_contents(&mut self, _offset: usize, data: &[u8]) -> Result<(), Error<Self::BusError>> {
-        let mut tps6699x = self
-            .tps6699x
-            .try_lock()
-            .expect("Driver should not have been locked before this, thus infallible");
-        let mut update_state = self
-            .update_state
-            .try_lock()
-            .expect("Update state should not have been locked before this, thus infallible");
-        if let Some(update) = update_state.as_mut() {
+        if let Some(update) = &mut self.update_state {
             let mut delay = Delay;
             update
                 .updater
-                .write_bytes(&mut [&mut tps6699x], &mut delay, data)
+                .write_bytes(&mut [&mut self.tps6699x], &mut delay, data)
                 .await?;
             Ok(())
         } else {
@@ -687,35 +589,23 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
         }
     }
 
-    async fn set_max_sink_voltage(
+    fn set_max_sink_voltage(
         &mut self,
         port: LocalPortId,
         voltage_mv: Option<u16>,
-    ) -> Result<(), Error<Self::BusError>> {
-        let mut tps6699x = self
-            .tps6699x
-            .try_lock()
-            .expect("Driver should not have been locked before this, thus infallible");
-        tps6699x.set_autonegotiate_sink_max_voltage(port, voltage_mv).await
+    ) -> impl Future<Output = Result<(), Error<Self::BusError>>> {
+        self.tps6699x.set_autonegotiate_sink_max_voltage(port, voltage_mv)
     }
 
     async fn get_other_vdm(&mut self, port: LocalPortId) -> Result<OtherVdm, Error<Self::BusError>> {
-        let mut tps6699x = self
-            .tps6699x
-            .try_lock()
-            .expect("Driver should not have been locked before this, thus infallible");
-        match tps6699x.get_rx_other_vdm(port).await {
+        match self.tps6699x.get_rx_other_vdm(port).await {
             Ok(vdm) => Ok((*vdm.as_bytes()).into()),
             Err(e) => Err(e),
         }
     }
 
     async fn get_attn_vdm(&mut self, port: LocalPortId) -> Result<AttnVdm, Error<Self::BusError>> {
-        let mut tps6699x = self
-            .tps6699x
-            .try_lock()
-            .expect("Driver should not have been locked before this, thus infallible");
-        match tps6699x.get_rx_attn_vdm(port).await {
+        match self.tps6699x.get_rx_attn_vdm(port).await {
             Ok(vdm) => {
                 let buf: [u8; ATTN_VDM_LEN] = vdm.into();
                 let attn_vdm: AttnVdm = buf.into();
@@ -726,11 +616,6 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
     }
 
     async fn send_vdm(&mut self, port: LocalPortId, tx_vdm: SendVdm) -> Result<(), Error<Self::BusError>> {
-        let mut tps6699x = self
-            .tps6699x
-            .try_lock()
-            .expect("Driver should not have been locked before this, thus infallible");
-
         let input = {
             let mut input = tps6699x::command::vdms::Input::default();
             input.set_num_vdo(tx_vdm.vdo_count);
@@ -750,7 +635,7 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
             input
         };
 
-        match tps6699x.send_vdms(port, input).await? {
+        match self.tps6699x.send_vdms(port, input).await? {
             ReturnValue::Success => Ok(()),
             r => {
                 debug!("Error executing VDMs on port {}: {:#?}", port.0, r);
@@ -765,10 +650,6 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
         port: LocalPortId,
         config: UsbControlConfig,
     ) -> Result<(), Error<Self::BusError>> {
-        let mut tps6699x = self
-            .tps6699x
-            .try_lock()
-            .expect("Driver should not have been locked before this, thus infallible");
         let mut tx_identity_value = 0;
 
         if config.usb2_enabled {
@@ -781,7 +662,7 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
             tx_identity_value |= 1 << 2;
         }
 
-        tps6699x
+        self.tps6699x
             .modify_tx_identity(port, |identity| {
                 let mut dfp_vdo = DfpVdo(identity.dfp1_vdo());
                 dfp_vdo.set_host_capability(tx_identity_value);
@@ -793,18 +674,11 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
     }
 
     async fn get_dp_status(&mut self, port: LocalPortId) -> Result<controller::DpStatus, Error<Self::BusError>> {
-        let mut tps6699x = self
-            .tps6699x
-            .try_lock()
-            .expect("Driver should not have been locked before this, thus infallible");
-
-        let dp_status = tps6699x.get_dp_status(port).await?;
+        let dp_status = self.tps6699x.get_dp_status(port).await?;
         debug!("Port{} DP status: {:#?}", port.0, dp_status);
 
-        // Extract DisplayPort mode active status
         let alt_mode_entered = dp_status.dp_mode_active() != 0;
 
-        // Get the DP configure message which contains pin configuration
         let dp_config = PdDpAltConfig(dp_status.dp_configure_message());
         let cfg_raw: PdDpPinConfig = dp_config.config_pin().into();
         let pin_config: DpPinConfig = cfg_raw.into();
@@ -820,15 +694,9 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
         port: LocalPortId,
         config: controller::DpConfig,
     ) -> Result<(), Error<Self::BusError>> {
-        let mut tps6699x = self
-            .tps6699x
-            .try_lock()
-            .expect("Driver should not have been locked before this, thus infallible");
-
         debug!("Port{} setting DP config: {:#?}", port.0, config);
 
-        // Read current config first
-        let mut dp_config_reg = tps6699x.get_dp_config(port).await?;
+        let mut dp_config_reg = self.tps6699x.get_dp_config(port).await?;
 
         debug!("Current DP config: {:#?}", dp_config_reg);
 
@@ -836,17 +704,12 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
         let cfg_raw: PdDpPinConfig = config.dfp_d_pin_cfg.into();
         dp_config_reg.set_dfpd_pin_assignment(cfg_raw.bits());
 
-        tps6699x.set_dp_config(port, dp_config_reg).await?;
+        self.tps6699x.set_dp_config(port, dp_config_reg).await?;
         Ok(())
     }
 
     async fn execute_drst(&mut self, port: LocalPortId) -> Result<(), Error<Self::BusError>> {
-        let mut tps6699x = self
-            .tps6699x
-            .try_lock()
-            .expect("Driver should not have been locked before this, thus infallible");
-
-        match tps6699x.execute_drst(port).await? {
+        match self.tps6699x.execute_drst(port).await? {
             ReturnValue::Success => Ok(()),
             r => {
                 debug!("Error executing DRST on port {}: {:#?}", port.0, r);
@@ -854,15 +717,28 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
             }
         }
     }
+
+    async fn set_tbt_config(&mut self, port: LocalPortId, config: TbtConfig) -> Result<(), Error<Self::BusError>> {
+        debug!("Port{} setting TBT config: {:#?}", port.0, config);
+
+        let mut config_reg = self.tps6699x.lock_inner().await.get_tbt_config(port).await?;
+
+        config_reg.set_tbt_vid_en(config.tbt_enabled);
+        config_reg.set_tbt_mode_en(config.tbt_enabled);
+
+        self.tps6699x.lock_inner().await.set_tbt_config(port, config_reg).await
+    }
 }
 
-impl<'a, M: RawMutex, B: I2c> Object<tps6699x_drv::Tps6699x<'a, M, B>> for Tps6699x<'a, M, B> {
-    fn get_inner(&self) -> impl Future<Output = impl RefGuard<tps6699x_drv::Tps6699x<'a, M, B>>> {
-        self.tps6699x.lock()
+impl<'a, M: RawMutex, BUS: I2c> AsRef<tps6699x_drv::Tps6699x<'a, M, BUS>> for Tps6699x<'a, M, BUS> {
+    fn as_ref(&self) -> &tps6699x_drv::Tps6699x<'a, M, BUS> {
+        &self.tps6699x
     }
+}
 
-    fn get_inner_mut(&self) -> impl Future<Output = impl RefMutGuard<tps6699x_drv::Tps6699x<'a, M, B>>> {
-        self.tps6699x.lock()
+impl<'a, M: RawMutex, BUS: I2c> AsMut<tps6699x_drv::Tps6699x<'a, M, BUS>> for Tps6699x<'a, M, BUS> {
+    fn as_mut(&mut self) -> &mut tps6699x_drv::Tps6699x<'a, M, BUS> {
+        &mut self.tps6699x
     }
 }
 
