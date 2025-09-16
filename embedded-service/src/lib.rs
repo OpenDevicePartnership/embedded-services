@@ -41,21 +41,16 @@ pub type GlobalRawMutex = embassy_sync::blocking_mutex::raw::CriticalSectionRawM
 #[cfg(all(not(test), target_os = "none", not(target_arch = "riscv32")))]
 pub type GlobalRawMutex = embassy_sync::blocking_mutex::raw::ThreadModeRawMutex;
 
-/// Global AtomicUsize and Ordering aliases selected based on target atomic support.
-/// Use `GlobalAtomicUsize` and `GlobalAtomicOrdering` from inside the crate (or `crate::...`),
-/// then optionally `as AtomicUsize` / `as Ordering` at the callsite to preserve existing names.
+/// AtomicUsize and Ordering re-exports. Uses core::sync::atomic if the target supports atomic operations,
+/// otherwise falls back to portable-atomic crate.
 #[cfg(target_has_atomic = "ptr")]
-/// Alias to the platform `core::sync::atomic::AtomicUsize` when pointer-width atomics are available.
-pub type GlobalAtomicUsize = core::sync::atomic::AtomicUsize;
+pub use core::sync::atomic::AtomicUsize;
 #[cfg(target_has_atomic = "ptr")]
-/// Alias to the platform `core::sync::atomic::Ordering` when pointer-width atomics are available.
-pub type GlobalAtomicOrdering = core::sync::atomic::Ordering;
+pub use core::sync::atomic::Ordering;
 #[cfg(not(target_has_atomic = "ptr"))]
-/// Alias to `portable_atomic::AtomicUsize` on targets that lack pointer-width atomics.
-pub type GlobalAtomicUsize = portable_atomic::AtomicUsize;
+pub use portable_atomic::AtomicUsize;
 #[cfg(not(target_has_atomic = "ptr"))]
-/// Alias to `portable_atomic::Ordering` on targets that lack pointer-width atomics.
-pub type GlobalAtomicOrdering = portable_atomic::Ordering;
+pub use portable_atomic::Ordering;
 
 /// A cell type that is Sync and Send. CriticalSectionCell is used in a standard context to support multiple cores and
 /// executors.
