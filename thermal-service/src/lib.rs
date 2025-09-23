@@ -4,11 +4,11 @@
 use embassy_sync::once_lock::OnceLock;
 use embedded_sensors_hal_async::temperature::DegreesCelsius;
 use embedded_services::buffer::OwnedRef;
+use embedded_services::ec_type::message::StdHostRequest;
 use embedded_services::{comms, error, info, intrusive_list};
 
 mod context;
 pub mod fan;
-pub mod mctp;
 pub mod mptf;
 pub mod sensor;
 pub mod utils;
@@ -49,9 +49,9 @@ impl<'a> Service<'a> {
 impl<'a> comms::MailboxDelegate for Service<'a> {
     fn receive(&self, message: &comms::Message) -> Result<(), comms::MailboxDelegateError> {
         // Queue for later processing
-        if let Some(msg) = message.data.get::<mctp::AcpiMsgComms>() {
+        if let Some(msg) = message.data.get::<StdHostRequest>() {
             self.context
-                .send_mctp_payload(msg.clone())
+                .send_mctp_payload(*msg)
                 .map_err(|_| comms::MailboxDelegateError::BufferFull)
         } else if let Some(&msg) = message.data.get::<mptf::Request>() {
             self.context
@@ -100,7 +100,7 @@ pub async fn wait_mptf_request() -> mptf::Request {
 }
 
 /// Wait for a MCTP payload
-pub async fn wait_mctp_payload<'a>() -> mctp::AcpiMsgComms<'a> {
+pub async fn wait_mctp_payload() -> StdHostRequest {
     SERVICE.get().await.context.wait_mctp_payload().await
 }
 

@@ -16,11 +16,13 @@ mod espi_service {
     use embedded_services::GlobalRawMutex;
     use embedded_services::buffer::OwnedRef;
     use embedded_services::comms::{self, EndpointID, External, Internal};
-    use embedded_services::ec_type::message::{AcpiMsgComms, HostMsg, NotificationMsg};
+    use embedded_services::ec_type::message::{
+        HostMsg, NotificationMsg, STD_DEBUG_BUF_SIZE, StdHostMsg, StdHostPayload, StdHostRequest,
+    };
     use log::{info, trace};
 
     // Max defmt payload we expect to shuttle in this mock
-    const MAX_DEFMT_BYTES: usize = 1024;
+    const MAX_DEFMT_BYTES: usize = STD_DEBUG_BUF_SIZE;
     embedded_services::define_static_buffer!(host_oob_buf, u8, [0u8; MAX_DEFMT_BYTES]);
     // Static request buffer used to build the "GetDebugBuffer" payload
     embedded_services::define_static_buffer!(debug_req_buf, u8, [0u8; 32]);
@@ -47,7 +49,7 @@ mod espi_service {
 
     impl comms::MailboxDelegate for Service {
         fn receive(&self, message: &comms::Message) -> Result<(), comms::MailboxDelegateError> {
-            if let Some(host_msg) = message.data.get::<HostMsg>() {
+            if let Some(host_msg) = message.data.get::<StdHostMsg>() {
                 match host_msg {
                     HostMsg::Notification(n) => {
                         info!(
@@ -62,12 +64,12 @@ mod espi_service {
                         // Stage the response bytes into the mock OOB buffer for the host
                         let mut access = self.resp_owned.borrow_mut();
                         let buf: &mut [u8] = core::borrow::BorrowMut::borrow_mut(&mut access);
-                        let src = acpi.payload.borrow();
-                        let src_slice: &[u8] = core::borrow::Borrow::borrow(&src);
-                        let copy_len = core::cmp::min(acpi.payload_len, buf.len());
-                        buf[..copy_len].copy_from_slice(&src_slice[..copy_len]);
-                        trace!("mock eSPI staged {copy_len} response bytes for host");
-                        self.resp_len.signal(copy_len);
+                        if let StdHostPayload::DebugGetMsgsResponse { debug_buf } = acpi.payload {
+                            let copy_len = core::cmp::min(debug_buf.len(), buf.len());
+                            buf[..copy_len].copy_from_slice(&debug_buf[..copy_len]);
+                            trace!("mock eSPI staged {copy_len} response bytes for host");
+                            self.resp_len.signal(copy_len);
+                        }
                         Ok(())
                     }
                 }
@@ -125,13 +127,16 @@ mod espi_service {
                 buf[..req_len].copy_from_slice(request);
             }
 
-            // Send an ACK/"OOB request" (as AcpiMsgComms) to the Debug service
+            // Send an ACK/"OOB request" (as HostRequest) to the Debug service
             let _ = comms::send(
                 EndpointID::External(External::Host),
                 EndpointID::Internal(Internal::Debug),
-                &AcpiMsgComms {
-                    payload: debug_req_buf::get(),
-                    payload_len: req_len,
+                &StdHostRequest {
+                    command: embedded_services::ec_type::message::OdpCommand::Debug(
+                        embedded_services::ec_type::protocols::debug::DebugCmd::GetMsgs,
+                    ),
+                    status: 0,
+                    payload: StdHostPayload::DebugGetMsgsRequest,
                 },
             )
             .await;

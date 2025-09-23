@@ -1,17 +1,18 @@
-use core::cmp::min;
 use core::mem::offset_of;
 use core::slice;
 
-use core::borrow::{Borrow, BorrowMut};
+use core::borrow::BorrowMut;
 use embassy_futures::select::select;
 use embassy_sync::channel::Channel;
 use embassy_sync::mutex::Mutex;
 use embassy_sync::once_lock::OnceLock;
 use embedded_services::buffer::OwnedRef;
 use embedded_services::comms::{self, EndpointID, External, Internal};
-use embedded_services::ec_type::message::{AcpiMsgComms, HostMsg, NotificationMsg};
-use embedded_services::ec_type::protocols::mctp::{build_mctp_header, handle_mctp_header};
+use embedded_services::ec_type::message::{HostMsg, NotificationMsg, StdHostMsg, StdHostPayload, StdHostRequest};
+use embedded_services::ec_type::protocols::mctp::build_mctp_header;
 use embedded_services::{GlobalRawMutex, debug, ec_type, error, info, trace};
+use mctp_rs::smbus_espi::SmbusEspiMedium;
+use mctp_rs::smbus_espi::SmbusEspiReplyContext;
 
 const HOST_TX_QUEUE_SIZE: usize = 5;
 
@@ -19,24 +20,27 @@ const HOST_TX_QUEUE_SIZE: usize = 5;
 // REVISIT: When adding support for other platforms, refactor this as they don't have a notion of port IDs
 const OOB_PORT_ID: usize = 1;
 
-embedded_services::define_static_buffer!(acpi_buf, u8, [0u8; 69]);
+embedded_services::define_static_buffer!(comms_buf, u8, [0u8; 69]);
+embedded_services::define_static_buffer!(assembly_buf, u8, [0u8; 69]);
 
-type HostMsgInternal<'a> = (EndpointID, HostMsg<'a>);
+type HostMsgInternal = (EndpointID, StdHostMsg);
 
-pub struct Service<'a, 'b> {
+pub struct Service<'a> {
     endpoint: comms::Endpoint,
     ec_memory: Mutex<GlobalRawMutex, &'a mut ec_type::structure::ECMemory>,
-    host_tx_queue: Channel<GlobalRawMutex, HostMsgInternal<'b>, HOST_TX_QUEUE_SIZE>,
-    acpi_buf_owned_ref: OwnedRef<'a, u8>,
+    host_tx_queue: Channel<GlobalRawMutex, HostMsgInternal, HOST_TX_QUEUE_SIZE>,
+    // comms_buf_owned_ref: OwnedRef<'a, u8>,
+    assembly_buf_owned_ref: OwnedRef<'a, u8>,
 }
 
-impl Service<'_, '_> {
+impl Service<'_> {
     pub fn new(ec_memory: &'static mut ec_type::structure::ECMemory) -> Self {
         Service {
             endpoint: comms::Endpoint::uninit(EndpointID::External(External::Host)),
             ec_memory: Mutex::new(ec_memory),
             host_tx_queue: Channel::new(),
-            acpi_buf_owned_ref: acpi_buf::get_mut().unwrap(),
+            // comms_buf_owned_ref: comms_buf::get_mut().unwrap(),
+            assembly_buf_owned_ref: assembly_buf::get_mut().unwrap(),
         }
     }
 
@@ -136,11 +140,11 @@ impl Service<'_, '_> {
         Ok(())
     }
 
-    async fn wait_for_subsystem_msg(&self) -> HostMsgInternal<'_> {
+    async fn wait_for_subsystem_msg(&self) -> HostMsgInternal {
         self.host_tx_queue.receive().await
     }
 
-    async fn process_subsystem_msg(&self, espi: &mut espi::Espi<'static>, host_msg: HostMsgInternal<'_>) {
+    async fn process_subsystem_msg(&self, espi: &mut espi::Espi<'static>, host_msg: HostMsgInternal) {
         let (endpoint, host_msg) = host_msg;
         match host_msg {
             HostMsg::Notification(notification_msg) => self.process_notification_to_host(espi, &notification_msg).await,
@@ -156,43 +160,61 @@ impl Service<'_, '_> {
     async fn process_response_to_host(
         &self,
         espi: &mut espi::Espi<'static>,
-        acpi_response: &AcpiMsgComms<'_>,
+        response: &StdHostRequest,
         endpoint: EndpointID,
     ) {
-        let response_len = acpi_response.payload_len;
-        let num_pkts = ((acpi_response.payload_len - 1) / 64) + 1;
-        let access = acpi_response.payload.borrow();
-        let acpi_pkt: &[u8] = access.borrow();
+        let mut pkt_ctx_buf = [0u8; 160];
 
-        for i in 0..num_pkts {
-            let pkt_start_index = 64 * i;
-            let pkt_end_index = min(response_len, pkt_start_index + 64);
-            let mctp_pkt_len = pkt_end_index - pkt_start_index;
-            trace!(
-                "start: {}, end: {}, len: {}",
-                pkt_start_index, pkt_end_index, mctp_pkt_len
-            );
-            let som = i == 0;
-            let eom = i == num_pkts - 1;
+        let mut mctp_ctx = mctp_rs::MctpPacketContext::new(mctp_rs::smbus_espi::SmbusEspiMedium, &mut pkt_ctx_buf);
 
-            if let Ok((final_packet, final_packet_size)) =
-                // take into account response_len
-                build_mctp_header(
-                    &acpi_pkt[pkt_start_index..pkt_end_index],
-                    mctp_pkt_len,
-                    endpoint,
-                    som,
-                    eom,
-                )
-            {
-                info!("Sending MCTP response: {:?}", &final_packet[..final_packet_size]);
+        let reply_context: mctp_rs::MctpReplyContext<SmbusEspiMedium> = mctp_rs::MctpReplyContext {
+            source_endpoint_id: mctp_rs::EndpointId::Id(0x80),
+            destination_endpoint_id: match endpoint {
+                EndpointID::Internal(Internal::Battery) => mctp_rs::EndpointId::Id(8),
+                EndpointID::Internal(Internal::Thermal) => mctp_rs::EndpointId::Id(9),
+                EndpointID::Internal(Internal::Debug) => mctp_rs::EndpointId::Id(10),
+                _ => mctp_rs::EndpointId::Id(0x80),
+            },
+            packet_sequence_number: mctp_rs::MctpSequenceNumber::new(0),
+            message_tag: mctp_rs::MctpMessageTag::try_from(3).unwrap(),
+            medium_context: SmbusEspiReplyContext {
+                destination_slave_address: 1,
+                source_slave_address: 0,
+            }, // Medium-specific context
+        };
 
+        let header = mctp_rs::odp::OdpHeader {
+            request_bit: false,
+            datagram_bit: false,
+            service: match endpoint {
+                EndpointID::Internal(Internal::Battery) => mctp_rs::odp::OdpService::Battery,
+                EndpointID::Internal(Internal::Thermal) => mctp_rs::odp::OdpService::Thermal,
+                EndpointID::Internal(Internal::Debug) => mctp_rs::odp::OdpService::Debug,
+                _ => mctp_rs::odp::OdpService::Debug,
+            },
+            command_code: response.command.into(),
+            completion_code: Default::default(),
+        };
+
+        let mut packet_state = mctp_ctx
+            .serialize_packet(reply_context, (header, response.payload))
+            .unwrap();
+        // Send each packet
+        while let Some(packet_result) = packet_state.next() {
+            if let Err(e) = packet_result {
+                error!("Packet serialize error {:?}", e);
+                return;
+            } else if let Ok(packet) = packet_result {
+                // Last byte is PEC, ignore for now
+                trace!("Sending MCTP response: {:?}", &packet[..packet.len() - 1]);
+
+                // Send packet via your transport medium
                 // SAFETY: Safe as the access to espi is protected by a mut reference.
                 let result = unsafe { espi.oob_get_write_buffer(OOB_PORT_ID) };
 
                 match result {
                     Ok(dest_slice) => {
-                        dest_slice[..final_packet_size].copy_from_slice(&final_packet[..final_packet_size]);
+                        dest_slice[..packet.len() - 1].copy_from_slice(&packet[..packet.len() - 1]);
                     }
                     Err(_e) => {
                         #[cfg(feature = "defmt")]
@@ -203,33 +225,28 @@ impl Service<'_, '_> {
                 }
 
                 // Write response over OOB
-                let res = espi.oob_write_data(OOB_PORT_ID, final_packet_size as u8);
+                let res = espi.oob_write_data(OOB_PORT_ID, (packet.len() - 1) as u8);
 
                 if res.is_err() {
                     #[cfg(feature = "defmt")]
                     error!("eSPI OOB write failed: {}", res.err().unwrap());
                     return;
                 }
-            } else {
-                // Packet malformed, throw it away and respond with ACPI packet with error in reserved field.
-                error!("Error building MCTP response packet from service {:?}", endpoint);
-                send_mctp_error_response(espi, OOB_PORT_ID);
-                return;
-            }
 
-            // Immediately service the packet with the ESPI HAL
-            // REVISIT: Can i just do espi.complete_port(OOB_PORT_ID);
-            // or is there more business logic in wait_for_event();
-            let event = espi.wait_for_event().await;
-            process_controller_event(espi, self, event).await;
+                // Immediately service the packet with the ESPI HAL
+                // REVISIT: Can i just do espi.complete_port(OOB_PORT_ID);
+                // or is there more business logic in wait_for_event();
+                let event = espi.wait_for_event().await;
+                process_controller_event(espi, self, event).await;
+            }
         }
     }
 }
 
-impl comms::MailboxDelegate for Service<'_, '_> {
+impl comms::MailboxDelegate for Service<'_> {
     fn receive(&self, message: &comms::Message) -> Result<(), comms::MailboxDelegateError> {
-        if let Some(msg) = message.data.get::<HostMsg>() {
-            let host_msg = (message.from, msg.clone());
+        if let Some(msg) = message.data.get::<StdHostMsg>() {
+            let host_msg = (message.from, *msg);
             debug!("Espi service: recvd acpi response");
             if self.host_tx_queue.try_send(host_msg).is_err() {
                 return Err(comms::MailboxDelegateError::BufferFull);
@@ -303,7 +320,7 @@ pub async fn espi_service(mut espi: espi::Espi<'static>, memory_map_buffer: &'st
 
 async fn process_controller_event(
     espi: &mut espi::Espi<'static>,
-    espi_service: &Service<'_, '_>,
+    espi_service: &Service<'_>,
     event: Result<embassy_imxrt::espi::Event, embassy_imxrt::espi::Error>,
 ) {
     match event {
@@ -338,25 +355,74 @@ async fn process_controller_event(
             if port_event.direction {
                 let src_slice = unsafe { slice::from_raw_parts(port_event.base_addr as *const u8, port_event.length) };
 
+                // TODO: This is a workaround because mctp_rs expects a PEC byte, so we hardcode a 0 at the end.
+                // We should add functionality to mctp_rs to disable PEC.
+                let mut with_pec = [0u8; 100];
+                with_pec[..src_slice.len()].copy_from_slice(src_slice);
+                with_pec[src_slice.len()] = 0;
+                let with_pec = &with_pec[..=src_slice.len()];
+
                 #[cfg(feature = "defmt")]
                 debug!("OOB message: {:02X}", &src_slice[0..]);
 
-                let acpi_msg: AcpiMsgComms;
+                let host_request: StdHostRequest;
                 let endpoint: EndpointID;
 
                 {
-                    let mut access = espi_service.acpi_buf_owned_ref.borrow_mut();
-                    match handle_mctp_header(src_slice, access.borrow_mut()) {
-                        Ok((raw_endpoint, payload_len)) => {
-                            acpi_msg = AcpiMsgComms {
-                                payload: acpi_buf::get(),
-                                payload_len,
-                            };
-                            endpoint = raw_endpoint;
+                    let mut assembly_access = espi_service.assembly_buf_owned_ref.borrow_mut();
+                    // let mut comms_access = espi_service.comms_buf_owned_ref.borrow_mut();
+                    let mut mctp_ctx = mctp_rs::MctpPacketContext::<SmbusEspiMedium>::new(
+                        SmbusEspiMedium,
+                        assembly_access.borrow_mut(),
+                    );
+
+                    match mctp_ctx.deserialize_packet(with_pec) {
+                        Ok(Some(message)) => {
+                            #[cfg(feature = "defmt")]
+                            trace!("MCTP packet successfully deserialized");
+
+                            match message.parse_as::<StdHostPayload>() {
+                                Ok((header, body)) => {
+                                    host_request = StdHostRequest {
+                                        command: header.command_code.into(),
+                                        status: header.completion_code.into(),
+                                        payload: body,
+                                    };
+                                    endpoint = match header.service {
+                                        mctp_rs::odp::OdpService::Battery => {
+                                            EndpointID::Internal(embedded_services::comms::Internal::Battery)
+                                        }
+                                        mctp_rs::odp::OdpService::Thermal => {
+                                            EndpointID::Internal(embedded_services::comms::Internal::Thermal)
+                                        }
+                                        mctp_rs::odp::OdpService::Debug => {
+                                            EndpointID::Internal(embedded_services::comms::Internal::Debug)
+                                        }
+                                    };
+                                    #[cfg(feature = "defmt")]
+                                    trace!(
+                                        "Host Request: Service {:?}, Command {:?}, Status {:?}",
+                                        endpoint, host_request.command, host_request.status,
+                                    );
+                                }
+                                Err(_e) => {
+                                    #[cfg(feature = "defmt")]
+                                    error!("MCTP ODP type malformed");
+                                    espi.complete_port(port_event.port);
+
+                                    send_mctp_error_response(espi, port_event.port);
+                                    return;
+                                }
+                            }
                         }
-                        Err(e) => {
-                            // Packet malformed, throw it away and respond with ACPI packet with error in reserved field.
-                            error!("MCTP packet malformed: {:?}", e);
+                        Ok(None) => {
+                            // Partial message, waiting for more packets
+                            error!("Partial msg, should not happen");
+                            unreachable!()
+                        }
+                        Err(_e) => {
+                            // Handle protocol or medium error
+                            error!("MCTP packet malformed");
                             espi.complete_port(port_event.port);
 
                             send_mctp_error_response(espi, port_event.port);
@@ -366,7 +432,7 @@ async fn process_controller_event(
                 }
 
                 espi.complete_port(port_event.port);
-                espi_service.endpoint.send(endpoint, &acpi_msg).await.unwrap();
+                espi_service.endpoint.send(endpoint, &host_request).await.unwrap();
                 info!("MCTP packet forwarded to service: {:?}", endpoint);
             } else {
                 espi.complete_port(port_event.port);

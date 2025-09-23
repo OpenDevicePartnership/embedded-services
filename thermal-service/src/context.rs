@@ -1,10 +1,10 @@
 //! Thermal service context
-use crate::mctp;
 use crate::mptf;
 use crate::{Error, Event, fan, sensor};
 use embassy_sync::channel::Channel;
 use embedded_services::GlobalRawMutex;
 use embedded_services::buffer::OwnedRef;
+use embedded_services::ec_type::message::StdHostRequest;
 use embedded_services::{error, intrusive_list};
 
 embedded_services::define_static_buffer!(mctp_buf, u8, [0u8; 69]);
@@ -17,7 +17,7 @@ pub(crate) struct Context<'a> {
     // MPTF Request Queue
     mptf: Channel<GlobalRawMutex, mptf::Request, 10>,
     // Raw MCTP Payload Queue
-    mctp: Channel<GlobalRawMutex, mctp::AcpiMsgComms<'a>, 10>,
+    mctp: Channel<GlobalRawMutex, StdHostRequest, 10>,
     // MCTP message buffer
     mctp_buf: OwnedRef<'a, u8>,
     // Event queue
@@ -111,12 +111,12 @@ impl<'a> Context<'a> {
         self.mptf.receive().await
     }
 
-    pub(crate) fn send_mctp_payload(&self, msg: mctp::AcpiMsgComms<'a>) -> Result<(), Error> {
+    pub(crate) fn send_mctp_payload(&self, msg: StdHostRequest) -> Result<(), Error> {
         self.mctp.try_send(msg).map_err(|_| Error)?;
         Ok(())
     }
 
-    pub(crate) async fn wait_mctp_payload(&self) -> mctp::AcpiMsgComms<'_> {
+    pub(crate) async fn wait_mctp_payload(&self) -> StdHostRequest {
         self.mctp.receive().await
     }
 
