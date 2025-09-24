@@ -1,0 +1,35 @@
+[package]
+name = "time-alarm-service"
+description = "Time and Alarm service implementation"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+# TODO review these and figure out if we actually need them
+bytemuck.workspace = true
+defmt = { workspace = true, optional = true }
+log = { workspace = true, optional = true }
+embassy-executor.workspace = true
+embassy-futures.workspace = true
+embassy-sync.workspace = true
+embassy-time.workspace = true
+embedded-hal-async.workspace = true
+embedded-hal.workspace = true
+embedded-mcu-hal.workspace = true
+embedded-services.workspace = true
+heapless.workspace = true
+uuid.workspace = true
+
+[features]
+defmt = [
+    "dep:defmt",
+    "embedded-services/defmt",
+    "embassy-time/defmt",
+    "embassy-sync/defmt",
+    "embassy-executor/defmt",
+]
+
+[lints]
+workspace = true
