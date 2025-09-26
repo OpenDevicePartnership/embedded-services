@@ -727,6 +727,7 @@ dependencies = [
  "embedded-usb-pd",
  "fixed",
  "heapless 0.8.0",
+ "portable-atomic",
  "postcard",
  "rand_core",
  "serde",

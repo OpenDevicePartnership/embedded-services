@@ -31,15 +31,26 @@ pub mod type_c;
 ///
 /// Used because ThreadModeRawMutex is not unit test friendly
 /// but CriticalSectionRawMutex would incur a significant performance impact, since it disables interrupts.
-#[cfg(any(test, not(target_os = "none")))]
+#[cfg(any(test, not(target_os = "none"), target_arch = "riscv32"))]
 pub type GlobalRawMutex = embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 /// Global Mutex type, ThreadModeRawMutex is used in a microcontroller context, whereas CriticalSectionRawMutex is used
 /// in a standard context for unit testing.
 ///
 /// Used because ThreadModeRawMutex is not unit test friendly
 /// but CriticalSectionRawMutex would incur a significant performance impact, since it disables interrupts.
-#[cfg(all(not(test), target_os = "none"))]
+#[cfg(all(not(test), target_os = "none", not(target_arch = "riscv32")))]
 pub type GlobalRawMutex = embassy_sync::blocking_mutex::raw::ThreadModeRawMutex;
+
+/// AtomicUsize and Ordering re-exports. Uses core::sync::atomic if the target supports atomic operations,
+/// otherwise falls back to portable-atomic crate.
+#[cfg(target_has_atomic = "ptr")]
+pub use core::sync::atomic::AtomicUsize;
+#[cfg(target_has_atomic = "ptr")]
+pub use core::sync::atomic::Ordering;
+#[cfg(not(target_has_atomic = "ptr"))]
+pub use portable_atomic::AtomicUsize;
+#[cfg(not(target_has_atomic = "ptr"))]
+pub use portable_atomic::Ordering;
 
 /// A cell type that is Sync and Send. CriticalSectionCell is used in a standard context to support multiple cores and
 /// executors.

@@ -764,6 +764,7 @@ dependencies = [
  "fixed",
  "heapless 0.8.0",
  "log",
+ "portable-atomic",
  "postcard",
  "rand_core",
  "serde",

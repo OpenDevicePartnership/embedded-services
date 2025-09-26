@@ -1,5 +1,6 @@
 //! Definitions for deferred execution of commands
-use core::sync::atomic::{AtomicUsize, Ordering};
+use crate::AtomicUsize;
+use crate::Ordering;
 
 use crate::debug;
 use embassy_sync::{blocking_mutex::raw::RawMutex, mutex::Mutex, signal::Signal};

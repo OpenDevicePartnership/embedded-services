@@ -39,6 +39,9 @@ postcard.workspace = true
 rand_core.workspace = true
 serde.workspace = true
 
+[target.'cfg(not(target_has_atomic = "ptr"))'.dependencies]
+portable-atomic.workspace = true
+
 [target.'cfg(target_os = "none")'.dependencies]
 cortex-m-rt.workspace = true
 cortex-m.workspace = true
