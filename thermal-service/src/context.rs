@@ -17,7 +17,7 @@ pub(crate) struct Context<'a> {
     // MPTF Request Queue
     mptf: Channel<GlobalRawMutex, mptf::Request, 10>,
     // Raw MCTP Payload Queue
-    mctp: Channel<GlobalRawMutex, mctp::AcpiMsgComms<'a>, 10>,
+    mctp: Channel<GlobalRawMutex, mctp::HostRequest<'a>, 10>,
     // MCTP message buffer
     mctp_buf: OwnedRef<'a, u8>,
     // Event queue
@@ -111,12 +111,12 @@ impl<'a> Context<'a> {
         self.mptf.receive().await
     }
 
-    pub(crate) fn send_mctp_payload(&self, msg: mctp::AcpiMsgComms<'a>) -> Result<(), Error> {
+    pub(crate) fn send_mctp_payload(&self, msg: mctp::HostRequest<'a>) -> Result<(), Error> {
         self.mctp.try_send(msg).map_err(|_| Error)?;
         Ok(())
     }
 
-    pub(crate) async fn wait_mctp_payload(&self) -> mctp::AcpiMsgComms<'_> {
+    pub(crate) async fn wait_mctp_payload(&self) -> mctp::HostRequest<'_> {
         self.mctp.receive().await
     }
 

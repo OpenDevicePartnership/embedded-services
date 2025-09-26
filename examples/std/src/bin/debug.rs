@@ -16,7 +16,7 @@ mod espi_service {
     use embedded_services::GlobalRawMutex;
     use embedded_services::buffer::OwnedRef;
     use embedded_services::comms::{self, EndpointID, External, Internal};
-    use embedded_services::ec_type::message::{AcpiMsgComms, HostMsg, NotificationMsg};
+    use embedded_services::ec_type::message::{HostMsg, HostRequest, NotificationMsg};
     use log::{info, trace};
 
     // Max defmt payload we expect to shuttle in this mock
@@ -125,13 +125,15 @@ mod espi_service {
                 buf[..req_len].copy_from_slice(request);
             }
 
-            // Send an ACK/"OOB request" (as AcpiMsgComms) to the Debug service
+            // Send an ACK/"OOB request" (as HostRequest) to the Debug service
             let _ = comms::send(
                 EndpointID::External(External::Host),
                 EndpointID::Internal(Internal::Debug),
-                &AcpiMsgComms {
+                &HostRequest {
                     payload: debug_req_buf::get(),
                     payload_len: req_len,
+                    command: 0,
+                    status: 0,
                 },
             )
             .await;

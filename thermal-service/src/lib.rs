@@ -49,7 +49,7 @@ impl<'a> Service<'a> {
 impl<'a> comms::MailboxDelegate for Service<'a> {
     fn receive(&self, message: &comms::Message) -> Result<(), comms::MailboxDelegateError> {
         // Queue for later processing
-        if let Some(msg) = message.data.get::<mctp::AcpiMsgComms>() {
+        if let Some(msg) = message.data.get::<mctp::HostRequest>() {
             self.context
                 .send_mctp_payload(msg.clone())
                 .map_err(|_| comms::MailboxDelegateError::BufferFull)
@@ -100,7 +100,7 @@ pub async fn wait_mptf_request() -> mptf::Request {
 }
 
 /// Wait for a MCTP payload
-pub async fn wait_mctp_payload<'a>() -> mctp::AcpiMsgComms<'a> {
+pub async fn wait_mctp_payload<'a>() -> mctp::HostRequest<'a> {
     SERVICE.get().await.context.wait_mctp_payload().await
 }
 
