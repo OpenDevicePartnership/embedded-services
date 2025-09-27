@@ -1,4 +1,4 @@
-use crate::{AlarmExpiredWakePolicy, TimerStatus};
+use crate::{AlarmExpiredWakePolicy, ClockState, TimerStatus};
 use core::cell::RefCell;
 use embassy_futures::select::{Either, select};
 use embassy_sync::{blocking_mutex::Mutex, signal::Signal};
@@ -23,24 +23,67 @@ enum WakeState {
     ExpiredOrphaned,
 }
 
-// TODO do we want to do something like this to make persistent storage easier to read?
-// struct PersistentAlarmExpiredWakePolicy {
-//     wake_policy: AlarmExpiredWakePolicy,
-//     storage: &'static mut dyn NvramStorage<'static, u32>,
-// }
-// struct PersistentExpirationTime {
-//     expiration_time: Option<Datetime>,
-//     storage: &'static mut dyn NvramStorage<'static, u32>,
-// }
+mod persistent_storage {
+    use crate::{AlarmExpiredWakePolicy, Datetime};
+    use embedded_mcu_hal::NvramStorage;
+
+    pub struct PersistentStorage {
+        /// When the timer is programmed to expire, or None if the timer is not set
+        /// This can't be part of the wake_state because we need to be able to report its value for _CWS even when the timer has expired and
+        /// we're handling the power source policy.
+        expiration_time_storage: &'static mut dyn NvramStorage<'static, u32>,
+
+        // Persistent storage for the AlarmExpiredWakePolicy
+        wake_policy_storage: &'static mut dyn NvramStorage<'static, u32>,
+    }
+
+    impl PersistentStorage {
+        pub fn new(
+            expiration_time_storage: &'static mut dyn NvramStorage<'static, u32>,
+            wake_policy_storage: &'static mut dyn NvramStorage<'static, u32>,
+        ) -> Self {
+            Self {
+                expiration_time_storage,
+                wake_policy_storage,
+            }
+        }
+
+        const NO_EXPIRATION_TIME: u32 = u32::MAX;
+
+        pub fn get_timer_wake_policy(&self) -> AlarmExpiredWakePolicy {
+            AlarmExpiredWakePolicy(self.wake_policy_storage.read())
+        }
+
+        pub fn set_timer_wake_policy(&mut self, wake_policy: AlarmExpiredWakePolicy) {
+            self.wake_policy_storage.write(wake_policy.0);
+        }
+
+        pub fn get_expiration_time(&self) -> Option<Datetime> {
+            match self.expiration_time_storage.read() {
+                Self::NO_EXPIRATION_TIME => None,
+                secs => Some(Datetime::from_unix_time_seconds(secs.into())),
+            }
+        }
+
+        pub fn set_expiration_time(&mut self, expiration_time: Option<Datetime>) {
+            match expiration_time {
+                Some(dt) => {
+                    self.expiration_time_storage
+                        .write(dt.to_unix_time_seconds().try_into().expect(
+                            "Datetime::to_unix_timestamp() returns i64, which should always fit in u32 until the year 2106",
+                        ));
+                }
+                None => {
+                    self.expiration_time_storage.write(Self::NO_EXPIRATION_TIME);
+                }
+            }
+        }
+    }
+}
+use persistent_storage::PersistentStorage;
 
 struct TimerState {
-    /// When the timer is programmed to expire, or None if the timer is not set
-    /// This can't be part of the wake_state because we need to be able to report its value for _CWS even when the timer has expired and
-    /// we're handling the power source policy.
-    expiration_time_storage: &'static mut dyn NvramStorage<'static, u32>,
-
-    // Persistent storage for the AlarmExpiredWakePolicy
-    wake_policy_storage: &'static mut dyn NvramStorage<'static, u32>,
+    persistent_storage: PersistentStorage,
 
     wake_state: WakeState,
 
@@ -52,38 +95,7 @@ struct TimerState {
 }
 
 impl TimerState {
-    const NO_EXPIRATION_TIME: u32 = u32::MAX;
 
-    fn get_timer_wake_policy(&self) -> AlarmExpiredWakePolicy {
-        AlarmExpiredWakePolicy(self.wake_policy_storage.read())
-    }
-
-    fn set_timer_wake_policy(&mut self, wake_policy: AlarmExpiredWakePolicy) {
-        self.wake_policy_storage.write(wake_policy.0);
-    }
-
-    fn get_expiration_time(&self) -> Option<Datetime> {
-        match self.expiration_time_storage.read() {
-            Self::NO_EXPIRATION_TIME => None,
-            secs => Some(Datetime::from_unix_time_seconds(secs.into())),
-        }
-    }
-
-    fn set_expiration_time(&mut self, expiration_time: Option<Datetime>) {
-        match expiration_time {
-            Some(dt) => {
-                self.expiration_time_storage
-                    .write(dt.to_unix_time_seconds().try_into().expect(
-                        "Datetime::to_unix_timestamp() returns i64, which should always fit in u32 until the year 2106",
-                    ));
-                self.wake_state = WakeState::Armed;
-            }
-            None => {
-                self.expiration_time_storage.write(Self::NO_EXPIRATION_TIME);
-                self.wake_state = WakeState::Clear;
-            }
-        }
-    }
 }
 
 pub(crate) struct Timer {
@@ -94,39 +106,36 @@ pub(crate) struct Timer {
 
 impl Timer {
     pub fn new(
-        active: bool,
         expiration_time_storage: &'static mut dyn NvramStorage<'static, u32>,
         wake_policy_storage: &'static mut dyn NvramStorage<'static, u32>,
     ) -> Self {
-        let result = Self {
+        Self {
             timer_state: Mutex::new(RefCell::new(TimerState {
-                expiration_time_storage,
-                wake_policy_storage,
-
+                persistent_storage: PersistentStorage::new(expiration_time_storage, wake_policy_storage),
                 wake_state: WakeState::Clear,
-
                 timer_status: Default::default(),
                 is_active: false,
             })),
             timer_signal: Signal::new(),
-        };
+        }
+    }
 
-        // TODO make sure there's not some weird edge case here with coming back from a power loss - we may need to suppress the wake policy timer in this case?
-        result.set_timer_wake_policy(
-            result
+    pub fn start(&self, clock_state: &'static Mutex<GlobalRawMutex, RefCell<ClockState>>, active: bool) {
+        self.set_timer_wake_policy(
+            clock_state,
+            self
                 .timer_state
-                .lock(|timer_state| timer_state.borrow().get_timer_wake_policy()),
+                .lock(|timer_state| timer_state.borrow().persistent_storage.get_timer_wake_policy()),
         );
 
-        result.set_expiration_time(
-            result
+        self.set_expiration_time(
+            clock_state,
+            self
                 .timer_state
-                .lock(|timer_state| timer_state.borrow().get_expiration_time()),
+                .lock(|timer_state| timer_state.borrow().persistent_storage.get_expiration_time()),
         );
 
-        result.set_active(active);
-
-        result
+        self.set_active(clock_state, active);
     }
 
     pub fn get_wake_status(&self) -> TimerStatus {
@@ -143,27 +152,26 @@ impl Timer {
         });
     }
 
-    // TODO [SPEC_QUESTION] the spec is ambiguous on whether or not this policy should include the number of seconds that have elapsed against it
+    // TODO [SPEC] the spec is ambiguous on whether or not this policy should include the number of seconds that have elapsed against it
     //     (i.e. if the user set it to 60s and 45s have elapsed since we switched to the expired power source, should we report
     //      60s or 15s?)- see if we can get a concrete answer on this.
     //
     pub fn get_timer_wake_policy(&self) -> AlarmExpiredWakePolicy {
         self.timer_state
-            .lock(|timer_state| timer_state.borrow().get_timer_wake_policy())
+            .lock(|timer_state| timer_state.borrow().persistent_storage.get_timer_wake_policy())
     }
 
-    pub fn set_timer_wake_policy(&self, wake_policy: AlarmExpiredWakePolicy) {
+    pub fn set_timer_wake_policy(&self, clock_state: &'static Mutex<GlobalRawMutex, RefCell<ClockState>>, wake_policy: AlarmExpiredWakePolicy) {
         self.timer_state.lock(|timer_state| {
             let mut timer_state = timer_state.borrow_mut();
-            timer_state.set_timer_wake_policy(wake_policy);
+            timer_state.persistent_storage.set_timer_wake_policy(wake_policy);
 
-            // TODO [SPEC_QUESTION] verify this is correct - the spec isn't particularly clear on what should happen if reprogramming the policy while it's actively ticking down,
+            // TODO [SPEC] verify this is correct - the spec isn't particularly clear on what should happen if reprogramming the policy while it's actively ticking down,
             //      may need to look at the windows acpi implementation or something
             //
             if let WakeState::ExpiredWaitingForPolicyDelay(_, _) = timer_state.wake_state {
                 timer_state.wake_state = WakeState::ExpiredWaitingForPolicyDelay(
-                    crate::get_current_datetime()
-                        .expect("Datetime clock should have already been initialized before we were constructed"),
+                    Self::get_current_datetime(clock_state),
                     0,
                 );
                 self.timer_signal.signal(Some(wake_policy.0));
@@ -171,7 +179,7 @@ impl Timer {
         })
     }
 
-    pub fn set_expiration_time(&self, expiration_time: Option<Datetime>) {
+    pub fn set_expiration_time(&self, clock_state: &'static Mutex<GlobalRawMutex, RefCell<ClockState>>, expiration_time: Option<Datetime>) {
         self.timer_state.lock(|timer_state| {
             let mut timer_state = timer_state.borrow_mut();
 
@@ -180,14 +188,14 @@ impl Timer {
 
             match expiration_time {
                 Some(dt) => {
-                    timer_state.set_expiration_time(expiration_time);
+                    timer_state.persistent_storage.set_expiration_time(expiration_time);
                     timer_state.wake_state = WakeState::Armed;
 
                     // Note: If the expiration time was in the past, this will immediately trigger the timer to expire.
                     self.timer_signal.signal(Some(
                         dt
                             .to_unix_time_seconds()
-                            .saturating_sub(crate::get_current_datetime().expect("datetime clocks should have been initialized before we were constructed").to_unix_time_seconds()).try_into()
+                            .saturating_sub(Self::get_current_datetime(clock_state).to_unix_time_seconds()).try_into()
                             .expect("Users should not have been able to program a time greater than u32::MAX seconds in the future - the ACPI spec prevents it")
                     ));
                 }
@@ -198,10 +206,10 @@ impl Timer {
 
     pub fn get_expiration_time(&self) -> Option<Datetime> {
         self.timer_state
-            .lock(|timer_state| timer_state.borrow().get_expiration_time())
+            .lock(|timer_state| timer_state.borrow().persistent_storage.get_expiration_time())
     }
 
-    pub fn set_active(&self, is_active: bool) {
+    pub fn set_active(&self, clock_state: &'static Mutex<GlobalRawMutex, RefCell<ClockState>>, is_active: bool) {
         self.timer_state.lock(|timer_state| {
             let mut timer_state = timer_state.borrow_mut();
 
@@ -215,12 +223,11 @@ impl Timer {
             if !was_active {
                 if let WakeState::ExpiredWaitingForPowerSource(seconds_already_elapsed) = timer_state.wake_state {
                     timer_state.wake_state = WakeState::ExpiredWaitingForPolicyDelay(
-                        crate::get_current_datetime()
-                            .expect("datetime clock should have already been initialized before we were constructed"),
+                        Self::get_current_datetime(clock_state),
                         seconds_already_elapsed,
                     );
                     self.timer_signal.signal(Some(
-                        timer_state
+                        timer_state.persistent_storage
                             .get_timer_wake_policy()
                             .0
                             .saturating_sub(seconds_already_elapsed),
@@ -231,10 +238,10 @@ impl Timer {
                     timer_state.wake_state
                 {
                     let total_seconds_elapsed_on_policy_delay: u32 = seconds_elapsed_before_wait
-                        + (crate::get_current_datetime()
-                            .expect("Datetime clock should have already been initialized before we were constructed")
+                        + u32::try_from(Self::get_current_datetime(clock_state)
                             .to_unix_time_seconds()
-                            .saturating_sub(wait_start_time.to_unix_time_seconds())) as u32; // TODO figure out how to make this build without the cast
+                            .saturating_sub(wait_start_time.to_unix_time_seconds()))
+                            .expect("The ACPI spec expresses timeouts in terms of u32s - it's impossible to schedule a timer u32::MAX seconds in the future");
 
                     timer_state.wake_state =
                         WakeState::ExpiredWaitingForPowerSource(total_seconds_elapsed_on_policy_delay);
@@ -244,7 +251,7 @@ impl Timer {
         });
     }
 
-    pub(crate) async fn wait_until_wake(&self) {
+    pub(crate) async fn wait_until_wake(&self, clock_state: &'static Mutex<GlobalRawMutex, RefCell<ClockState>>) {
         let mut wait_duration: Option<u32> = self.timer_signal.wait().await;
 
         loop {
@@ -258,7 +265,7 @@ impl Timer {
                         .await
                         {
                             Either::First(()) => {
-                                if self.process_expired_timer() {
+                                if self.process_expired_timer(clock_state) {
                                     return;
                                 }
                             }
@@ -278,7 +285,7 @@ impl Timer {
 
     /// Handles state changes for when the timer expires (figuring out what to do based on the current power source, etc).
     /// Returns true if the timer's expiry indicates that a wake event should be signaled to the host.
-    fn process_expired_timer(&self) -> bool {
+    fn process_expired_timer(&self, clock_state: &'static Mutex<GlobalRawMutex, RefCell<ClockState>>) -> bool {
         self.timer_state.lock(|timer_state| {
             let mut timer_state = timer_state.borrow_mut();
 
@@ -289,9 +296,9 @@ impl Timer {
                 WakeState::Clear | WakeState::ExpiredOrphaned | WakeState::ExpiredWaitingForPowerSource(_) => return false,
 
                 WakeState::Armed | WakeState::ExpiredWaitingForPolicyDelay(_, _) => {
-                    let now = crate::get_current_datetime().expect("Datetime clock should have already been initialized before we were constructed");
-                    let expiration_time = timer_state.get_expiration_time().expect("We should never be in the Armed or ExpiredWaitingForPolicyDelay states if there's no expiration time set");
-                    if now.to_unix_time_seconds() < expiration_time.to_unix_time_seconds() { // TODO we should probably implement Ord for Datetime and use that
+                    let now = Self::get_current_datetime(clock_state);
+                    let expiration_time = timer_state.persistent_storage.get_expiration_time().expect("We should never be in the Armed or ExpiredWaitingForPolicyDelay states if there's no expiration time set");
+                    if now.to_unix_time_seconds() < expiration_time.to_unix_time_seconds() {
                         // Time hasn't actually passed the mark yet - this can happen if we were reprogrammed with a different time right as the old timer was expiring. Reset the timer.
                         timer_state.wake_state = WakeState::Armed;
                         self.timer_signal.signal(Some(expiration_time
@@ -305,17 +312,18 @@ impl Timer {
                     timer_state.timer_status.timer_expired = true;
                     if timer_state.is_active {
                         timer_state.timer_status.timer_triggered_wake = true;
+                        timer_state.persistent_storage.set_timer_wake_policy(AlarmExpiredWakePolicy::NEVER);
                         self.clear_expiration_time(&mut timer_state);
                         return true;
                     }
                     else {
-                        if timer_state.get_timer_wake_policy() == AlarmExpiredWakePolicy::NEVER {
+                        if timer_state.persistent_storage.get_timer_wake_policy() == AlarmExpiredWakePolicy::NEVER {
                             timer_state.wake_state = WakeState::ExpiredOrphaned;
                             return false;
                         }
 
                         if let WakeState::ExpiredWaitingForPolicyDelay(_, _) = timer_state.wake_state {
-                            timer_state.wake_state = WakeState::ExpiredWaitingForPowerSource(timer_state.get_timer_wake_policy().0);
+                            timer_state.wake_state = WakeState::ExpiredWaitingForPowerSource(timer_state.persistent_storage.get_timer_wake_policy().0);
                         } else {
                             timer_state.wake_state = WakeState::ExpiredWaitingForPowerSource(0);
                         }
@@ -328,9 +336,14 @@ impl Timer {
     }
 
     fn clear_expiration_time(&self, timer_state: &mut TimerState) {
-        timer_state.set_expiration_time(None);
-        timer_state.set_timer_wake_policy(AlarmExpiredWakePolicy::NEVER);
+        timer_state.persistent_storage.set_expiration_time(None);
         timer_state.wake_state = WakeState::Clear;
         self.timer_signal.signal(None);
     }
+
+    fn get_current_datetime(clock_state: &'static Mutex<GlobalRawMutex, RefCell<ClockState>>) -> Datetime {
+        clock_state.lock(|clock_state| clock_state.borrow().datetime_clock.get_current_datetime()
+            .expect("Datetime clock should have already been initialized before we were constructed"))
+    }
+
 }

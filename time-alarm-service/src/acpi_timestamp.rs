@@ -3,7 +3,7 @@ use embedded_mcu_hal::time::{Datetime, UncheckedDatetime};
 use crate::TimeAlarmError;
 
 // Timestamp structure as specified in the ACPI spec.  Must be exactly this layout.
-// TODO are there any endianness shenanigans associated with bytemuck here?
+// TODO [TESTING] are there any endianness shenanigans associated with bytemuck here?
 #[repr(C)]
 #[derive(bytemuck::Pod, bytemuck::Zeroable, Copy, Clone, Debug)]
 struct RawAcpiTimestamp {
@@ -28,7 +28,8 @@ struct RawAcpiTimestamp {
     // For _GRT, 0 = time is not valid (request failed), 1 = time is valid.  For _SRT, this is padding and should be 0.
     valid_or_padding: u8,
 
-    // Millseconds: 1-1000. Leap seconds are not supported.  // TODO ACPI spec says 1-1000, but surely it should be 0-999? what's up with that? We may need to do some translation if this isn't just a typo in the spec
+    // Millseconds: 1-1000. Leap seconds are not supported.
+    // TODO [SPEC] The ACPI spec says 1-1000, but it seems like it should be 0-999? We may need to do some translation if this isn't just a typo in the spec.
     milliseconds: u16,
 
     // Time zone: -1440 to 1440 in minutes from UTC, or 2047 if unspecified
@@ -52,26 +53,8 @@ impl RawAcpiTimestamp {
     pub fn as_bytes(&self) -> &[u8; core::mem::size_of::<Self>()] /* 16 */ {
         bytemuck::bytes_of(self).try_into().expect("Should never fail because we know the size of AcpiTimestamp at compile time")
     }
-
-    #[allow(dead_code)] // TODO either use this or remove it. I think we only need it if we want to return an invalid timestamp to the host rather than an error code that the ASL translates into the invalid timestamp structure to report failure.
-    pub fn invalid() -> Self {
-        Self {
-            year: 0,
-            month: 0,
-            day: 0,
-            hour: 0,
-            minute: 0,
-            second: 0,
-            valid_or_padding: 0, // invalid
-            milliseconds: 0,
-            time_zone: 0,
-            daylight: 0,
-            _padding: [0; 3],
-        }
-    }
 }
 
-// TODO s/AcpiTimestamp/AcpiTime/?
 impl From<&AcpiTimestamp> for RawAcpiTimestamp {
     fn from(ts: &AcpiTimestamp) -> Self {
         Self {
@@ -204,14 +187,9 @@ impl AcpiTimestamp {
                 minute: raw.minute,
                 second: raw.second,
                 nanosecond: (raw.milliseconds as u32) * 1_000_000,
-            }).map_err(|_| TimeAlarmError::InvalidArgument)?, // TODO verify that this is sufficient validation
+            })?,
             time_zone: raw.time_zone.try_into()?,
             dst_status: raw.daylight.try_into()?,
         })
-    }
-
-    #[allow(dead_code)] // TODO either use this or remove it. I think we only need it if we want to return an invalid timestamp to the host rather than an error code that the ASL translates into the invalid timestamp structure to report failure.
-    pub fn invalid_timestamp_bytes() -> [u8; core::mem::size_of::<RawAcpiTimestamp>()] /* 16 */ {
-        *RawAcpiTimestamp::invalid().as_bytes()
     }
 }
