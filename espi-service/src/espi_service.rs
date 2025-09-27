@@ -66,10 +66,6 @@ impl Service<'_, '_> {
                 && offset < offset_of!(ec_type::structure::ECMemory, therm) + size_of::<ec_type::structure::Thermal>()
             {
                 self.route_to_thermal_service(&mut offset, &mut length).await?;
-            } else if offset >= offset_of!(ec_type::structure::ECMemory, alarm)
-                && offset < offset_of!(ec_type::structure::ECMemory, alarm) + size_of::<ec_type::structure::TimeAlarm>()
-            {
-                self.route_to_time_alarm_service(&mut offset, &mut length).await?;
             }
         }
 
@@ -108,26 +104,6 @@ impl Service<'_, '_> {
         comms::send(
             EndpointID::External(External::Host),
             EndpointID::Internal(Internal::Thermal),
-            &msg,
-        )
-        .await
-        .unwrap();
-
-        Ok(())
-    }
-
-    async fn route_to_time_alarm_service(&self, offset: &mut usize, length: &mut usize) -> Result<(), ec_type::Error> {
-        let msg = {
-            let memory_map = self
-                .ec_memory
-                .try_lock()
-                .expect("Messages handled one after another, should be infallible.");
-            ec_type::mem_map_to_time_alarm_msg(&memory_map, offset, length)?
-        };
-
-        comms::send(
-            EndpointID::External(External::Host),
-            EndpointID::Internal(Internal::TimeAlarm),
             &msg,
         )
         .await
@@ -245,8 +221,6 @@ impl comms::MailboxDelegate for Service<'_, '_> {
                 ec_type::update_battery_section(msg, &mut memory_map);
             } else if let Some(msg) = message.data.get::<ec_type::message::ThermalMessage>() {
                 ec_type::update_thermal_section(msg, &mut memory_map);
-            } else if let Some(msg) = message.data.get::<ec_type::message::TimeAlarmMessage>() {
-                ec_type::update_time_alarm_section(msg, &mut memory_map);
             } else {
                 return Err(comms::MailboxDelegateError::MessageNotFound);
             }

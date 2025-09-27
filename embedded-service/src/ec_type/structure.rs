@@ -1,5 +1,6 @@
 //! EC Internal Data Structures
 
+// TODO need to rev? do we need to update yaml?
 #[allow(missing_docs)]
 pub const EC_MEMMAP_VERSION: Version = Version {
     major: 0,
@@ -32,29 +33,6 @@ pub struct Capabilities {
     pub key_mask: u16,
     pub debug_mask: u16,
     pub res0: u16,
-}
-
-#[allow(missing_docs)]
-#[repr(C, packed)]
-#[derive(Clone, Copy, Debug, Default)]
-pub struct TimeAlarm {
-    pub events: u32,
-    pub capability: u32,
-    pub year: u16,
-    pub month: u8,
-    pub day: u8,
-    pub hour: u8,
-    pub minute: u8,
-    pub second: u8,
-    pub valid: u8,
-    pub daylight: u8,
-    pub res1: u8,
-    pub milli: u16,
-    pub time_zone: u16,
-    pub res2: u16,
-    pub alarm_status: u32,
-    pub ac_time_val: u32,
-    pub dc_time_val: u32,
 }
 
 #[allow(missing_docs)]
@@ -125,7 +103,6 @@ pub struct ECMemory {
     pub ver: Version,
     pub caps: Capabilities,
     pub notif: Notifications,
-    pub alarm: TimeAlarm,
     pub batt: Battery,
     pub therm: Thermal,
 }
