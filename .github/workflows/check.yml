@@ -111,7 +111,7 @@ jobs:
       # intentionally no target specifier; see https://github.com/jonhoo/rust-ci-conf/pull/4
       # --feature-powerset runs for every combination of features
       - name: cargo hack
-        run: cargo hack --feature-powerset --mutually-exclusive-features=log,defmt clippy --locked --target ${{ matrix.target }}
+        run: cargo hack --feature-powerset --mutually-exclusive-features=log,defmt,defmt-timestamp-uptime clippy --locked --target ${{ matrix.target }}
 
   deny:
     # cargo-deny checks licenses, advisories, sources, and bans for
