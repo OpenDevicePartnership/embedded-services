@@ -5,20 +5,26 @@ use embedded_services::debug;
 use embedded_services::type_c::controller::{InternalResponseData, Response};
 use embedded_services::type_c::Cached;
 use embedded_usb_pd::constants::{T_SRC_TRANS_REQ_EPR_MS, T_SRC_TRANS_REQ_SPR_MS};
-use embedded_usb_pd::ucsi;
+use embedded_usb_pd::ucsi::{self, lpm};
 
 use super::*;
 
-impl<'a, const N: usize, C: Controller, BACK: Backing<'a>, V: FwOfferValidator> ControllerWrapper<'a, N, C, BACK, V> {
-    async fn process_get_pd_alert(&self, local_port: LocalPortId) -> Result<Option<Ado>, PdError> {
-        let mut backing = self.backing.lock().await;
-        let mut channel = match backing.pd_alert_channel_mut(local_port.0 as usize).await {
-            Some(channel) => channel,
-            None => return Err(PdError::InvalidPort),
-        };
+impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, M, C, V> {
+    async fn process_get_pd_alert(
+        &self,
+        state: &mut dyn DynPortState<'_>,
+        local_port: LocalPortId,
+    ) -> Result<Option<Ado>, PdError> {
+        if local_port.0 as usize >= state.num_ports() {
+            return Err(PdError::InvalidPort);
+        }
 
         loop {
-            match channel.1.try_next_message() {
+            match state.port_states_mut()[local_port.0 as usize]
+                .pd_alerts
+                .1
+                .try_next_message()
+            {
                 Some(WaitResult::Message(alert)) => return Ok(Some(alert)),
                 None => return Ok(None),
                 Some(WaitResult::Lagged(count)) => {
@@ -37,17 +43,17 @@ impl<'a, const N: usize, C: Controller, BACK: Backing<'a>, V: FwOfferValidator> 
     /// even for controllers that might not always broadcast sink ready events.
     pub(super) async fn check_sink_ready_timeout(
         &self,
-        state: &mut InternalState<N>,
+        state: &mut dyn DynPortState<'_>,
         status: &PortStatus,
         port: LocalPortId,
         new_contract: bool,
         sink_ready: bool,
     ) -> Result<(), PdError> {
-        if port.0 as usize >= N {
+        if port.0 as usize >= state.num_ports() {
             return Err(PdError::InvalidPort);
         }
 
-        let deadline = &mut state.port_states[port.0 as usize].sink_ready_deadline;
+        let deadline = &mut state.port_states_mut()[port.0 as usize].sink_ready_deadline;
 
         if new_contract && !sink_ready {
             // Start the timeout
@@ -72,12 +78,19 @@ impl<'a, const N: usize, C: Controller, BACK: Backing<'a>, V: FwOfferValidator> 
     ///
     /// DROP SAFETY: No state to restore
     pub(super) async fn wait_sink_ready_timeout(&self) -> LocalPortId {
-        let futures: [_; N] = from_fn(|i| async move {
-            let deadline = self.state.lock().await.port_states[i].sink_ready_deadline;
+        let futures: [_; MAX_SUPPORTED_PORTS] = from_fn(|i| async move {
+            let deadline = self
+                .state
+                .lock()
+                .await
+                .port_states()
+                .get(i)
+                .and_then(|s| s.sink_ready_deadline);
+
             if let Some(deadline) = deadline {
                 Timer::at(deadline).await;
                 debug!("Port{}: Sink ready timeout reached", i);
-                self.state.lock().await.port_states[i].sink_ready_deadline = None;
+                self.state.lock().await.port_states_mut()[i].sink_ready_deadline = None;
             } else {
                 pending::<()>().await;
             }
@@ -104,7 +117,7 @@ impl<'a, const N: usize, C: Controller, BACK: Backing<'a>, V: FwOfferValidator> 
         local_port: LocalPortId,
         voltage_mv: Option<u16>,
     ) -> Result<controller::PortResponseData, PdError> {
-        let power_device = self.get_power_device(local_port)?;
+        let power_device = self.get_power_device(local_port).ok_or(PdError::InvalidPort)?;
 
         let state = power_device.state().await;
         debug!("Port{}: Current state: {:#?}", local_port.0, state);
@@ -139,13 +152,17 @@ impl<'a, const N: usize, C: Controller, BACK: Backing<'a>, V: FwOfferValidator> 
     async fn process_get_port_status(
         &self,
         controller: &mut C,
-        state: &mut InternalState<N>,
+        state: &mut dyn DynPortState<'_>,
         local_port: LocalPortId,
         cached: Cached,
     ) -> Result<controller::PortResponseData, PdError> {
         if cached.0 {
+            if local_port.0 as usize >= state.num_ports() {
+                return Err(PdError::InvalidPort);
+            }
+
             Ok(controller::PortResponseData::PortStatus(
-                state.port_states[local_port.0 as usize].status,
+                state.port_states()[local_port.0 as usize].status,
             ))
         } else {
             match controller.get_port_status(local_port).await {
@@ -162,16 +179,17 @@ impl<'a, const N: usize, C: Controller, BACK: Backing<'a>, V: FwOfferValidator> 
     async fn process_port_command(
         &self,
         controller: &mut C,
-        state: &mut InternalState<N>,
+        state: &mut dyn DynPortState<'_>,
         command: &controller::PortCommand,
     ) -> Response<'static> {
-        if state.fw_update_state.in_progress() {
+        if state.controller_state().fw_update_state.in_progress() {
             debug!("FW update in progress, ignoring port command");
             return controller::Response::Port(Err(PdError::Busy));
         }
 
-        let local_port = self.pd_controller.lookup_local_port(command.port);
+        let local_port = self.registration.pd_controller.lookup_local_port(command.port);
         if local_port.is_err() {
+            debug!("Invalid port: {:?}", command.port);
             return controller::Response::Port(Err(PdError::InvalidPort));
         }
 
@@ -183,7 +201,7 @@ impl<'a, const N: usize, C: Controller, BACK: Backing<'a>, V: FwOfferValidator> 
             }
             controller::PortCommandData::ClearEvents => {
                 let port_index = local_port.0 as usize;
-                let event = core::mem::take(&mut state.port_states[port_index].pending_events);
+                let event = core::mem::take(&mut state.port_states_mut()[port_index].pending_events);
                 Ok(controller::PortResponseData::ClearEvents(event))
             }
             controller::PortCommandData::RetimerFwUpdateGetState => {
@@ -227,12 +245,12 @@ impl<'a, const N: usize, C: Controller, BACK: Backing<'a>, V: FwOfferValidator> 
                     Error::Pd(e) => Err(e),
                 },
             },
-            controller::PortCommandData::GetPdAlert => match self.process_get_pd_alert(local_port).await {
+            controller::PortCommandData::GetPdAlert => match self.process_get_pd_alert(state, local_port).await {
                 Ok(alert) => Ok(controller::PortResponseData::PdAlert(alert)),
                 Err(e) => Err(e),
             },
             controller::PortCommandData::SetMaxSinkVoltage(voltage_mv) => {
-                match self.pd_controller.lookup_local_port(command.port) {
+                match self.registration.pd_controller.lookup_local_port(command.port) {
                     Ok(local_port) => {
                         self.process_set_max_sink_voltage(controller, local_port, voltage_mv)
                             .await
@@ -329,16 +347,27 @@ impl<'a, const N: usize, C: Controller, BACK: Backing<'a>, V: FwOfferValidator> 
                     },
                 }
             }
+            controller::PortCommandData::ExecuteUcsiCommand(command_data) => {
+                Ok(controller::PortResponseData::UcsiResponse(
+                    controller
+                        .execute_ucsi_command(lpm::Command::new(local_port, command_data))
+                        .await
+                        .map_err(|e| match e {
+                            Error::Bus(_) => PdError::Failed,
+                            Error::Pd(e) => e,
+                        }),
+                ))
+            }
         })
     }
 
     async fn process_controller_command(
         &self,
         controller: &mut C,
-        state: &mut InternalState<N>,
+        state: &mut dyn DynPortState<'_>,
         command: &controller::InternalCommandData,
     ) -> Response<'static> {
-        if state.fw_update_state.in_progress() {
+        if state.controller_state().fw_update_state.in_progress() {
             debug!("FW update in progress, ignoring controller command");
             return controller::Response::Controller(Err(PdError::Busy));
         }
@@ -371,7 +400,7 @@ impl<'a, const N: usize, C: Controller, BACK: Backing<'a>, V: FwOfferValidator> 
     pub(super) async fn process_pd_command(
         &self,
         controller: &mut C,
-        state: &mut InternalState<N>,
+        state: &mut dyn DynPortState<'_>,
         command: &controller::Command,
     ) -> Response<'static> {
         match command {

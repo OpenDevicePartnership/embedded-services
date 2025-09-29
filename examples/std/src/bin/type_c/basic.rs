@@ -70,16 +70,16 @@ mod test_controller {
         }
 
         async fn process_ucsi_command(&self, command: &lpm::GlobalCommand) -> ucsi::GlobalResponse {
-            match command.operation {
-                lpm::CommandData::ConnectorReset(reset_type) => {
-                    info!("Reset ({:#?}) for port {:#?}", reset_type, command.port);
+            match command.operation() {
+                lpm::CommandData::ConnectorReset => {
+                    info!("Reset for port {:#?}", command.port());
                     ucsi::Response {
                         cci: ucsi::cci::Cci::new_cmd_complete(),
                         data: None,
                     }
                 }
                 rest => {
-                    info!("UCSI command {:#?} for port {:#?}", rest, command.port);
+                    info!("UCSI command {:#?} for port {:#?}", rest, command.port());
                     ucsi::Response {
                         cci: ucsi::cci::Cci::new_cmd_complete(),
                         data: None,
@@ -152,9 +152,20 @@ async fn task(spawner: Spawner) {
 
     context.reset_controller(CONTROLLER0).await.unwrap();
     info!("Reset controller done");
-    context.reset_port(PORT0, lpm::ResetType::Hard).await.unwrap();
+    context
+        .execute_ucsi_command(lpm::GlobalCommand::new(PORT0, lpm::CommandData::ConnectorReset))
+        .await
+        .unwrap()
+        .unwrap();
+
     info!("Reset port 0 done");
-    context.reset_port(PORT1, lpm::ResetType::Data).await.unwrap();
+
+    context
+        .execute_ucsi_command(lpm::GlobalCommand::new(PORT1, lpm::CommandData::ConnectorReset))
+        .await
+        .unwrap()
+        .unwrap();
+
     info!("Reset port 1 done");
 
     let status = context.get_controller_status(CONTROLLER0).await.unwrap();

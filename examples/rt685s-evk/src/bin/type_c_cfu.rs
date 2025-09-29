@@ -8,7 +8,6 @@ use embassy_imxrt::gpio::{Input, Inverter, Pull};
 use embassy_imxrt::i2c::Async;
 use embassy_imxrt::i2c::master::{Config, I2cMaster};
 use embassy_imxrt::{bind_interrupts, peripherals};
-use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_sync::mutex::Mutex;
 use embassy_time::Timer;
 use embassy_time::{self as _, Delay};
@@ -24,7 +23,7 @@ use embedded_usb_pd::GlobalPortId;
 use static_cell::StaticCell;
 use tps6699x::asynchronous::embassy as tps6699x;
 use type_c_service::driver::tps6699x::{self as tps6699x_drv};
-use type_c_service::wrapper::backing::{BackingDefault, BackingDefaultStorage};
+use type_c_service::wrapper::backing::{ReferencedStorage, Storage};
 
 extern crate rt685s_evk_example;
 
@@ -42,11 +41,10 @@ impl type_c_service::wrapper::FwOfferValidator for Validator {
 }
 
 type BusMaster<'a> = I2cMaster<'a, Async>;
-type BusDevice<'a> = I2cDevice<'a, NoopRawMutex, BusMaster<'a>>;
-type Wrapper<'a> =
-    tps6699x_drv::Tps66994Wrapper<'a, NoopRawMutex, BusDevice<'a>, BackingDefault<'a, TPS66994_NUM_PORTS>, Validator>;
-type Controller<'a> = tps6699x::controller::Controller<NoopRawMutex, BusDevice<'a>>;
-type Interrupt<'a> = tps6699x::Interrupt<'a, NoopRawMutex, BusDevice<'a>>;
+type BusDevice<'a> = I2cDevice<'a, GlobalRawMutex, BusMaster<'a>>;
+type Wrapper<'a> = tps6699x_drv::Tps6699xWrapper<'a, GlobalRawMutex, BusDevice<'a>, Validator>;
+type Controller<'a> = tps6699x::controller::Controller<GlobalRawMutex, BusDevice<'a>>;
+type Interrupt<'a> = tps6699x::Interrupt<'a, GlobalRawMutex, BusDevice<'a>>;
 
 const CONTROLLER0_ID: ControllerId = ControllerId(0);
 const CONTROLLER0_CFU_ID: ComponentId = 0x12;
@@ -165,7 +163,7 @@ async fn main(spawner: Spawner) {
     spawner.must_spawn(type_c_service::task(Default::default()));
 
     let int_in = Input::new(p.PIO1_7, Pull::Up, Inverter::Disabled);
-    static BUS: StaticCell<Mutex<NoopRawMutex, BusMaster<'static>>> = StaticCell::new();
+    static BUS: StaticCell<Mutex<GlobalRawMutex, BusMaster<'static>>> = StaticCell::new();
     let bus = BUS.init(Mutex::new(
         I2cMaster::new_async(p.FLEXCOMM2, p.PIO0_18, p.PIO0_17, Irqs, Config::default(), p.DMA0_CH5).unwrap(),
     ));
@@ -196,26 +194,20 @@ async fn main(spawner: Spawner) {
         .await
         .unwrap();
 
-    static PD_PORTS: [GlobalPortId; 2] = [PORT0_ID, PORT1_ID];
-    static BACKING_STORAGE: StaticCell<BackingDefaultStorage<TPS66994_NUM_PORTS, GlobalRawMutex>> = StaticCell::new();
-    let backing_storage = BACKING_STORAGE.init(BackingDefaultStorage::new());
-    let backing = backing_storage.get_backing().expect("Failed to create backing storage");
+    static STORAGE: StaticCell<Storage<TPS66994_NUM_PORTS, GlobalRawMutex>> = StaticCell::new();
+    let storage = STORAGE.init(Storage::new(
+        CONTROLLER0_ID,
+        CONTROLLER0_CFU_ID,
+        [(PORT0_ID, PORT0_PWR_ID), (PORT1_ID, PORT1_PWR_ID)],
+    ));
+
+    static REFERENCED: StaticCell<ReferencedStorage<TPS66994_NUM_PORTS, GlobalRawMutex>> = StaticCell::new();
+    let referenced = REFERENCED.init(storage.create_referenced());
 
     info!("Spawining PD controller task");
     static PD_CONTROLLER: StaticCell<Wrapper> = StaticCell::new();
-    let pd_controller = PD_CONTROLLER.init(
-        tps6699x_drv::tps66994(
-            tps6699x,
-            CONTROLLER0_ID,
-            &PD_PORTS,
-            [PORT0_PWR_ID, PORT1_PWR_ID],
-            CONTROLLER0_CFU_ID,
-            backing,
-            Default::default(),
-            Validator,
-        )
-        .unwrap(),
-    );
+    let pd_controller =
+        PD_CONTROLLER.init(tps6699x_drv::tps66994(tps6699x, referenced, Default::default(), Validator).unwrap());
 
     pd_controller.register().await.unwrap();
     spawner.must_spawn(pd_controller_task(pd_controller));

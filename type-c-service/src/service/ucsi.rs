@@ -1,5 +1,4 @@
 use embedded_usb_pd::ucsi::cci::Cci;
-use embedded_usb_pd::ucsi::lpm::get_connector_capability::OperationModeFlags;
 use embedded_usb_pd::ucsi::ppm::set_notification_enable::NotificationEnable;
 use embedded_usb_pd::ucsi::ppm::state_machine::{
     GlobalInput as PpmInput, GlobalOutput as PpmOutput, GlobalStateMachine as StateMachine, InvalidTransition,
@@ -59,33 +58,16 @@ impl<'a> Service<'a> {
         &self,
         command: &ucsi::lpm::GlobalCommand,
     ) -> Result<Option<lpm::ResponseData>, PdError> {
-        match command.operation {
-            lpm::CommandData::GetConnectorCapability => Ok(Some(lpm::ResponseData::GetConnectorCapability(
-                //TODO: Send command to controller
-                *lpm::get_connector_capability::ResponseData::default()
-                    .set_operation_mode(
-                        *OperationModeFlags::default()
-                            .set_drp(true)
-                            .set_usb2(true)
-                            .set_usb3(true),
-                    )
-                    .set_consumer(true)
-                    .set_provider(true)
-                    .set_swap_to_dfp(true)
-                    .set_swap_to_snk(true)
-                    .set_swap_to_src(true),
-            ))),
-            lpm::CommandData::GetConnectorStatus => Ok(
-                //TODO: Send command to controller
-                Some(lpm::ResponseData::GetConnectorStatus(
-                    lpm::get_connector_status::ResponseData::default(),
-                )),
-            ),
-            // TODO: implement all other LPM commands
-            rest => {
-                error!("Unsupported command received: {:?}", rest);
-                Err(PdError::UnrecognizedCommand)
+        debug!("Processing LPM command: {:?}", command);
+        if matches!(command.operation(), lpm::CommandData::GetConnectorCapability) {
+            // Override the capabilities if present in the config
+            if let Some(capabilities) = &self.config.ucsi_port_capabilities {
+                Ok(Some(lpm::ResponseData::GetConnectorCapability(*capabilities)))
+            } else {
+                self.context.execute_ucsi_command(*command).await
             }
+        } else {
+            self.context.execute_ucsi_command(*command).await
         }
     }
 

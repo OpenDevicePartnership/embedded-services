@@ -11,13 +11,12 @@ use embedded_services::{
         event::PortEvent,
     },
 };
-use embedded_usb_pd::LocalPortId;
-use embedded_usb_pd::type_c::ConnectionState;
 use embedded_usb_pd::type_c::Current;
 use embedded_usb_pd::{Error, ado::Ado};
+use embedded_usb_pd::{LocalPortId, PdError};
+use embedded_usb_pd::{type_c::ConnectionState, ucsi::lpm};
 use log::{debug, info, trace};
 use std::cell::Cell;
-use type_c_service::wrapper::backing::BackingDefault;
 
 pub struct ControllerState {
     events: Signal<GlobalRawMutex, PortEvent>,
@@ -291,6 +290,19 @@ impl embedded_services::type_c::controller::Controller for Controller<'_> {
         debug!("Set Thunderbolt config for port {port:?}: {config:?}");
         Ok(())
     }
+
+    async fn execute_ucsi_command(
+        &mut self,
+        command: lpm::LocalCommand,
+    ) -> Result<Option<lpm::ResponseData>, Error<Self::BusError>> {
+        debug!("Execute UCSI command for port {:?}: {command:?}", command.port());
+        match command.operation() {
+            lpm::CommandData::GetConnectorStatus => Ok(Some(lpm::ResponseData::GetConnectorStatus(
+                lpm::get_connector_status::ResponseData::default(),
+            ))),
+            _ => Err(PdError::UnrecognizedCommand.into()),
+        }
+    }
 }
 
 pub struct Validator;
@@ -306,5 +318,4 @@ impl type_c_service::wrapper::FwOfferValidator for Validator {
     }
 }
 
-pub type Wrapper<'a> =
-    type_c_service::wrapper::ControllerWrapper<'a, 1, Controller<'a>, BackingDefault<'a, 1>, Validator>;
+pub type Wrapper<'a> = type_c_service::wrapper::ControllerWrapper<'a, GlobalRawMutex, Controller<'a>, Validator>;
