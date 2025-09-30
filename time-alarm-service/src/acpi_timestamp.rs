@@ -96,6 +96,7 @@ impl TryFrom<u8> for AcpiDaylightSavingsTimeStatus {
         match value {
             0 => Ok(Self::NotObserved),
             1 => Ok(Self::NotAdjusted),
+            // 2 would be Adjusted but not Observed, which is nonsensical, so omitted.
             3 => Ok(Self::Adjusted),
             _ => Err(TimeAlarmError::InvalidArgument),
         }

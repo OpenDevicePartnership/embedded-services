@@ -1,6 +1,5 @@
 //! EC Internal Data Structures
 
-// TODO need to rev? do we need to update yaml?
 #[allow(missing_docs)]
 pub const EC_MEMMAP_VERSION: Version = Version {
     major: 0,

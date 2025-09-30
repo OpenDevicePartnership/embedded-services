@@ -94,8 +94,6 @@ struct TimerState {
     is_active: bool,
 }
 
-impl TimerState {}
-
 pub(crate) struct Timer {
     timer_state: Mutex<GlobalRawMutex, RefCell<TimerState>>,
 

@@ -174,10 +174,14 @@ impl AcpiTimeAlarmDeviceCommand {
         //      We need to make sure this is actually how we implement it over eSPI, or adapt to match what eSPI actually sends us.
 
         const COMMAND_CODE_SIZE_BYTES: usize = core::mem::size_of::<u32>();
-        let command_code = u32::from_le_bytes(bytes.try_into()?);
-
+        let command_code = u32::from_le_bytes(
+            bytes
+                .get(..COMMAND_CODE_SIZE_BYTES)
+                .ok_or(TimeAlarmError::InvalidArgument)?
+                .try_into()?,
+        );
         let bytes = bytes.get(COMMAND_CODE_SIZE_BYTES..)
-                                .expect("Should never fail because if there were less than 4 bytes, u32::from_le_bytes would have failed. If there were exactly four bytes, this will return an empty slice, not None.");
+                                .expect("Should never fail because if there were less than 4 bytes, parsing the command code would have failed. If there were exactly four bytes, this will return an empty slice, not None.");
 
         match command_code {
             1 => Ok(AcpiTimeAlarmDeviceCommand::GetRealTime),
