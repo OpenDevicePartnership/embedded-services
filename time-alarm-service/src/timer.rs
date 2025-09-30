@@ -233,21 +233,20 @@ impl Timer {
                             .saturating_sub(seconds_already_elapsed),
                     ));
                 }
-            } else if was_active {
-                if let WakeState::ExpiredWaitingForPolicyDelay(wait_start_time, seconds_elapsed_before_wait) =
+            } else if let WakeState::ExpiredWaitingForPolicyDelay(wait_start_time, seconds_elapsed_before_wait) =
                     timer_state.wake_state
-                {
-                    let total_seconds_elapsed_on_policy_delay: u32 = seconds_elapsed_before_wait
-                        + u32::try_from(Self::get_current_datetime(clock_state)
-                            .to_unix_time_seconds()
-                            .saturating_sub(wait_start_time.to_unix_time_seconds()))
-                            .expect("The ACPI spec expresses timeouts in terms of u32s - it's impossible to schedule a timer u32::MAX seconds in the future");
+            {
+                let total_seconds_elapsed_on_policy_delay: u32 = seconds_elapsed_before_wait
+                    + u32::try_from(Self::get_current_datetime(clock_state)
+                        .to_unix_time_seconds()
+                        .saturating_sub(wait_start_time.to_unix_time_seconds()))
+                        .expect("The ACPI spec expresses timeouts in terms of u32s - it's impossible to schedule a timer u32::MAX seconds in the future");
 
-                    timer_state.wake_state =
-                        WakeState::ExpiredWaitingForPowerSource(total_seconds_elapsed_on_policy_delay);
-                    self.timer_signal.signal(None);
-                }
+                timer_state.wake_state =
+                    WakeState::ExpiredWaitingForPowerSource(total_seconds_elapsed_on_policy_delay);
+                self.timer_signal.signal(None);
             }
+            
         });
     }
 
