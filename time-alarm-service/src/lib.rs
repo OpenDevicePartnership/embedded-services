@@ -38,12 +38,14 @@ pub enum TimeAlarmError {
 impl From<TimeAlarmError> for MailboxDelegateError {
     fn from(error: TimeAlarmError) -> Self {
         match error {
-            TimeAlarmError::UnknownCommand=> MailboxDelegateError::InvalidData,
-            TimeAlarmError::DoubleInitError=> panic!("Should never attempt intitialization as a response to receiving a mailbox message"),
-            TimeAlarmError::MailboxFullError=> MailboxDelegateError::BufferFull,
-            TimeAlarmError::InvalidAcpiTimerId=> MailboxDelegateError::InvalidData,
-            TimeAlarmError::InvalidArgument=> MailboxDelegateError::InvalidData,
-            TimeAlarmError::ClockError(_)=> MailboxDelegateError::Other,
+            TimeAlarmError::UnknownCommand => MailboxDelegateError::InvalidData,
+            TimeAlarmError::DoubleInitError => {
+                panic!("Should never attempt intitialization as a response to receiving a mailbox message")
+            }
+            TimeAlarmError::MailboxFullError => MailboxDelegateError::BufferFull,
+            TimeAlarmError::InvalidAcpiTimerId => MailboxDelegateError::InvalidData,
+            TimeAlarmError::InvalidArgument => MailboxDelegateError::InvalidData,
+            TimeAlarmError::ClockError(_) => MailboxDelegateError::Other,
         }
     }
 }
@@ -358,22 +360,20 @@ impl Service {
     ) -> Result<(), TimeAlarmError> {
         info!("Starting time-alarm service task");
 
-        let service = service_storage.get_or_init(|| {
-            Service {
-                endpoint: comms::Endpoint::uninit(comms::EndpointID::Internal(comms::Internal::TimeAlarm)),
-                acpi_channel: Channel::new(),
-                clock_state: Mutex::new(RefCell::new(ClockState {
-                    datetime_clock: backing_clock,
-                    tz_data: TimeZoneData::new(tz_storage),
-                })),
-                power_source_signal: Signal::new(),
-                timers: Timers::new(
-                    ac_expiration_storage,
-                    ac_policy_storage,
-                    dc_expiration_storage,
-                    dc_policy_storage,
-                ),
-            }
+        let service = service_storage.get_or_init(|| Service {
+            endpoint: comms::Endpoint::uninit(comms::EndpointID::Internal(comms::Internal::TimeAlarm)),
+            acpi_channel: Channel::new(),
+            clock_state: Mutex::new(RefCell::new(ClockState {
+                datetime_clock: backing_clock,
+                tz_data: TimeZoneData::new(tz_storage),
+            })),
+            power_source_signal: Signal::new(),
+            timers: Timers::new(
+                ac_expiration_storage,
+                ac_policy_storage,
+                dc_expiration_storage,
+                dc_policy_storage,
+            ),
         });
 
         // TODO [POWER_SOURCE] we need to subscribe to messages that tell us if we're on AC or DC power so we can decide which alarms to trigger - how do we do that?
@@ -381,8 +381,7 @@ impl Service {
         service.timers.ac_timer.start(&service.clock_state, true);
         service.timers.dc_timer.start(&service.clock_state, false);
 
-        comms::register_endpoint(service, &service.endpoint)
-            .await?;
+        comms::register_endpoint(service, &service.endpoint).await?;
 
         spawner.must_spawn(command_handler_task(service));
         spawner.must_spawn(timer_task(service, AcpiTimerId::AcPower));
@@ -436,7 +435,9 @@ impl Service {
                     self.timers
                         .get_timer(new_power_source.get_other_timer_id())
                         .set_active(&self.clock_state, false);
-                    self.timers.get_timer(new_power_source).set_active(&self.clock_state, true);
+                    self.timers
+                        .get_timer(new_power_source)
+                        .set_active(&self.clock_state, true);
                 }
             }
         }
@@ -470,24 +471,20 @@ impl Service {
     ) -> Result<AcpiTimeAlarmCommandResult, TimeAlarmError> {
         info!("Received Time-Alarm Device command: {:?}", command);
         match command {
-            AcpiTimeAlarmDeviceCommand::GetRealTime => {
-                self.clock_state.lock(|clock_state| {
-                    let clock_state = clock_state.borrow();
-                    let datetime = clock_state.datetime_clock.get_current_datetime()?;
-                    let (time_zone, dst_status) = clock_state.tz_data.get_data();
-                    Ok(AcpiTimeAlarmCommandResult::Timestamp(AcpiTimestamp {
-                        datetime,
-                        time_zone,
-                        dst_status,
-                    }))
-                })
-            }
+            AcpiTimeAlarmDeviceCommand::GetRealTime => self.clock_state.lock(|clock_state| {
+                let clock_state = clock_state.borrow();
+                let datetime = clock_state.datetime_clock.get_current_datetime()?;
+                let (time_zone, dst_status) = clock_state.tz_data.get_data();
+                Ok(AcpiTimeAlarmCommandResult::Timestamp(AcpiTimestamp {
+                    datetime,
+                    time_zone,
+                    dst_status,
+                }))
+            }),
             AcpiTimeAlarmDeviceCommand::SetRealTime(timestamp) => {
                 self.clock_state.lock(|clock_state| {
                     let mut clock_state = clock_state.borrow_mut();
-                    clock_state
-                        .datetime_clock
-                        .set_current_datetime(&timestamp.datetime)?;
+                    clock_state.datetime_clock.set_current_datetime(&timestamp.datetime)?;
                     clock_state.tz_data.set_data(timestamp.time_zone, timestamp.dst_status);
 
                     // TODO [SPEC] the spec is ambiguous on whether or not we should adjust any outstanding timers based on the new time - see if we can find an answer elsewhere
@@ -503,7 +500,9 @@ impl Service {
                 Ok(AcpiTimeAlarmCommandResult::Valueless)
             }
             AcpiTimeAlarmDeviceCommand::SetExpiredTimerPolicy(timer_id, timer_policy) => {
-                self.timers.get_timer(timer_id).set_timer_wake_policy(&self.clock_state, timer_policy);
+                self.timers
+                    .get_timer(timer_id)
+                    .set_timer_wake_policy(&self.clock_state, timer_policy);
                 Ok(AcpiTimeAlarmCommandResult::Valueless)
             }
             AcpiTimeAlarmDeviceCommand::SetTimerValue(timer_id, timer_value) => {
@@ -514,16 +513,20 @@ impl Service {
                             .clock_state
                             .lock(|clock_state| clock_state.borrow().datetime_clock.get_current_datetime())?;
 
-                        Some(Datetime::from_unix_time_seconds(current_time.to_unix_time_seconds() + u64::from(secs)))
+                        Some(Datetime::from_unix_time_seconds(
+                            current_time.to_unix_time_seconds() + u64::from(secs),
+                        ))
                     }
                 };
 
-                self.timers.get_timer(timer_id).set_expiration_time(&self.clock_state, new_expiration_time);
+                self.timers
+                    .get_timer(timer_id)
+                    .set_expiration_time(&self.clock_state, new_expiration_time);
                 Ok(AcpiTimeAlarmCommandResult::Valueless)
             }
-            AcpiTimeAlarmDeviceCommand::GetExpiredTimerPolicy(timer_id) => {
-                Ok(AcpiTimeAlarmCommandResult::U32(self.timers.get_timer(timer_id).get_timer_wake_policy().0))
-            }
+            AcpiTimeAlarmDeviceCommand::GetExpiredTimerPolicy(timer_id) => Ok(AcpiTimeAlarmCommandResult::U32(
+                self.timers.get_timer(timer_id).get_timer_wake_policy().0,
+            )),
             AcpiTimeAlarmDeviceCommand::GetTimerValue(timer_id) => {
                 let expiration_time = self.timers.get_timer(timer_id).get_expiration_time();
 

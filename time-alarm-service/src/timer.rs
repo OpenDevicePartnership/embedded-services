@@ -70,8 +70,8 @@ mod persistent_storage {
                 Some(dt) => {
                     self.expiration_time_storage
                         .write(dt.to_unix_time_seconds().try_into().expect(
-                            "Datetime::to_unix_timestamp() returns i64, which should always fit in u32 until the year 2106",
-                        ));
+                        "Datetime::to_unix_timestamp() returns i64, which should always fit in u32 until the year 2106",
+                    ));
                 }
                 None => {
                     self.expiration_time_storage.write(Self::NO_EXPIRATION_TIME);
@@ -94,9 +94,7 @@ struct TimerState {
     is_active: bool,
 }
 
-impl TimerState {
-
-}
+impl TimerState {}
 
 pub(crate) struct Timer {
     timer_state: Mutex<GlobalRawMutex, RefCell<TimerState>>,
@@ -123,15 +121,13 @@ impl Timer {
     pub fn start(&self, clock_state: &'static Mutex<GlobalRawMutex, RefCell<ClockState>>, active: bool) {
         self.set_timer_wake_policy(
             clock_state,
-            self
-                .timer_state
+            self.timer_state
                 .lock(|timer_state| timer_state.borrow().persistent_storage.get_timer_wake_policy()),
         );
 
         self.set_expiration_time(
             clock_state,
-            self
-                .timer_state
+            self.timer_state
                 .lock(|timer_state| timer_state.borrow().persistent_storage.get_expiration_time()),
         );
 
@@ -161,7 +157,11 @@ impl Timer {
             .lock(|timer_state| timer_state.borrow().persistent_storage.get_timer_wake_policy())
     }
 
-    pub fn set_timer_wake_policy(&self, clock_state: &'static Mutex<GlobalRawMutex, RefCell<ClockState>>, wake_policy: AlarmExpiredWakePolicy) {
+    pub fn set_timer_wake_policy(
+        &self,
+        clock_state: &'static Mutex<GlobalRawMutex, RefCell<ClockState>>,
+        wake_policy: AlarmExpiredWakePolicy,
+    ) {
         self.timer_state.lock(|timer_state| {
             let mut timer_state = timer_state.borrow_mut();
             timer_state.persistent_storage.set_timer_wake_policy(wake_policy);
@@ -170,16 +170,18 @@ impl Timer {
             //      may need to look at the windows acpi implementation or something
             //
             if let WakeState::ExpiredWaitingForPolicyDelay(_, _) = timer_state.wake_state {
-                timer_state.wake_state = WakeState::ExpiredWaitingForPolicyDelay(
-                    Self::get_current_datetime(clock_state),
-                    0,
-                );
+                timer_state.wake_state =
+                    WakeState::ExpiredWaitingForPolicyDelay(Self::get_current_datetime(clock_state), 0);
                 self.timer_signal.signal(Some(wake_policy.0));
             }
         })
     }
 
-    pub fn set_expiration_time(&self, clock_state: &'static Mutex<GlobalRawMutex, RefCell<ClockState>>, expiration_time: Option<Datetime>) {
+    pub fn set_expiration_time(
+        &self,
+        clock_state: &'static Mutex<GlobalRawMutex, RefCell<ClockState>>,
+        expiration_time: Option<Datetime>,
+    ) {
         self.timer_state.lock(|timer_state| {
             let mut timer_state = timer_state.borrow_mut();
 
@@ -246,7 +248,6 @@ impl Timer {
                     WakeState::ExpiredWaitingForPowerSource(total_seconds_elapsed_on_policy_delay);
                 self.timer_signal.signal(None);
             }
-            
         });
     }
 
@@ -341,8 +342,12 @@ impl Timer {
     }
 
     fn get_current_datetime(clock_state: &'static Mutex<GlobalRawMutex, RefCell<ClockState>>) -> Datetime {
-        clock_state.lock(|clock_state| clock_state.borrow().datetime_clock.get_current_datetime()
-            .expect("Datetime clock should have already been initialized before we were constructed"))
+        clock_state.lock(|clock_state| {
+            clock_state
+                .borrow()
+                .datetime_clock
+                .get_current_datetime()
+                .expect("Datetime clock should have already been initialized before we were constructed")
+        })
     }
-
 }

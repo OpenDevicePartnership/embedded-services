@@ -39,7 +39,7 @@ struct RawAcpiTimestamp {
     daylight: u8,
 
     // Reserved, must be 0
-    _padding: [u8; 3]
+    _padding: [u8; 3],
 }
 
 impl RawAcpiTimestamp {
@@ -51,7 +51,9 @@ impl RawAcpiTimestamp {
 
     // Get a byte slice representing this AcpiTimestamp.
     pub fn as_bytes(&self) -> &[u8; core::mem::size_of::<Self>()] /* 16 */ {
-        bytemuck::bytes_of(self).try_into().expect("Should never fail because we know the size of AcpiTimestamp at compile time")
+        bytemuck::bytes_of(self)
+            .try_into()
+            .expect("Should never fail because we know the size of AcpiTimestamp at compile time")
     }
 }
 
@@ -84,7 +86,7 @@ pub enum AcpiDaylightSavingsTimeStatus {
     NotAdjusted,
 
     /// Daylight savings time is observed in this timezone, and the current time has been adjusted for it.
-    Adjusted
+    Adjusted,
 }
 
 impl TryFrom<u8> for AcpiDaylightSavingsTimeStatus {
@@ -95,7 +97,7 @@ impl TryFrom<u8> for AcpiDaylightSavingsTimeStatus {
             0 => Ok(Self::NotObserved),
             1 => Ok(Self::NotAdjusted),
             3 => Ok(Self::Adjusted),
-            _ => Err(TimeAlarmError::InvalidArgument)
+            _ => Err(TimeAlarmError::InvalidArgument),
         }
     }
 }
@@ -114,7 +116,7 @@ impl From<AcpiDaylightSavingsTimeStatus> for u8 {
 
 #[derive(Copy, Clone, Debug)]
 pub struct AcpiTimeZoneOffset {
-    minutes_from_utc: i16 // minutes from UTC
+    minutes_from_utc: i16, // minutes from UTC
 }
 
 impl AcpiTimeZoneOffset {
@@ -122,9 +124,7 @@ impl AcpiTimeZoneOffset {
         if !(-1440..=1440).contains(&minutes_from_utc) {
             return Err(TimeAlarmError::InvalidArgument);
         }
-        Ok(Self {
-            minutes_from_utc
-        })
+        Ok(Self { minutes_from_utc })
     }
 
     pub fn minutes_from_utc(&self) -> i16 {
@@ -138,7 +138,7 @@ pub enum AcpiTimeZone {
     Unknown,
 
     /// The time zone is this many minutes from UTC.
-    MinutesFromUtc(AcpiTimeZoneOffset)
+    MinutesFromUtc(AcpiTimeZoneOffset),
 }
 
 impl TryFrom<i16> for AcpiTimeZone {
@@ -157,7 +157,7 @@ impl From<AcpiTimeZone> for i16 {
     fn from(val: AcpiTimeZone) -> Self {
         match val {
             AcpiTimeZone::Unknown => 2047,
-            AcpiTimeZone::MinutesFromUtc(offset) => offset.minutes_from_utc()
+            AcpiTimeZone::MinutesFromUtc(offset) => offset.minutes_from_utc(),
         }
     }
 }
@@ -167,7 +167,7 @@ impl From<AcpiTimeZone> for i16 {
 pub(crate) struct AcpiTimestamp {
     pub datetime: Datetime,
     pub time_zone: AcpiTimeZone,
-    pub dst_status: AcpiDaylightSavingsTimeStatus
+    pub dst_status: AcpiDaylightSavingsTimeStatus,
 }
 
 impl AcpiTimestamp {
