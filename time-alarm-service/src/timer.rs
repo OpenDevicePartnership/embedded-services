@@ -252,9 +252,8 @@ impl Timer {
     }
 
     pub(crate) async fn wait_until_wake(&self, clock_state: &'static Mutex<GlobalRawMutex, RefCell<ClockState>>) {
-        let mut wait_duration: Option<u32> = self.timer_signal.wait().await;
-
         loop {
+            let mut wait_duration: Option<u32> = self.timer_signal.wait().await;
             'waiting_for_timer: loop {
                 match wait_duration {
                     Some(seconds) => {
