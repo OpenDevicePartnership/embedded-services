@@ -1,7 +1,7 @@
 use core::mem::offset_of;
 use core::slice;
 
-use core::borrow::{Borrow, BorrowMut};
+use core::borrow::BorrowMut;
 use embassy_futures::select::select;
 use embassy_sync::channel::Channel;
 use embassy_sync::mutex::Mutex;
@@ -11,7 +11,6 @@ use embedded_services::comms::{self, EndpointID, External, Internal};
 use embedded_services::ec_type::message::{HostMsg, HostRequest, NotificationMsg};
 use embedded_services::ec_type::protocols::mctp::build_mctp_header;
 use embedded_services::{GlobalRawMutex, debug, ec_type, error, info, trace};
-use mctp_rs::MctpMessageHeaderAndBody;
 use mctp_rs::medium::smbus_espi::{SmbusEspiMedium, SmbusEspiReplyContext};
 
 const HOST_TX_QUEUE_SIZE: usize = 5;
@@ -29,7 +28,7 @@ pub struct Service<'a, 'b> {
     endpoint: comms::Endpoint,
     ec_memory: Mutex<GlobalRawMutex, &'a mut ec_type::structure::ECMemory>,
     host_tx_queue: Channel<GlobalRawMutex, HostMsgInternal<'b>, HOST_TX_QUEUE_SIZE>,
-    comms_buf_owned_ref: OwnedRef<'a, u8>,
+    // comms_buf_owned_ref: OwnedRef<'a, u8>,
     assembly_buf_owned_ref: OwnedRef<'a, u8>,
 }
 
@@ -39,7 +38,7 @@ impl Service<'_, '_> {
             endpoint: comms::Endpoint::uninit(EndpointID::External(External::Host)),
             ec_memory: Mutex::new(ec_memory),
             host_tx_queue: Channel::new(),
-            comms_buf_owned_ref: comms_buf::get_mut().unwrap(),
+            // comms_buf_owned_ref: comms_buf::get_mut().unwrap(),
             assembly_buf_owned_ref: assembly_buf::get_mut().unwrap(),
         }
     }
@@ -160,13 +159,13 @@ impl Service<'_, '_> {
     async fn process_response_to_host(
         &self,
         espi: &mut espi::Espi<'static>,
-        acpi_response: &HostRequest<'_>,
+        _acpi_response: &HostRequest<'_>,
         endpoint: EndpointID,
     ) {
         let mut pkt_ctx_buf = [0u8; 160];
-        let response_len = acpi_response.payload_len;
-        let access = acpi_response.payload.borrow();
-        let acpi_pkt: &[u8] = access.borrow();
+        // let response_len = acpi_response.payload_len;
+        // let access = acpi_response.payload.borrow();
+        // let acpi_pkt: &[u8] = access.borrow();
 
         let mut mctp_ctx =
             mctp_rs::MctpPacketContext::new(mctp_rs::medium::smbus_espi::SmbusEspiMedium, &mut pkt_ctx_buf);
@@ -187,9 +186,25 @@ impl Service<'_, '_> {
             }, // Medium-specific context
         };
 
-        let mut packet_state = mctp_ctx
-            .serialize_packet(reply_context, &acpi_pkt[..response_len])
-            .unwrap();
+        let header = mctp_rs::OdpHeader {
+            request_bit: false,
+            datagram_bit: false,
+            service: match endpoint {
+                EndpointID::Internal(Internal::Battery) => mctp_rs::OdpService::Battery,
+                EndpointID::Internal(Internal::Thermal) => mctp_rs::OdpService::Thermal,
+                EndpointID::Internal(Internal::Debug) => mctp_rs::OdpService::Debug,
+                _ => mctp_rs::OdpService::Debug,
+            },
+            command_code: mctp_rs::OdpCommandCode::BatteryGetBix,
+            completion_code: Default::default(),
+        };
+
+        let body = mctp_rs::Odp::BatteryGetBixRequest { battery_id: 0 };
+
+        let mut packet_state = mctp_ctx.serialize_packet(reply_context, (header, body)).unwrap();
+        // let mut packet_state = mctp_ctx
+        //     .serialize_packet(reply_context, &acpi_pkt[..response_len])
+        //     .unwrap();
         // Send each packet
         while let Some(packet_result) = packet_state.next() {
             let packet = packet_result.unwrap();
@@ -357,7 +372,7 @@ async fn process_controller_event(
 
                 {
                     let mut assembly_access = espi_service.assembly_buf_owned_ref.borrow_mut();
-                    let mut comms_access = espi_service.comms_buf_owned_ref.borrow_mut();
+                    // let mut comms_access = espi_service.comms_buf_owned_ref.borrow_mut();
                     let mut mctp_ctx = mctp_rs::MctpPacketContext::<SmbusEspiMedium>::new(
                         SmbusEspiMedium,
                         assembly_access.borrow_mut(),
@@ -365,37 +380,42 @@ async fn process_controller_event(
 
                     match mctp_ctx.deserialize_packet(with_pec) {
                         Ok(Some(message)) => {
-                            debug!("Complete message received");
+                            #[cfg(feature = "defmt")]
+                            trace!("MCTP packet successfully deserialized");
 
                             match message.parse_as::<mctp_rs::message_type::odp::Odp>() {
-                                Ok((one, two)) => return,
-                                Err(e) => return,
-                            }
-
-                            // Complete message received
-                            match message.header_and_body {
-                                MctpMessageHeaderAndBody::Odp { header, body } => {
-                                    info!("Body {:?}", body);
-                                    let buf: &mut [u8] = comms_access.borrow_mut();
-                                    buf[..body.len()].copy_from_slice(body);
-                                    endpoint = match u8::from(message.reply_context.destination_endpoint_id) {
-                                        8 => EndpointID::Internal(embedded_services::comms::Internal::Battery),
-                                        9 => EndpointID::Internal(embedded_services::comms::Internal::Thermal),
-                                        10 => EndpointID::Internal(embedded_services::comms::Internal::Debug),
-                                        _ => unimplemented!(),
-                                    };
+                                Ok((header, _body)) => {
                                     host_request = HostRequest {
                                         payload: comms_buf::get(),
-                                        payload_len: body.len(),
-                                        command: header.command_code.into(),
+                                        payload_len: 0,
+                                        command: header.command_code as u8,
                                         status: header.completion_code.into(),
                                     };
-                                    info!(
-                                        "Host Request {:?} {:?} {:?}",
-                                        host_request.payload_len, host_request.command, host_request.status,
+                                    endpoint = match header.service {
+                                        mctp_rs::OdpService::Battery => {
+                                            EndpointID::Internal(embedded_services::comms::Internal::Battery)
+                                        }
+                                        mctp_rs::OdpService::Thermal => {
+                                            EndpointID::Internal(embedded_services::comms::Internal::Thermal)
+                                        }
+                                        mctp_rs::OdpService::Debug => {
+                                            EndpointID::Internal(embedded_services::comms::Internal::Debug)
+                                        }
+                                    };
+                                    #[cfg(feature = "defmt")]
+                                    trace!(
+                                        "Host Request: Service {:?}, Len {:?}, Command {:?}, Status {:?}",
+                                        endpoint, host_request.payload_len, host_request.command, host_request.status,
                                     );
                                 }
-                                _ => todo!(),
+                                Err(_e) => {
+                                    #[cfg(feature = "defmt")]
+                                    error!("MCTP ODP type malformed");
+                                    espi.complete_port(port_event.port);
+
+                                    send_mctp_error_response(espi, port_event.port);
+                                    return;
+                                }
                             }
                         }
                         Ok(None) => {
