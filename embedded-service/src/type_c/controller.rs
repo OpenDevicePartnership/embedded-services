@@ -291,6 +291,8 @@ pub enum PortCommandData {
     ExecuteDrst,
     /// Set Thunderbolt configuration
     SetTbtConfig(TbtConfig),
+    /// Execute the UCSI command
+    ExecuteUcsiCommand(lpm::CommandData),
 }
 
 /// Port-specific commands
@@ -333,6 +335,8 @@ pub enum PortResponseData {
     AttnVdm(AttnVdm),
     /// Get DisplayPort status
     DpStatus(DpStatus),
+    /// UCSI response
+    UcsiResponse(Result<Option<lpm::ResponseData>, PdError>),
 }
 
 impl PortResponseData {
@@ -626,6 +630,12 @@ pub trait Controller {
         port: LocalPortId,
         config: TbtConfig,
     ) -> impl Future<Output = Result<(), Error<Self::BusError>>>;
+
+    /// Execute the given UCSI command
+    fn execute_ucsi_command(
+        &mut self,
+        command: lpm::LocalCommand,
+    ) -> impl Future<Output = Result<Option<lpm::ResponseData>, Error<Self::BusError>>>;
 }
 
 /// Internal context for managing PD controllers
@@ -805,10 +815,7 @@ impl ContextToken {
         match node
             .data::<Device>()
             .ok_or(PdError::InvalidController)?
-            .execute_command(Command::Lpm(lpm::Command {
-                port: port_id,
-                operation: command,
-            }))
+            .execute_command(Command::Lpm(lpm::Command::new(port_id, command)))
             .await
         {
             Response::Ucsi(response) => Ok(response),
@@ -834,16 +841,6 @@ impl ContextToken {
             Ok(response) => response,
             Err(_) => Err(PdError::Timeout),
         }
-    }
-
-    /// Resets the given port
-    pub async fn reset_port(
-        &self,
-        port_id: GlobalPortId,
-        reset_type: lpm::ResetType,
-    ) -> Result<ucsi::GlobalResponse, PdError> {
-        self.send_port_command_ucsi(port_id, lpm::CommandData::ConnectorReset(reset_type))
-            .await
     }
 
     /// Send a command to the given port with no timeout
@@ -1140,6 +1137,20 @@ impl ContextToken {
             .await?
         {
             PortResponseData::Complete => Ok(()),
+            _ => Err(PdError::InvalidResponse),
+        }
+    }
+
+    /// Execute the given UCSI command
+    pub async fn execute_ucsi_command(
+        &self,
+        command: lpm::GlobalCommand,
+    ) -> Result<Option<lpm::ResponseData>, PdError> {
+        match self
+            .send_port_command(command.port(), PortCommandData::ExecuteUcsiCommand(command.operation()))
+            .await?
+        {
+            PortResponseData::UcsiResponse(response) => response,
             _ => Err(PdError::InvalidResponse),
         }
     }

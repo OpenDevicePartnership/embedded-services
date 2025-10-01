@@ -17,14 +17,16 @@
 //! [`ControllerWrapper::process_event`] consumes [`message::Output`] and responds to any deferred requests, performs
 //! any caching/buffering of data, and notifies the type-C service implementation of the event if needed.
 use core::array::from_fn;
+use core::cell::RefMut;
 use core::future::{pending, Future};
+use core::ops::DerefMut;
 
 use embassy_futures::select::{select, select5, select_array, Either, Either5};
+use embassy_sync::blocking_mutex::raw::RawMutex;
 use embassy_sync::mutex::Mutex;
 use embassy_sync::signal::Signal;
 use embassy_time::Instant;
 use embedded_cfu_protocol::protocol_definitions::{FwUpdateOffer, FwUpdateOfferResponse, FwVersion};
-use embedded_services::cfu::component::CfuDevice;
 use embedded_services::power::policy::device::StateKind;
 use embedded_services::power::policy::{self, action};
 use embedded_services::transformers::object::{Object, RefGuard, RefMutGuard};
@@ -35,7 +37,7 @@ use embedded_services::{debug, error, info, trace, warn};
 use embedded_usb_pd::ado::Ado;
 use embedded_usb_pd::{Error, LocalPortId, PdError};
 
-use crate::wrapper::backing::Backing;
+use crate::wrapper::backing::DynPortState;
 use crate::wrapper::message::*;
 use crate::{PortEventStreamer, PortEventVariant};
 
@@ -53,40 +55,6 @@ pub const DEFAULT_FW_UPDATE_TICK_INTERVAL_MS: u64 = 5000;
 /// 300 seconds at 5 seconds per tick
 pub const DEFAULT_FW_UPDATE_TIMEOUT_TICKS: u8 = 60;
 
-/// Internal per-port state
-#[derive(Copy, Clone, Default)]
-pub struct PortState {
-    /// Cached port status
-    status: PortStatus,
-    /// Software status event
-    sw_status_event: PortStatusChanged,
-    /// Sink ready deadline instant
-    sink_ready_deadline: Option<Instant>,
-    /// Pending events for the type-C service
-    pending_events: PortEvent,
-}
-
-/// Internal wrapper state
-#[derive(Copy, Clone)]
-pub struct InternalState<const N: usize> {
-    /// If we're currently doing a firmware update
-    pub fw_update_state: cfu::FwUpdateState,
-    /// State used to keep track of where we are as we turn the event bitfields into a stream of events
-    port_event_streaming_state: Option<PortEventStreamer>,
-    /// Per-port state
-    port_states: [PortState; N],
-}
-
-impl<const N: usize> Default for InternalState<N> {
-    fn default() -> Self {
-        Self {
-            fw_update_state: cfu::FwUpdateState::Idle,
-            port_event_streaming_state: None,
-            port_states: [Default::default(); N],
-        }
-    }
-}
-
 /// Trait for validating firmware versions before applying an update
 // TODO: remove this once we have a better framework for OEM customization
 // See https://github.com/OpenDevicePartnership/embedded-services/issues/326
@@ -95,83 +63,85 @@ pub trait FwOfferValidator {
     fn validate(&self, current: FwVersion, offer: &FwUpdateOffer) -> FwUpdateOfferResponse;
 }
 
+/// Maximum number of supported ports
+pub const MAX_SUPPORTED_PORTS: usize = 2;
+
 /// Common functionality implemented on top of [`embedded_services::type_c::controller::Controller`]
-pub struct ControllerWrapper<'a, const N: usize, C: Controller, BACK: Backing<'a>, V: FwOfferValidator> {
-    /// PD controller to interface with PD service
-    pd_controller: controller::Device<'a>,
-    /// Power policy devices to interface with power policy service
-    power: [policy::device::Device; N],
-    /// CFU device to interface with firmware update service
-    cfu_device: CfuDevice,
-    /// Internal state for the wrapper
-    state: Mutex<GlobalRawMutex, InternalState<N>>,
-    controller: Mutex<GlobalRawMutex, C>,
+pub struct ControllerWrapper<'a, M: RawMutex, C: Controller, V: FwOfferValidator> {
+    controller: Mutex<M, C>,
     /// Trait object for validating firmware versions
     fw_version_validator: V,
     /// FW update ticker used to check for timeouts and recovery attempts
-    fw_update_ticker: Mutex<GlobalRawMutex, embassy_time::Ticker>,
-    /// Channels and buffers used by the wrapper
-    backing: Mutex<GlobalRawMutex, BACK>,
+    fw_update_ticker: Mutex<M, embassy_time::Ticker>,
+    /// Registration information for services
+    registration: backing::Registration<'a>,
+    /// State
+    state: Mutex<M, RefMut<'a, dyn DynPortState<'a>>>,
     /// SW port status event signal
-    sw_status_event: Signal<GlobalRawMutex, ()>,
+    sw_status_event: Signal<M, ()>,
 }
 
-impl<'a, const N: usize, C: Controller, BACK: Backing<'a>, V: FwOfferValidator> ControllerWrapper<'a, N, C, BACK, V> {
-    /// Create a new controller wrapper
-    pub fn new(
-        pd_controller: controller::Device<'a>,
-        power: [policy::device::Device; N],
-        cfu_device: CfuDevice,
-        backing: BACK,
+impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, M, C, V> {
+    /// Create a new controller wrapper, returns `None` if the backing storage is already in use
+    pub fn try_new<const N: usize>(
         controller: C,
+        storage: &'a backing::ReferencedStorage<'a, N, M>,
         fw_version_validator: V,
-    ) -> Self {
-        Self {
-            pd_controller,
-            power,
-            cfu_device,
-            state: Mutex::new(Default::default()),
+    ) -> Option<Self> {
+        const {
+            assert!(N > 0 && N <= MAX_SUPPORTED_PORTS, "Invalid number of ports");
+        };
+
+        let backing = storage.create_backing()?;
+        Some(Self {
             controller: Mutex::new(controller),
             fw_version_validator,
             fw_update_ticker: Mutex::new(embassy_time::Ticker::every(embassy_time::Duration::from_millis(
                 DEFAULT_FW_UPDATE_TICK_INTERVAL_MS,
             ))),
-            backing: Mutex::new(backing),
+            registration: backing.registration,
+            state: Mutex::new(backing.state),
             sw_status_event: Signal::new(),
-        }
+        })
     }
 
     /// Get the power policy devices for this controller.
     pub fn power_policy_devices(&self) -> &[policy::device::Device] {
-        &self.power
+        self.registration.power_devices
     }
 
-    /// Get the cached port status
-    pub async fn get_cached_port_status(&self, local_port: LocalPortId) -> PortStatus {
-        self.state.lock().await.port_states[local_port.0 as usize].status
+    /// Get the cached port status, returns None if the port is invalid
+    pub async fn get_cached_port_status(&self, local_port: LocalPortId) -> Option<PortStatus> {
+        self.state
+            .lock()
+            .await
+            .port_states()
+            .get(local_port.0 as usize)
+            .map(|s| s.status)
     }
 
     /// Synchronize the state between the controller and the internal state
     pub async fn sync_state(&self) -> Result<(), Error<<C as Controller>::BusError>> {
         let mut controller = self.controller.lock().await;
         let mut state = self.state.lock().await;
-        self.sync_state_internal(&mut controller, &mut state).await
+        self.sync_state_internal(&mut controller, state.deref_mut().deref_mut())
+            .await
     }
 
     /// Synchronize the state between the controller and the internal state
     async fn sync_state_internal(
         &self,
         controller: &mut C,
-        state: &mut InternalState<N>,
+        state: &mut dyn DynPortState<'_>,
     ) -> Result<(), Error<<C as Controller>::BusError>> {
         // Sync the controller state with the PD controller
-        for port in 0..N {
-            let mut status_changed = state.port_states[port].sw_status_event;
-            let local_port = LocalPortId(port as u8);
+        for (i, port_state) in state.port_states_mut().iter_mut().enumerate() {
+            let mut status_changed = port_state.sw_status_event;
+            let local_port = LocalPortId(i as u8);
             let status = controller.get_port_status(local_port).await?;
-            trace!("Port{} status: {:#?}", port, status);
+            trace!("Port{} status: {:#?}", i, status);
 
-            let previous_status = state.port_states[port].status;
+            let previous_status = port_state.status;
 
             if previous_status.is_connected() != status.is_connected() {
                 status_changed.set_plug_inserted_or_removed(true);
@@ -185,10 +155,10 @@ impl<'a, const N: usize, C: Controller, BACK: Backing<'a>, V: FwOfferValidator> 
                 status_changed.set_new_power_contract_as_provider(true);
             }
 
-            state.port_states[port].sw_status_event = status_changed;
-            if state.port_states[port].sw_status_event != PortStatusChanged::none() {
+            port_state.sw_status_event = status_changed;
+            if port_state.sw_status_event != PortStatusChanged::none() {
                 // Have a status changed event, notify
-                trace!("Port{} status changed: {:#?}", port, status);
+                trace!("Port{} status changed: {:#?}", i, status);
                 self.sw_status_event.signal(());
             }
         }
@@ -203,7 +173,7 @@ impl<'a, const N: usize, C: Controller, BACK: Backing<'a>, V: FwOfferValidator> 
         port: LocalPortId,
         status: &PortStatus,
     ) -> Result<(), Error<<C as Controller>::BusError>> {
-        if port.0 > N as u8 {
+        if port.0 as usize >= self.registration.num_ports() {
             error!("Invalid port {}", port.0);
             return PdError::InvalidPort.into();
         }
@@ -246,11 +216,12 @@ impl<'a, const N: usize, C: Controller, BACK: Backing<'a>, V: FwOfferValidator> 
     async fn process_port_status_changed<'b>(
         &self,
         controller: &mut C,
-        state: &mut InternalState<N>,
+        state: &mut dyn DynPortState<'_>,
         local_port_id: LocalPortId,
         status_event: PortStatusChanged,
     ) -> Result<Output<'b>, Error<<C as Controller>::BusError>> {
         let global_port_id = self
+            .registration
             .pd_controller
             .lookup_global_port(local_port_id)
             .map_err(Error::Pd)?;
@@ -258,7 +229,9 @@ impl<'a, const N: usize, C: Controller, BACK: Backing<'a>, V: FwOfferValidator> 
         let status = controller.get_port_status(local_port_id).await?;
         trace!("Port{} status: {:#?}", global_port_id.0, status);
 
-        let power = self.get_power_device(local_port_id).map_err(Error::Pd)?;
+        let power = self
+            .get_power_device(local_port_id)
+            .ok_or(Error::Pd(PdError::InvalidPort))?;
         trace!("Port{} status events: {:#?}", global_port_id.0, status_event);
         if status_event.plug_inserted_or_removed() {
             self.process_plug_event(controller, power, local_port_id, &status)
@@ -293,23 +266,32 @@ impl<'a, const N: usize, C: Controller, BACK: Backing<'a>, V: FwOfferValidator> 
     /// Finalize a port status change output
     async fn finalize_port_status_change(
         &self,
-        state: &mut InternalState<N>,
+        state: &mut dyn DynPortState<'_>,
         local_port: LocalPortId,
         status_event: PortStatusChanged,
         status: PortStatus,
     ) -> Result<(), Error<<C as Controller>::BusError>> {
-        let global_port_id = self.pd_controller.lookup_global_port(local_port).map_err(Error::Pd)?;
-
         let port_index = local_port.0 as usize;
-        let mut events = state.port_states[port_index].pending_events;
+        if port_index >= state.num_ports() {
+            return Err(PdError::InvalidPort.into());
+        }
+
+        let global_port_id = self
+            .registration
+            .pd_controller
+            .lookup_global_port(local_port)
+            .map_err(Error::Pd)?;
+
+        let port_state = &mut state.port_states_mut()[port_index];
+        let mut events = port_state.pending_events;
         events.status = events.status.union(status_event);
-        state.port_states[port_index].pending_events = events;
-        state.port_states[port_index].status = status;
+        port_state.pending_events = events;
+        port_state.status = status;
 
         if events != PortEvent::none() {
             let mut pending = PortPending::none();
             pending.pend_port(global_port_id.0 as usize);
-            self.pd_controller.notify_ports(pending).await;
+            self.registration.pd_controller.notify_ports(pending).await;
             trace!("P{}: Notified service for events: {:#?}", global_port_id.0, events);
         }
 
@@ -319,28 +301,32 @@ impl<'a, const N: usize, C: Controller, BACK: Backing<'a>, V: FwOfferValidator> 
     /// Finalize a PD alert output
     async fn finalize_pd_alert(
         &self,
-        state: &mut InternalState<N>,
+        state: &mut dyn DynPortState<'_>,
         local_port: LocalPortId,
         alert: Ado,
     ) -> Result<(), Error<<C as Controller>::BusError>> {
-        let global_port_id = self.pd_controller.lookup_global_port(local_port).map_err(Error::Pd)?;
         let port_index = local_port.0 as usize;
+        if port_index >= state.num_ports() {
+            return Err(PdError::InvalidPort.into());
+        }
 
+        let global_port_id = self
+            .registration
+            .pd_controller
+            .lookup_global_port(local_port)
+            .map_err(Error::Pd)?;
+
+        let port_state = &mut state.port_states_mut()[port_index];
         // Buffer the alert
-        let backing = self.backing.lock().await;
-        let channel = backing.pd_alert_channel(port_index).await.ok_or(PdError::InvalidPort)?;
-        channel.0.publish_immediate(alert);
+        port_state.pd_alerts.0.publish_immediate(alert);
 
         // Pend the alert
-        state.port_states[port_index]
-            .pending_events
-            .notification
-            .set_alert(true);
+        port_state.pending_events.notification.set_alert(true);
 
         // Pend this port
         let mut pending = PortPending::none();
         pending.pend_port(global_port_id.0 as usize);
-        self.pd_controller.notify_ports(pending).await;
+        self.registration.pd_controller.notify_ports(pending).await;
         Ok(())
     }
 
@@ -351,13 +337,13 @@ impl<'a, const N: usize, C: Controller, BACK: Backing<'a>, V: FwOfferValidator> 
         &self,
         controller: &mut C,
     ) -> Result<PortEventStreamer, Error<<C as Controller>::BusError>> {
-        if self.state.lock().await.fw_update_state.in_progress() {
+        if self.state.lock().await.controller_state().fw_update_state.in_progress() {
             // Don't process events while firmware update is in progress
             debug!("Firmware update in progress, ignoring port events");
             return pending().await;
         }
 
-        let streaming_state = self.state.lock().await.port_event_streaming_state;
+        let streaming_state = self.state.lock().await.controller_state().port_event_streaming_state;
         if let Some(streamer) = streaming_state {
             // If we're converting the bitfields into an event stream yield first to prevent starving other tasks
             embassy_futures::yield_now().await;
@@ -374,7 +360,7 @@ impl<'a, const N: usize, C: Controller, BACK: Backing<'a>, V: FwOfferValidator> 
                 Either::First(r) => r?,
                 Either::Second(_) => (),
             };
-            let pending: PortPending = FromIterator::from_iter(0..N);
+            let pending: PortPending = FromIterator::from_iter(0..self.registration.num_ports());
             Ok(PortEventStreamer::new(pending.into_iter()))
         }
     }
@@ -389,7 +375,7 @@ impl<'a, const N: usize, C: Controller, BACK: Backing<'a>, V: FwOfferValidator> 
                 select5(
                     self.wait_port_pending(&mut controller),
                     self.wait_power_command(),
-                    self.pd_controller.receive(),
+                    self.registration.pd_controller.receive(),
                     self.wait_cfu_command(),
                     self.wait_sink_ready_timeout(),
                 )
@@ -408,7 +394,7 @@ impl<'a, const N: usize, C: Controller, BACK: Backing<'a>, V: FwOfferValidator> 
 
                             // No more awaits, modify state here for drop safety
                             let sw_event = core::mem::replace(
-                                &mut state.port_states[port_index].sw_status_event,
+                                &mut state.port_states_mut()[port_index].sw_status_event,
                                 PortStatusChanged::none(),
                             );
                             Ok(hw_event.union(sw_event.into()))
@@ -416,7 +402,11 @@ impl<'a, const N: usize, C: Controller, BACK: Backing<'a>, V: FwOfferValidator> 
                         .await?
                     {
                         let port_id = LocalPortId(port_index as u8);
-                        self.state.lock().await.port_event_streaming_state = Some(stream);
+                        self.state
+                            .lock()
+                            .await
+                            .controller_state_mut()
+                            .port_event_streaming_state = Some(stream);
                         match event {
                             PortEventVariant::StatusChanged(status_event) => {
                                 return Ok(Event::PortStatusChanged(EventPortStatusChanged {
@@ -432,7 +422,11 @@ impl<'a, const N: usize, C: Controller, BACK: Backing<'a>, V: FwOfferValidator> 
                             }
                         }
                     } else {
-                        self.state.lock().await.port_event_streaming_state = None;
+                        self.state
+                            .lock()
+                            .await
+                            .controller_state_mut()
+                            .port_event_streaming_state = None;
                     }
                 }
                 Either5::Second((port, request)) => {
@@ -443,7 +437,7 @@ impl<'a, const N: usize, C: Controller, BACK: Backing<'a>, V: FwOfferValidator> 
                 Either5::Fifth(port) => {
                     // Sink ready timeout event
                     debug!("Port{0}: Sink ready timeout", port.0);
-                    self.state.lock().await.port_states[port.0 as usize].sink_ready_deadline = None;
+                    self.state.lock().await.port_states_mut()[port.0 as usize].sink_ready_deadline = None;
                     let mut status_event = PortStatusChanged::none();
                     status_event.set_sink_ready(true);
                     return Ok(Event::PortStatusChanged(EventPortStatusChanged { port, status_event }));
@@ -492,12 +486,12 @@ impl<'a, const N: usize, C: Controller, BACK: Backing<'a>, V: FwOfferValidator> 
         let mut state = self.state.lock().await;
         match event {
             Event::PortStatusChanged(EventPortStatusChanged { port, status_event }) => {
-                self.process_port_status_changed(&mut controller, &mut state, port, status_event)
+                self.process_port_status_changed(&mut controller, state.deref_mut().deref_mut(), port, status_event)
                     .await
             }
             Event::PowerPolicyCommand(EventPowerPolicyCommand { port, request }) => {
                 let response = self
-                    .process_power_command(&mut controller, &mut state, port, &request.command)
+                    .process_power_command(&mut controller, state.deref_mut().deref_mut(), port, &request.command)
                     .await;
                 Ok(Output::PowerPolicyCommand(OutputPowerPolicyCommand {
                     port,
@@ -507,18 +501,21 @@ impl<'a, const N: usize, C: Controller, BACK: Backing<'a>, V: FwOfferValidator> 
             }
             Event::ControllerCommand(request) => {
                 let response = self
-                    .process_pd_command(&mut controller, &mut state, &request.command)
+                    .process_pd_command(&mut controller, state.deref_mut().deref_mut(), &request.command)
                     .await;
                 Ok(Output::ControllerCommand(OutputControllerCommand { request, response }))
             }
             Event::CfuEvent(event) => match event {
                 EventCfu::Request(request) => {
-                    let response = self.process_cfu_command(&mut controller, &mut state, &request).await;
+                    let response = self
+                        .process_cfu_command(&mut controller, state.deref_mut().deref_mut(), &request)
+                        .await;
                     Ok(Output::CfuResponse(response))
                 }
                 EventCfu::RecoveryTick => {
                     // FW Update tick, process timeouts and recovery attempts
-                    self.process_cfu_tick(&mut controller, &mut state).await;
+                    self.process_cfu_tick(&mut controller, state.deref_mut().deref_mut())
+                        .await;
                     Ok(Output::CfuRecovery)
                 }
             },
@@ -540,11 +537,16 @@ impl<'a, const N: usize, C: Controller, BACK: Backing<'a>, V: FwOfferValidator> 
                 status_event,
                 status,
             }) => {
-                self.finalize_port_status_change(&mut state, port, status_event, status)
+                self.finalize_port_status_change(state.deref_mut().deref_mut(), port, status_event, status)
                     .await
             }
-            Output::PdAlert(OutputPdAlert { port, ado }) => self.finalize_pd_alert(&mut state, port, ado).await,
-            Output::Vdm(vdm) => self.finalize_vdm(&mut state, vdm).await.map_err(Error::Pd),
+            Output::PdAlert(OutputPdAlert { port, ado }) => {
+                self.finalize_pd_alert(state.deref_mut().deref_mut(), port, ado).await
+            }
+            Output::Vdm(vdm) => self
+                .finalize_vdm(state.deref_mut().deref_mut(), vdm)
+                .await
+                .map_err(Error::Pd),
             Output::PowerPolicyCommand(OutputPowerPolicyCommand { request, response, .. }) => {
                 request.respond(response);
                 Ok(())
@@ -585,41 +587,42 @@ impl<'a, const N: usize, C: Controller, BACK: Backing<'a>, V: FwOfferValidator> 
 
     /// Register all devices with their respective services
     pub async fn register(&'static self) -> Result<(), Error<<C as Controller>::BusError>> {
-        for device in &self.power {
+        for device in self.registration.power_devices {
             policy::register_device(device).await.map_err(|_| {
                 error!(
                     "Controller{}: Failed to register power device {}",
-                    self.pd_controller.id().0,
+                    self.registration.pd_controller.id().0,
                     device.id().0
                 );
                 Error::Pd(PdError::Failed)
             })?;
         }
 
-        controller::register_controller(&self.pd_controller)
+        controller::register_controller(self.registration.pd_controller)
             .await
             .map_err(|_| {
                 error!(
                     "Controller{}: Failed to register PD controller",
-                    self.pd_controller.id().0
+                    self.registration.pd_controller.id().0
                 );
                 Error::Pd(PdError::Failed)
             })?;
 
         //TODO: Remove when we have a more general framework in place
-        embedded_services::cfu::register_device(&self.cfu_device)
+        embedded_services::cfu::register_device(self.registration.cfu_device)
             .await
             .map_err(|_| {
-                error!("Controller{}: Failed to register CFU device", self.pd_controller.id().0);
+                error!(
+                    "Controller{}: Failed to register CFU device",
+                    self.registration.pd_controller.id().0
+                );
                 Error::Pd(PdError::Failed)
             })?;
         Ok(())
     }
 }
 
-impl<'a, const N: usize, C: Controller, BACK: Backing<'a>, V: FwOfferValidator> Object<C>
-    for ControllerWrapper<'a, N, C, BACK, V>
-{
+impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> Object<C> for ControllerWrapper<'a, M, C, V> {
     fn get_inner(&self) -> impl Future<Output = impl RefGuard<C>> {
         self.controller.lock()
     }

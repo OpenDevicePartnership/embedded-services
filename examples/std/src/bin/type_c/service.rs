@@ -1,7 +1,7 @@
 use embassy_executor::{Executor, Spawner};
 use embassy_sync::once_lock::OnceLock;
 use embassy_time::Timer;
-use embedded_services::power::{self, policy};
+use embedded_services::power::{self};
 use embedded_services::transformers::object::Object;
 use embedded_services::type_c::{ControllerId, controller};
 use embedded_services::{GlobalRawMutex, comms};
@@ -11,7 +11,7 @@ use embedded_usb_pd::type_c::Current;
 use log::*;
 use static_cell::StaticCell;
 use std_examples::type_c::mock_controller;
-use type_c_service::wrapper::backing::BackingDefaultStorage;
+use type_c_service::wrapper::backing::{ReferencedStorage, Storage};
 use type_c_service::wrapper::message::*;
 
 const CONTROLLER0: ControllerId = ControllerId(0);
@@ -55,20 +55,21 @@ mod debug {
 
 #[embassy_executor::task]
 async fn controller_task(state: &'static mock_controller::ControllerState) {
-    static BACKING_STORAGE: StaticCell<BackingDefaultStorage<1, GlobalRawMutex>> = StaticCell::new();
-    let backing_storage = BACKING_STORAGE.init(BackingDefaultStorage::new());
-    let backing = backing_storage.get_backing().expect("Failed to create backing storage");
+    static STORAGE: StaticCell<Storage<1, GlobalRawMutex>> = StaticCell::new();
+    let storage = STORAGE.init(Storage::new(
+        CONTROLLER0,
+        0, // CFU component ID (unused)
+        [(PORT0, POWER0)],
+    ));
+    static REFERENCED: StaticCell<ReferencedStorage<1, GlobalRawMutex>> = StaticCell::new();
+    let referenced = REFERENCED.init(storage.create_referenced());
 
     static WRAPPER: StaticCell<mock_controller::Wrapper> = StaticCell::new();
     let controller = mock_controller::Controller::new(state);
-    let wrapper = WRAPPER.init(mock_controller::Wrapper::new(
-        embedded_services::type_c::controller::Device::new(CONTROLLER0, &[PORT0, PORT0]),
-        [policy::device::Device::new(POWER0)],
-        embedded_services::cfu::component::CfuDevice::new(0x00),
-        backing,
-        controller,
-        crate::mock_controller::Validator,
-    ));
+    let wrapper = WRAPPER.init(
+        mock_controller::Wrapper::try_new(controller, referenced, crate::mock_controller::Validator)
+            .expect("Failed to create wrapper"),
+    );
 
     wrapper.register().await.unwrap();
 

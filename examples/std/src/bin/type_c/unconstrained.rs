@@ -2,13 +2,13 @@ use embassy_executor::{Executor, Spawner};
 use embassy_time::Timer;
 use embedded_services::GlobalRawMutex;
 use embedded_services::power::policy::PowerCapability;
-use embedded_services::power::{self, policy};
+use embedded_services::power::{self};
 use embedded_services::type_c::{ControllerId, controller};
 use embedded_usb_pd::GlobalPortId;
 use log::*;
 use static_cell::StaticCell;
 use std_examples::type_c::mock_controller;
-use type_c_service::wrapper::backing::BackingDefaultStorage;
+use type_c_service::wrapper::backing::{ReferencedStorage, Storage};
 
 const CONTROLLER0: ControllerId = ControllerId(0);
 const PORT0: GlobalPortId = GlobalPortId(0);
@@ -44,62 +44,47 @@ async fn task(spawner: Spawner) {
 
     controller::init();
 
-    static BACKING_STORAGE0: StaticCell<BackingDefaultStorage<1, GlobalRawMutex>> = StaticCell::new();
-    let backing_storage0 = BACKING_STORAGE0.init(BackingDefaultStorage::new());
-    let backing0 = backing_storage0
-        .get_backing()
-        .expect("Failed to create backing storage");
+    static STORAGE: StaticCell<Storage<1, GlobalRawMutex>> = StaticCell::new();
+    let storage = STORAGE.init(Storage::new(CONTROLLER0, CFU0, [(PORT0, POWER0)]));
+    static REFERENCED: StaticCell<ReferencedStorage<1, GlobalRawMutex>> = StaticCell::new();
+    let referenced = REFERENCED.init(storage.create_referenced());
 
     static STATE0: StaticCell<mock_controller::ControllerState> = StaticCell::new();
     let state0 = STATE0.init(mock_controller::ControllerState::new());
     let controller0 = mock_controller::Controller::new(state0);
     static WRAPPER0: StaticCell<mock_controller::Wrapper> = StaticCell::new();
-    let wrapper0 = WRAPPER0.init(mock_controller::Wrapper::new(
-        embedded_services::type_c::controller::Device::new(CONTROLLER0, &[PORT0]),
-        [policy::device::Device::new(POWER0)],
-        embedded_services::cfu::component::CfuDevice::new(CFU0),
-        backing0,
-        controller0,
-        crate::mock_controller::Validator,
-    ));
+    let wrapper0 = WRAPPER0.init(
+        mock_controller::Wrapper::try_new(controller0, referenced, crate::mock_controller::Validator)
+            .expect("Failed to create wrapper"),
+    );
 
-    static BACKING_STORAGE1: StaticCell<BackingDefaultStorage<1, GlobalRawMutex>> = StaticCell::new();
-    let backing_storage1 = BACKING_STORAGE1.init(BackingDefaultStorage::new());
-    let backing1 = backing_storage1
-        .get_backing()
-        .expect("Failed to create backing storage");
+    static STORAGE1: StaticCell<Storage<1, GlobalRawMutex>> = StaticCell::new();
+    let storage1 = STORAGE1.init(Storage::new(CONTROLLER1, CFU1, [(PORT1, POWER1)]));
+    static REFERENCED1: StaticCell<ReferencedStorage<1, GlobalRawMutex>> = StaticCell::new();
+    let referenced1 = REFERENCED1.init(storage1.create_referenced());
 
     static STATE1: StaticCell<mock_controller::ControllerState> = StaticCell::new();
     let state1 = STATE1.init(mock_controller::ControllerState::new());
     let controller1 = mock_controller::Controller::new(state1);
     static WRAPPER1: StaticCell<mock_controller::Wrapper> = StaticCell::new();
-    let wrapper1 = WRAPPER1.init(mock_controller::Wrapper::new(
-        embedded_services::type_c::controller::Device::new(CONTROLLER1, &[PORT1]),
-        [policy::device::Device::new(POWER1)],
-        embedded_services::cfu::component::CfuDevice::new(CFU1),
-        backing1,
-        controller1,
-        crate::mock_controller::Validator,
-    ));
+    let wrapper1 = WRAPPER1.init(
+        mock_controller::Wrapper::try_new(controller1, referenced1, crate::mock_controller::Validator)
+            .expect("Failed to create wrapper"),
+    );
 
-    static BACKING_STORAGE2: StaticCell<BackingDefaultStorage<1, GlobalRawMutex>> = StaticCell::new();
-    let backing_storage2 = BACKING_STORAGE2.init(BackingDefaultStorage::new());
-    let backing2 = backing_storage2
-        .get_backing()
-        .expect("Failed to create backing storage");
+    static STORAGE2: StaticCell<Storage<1, GlobalRawMutex>> = StaticCell::new();
+    let storage2 = STORAGE2.init(Storage::new(CONTROLLER2, CFU2, [(PORT2, POWER2)]));
+    static REFERENCED2: StaticCell<ReferencedStorage<1, GlobalRawMutex>> = StaticCell::new();
+    let referenced2 = REFERENCED2.init(storage2.create_referenced());
 
     static STATE2: StaticCell<mock_controller::ControllerState> = StaticCell::new();
     let state2 = STATE2.init(mock_controller::ControllerState::new());
     let controller2 = mock_controller::Controller::new(state2);
     static WRAPPER2: StaticCell<mock_controller::Wrapper> = StaticCell::new();
-    let wrapper2 = WRAPPER2.init(mock_controller::Wrapper::new(
-        embedded_services::type_c::controller::Device::new(CONTROLLER2, &[PORT2]),
-        [policy::device::Device::new(POWER2)],
-        embedded_services::cfu::component::CfuDevice::new(CFU2),
-        backing2,
-        controller2,
-        crate::mock_controller::Validator,
-    ));
+    let wrapper2 = WRAPPER2.init(
+        mock_controller::Wrapper::try_new(controller2, referenced2, crate::mock_controller::Validator)
+            .expect("Failed to create wrapper"),
+    );
 
     info!("Starting controller tasks");
     spawner.must_spawn(controller_task(wrapper0));

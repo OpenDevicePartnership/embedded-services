@@ -1,4 +1,4 @@
-use crate::wrapper::backing::Backing;
+use crate::wrapper::backing::ReferencedStorage;
 use crate::wrapper::{ControllerWrapper, FwOfferValidator};
 use ::tps6699x::registers::field_sets::IntEventBus1;
 use ::tps6699x::registers::{PdCcPullUp, PpExtVbusSw, PpIntVbusSw};
@@ -10,22 +10,21 @@ use core::future::Future;
 use core::iter::zip;
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use embassy_time::Delay;
-use embedded_cfu_protocol::protocol_definitions::ComponentId;
 use embedded_hal_async::i2c::I2c;
-use embedded_services::cfu::component::CfuDevice;
-use embedded_services::power::policy::{self, PowerCapability};
+use embedded_services::power::policy::PowerCapability;
 use embedded_services::type_c::controller::{
     self, AttnVdm, Controller, ControllerStatus, DpPinConfig, OtherVdm, PortStatus, SendVdm, TbtConfig,
     UsbControlConfig,
 };
 use embedded_services::type_c::event::PortEvent;
-use embedded_services::type_c::{ControllerId, ATTN_VDM_LEN};
+use embedded_services::type_c::ATTN_VDM_LEN;
 use embedded_services::{debug, error, info, trace, type_c, warn};
 use embedded_usb_pd::ado::Ado;
 use embedded_usb_pd::pdinfo::PowerPathStatus;
 use embedded_usb_pd::pdo::{sink, source, Common, Rdo};
 use embedded_usb_pd::type_c::Current as TypecCurrent;
-use embedded_usb_pd::{DataRole, Error, GlobalPortId, LocalPortId, PdError, PlugOrientation, PowerRole};
+use embedded_usb_pd::ucsi::lpm;
+use embedded_usb_pd::{DataRole, Error, LocalPortId, PdError, PlugOrientation, PowerRole};
 use tps6699x::asynchronous::embassy as tps6699x_drv;
 use tps6699x::asynchronous::fw_update::UpdateTarget;
 use tps6699x::asynchronous::fw_update::{
@@ -728,6 +727,13 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
 
         self.tps6699x.lock_inner().await.set_tbt_config(port, config_reg).await
     }
+
+    async fn execute_ucsi_command(
+        &mut self,
+        command: lpm::LocalCommand,
+    ) -> Result<Option<lpm::ResponseData>, Error<Self::BusError>> {
+        self.tps6699x.execute_ucsi_command(&command).await
+    }
 }
 
 impl<'a, M: RawMutex, BUS: I2c> AsRef<tps6699x_drv::Tps6699x<'a, M, BUS>> for Tps6699x<'a, M, BUS> {
@@ -742,76 +748,46 @@ impl<'a, M: RawMutex, BUS: I2c> AsMut<tps6699x_drv::Tps6699x<'a, M, BUS>> for Tp
     }
 }
 
-/// TPS66994 controller wrapper
-pub type Tps66994Wrapper<'a, M, BUS, BACK, V> =
-    ControllerWrapper<'a, TPS66994_NUM_PORTS, Tps6699x<'a, M, BUS>, BACK, V>;
+/// TPS6699x controller wrapper
+pub type Tps6699xWrapper<'a, M, BUS, V> = ControllerWrapper<'a, M, Tps6699x<'a, M, BUS>, V>;
 
-/// TPS66993 controller wrapper
-pub type Tps66993Wrapper<'a, M, BUS, BACK, V> =
-    ControllerWrapper<'a, TPS66993_NUM_PORTS, Tps6699x<'a, M, BUS>, BACK, V>;
-
-/// Create a TPS66994 controller wrapper
-// TODO: combine and trim down the number of parameters
-#[allow(clippy::too_many_arguments)]
-pub fn tps66994<'a, M: RawMutex, BUS: I2c, BACK: Backing<'a>, V: FwOfferValidator>(
+/// Create a TPS66994 controller wrapper, returns `None` if the number of ports is invalid
+pub fn tps66994<'a, M: RawMutex, BUS: I2c, V: FwOfferValidator>(
     controller: tps6699x_drv::Tps6699x<'a, M, BUS>,
-    controller_id: ControllerId,
-    port_ids: &'a [GlobalPortId],
-    power_ids: [policy::DeviceId; TPS66994_NUM_PORTS],
-    cfu_id: ComponentId,
-    backing: BACK,
+    storage: &'a ReferencedStorage<'a, TPS66994_NUM_PORTS, M>,
     fw_update_config: FwUpdateConfig,
     fw_version_validator: V,
-) -> Result<Tps66994Wrapper<'a, M, BUS, BACK, V>, PdError> {
-    if port_ids.len() != TPS66994_NUM_PORTS {
-        return Err(PdError::InvalidParams);
-    }
-
+) -> Option<Tps6699xWrapper<'a, M, BUS, V>> {
     const _: () = assert!(
         TPS66994_NUM_PORTS > 0 && TPS66994_NUM_PORTS <= MAX_SUPPORTED_PORTS,
         "Number of ports exceeds maximum supported"
     );
-    Ok(ControllerWrapper::new(
-        controller::Device::new(controller_id, port_ids),
-        from_fn(|i| policy::device::Device::new(power_ids[i])),
-        CfuDevice::new(cfu_id),
-        backing,
+
+    ControllerWrapper::try_new(
         // Statically checked above
         Tps6699x::try_new(controller, TPS66994_NUM_PORTS, fw_update_config).unwrap(),
+        storage,
         fw_version_validator,
-    ))
+    )
 }
 
-/// Create a new TPS66993 controller wrapper
-// TODO: combine and trim down the number of parameters
-#[allow(clippy::too_many_arguments)]
-pub fn tps66993<'a, M: RawMutex, BUS: I2c, BACK: Backing<'a>, V: FwOfferValidator>(
+/// Create a new TPS66993 controller wrapper, returns `None` if the number of ports is invalid
+pub fn tps66993<'a, M: RawMutex, BUS: I2c, V: FwOfferValidator>(
     controller: tps6699x_drv::Tps6699x<'a, M, BUS>,
-    controller_id: ControllerId,
-    port_ids: &'a [GlobalPortId],
-    power_ids: [policy::DeviceId; TPS66993_NUM_PORTS],
-    cfu_id: ComponentId,
-    backing: BACK,
+    backing: &'a ReferencedStorage<'a, TPS66993_NUM_PORTS, M>,
     fw_update_config: FwUpdateConfig,
     fw_version_validator: V,
-) -> Result<Tps66993Wrapper<'a, M, BUS, BACK, V>, PdError> {
-    if port_ids.len() != TPS66993_NUM_PORTS {
-        return Err(PdError::InvalidParams);
-    }
-
+) -> Option<Tps6699xWrapper<'a, M, BUS, V>> {
     const _: () = assert!(
         TPS66993_NUM_PORTS > 0 && TPS66993_NUM_PORTS <= MAX_SUPPORTED_PORTS,
         "Number of ports exceeds maximum supported"
     );
-    Ok(ControllerWrapper::new(
-        controller::Device::new(controller_id, port_ids),
-        from_fn(|i| policy::device::Device::new(power_ids[i])),
-        CfuDevice::new(cfu_id),
-        backing,
+    ControllerWrapper::try_new(
         // Statically checked above
         Tps6699x::try_new(controller, TPS66993_NUM_PORTS, fw_update_config).unwrap(),
+        backing,
         fw_version_validator,
-    ))
+    )
 }
 
 bitfield! {
