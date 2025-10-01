@@ -337,10 +337,6 @@ criteria = "safe-to-deploy"
 version = "0.2.2"
 criteria = "safe-to-deploy"
 
-[[exemptions.mimxrt685s-pac]]
-version = "0.4.0"
-criteria = "safe-to-deploy"
-
 [[exemptions.mio]]
 version = "1.0.4"
 criteria = "safe-to-run"
@@ -367,10 +363,6 @@ criteria = "safe-to-deploy"
 
 [[exemptions.once_cell]]
 version = "1.21.3"
-criteria = "safe-to-deploy"
-
-[[exemptions.percent-encoding]]
-version = "2.3.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.pin-project]]

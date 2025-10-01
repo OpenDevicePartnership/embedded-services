@@ -172,6 +172,16 @@ who = "Robert Zieba <robertzieba@microsoft.com>"
 criteria = "safe-to-deploy"
 version = "0.4.1"
 
+[[audits.mimxrt633s-pac]]
+who = "Felipe Balbi <febalbi@microsoft.com>"
+criteria = "safe-to-deploy"
+version = "0.5.0"
+
+[[audits.mimxrt685s-pac]]
+who = "Felipe Balbi <febalbi@microsoft.com>"
+criteria = "safe-to-deploy"
+version = "0.5.0"
+
 [[audits.miniz_oxide]]
 who = "Robert Zieba <robertzieba@microsoft.com>"
 criteria = "safe-to-run"
