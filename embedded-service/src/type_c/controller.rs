@@ -249,6 +249,28 @@ pub struct TbtConfig {
     pub tbt_enabled: bool,
 }
 
+/// PD state-machine configuration
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[derive(Debug, Clone, Default, Copy, PartialEq)]
+pub struct PdStateMachineConfig {
+    /// Enable or disable the PD state-machine
+    pub enabled: bool,
+}
+
+/// TypeC State Machine
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum TypeCStateMachineState {
+    /// Sink state machine only
+    Sink,
+    /// Source state machine only
+    Source,
+    /// DRP state machine
+    Drp,
+    /// Disabled
+    Disabled,
+}
+
 /// Port-specific command data
 #[derive(Copy, Clone, Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
@@ -291,6 +313,10 @@ pub enum PortCommandData {
     ExecuteDrst,
     /// Set Thunderbolt configuration
     SetTbtConfig(TbtConfig),
+    /// Set PD state-machine configuration
+    SetPdStateMachineConfig(PdStateMachineConfig),
+    /// Set Type-C state-machine configuration
+    SetTypeCStateMachineConfig(TypeCStateMachineState),
     /// Execute the UCSI command
     ExecuteUcsiCommand(lpm::CommandData),
 }
@@ -629,6 +655,20 @@ pub trait Controller {
         &mut self,
         port: LocalPortId,
         config: TbtConfig,
+    ) -> impl Future<Output = Result<(), Error<Self::BusError>>>;
+
+    /// Set PD state-machine configuration for the given port
+    fn set_pd_state_machine_config(
+        &mut self,
+        port: LocalPortId,
+        config: PdStateMachineConfig,
+    ) -> impl Future<Output = Result<(), Error<Self::BusError>>>;
+
+    /// Set Type-C state-machine configuration for the given port
+    fn set_type_c_state_machine_config(
+        &mut self,
+        port: LocalPortId,
+        state: TypeCStateMachineState,
     ) -> impl Future<Output = Result<(), Error<Self::BusError>>>;
 
     /// Execute the given UCSI command
@@ -1134,6 +1174,36 @@ impl ContextToken {
     pub async fn set_tbt_config(&self, port: GlobalPortId, config: TbtConfig) -> Result<(), PdError> {
         match self
             .send_port_command(port, PortCommandData::SetTbtConfig(config))
+            .await?
+        {
+            PortResponseData::Complete => Ok(()),
+            _ => Err(PdError::InvalidResponse),
+        }
+    }
+
+    /// Set PD state-machine configuration for the given port
+    pub async fn set_pd_state_machine_config(
+        &self,
+        port: GlobalPortId,
+        config: PdStateMachineConfig,
+    ) -> Result<(), PdError> {
+        match self
+            .send_port_command(port, PortCommandData::SetPdStateMachineConfig(config))
+            .await?
+        {
+            PortResponseData::Complete => Ok(()),
+            _ => Err(PdError::InvalidResponse),
+        }
+    }
+
+    /// Set Type-C state-machine configuration for the given port
+    pub async fn set_type_c_state_machine_config(
+        &self,
+        port: GlobalPortId,
+        state: TypeCStateMachineState,
+    ) -> Result<(), PdError> {
+        match self
+            .send_port_command(port, PortCommandData::SetTypeCStateMachineConfig(state))
             .await?
         {
             PortResponseData::Complete => Ok(()),

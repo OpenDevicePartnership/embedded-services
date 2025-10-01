@@ -5,8 +5,8 @@ use embedded_services::{
     power::policy::PowerCapability,
     type_c::{
         controller::{
-            AttnVdm, Contract, ControllerStatus, DpConfig, DpPinConfig, DpStatus, OtherVdm, PortStatus,
-            RetimerFwUpdateState, SendVdm, TbtConfig, UsbControlConfig,
+            AttnVdm, Contract, ControllerStatus, DpConfig, DpPinConfig, DpStatus, OtherVdm, PdStateMachineConfig,
+            PortStatus, RetimerFwUpdateState, SendVdm, TbtConfig, TypeCStateMachineState, UsbControlConfig,
         },
         event::PortEvent,
     },
@@ -288,6 +288,24 @@ impl embedded_services::type_c::controller::Controller for Controller<'_> {
 
     async fn set_tbt_config(&mut self, port: LocalPortId, config: TbtConfig) -> Result<(), Error<Self::BusError>> {
         debug!("Set Thunderbolt config for port {port:?}: {config:?}");
+        Ok(())
+    }
+
+    async fn set_pd_state_machine_config(
+        &mut self,
+        port: LocalPortId,
+        config: PdStateMachineConfig,
+    ) -> Result<(), Error<Self::BusError>> {
+        debug!("Set PD State Machine config for port {port:?}: {config:?}");
+        Ok(())
+    }
+
+    async fn set_type_c_state_machine_config(
+        &mut self,
+        port: LocalPortId,
+        state: TypeCStateMachineState,
+    ) -> Result<(), Error<Self::BusError>> {
+        debug!("Set Type-C State Machine state for port {port:?}: {state:?}");
         Ok(())
     }
 
