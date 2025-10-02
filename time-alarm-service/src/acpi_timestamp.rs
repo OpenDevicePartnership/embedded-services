@@ -6,6 +6,7 @@ use crate::TimeAlarmError;
 // TODO [TESTING] are there any endianness shenanigans associated with bytemuck here?
 #[repr(C)]
 #[derive(bytemuck::Pod, bytemuck::Zeroable, Copy, Clone, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 struct RawAcpiTimestamp {
     // Year: 1900 - 9999
     year: u16,
@@ -78,6 +79,7 @@ impl From<&AcpiTimestamp> for RawAcpiTimestamp {
 // -------------------------------------------------
 
 #[derive(Copy, Clone, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum AcpiDaylightSavingsTimeStatus {
     /// Daylight savings time is not observed in this timezone.
     NotObserved,
@@ -116,6 +118,7 @@ impl From<AcpiDaylightSavingsTimeStatus> for u8 {
 // -------------------------------------------------
 
 #[derive(Copy, Clone, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct AcpiTimeZoneOffset {
     minutes_from_utc: i16, // minutes from UTC
 }
@@ -134,6 +137,7 @@ impl AcpiTimeZoneOffset {
 }
 
 #[derive(Copy, Clone, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum AcpiTimeZone {
     /// The time zone is not specified and no relation to UTC can be inferred.
     Unknown,
@@ -165,6 +169,7 @@ impl From<AcpiTimeZone> for i16 {
 
 // -------------------------------------------------
 
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub(crate) struct AcpiTimestamp {
     pub datetime: Datetime,
     pub time_zone: AcpiTimeZone,

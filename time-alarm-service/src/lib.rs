@@ -80,6 +80,7 @@ impl From<embedded_mcu_hal::time::DatetimeError> for TimeAlarmError {
 
 // Timer ID as defined in the ACPI spec.
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum AcpiTimerId {
     AcPower,
     DcPower,
@@ -123,6 +124,7 @@ impl TryFrom<u32> for AcpiTimerId {
 // -------------------------------------------------
 
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 struct AlarmTimerSeconds(u32);
 impl AlarmTimerSeconds {
     pub const DISABLED: Self = Self(u32::MAX);
@@ -135,6 +137,7 @@ impl Default for AlarmTimerSeconds {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 struct AlarmExpiredWakePolicy(u32);
 impl AlarmExpiredWakePolicy {
     #[allow(dead_code)]
@@ -153,6 +156,7 @@ impl Default for AlarmExpiredWakePolicy {
 /// Represents an ACPI Time and Alarm Device command.
 /// See ACPI Specification 6.4, Section 9.18 "Time and Alarm Device" for details on semantics.
 #[rustfmt::skip]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 enum AcpiTimeAlarmDeviceCommand {
     // Notably missing from the ACPI spec here is _GCP / 'Get Capabilities'.  It just returns a constant and is expected to be implemented wholly in the ACPI ASL code.
 
