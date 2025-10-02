@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use core::{borrow::BorrowMut, ops::Deref};
 
 use embedded_batteries_async::acpi::{
@@ -7,7 +8,7 @@ use embedded_batteries_async::acpi::{
 };
 use embedded_services::{
     debug,
-    ec_type::message::{AcpiMsgComms, HostMsg},
+    ec_type::message::{HostMsg, HostRequest},
     error, info,
     power::policy::PowerCapability,
     trace,
@@ -20,13 +21,12 @@ use crate::{
 
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub(crate) struct Payload<'a> {
-    pub version: u8,
-    pub instance: u8,
-    pub reserved: u8,
     pub command: AcpiCmd,
+    pub status: u8,
     pub data: &'a [u8],
 }
 
+#[derive(Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub(crate) enum PayloadError {
     MalformedPayload,
@@ -34,35 +34,6 @@ pub(crate) enum PayloadError {
 }
 
 const ACPI_HEADER_SIZE: usize = 4;
-
-impl<'a> Payload<'a> {
-    pub(crate) fn from_raw(raw: &'a [u8], size: usize) -> Result<Self, PayloadError> {
-        Ok(Payload {
-            version: raw[0],
-            instance: raw[1],
-            reserved: raw[2],
-            command: AcpiCmd::try_from(raw[3])?,
-            data: &raw[4..size],
-        })
-    }
-
-    pub(crate) fn to_raw(&self, buf: &mut [u8]) -> Result<usize, PayloadError> {
-        buf[0] = self.version;
-        buf[1] = self.instance;
-        buf[2] = self.reserved;
-        buf[3] = self.command as u8;
-
-        if buf.len() < self.data.len() + 4 {
-            // 1 in the reserved field is an error to the host
-            buf[2] = 1;
-            return Err(PayloadError::BufTooSmall(ACPI_HEADER_SIZE));
-        }
-
-        buf[4..self.data.len() + 4].copy_from_slice(self.data);
-
-        Ok(self.data.len() + 4)
-    }
-}
 
 #[derive(Copy, Clone)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
@@ -105,6 +76,12 @@ impl TryFrom<u8> for AcpiCmd {
             15 => Ok(AcpiCmd::GetSta),
             _ => Err(PayloadError::MalformedPayload),
         }
+    }
+}
+
+impl From<AcpiCmd> for u8 {
+    fn from(value: AcpiCmd) -> Self {
+        value as u8
     }
 }
 
@@ -238,26 +215,22 @@ pub(crate) fn compute_pif<'a>(psu_state: &PsuState) -> Pif<'a> {
 impl<'a> crate::context::Context<'a> {
     async fn send_acpi_response(&self, payload: &crate::acpi::Payload<'_>) {
         let payload_len: usize;
+        let cmd = payload.command;
+        let status = 0;
 
         {
             let mut buf_access = self.get_acpi_buf_owned_ref().borrow_mut();
 
-            match payload.to_raw(buf_access.borrow_mut()) {
-                Ok(payload_len_raw) => payload_len = payload_len_raw,
-                Err(PayloadError::BufTooSmall(payload_len_raw)) => {
-                    error!("payload to_raw error, buffer too small");
-                    payload_len = payload_len_raw;
-                }
-                Err(PayloadError::MalformedPayload) => {
-                    error!("payload to_raw error, sending empty response");
-                    payload_len = 0;
-                }
-            }
+            let buf: &mut [u8] = buf_access.borrow_mut();
+            buf[..payload.data.len()].copy_from_slice(payload.data);
+            payload_len = payload.data.len();
         }
 
-        let acpi_response = AcpiMsgComms {
+        let acpi_response = HostRequest {
             payload: crate::context::acpi_buf::get(),
             payload_len,
+            command: u8::from(cmd),
+            status,
         };
 
         super::comms_send(
@@ -270,7 +243,7 @@ impl<'a> crate::context::Context<'a> {
         debug!("response sent to espi_service");
     }
 
-    pub(super) async fn bix_handler(&self, fg: &Device, payload: &crate::acpi::Payload<'_>) {
+    pub(super) async fn bix_handler(&self, fg: &Device, _input_args: &[u8]) {
         trace!("Battery service: got BIX command!");
         // Enough space for all string fields to have 7 bytes + 1 null terminator byte
         let mut bix_data = [0u8; 100];
@@ -296,34 +269,30 @@ impl<'a> crate::context::Context<'a> {
         // Drop locks before next await point to eliminate possibility of deadlock
         drop(static_cache_guard);
         drop(dynamic_cache_guard);
-        let response = crate::acpi::Payload {
-            version: 1,
-            instance: 1,
-            reserved: 0,
-            command: payload.command,
+        let response = Payload {
+            command: AcpiCmd::GetBix,
             data: &bix_data,
+            status: 0,
         };
 
         self.send_acpi_response(&response).await;
     }
 
-    pub(super) async fn bst_handler(&self, fg: &Device, payload: &crate::acpi::Payload<'_>) {
+    pub(super) async fn bst_handler(&self, fg: &Device, _input_args: &[u8]) {
         trace!("Battery service: got BST command!");
         let cache = fg.get_dynamic_battery_cache().await;
         let mut bst_data = embedded_batteries_async::acpi::BstReturn::default();
         compute_bst(&mut bst_data, &cache);
         let bst_data: &[u8; BST_RETURN_SIZE_BYTES] = zerocopy::transmute_ref!(&bst_data);
-        let response = crate::acpi::Payload {
-            version: 1,
-            instance: 1,
-            reserved: 0,
-            command: payload.command,
+        let response = Payload {
+            command: AcpiCmd::GetBst,
             data: bst_data,
+            status: 0,
         };
         self.send_acpi_response(&response).await;
     }
 
-    pub(super) async fn psr_handler(&self, _fg: &Device, payload: &crate::acpi::Payload<'_>) {
+    pub(super) async fn psr_handler(&self, _fg: &Device, _input_args: &[u8]) {
         trace!("Battery service: got PSR command!");
 
         let mut psr_data = PsrReturn::default();
@@ -332,18 +301,16 @@ impl<'a> crate::context::Context<'a> {
 
         let psr_data: &[u8; PSR_RETURN_SIZE_BYTES] = zerocopy::transmute_ref!(&psr_data);
 
-        let response = crate::acpi::Payload {
-            version: 1,
-            instance: 1,
-            reserved: 0,
-            command: payload.command,
+        let response = Payload {
+            command: AcpiCmd::GetPsr,
             data: psr_data,
+            status: 0,
         };
 
         self.send_acpi_response(&response).await;
     }
 
-    pub(super) async fn pif_handler(&self, _fg: &Device, payload: &crate::acpi::Payload<'_>) {
+    pub(super) async fn pif_handler(&self, _fg: &Device, _input_args: &[u8]) {
         trace!("Battery service: got PIF command!");
         // Enough space for all string fields to have 7 bytes + 1 null terminator byte
         let mut pif_data = [0u8; 36];
@@ -356,18 +323,16 @@ impl<'a> crate::context::Context<'a> {
             .to_bytes(&mut pif_data, model_num_size, serial_num_size, oem_info_size)
             .unwrap_or_else(|_| error!("Computing PIF return failed!"));
 
-        let response = crate::acpi::Payload {
-            version: 1,
-            instance: 1,
-            reserved: 0,
-            command: payload.command,
+        let response = Payload {
+            command: AcpiCmd::GetPif,
             data: &pif_data,
+            status: 0,
         };
 
         self.send_acpi_response(&response).await;
     }
 
-    pub(super) async fn bps_handler(&self, fg: &Device, payload: &crate::acpi::Payload<'_>) {
+    pub(super) async fn bps_handler(&self, fg: &Device, _input_args: &[u8]) {
         trace!("Battery service: got BPS command!");
 
         let mut bps_data = embedded_batteries_async::acpi::Bps::default();
@@ -376,17 +341,15 @@ impl<'a> crate::context::Context<'a> {
         compute_bps(&mut bps_data, &cache);
         let bps_data: &[u8; BPS_RETURN_SIZE_BYTES] = zerocopy::transmute_ref!(&bps_data);
 
-        let response = crate::acpi::Payload {
-            version: 1,
-            instance: 1,
-            reserved: 0,
-            command: payload.command,
+        let response = Payload {
+            command: AcpiCmd::GetBps,
             data: bps_data,
+            status: 0,
         };
         self.send_acpi_response(&response).await;
     }
 
-    pub(super) async fn btp_handler(&self, _fg: &Device, payload: &crate::acpi::Payload<'_>) {
+    pub(super) async fn btp_handler(&self, _fg: &Device, _input_args: &[u8]) {
         trace!("Battery service: got BTP command!");
 
         // TODO: Save trip point
@@ -394,46 +357,42 @@ impl<'a> crate::context::Context<'a> {
         // 0 for success, 1 for failure
         let ret_status = 0u8;
 
-        let response = crate::acpi::Payload {
-            version: 1,
-            instance: 1,
-            reserved: ret_status,
-            command: payload.command,
+        let response = Payload {
+            command: AcpiCmd::SetBtp,
             data: &[],
+            status: ret_status,
         };
 
         self.send_acpi_response(&response).await;
     }
 
-    pub(super) async fn bpt_handler(&self, _fg: &Device, payload: &crate::acpi::Payload<'_>) {
+    pub(super) async fn bpt_handler(&self, _fg: &Device, input_args: &[u8]) {
         trace!("Battery service: got BPT command!");
 
         // 0 for success, 1 for failure
         let mut ret_status = 1u8;
 
-        if payload.data.len() >= 12 {
+        if input_args.len() >= 12 {
             // TODO: Save power threshold somewhere
             // Safe from panics as length is verified above.
-            let threshold_id = u32::from_le_bytes(payload.data[4..8].try_into().unwrap());
-            let threshold_value = u32::from_le_bytes(payload.data[8..12].try_into().unwrap());
+            let threshold_id = u32::from_le_bytes(input_args[4..8].try_into().unwrap());
+            let threshold_value = u32::from_le_bytes(input_args[8..12].try_into().unwrap());
             info!("Threshold ID: {}, Threshold value: {}", threshold_id, threshold_value);
             ret_status = 0;
         } else {
             error!("Malformed BPT command")
         }
 
-        let response = crate::acpi::Payload {
-            version: 1,
-            instance: 1,
-            reserved: ret_status,
-            command: payload.command,
+        let response = Payload {
+            command: AcpiCmd::SetBpt,
             data: &[],
+            status: ret_status,
         };
 
         self.send_acpi_response(&response).await;
     }
 
-    pub(super) async fn bpc_handler(&self, fg: &Device, payload: &crate::acpi::Payload<'_>) {
+    pub(super) async fn bpc_handler(&self, fg: &Device, _input_args: &[u8]) {
         trace!("Battery service: got BPC command!");
 
         let mut bpc_data = embedded_batteries_async::acpi::Bpc::default();
@@ -442,46 +401,42 @@ impl<'a> crate::context::Context<'a> {
         compute_bpc(&mut bpc_data, &cache);
         let bpc_data: &[u8; BPC_RETURN_SIZE_BYTES] = zerocopy::transmute_ref!(&bpc_data);
 
-        let response = crate::acpi::Payload {
-            version: 1,
-            instance: 1,
-            reserved: 0,
-            command: payload.command,
+        let response = Payload {
+            command: AcpiCmd::GetBpc,
             data: bpc_data,
+            status: 0,
         };
 
         self.send_acpi_response(&response).await;
     }
 
-    pub(super) async fn bmc_handler(&self, _fg: &Device, payload: &crate::acpi::Payload<'_>) {
+    pub(super) async fn bmc_handler(&self, _fg: &Device, input_args: &[u8]) {
         trace!("Battery service: got BMC command!");
 
         // 0 for success, 1 for failure
         let mut ret_status = 1u8;
 
-        if payload.data.len() >= 4 {
+        if input_args.len() >= 4 {
             // TODO: Save power threshold somewhere
             // Safe from panics as length is verified above.
             let raw_bmc_control_flags =
-                BmcControlFlags::from_bits_truncate(u32::from_le_bytes(payload.data[..4].try_into().unwrap()));
+                BmcControlFlags::from_bits_truncate(u32::from_le_bytes(input_args[..4].try_into().unwrap()));
             info!("Recvd BMC flags: {}", raw_bmc_control_flags.bits());
             ret_status = 0;
         } else {
             error!("Malformed BMC command")
         }
 
-        let response = crate::acpi::Payload {
-            version: 1,
-            instance: 1,
-            reserved: ret_status,
-            command: payload.command,
+        let response = Payload {
+            command: AcpiCmd::SetBmc,
             data: &[],
+            status: ret_status,
         };
 
         self.send_acpi_response(&response).await;
     }
 
-    pub(super) async fn bmd_handler(&self, fg: &Device, payload: &crate::acpi::Payload<'_>) {
+    pub(super) async fn bmd_handler(&self, fg: &Device, _input_args: &[u8]) {
         trace!("Battery service: got BMD command!");
         let mut bmd_data = embedded_batteries_async::acpi::Bmd::default();
         let static_cache = fg.get_static_battery_cache().await;
@@ -489,28 +444,26 @@ impl<'a> crate::context::Context<'a> {
         compute_bmd(&mut bmd_data, &static_cache, &dynamic_cache);
         let bmd_data: &[u8; BMD_RETURN_SIZE_BYTES] = zerocopy::transmute_ref!(&bmd_data);
 
-        let response = crate::acpi::Payload {
-            version: 1,
-            instance: 1,
-            reserved: 0,
-            command: payload.command,
+        let response = Payload {
+            command: AcpiCmd::GetBmd,
             data: bmd_data,
+            status: 0,
         };
 
         self.send_acpi_response(&response).await;
     }
 
-    pub(super) async fn bct_handler(&self, fg: &Device, payload: &crate::acpi::Payload<'_>) {
+    pub(super) async fn bct_handler(&self, fg: &Device, input_args: &[u8]) {
         trace!("Battery service: got BCT command!");
 
         let mut ret_status = 1;
         let mut bct_data = BctReturnResult::default();
 
-        if payload.data.len() >= 4 {
+        if input_args.len() >= 4 {
             // TODO: Save power threshold somewhere
             // Safe from panics as length is verified above.
             let raw_bct = Bct {
-                charge_level_percent: u32::from_le_bytes(payload.data[..4].try_into().unwrap()),
+                charge_level_percent: u32::from_le_bytes(input_args[..4].try_into().unwrap()),
             };
             info!("Recvd BCT charge_level_percent: {}", raw_bct.charge_level_percent);
             compute_bct(&raw_bct, &mut bct_data, &fg.get_dynamic_battery_cache().await);
@@ -521,28 +474,26 @@ impl<'a> crate::context::Context<'a> {
 
         let bct_return: &[u8; BCT_RETURN_SIZE_BYTES] = &bct_data.into();
 
-        let response = crate::acpi::Payload {
-            version: 1,
-            instance: 1,
-            reserved: ret_status,
-            command: payload.command,
+        let response = Payload {
+            command: AcpiCmd::GetBct,
             data: bct_return,
+            status: ret_status,
         };
 
         self.send_acpi_response(&response).await;
     }
 
-    pub(super) async fn btm_handler(&self, fg: &Device, payload: &crate::acpi::Payload<'_>) {
+    pub(super) async fn btm_handler(&self, fg: &Device, input_args: &[u8]) {
         trace!("Battery service: got BTM command!");
 
         let mut ret_status = 1;
         let mut btm_data = BtmReturnResult::default();
 
-        if payload.data.len() >= 4 {
+        if input_args.len() >= 4 {
             // TODO: Save power threshold somewhere
             // Safe from panics as length is verified above.
             let raw_btm = Btm {
-                discharge_rate: u32::from_le_bytes(payload.data[..4].try_into().unwrap()),
+                discharge_rate: u32::from_le_bytes(input_args[..4].try_into().unwrap()),
             };
             info!("Recvd BTM discharge_rate: {}", raw_btm.discharge_rate);
             compute_btm(&raw_btm, &mut btm_data, &fg.get_dynamic_battery_cache().await);
@@ -553,55 +504,51 @@ impl<'a> crate::context::Context<'a> {
 
         let btm_return: &[u8; BTM_RETURN_SIZE_BYTES] = &btm_data.into();
 
-        let response = crate::acpi::Payload {
-            version: 1,
-            instance: 1,
-            reserved: ret_status,
-            command: payload.command,
+        let response = Payload {
+            command: AcpiCmd::GetBtm,
             data: btm_return,
+            status: ret_status,
         };
 
         self.send_acpi_response(&response).await;
     }
 
-    pub(super) async fn bms_handler(&self, _fg: &Device, payload: &crate::acpi::Payload<'_>) {
+    pub(super) async fn bms_handler(&self, _fg: &Device, input_args: &[u8]) {
         trace!("Battery service: got BMS command!");
 
         let mut ret_status = 1;
 
-        if payload.data.len() >= 4 {
+        if input_args.len() >= 4 {
             // TODO: Set sampling time
             // Safe from panics as length is verified above.
-            let sampling_time = u32::from_le_bytes(payload.data[..4].try_into().unwrap());
+            let sampling_time = u32::from_le_bytes(input_args[..4].try_into().unwrap());
             info!("Recvd BMS sampling_time: {}", sampling_time);
             ret_status = 0;
         } else {
             error!("Malformed BMS command")
         }
 
-        let response = crate::acpi::Payload {
-            version: 1,
-            instance: 1,
-            reserved: ret_status,
-            command: payload.command,
+        let response = Payload {
+            command: AcpiCmd::SetBms,
             // Weirdly, BMS is a method with a dedicated result status in the data field.
             // We use the reserved field for our own return value, so just mirror it here.
             data: &u32::to_le_bytes(u32::from(ret_status)),
+            status: ret_status,
         };
 
         self.send_acpi_response(&response).await;
     }
 
-    pub(super) async fn bma_handler(&self, _fg: &Device, payload: &crate::acpi::Payload<'_>) {
+    pub(super) async fn bma_handler(&self, _fg: &Device, input_args: &[u8]) {
         trace!("Battery service: got BMA command!");
 
         let mut ret_status = 1;
 
-        if payload.data.len() >= 4 {
+        if input_args.len() >= 4 {
             // TODO: Save power threshold somewhere
             // Safe from panics as length is verified above.
             let raw_bma = Bma {
-                averaging_interval_ms: u32::from_le_bytes(payload.data[..4].try_into().unwrap()),
+                averaging_interval_ms: u32::from_le_bytes(input_args[..4].try_into().unwrap()),
             };
             info!("Recvd BMA averaging_interval_ms: {}", raw_bma.averaging_interval_ms);
             ret_status = 0;
@@ -609,20 +556,18 @@ impl<'a> crate::context::Context<'a> {
             error!("Malformed BMA command")
         }
 
-        let response = crate::acpi::Payload {
-            version: 1,
-            instance: 1,
-            reserved: ret_status,
-            command: payload.command,
+        let response = Payload {
+            command: AcpiCmd::SetBma,
             // Weirdly, BMA is a method with a dedicated result status in the data field.
             // We use the reserved field for our own return value, so just mirror it here.
             data: &u32::to_le_bytes(u32::from(ret_status)),
+            status: ret_status,
         };
 
         self.send_acpi_response(&response).await;
     }
 
-    pub(super) async fn sta_handler(&self, _fg: &Device, payload: &crate::acpi::Payload<'_>) {
+    pub(super) async fn sta_handler(&self, _fg: &Device, _input_args: &[u8]) {
         trace!("Battery service: got STA command!");
 
         let mut sta_data = embedded_batteries_async::acpi::StaReturn::default();
@@ -630,12 +575,10 @@ impl<'a> crate::context::Context<'a> {
         compute_sta(&mut sta_data);
         let sta_data: &[u8; STA_RETURN_SIZE_BYTES] = zerocopy::transmute_ref!(&sta_data);
 
-        let response = crate::acpi::Payload {
-            version: 1,
-            instance: 1,
-            reserved: 0,
-            command: payload.command,
+        let response = Payload {
+            command: AcpiCmd::GetSta,
             data: sta_data,
+            status: 0,
         };
 
         self.send_acpi_response(&response).await;

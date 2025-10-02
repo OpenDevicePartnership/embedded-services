@@ -7,7 +7,7 @@ use embassy_futures::select::select;
 use embassy_sync::once_lock::OnceLock;
 use embedded_services::{
     comms::{self, EndpointID},
-    ec_type::message::AcpiMsgComms,
+    ec_type::message::HostRequest,
     error, info, trace,
 };
 
@@ -73,7 +73,7 @@ impl<'a> Service<'a> {
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum Event<'a> {
     StateMachine(BatteryEvent),
-    AcpiRequest(AcpiMsgComms<'a>),
+    AcpiRequest(HostRequest<'a>),
 }
 
 impl<'a> Default for Service<'a> {
@@ -88,7 +88,7 @@ impl<'a> comms::MailboxDelegate for Service<'a> {
             self.context.send_event_no_wait(*event).map_err(|e| match e {
                 embassy_sync::channel::TrySendError::Full(_) => comms::MailboxDelegateError::BufferFull,
             })?
-        } else if let Some(acpi_cmd) = message.data.get::<AcpiMsgComms>() {
+        } else if let Some(acpi_cmd) = message.data.get::<HostRequest>() {
             self.context.send_acpi_cmd(acpi_cmd.clone());
         } else if let Some(power_policy_msg) = message.data.get::<embedded_services::power::policy::CommsMessage>() {
             self.context.set_power_info(&power_policy_msg.data)?;

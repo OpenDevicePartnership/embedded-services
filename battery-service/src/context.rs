@@ -8,7 +8,7 @@ use embassy_time::{Duration, with_timeout};
 use embedded_services::GlobalRawMutex;
 use embedded_services::buffer::OwnedRef;
 use embedded_services::comms::MailboxDelegateError;
-use embedded_services::ec_type::message::AcpiMsgComms;
+use embedded_services::ec_type::message::HostRequest;
 use embedded_services::power::policy::PowerCapability;
 use embedded_services::{IntrusiveList, debug, error, info, intrusive_list, trace, warn};
 
@@ -124,7 +124,7 @@ pub struct Context<'a> {
     battery_response: Channel<GlobalRawMutex, BatteryResponse, 1>,
     no_op_retry_count: AtomicUsize,
     config: Config,
-    acpi_request: Signal<GlobalRawMutex, AcpiMsgComms<'a>>,
+    acpi_request: Signal<GlobalRawMutex, HostRequest<'a>>,
     acpi_buf_owned_ref: OwnedRef<'a, u8>,
     power_info: Mutex<GlobalRawMutex, PsuState>,
 }
@@ -385,31 +385,29 @@ impl<'a> Context<'a> {
         }
     }
 
-    pub(super) async fn process_acpi_cmd(&self, acpi_msg: AcpiMsgComms<'a>) {
+    pub(super) async fn process_acpi_cmd(&self, acpi_msg: HostRequest<'a>) {
         if let Some(fg) = self.get_fuel_gauge(DeviceId(0)) {
-            let payload_len = acpi_msg.payload_len;
             let access = acpi_msg.payload.borrow();
             let raw = access.borrow();
-            if let Ok(payload) = crate::acpi::Payload::from_raw(raw, payload_len) {
-                match payload.command {
-                    crate::acpi::AcpiCmd::GetBix => self.bix_handler(fg, &payload).await,
-                    crate::acpi::AcpiCmd::GetBst => self.bst_handler(fg, &payload).await,
-                    crate::acpi::AcpiCmd::GetPsr => self.psr_handler(fg, &payload).await,
-                    crate::acpi::AcpiCmd::GetPif => self.pif_handler(fg, &payload).await,
-                    crate::acpi::AcpiCmd::GetBps => self.bps_handler(fg, &payload).await,
-                    crate::acpi::AcpiCmd::SetBtp => self.btp_handler(fg, &payload).await,
-                    crate::acpi::AcpiCmd::SetBpt => self.bpt_handler(fg, &payload).await,
-                    crate::acpi::AcpiCmd::GetBpc => self.bpc_handler(fg, &payload).await,
-                    crate::acpi::AcpiCmd::SetBmc => self.bmc_handler(fg, &payload).await,
-                    crate::acpi::AcpiCmd::GetBmd => self.bmd_handler(fg, &payload).await,
-                    crate::acpi::AcpiCmd::GetBct => self.bct_handler(fg, &payload).await,
-                    crate::acpi::AcpiCmd::GetBtm => self.btm_handler(fg, &payload).await,
-                    crate::acpi::AcpiCmd::SetBms => self.bms_handler(fg, &payload).await,
-                    crate::acpi::AcpiCmd::SetBma => self.bma_handler(fg, &payload).await,
-                    crate::acpi::AcpiCmd::GetSta => self.sta_handler(fg, &payload).await,
-                }
-            } else {
-                error!("Battery service: malformed ACPI payload!");
+            match acpi_msg.command.try_into() {
+                Ok(cmd) => match cmd {
+                    crate::acpi::AcpiCmd::GetBix => self.bix_handler(fg, raw).await,
+                    crate::acpi::AcpiCmd::GetBst => self.bst_handler(fg, raw).await,
+                    crate::acpi::AcpiCmd::GetPsr => self.psr_handler(fg, raw).await,
+                    crate::acpi::AcpiCmd::GetPif => self.pif_handler(fg, raw).await,
+                    crate::acpi::AcpiCmd::GetBps => self.bps_handler(fg, raw).await,
+                    crate::acpi::AcpiCmd::SetBtp => self.btp_handler(fg, raw).await,
+                    crate::acpi::AcpiCmd::SetBpt => self.bpt_handler(fg, raw).await,
+                    crate::acpi::AcpiCmd::GetBpc => self.bpc_handler(fg, raw).await,
+                    crate::acpi::AcpiCmd::SetBmc => self.bmc_handler(fg, raw).await,
+                    crate::acpi::AcpiCmd::GetBmd => self.bmd_handler(fg, raw).await,
+                    crate::acpi::AcpiCmd::GetBct => self.bct_handler(fg, raw).await,
+                    crate::acpi::AcpiCmd::GetBtm => self.btm_handler(fg, raw).await,
+                    crate::acpi::AcpiCmd::SetBms => self.bms_handler(fg, raw).await,
+                    crate::acpi::AcpiCmd::SetBma => self.bma_handler(fg, raw).await,
+                    crate::acpi::AcpiCmd::GetSta => self.sta_handler(fg, raw).await,
+                },
+                _ => error!("Battery service: host command not found!"),
             }
         } else {
             error!("Battery service: FG not found when trying to process ACPI cmd!");
@@ -461,11 +459,11 @@ impl<'a> Context<'a> {
         self.battery_event.receive().await
     }
 
-    pub(super) fn send_acpi_cmd(&self, raw: AcpiMsgComms<'a>) {
+    pub(super) fn send_acpi_cmd(&self, raw: HostRequest<'a>) {
         self.acpi_request.signal(raw);
     }
 
-    pub(super) async fn wait_acpi_cmd(&self) -> AcpiMsgComms<'a> {
+    pub(super) async fn wait_acpi_cmd(&self) -> HostRequest<'a> {
         self.acpi_request.wait().await
     }
 

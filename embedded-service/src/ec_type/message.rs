@@ -68,19 +68,15 @@ pub enum BatteryMessage {
 
 /// ACPI Message, compatible with comms system
 #[derive(Clone)]
-pub struct AcpiMsgComms<'a> {
+pub struct HostRequest<'a> {
     /// Shared ref to a buffer
     pub payload: crate::buffer::SharedRef<'a, u8>,
     /// Size of payload
     pub payload_len: usize,
-}
-
-/// ACPI Message, holding an owned reference to a buffer
-pub struct AcpiMsg<'a> {
-    /// Owned ref to a buffer
-    pub payload: crate::buffer::OwnedRef<'a, u8>,
-    /// Size of payload
-    pub payload_len: usize,
+    /// Command, to be interpreted by service
+    pub command: u8,
+    /// Status code
+    pub status: u8,
 }
 
 /// Notification type to be sent to Host
@@ -118,5 +114,5 @@ pub enum HostMsg<'a> {
     /// typically the host will request some data from the EC
     Notification(NotificationMsg),
     /// Response to Host request.
-    Response(AcpiMsgComms<'a>),
+    Response(HostRequest<'a>),
 }
