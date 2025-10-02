@@ -349,7 +349,7 @@ impl Service {
     //      on embassy task implementation.
     //
     pub async fn init(
-        service_storage: &'static mut OnceLock<Service>,
+        service_storage: &'static OnceLock<Service>,
         spawner: &embassy_executor::Spawner,
         backing_clock: &'static mut impl DatetimeClock,
         tz_storage: &'static mut dyn NvramStorage<'static, u32>,
