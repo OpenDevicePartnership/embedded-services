@@ -16,28 +16,6 @@ pub enum CapabilitiesMessage {
 
 #[allow(missing_docs)]
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub enum TimeAlarmMessage {
-    Events(u32),
-    Capability(u32),
-    Year(u16),
-    Month(u8),
-    Day(u8),
-    Hour(u8),
-    Minute(u8),
-    Second(u8),
-    Valid(u8),
-    Daylight(u8),
-    Res1(u8),
-    Milli(u16),
-    TimeZone(u16),
-    Res2(u16),
-    AlarmStatus(u32),
-    AcTimeVal(u32),
-    DcTimeVal(u32),
-}
-
-#[allow(missing_docs)]
-#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum BatteryMessage {
     Events(u32),
     Status(u32),
