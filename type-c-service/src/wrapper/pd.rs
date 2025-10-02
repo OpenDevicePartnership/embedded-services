@@ -347,6 +347,24 @@ impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, 
                     },
                 }
             }
+            controller::PortCommandData::SetPdStateMachineConfig(config) => {
+                match controller.set_pd_state_machine_config(local_port, config).await {
+                    Ok(()) => Ok(controller::PortResponseData::Complete),
+                    Err(e) => match e {
+                        Error::Bus(_) => Err(PdError::Failed),
+                        Error::Pd(e) => Err(e),
+                    },
+                }
+            }
+            controller::PortCommandData::SetTypeCStateMachineConfig(state) => {
+                match controller.set_type_c_state_machine_config(local_port, state).await {
+                    Ok(()) => Ok(controller::PortResponseData::Complete),
+                    Err(e) => match e {
+                        Error::Bus(_) => Err(PdError::Failed),
+                        Error::Pd(e) => Err(e),
+                    },
+                }
+            }
             controller::PortCommandData::ExecuteUcsiCommand(command_data) => {
                 Ok(controller::PortResponseData::UcsiResponse(
                     controller

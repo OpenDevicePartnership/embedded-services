@@ -14,7 +14,7 @@ use embedded_hal_async::i2c::I2c;
 use embedded_services::power::policy::PowerCapability;
 use embedded_services::type_c::controller::{
     self, AttnVdm, Controller, ControllerStatus, DpPinConfig, OtherVdm, PortStatus, SendVdm, TbtConfig,
-    UsbControlConfig,
+    TypeCStateMachineState, UsbControlConfig,
 };
 use embedded_services::type_c::event::PortEvent;
 use embedded_services::type_c::ATTN_VDM_LEN;
@@ -35,6 +35,7 @@ use tps6699x::command::{
     ReturnValue,
 };
 use tps6699x::fw_update::UpdateConfig as FwUpdateConfig;
+use tps6699x::registers::port_config::TypeCStateMachine;
 use tps6699x::MAX_SUPPORTED_PORTS;
 
 type Updater<'a, M, B> = BorrowedUpdaterInProgress<tps6699x_drv::Tps6699x<'a, M, B>>;
@@ -726,6 +727,39 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
         config_reg.set_tbt_mode_en(config.tbt_enabled);
 
         self.tps6699x.lock_inner().await.set_tbt_config(port, config_reg).await
+    }
+
+    async fn set_pd_state_machine_config(
+        &mut self,
+        port: LocalPortId,
+        config: controller::PdStateMachineConfig,
+    ) -> Result<(), Error<Self::BusError>> {
+        debug!("Port{} setting PD state machine config: {:#?}", port.0, config);
+
+        let mut config_reg = self.tps6699x.lock_inner().await.get_port_config(port).await?;
+
+        config_reg.set_disable_pd(!config.enabled);
+
+        self.tps6699x.lock_inner().await.set_port_config(port, config_reg).await
+    }
+
+    async fn set_type_c_state_machine_config(
+        &mut self,
+        port: LocalPortId,
+        state: controller::TypeCStateMachineState,
+    ) -> Result<(), Error<Self::BusError>> {
+        debug!("Port{} setting Type-C state machine state: {:#?}", port.0, state);
+
+        let mut config_reg = self.tps6699x.lock_inner().await.get_port_config(port).await?;
+        let typec_state = match state {
+            TypeCStateMachineState::Sink => TypeCStateMachine::Sink,
+            TypeCStateMachineState::Source => TypeCStateMachine::Source,
+            TypeCStateMachineState::Drp => TypeCStateMachine::Drp,
+            TypeCStateMachineState::Disabled => TypeCStateMachine::Disabled,
+        };
+
+        config_reg.set_typec_state_machine(typec_state);
+        self.tps6699x.lock_inner().await.set_port_config(port, config_reg).await
     }
 
     async fn execute_ucsi_command(

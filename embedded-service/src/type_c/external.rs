@@ -3,7 +3,9 @@ use embedded_usb_pd::{GlobalPortId, LocalPortId, PdError, ucsi};
 
 use crate::type_c::{
     Cached,
-    controller::{TbtConfig, UsbControlConfig, execute_external_ucsi_command},
+    controller::{
+        PdStateMachineConfig, TbtConfig, TypeCStateMachineState, UsbControlConfig, execute_external_ucsi_command,
+    },
 };
 
 use super::{
@@ -85,6 +87,10 @@ pub enum PortCommandData {
     ExecuteDrst,
     /// Set Thunderbolt configuration
     SetTbtConfig(TbtConfig),
+    /// Set PD state-machine configuration
+    SetPdStateMachineConfig(PdStateMachineConfig),
+    /// Set Type-C state-machine configuration
+    SetTypeCStateMachineConfig(TypeCStateMachineState),
 }
 
 /// Port-specific commands
@@ -415,6 +421,32 @@ pub async fn set_tbt_config(port: GlobalPortId, config: TbtConfig) -> Result<(),
     match execute_external_port_command(Command::Port(PortCommand {
         port,
         data: PortCommandData::SetTbtConfig(config),
+    }))
+    .await?
+    {
+        PortResponseData::Complete => Ok(()),
+        _ => Err(PdError::InvalidResponse),
+    }
+}
+
+/// Set PD state-machine configuration for the given port
+pub async fn set_pd_state_machine_config(port: GlobalPortId, config: PdStateMachineConfig) -> Result<(), PdError> {
+    match execute_external_port_command(Command::Port(PortCommand {
+        port,
+        data: PortCommandData::SetPdStateMachineConfig(config),
+    }))
+    .await?
+    {
+        PortResponseData::Complete => Ok(()),
+        _ => Err(PdError::InvalidResponse),
+    }
+}
+
+/// Set Type-C state-machine configuration for the given port
+pub async fn set_type_c_state_machine_config(port: GlobalPortId, state: TypeCStateMachineState) -> Result<(), PdError> {
+    match execute_external_port_command(Command::Port(PortCommand {
+        port,
+        data: PortCommandData::SetTypeCStateMachineConfig(state),
     }))
     .await?
     {

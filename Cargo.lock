@@ -671,7 +671,7 @@ dependencies = [
 [[package]]
 name = "embassy-imxrt"
 version = "0.1.0"
-source = "git+https://github.com/OpenDevicePartnership/embassy-imxrt#581f66e68ceaefb77e35f230dfb114322912dd6b"
+source = "git+https://github.com/OpenDevicePartnership/embassy-imxrt#fc8399970ca596a45a4457d7f046a7e3f8d05667"
 dependencies = [
  "cfg-if",
  "cortex-m",
@@ -869,7 +869,7 @@ dependencies = [
 [[package]]
 name = "embedded-mcu-hal"
 version = "0.1.0"
-source = "git+https://github.com/OpenDevicePartnership/embedded-mcu#146fda33807af6aeabcade513914da95c926fbc9"
+source = "git+https://github.com/OpenDevicePartnership/embedded-mcu#458f99699831ef5fbb557175334195cca7440f49"
 dependencies = [
  "defmt 1.0.1",
 ]
@@ -1337,27 +1337,27 @@ dependencies = [
 
 [[package]]
 name = "mimxrt633s-pac"
-version = "0.4.1"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "843c1c63c367293e4fa270cc161b5bdfef55b4c6a0a18768f737241fb24be70c"
+checksum = "a580cd0048e0e5b1eee17208b7f95ba05ec7ca0175789333b2fa7241798d3cdc"
 dependencies = [
  "cortex-m",
  "cortex-m-rt",
  "critical-section",
- "defmt 0.3.100",
+ "defmt 1.0.1",
  "vcell",
 ]
 
 [[package]]
 name = "mimxrt685s-pac"
-version = "0.4.0"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4c0b80e5add9dc74500acbb1ca70248e237d242b77988631e41db40a225f3a40"
+checksum = "8c8860258951178c4f91e42581ae8f33241a0e9a3e89bf2721d932ef366db51b"
 dependencies = [
  "cortex-m",
  "cortex-m-rt",
  "critical-section",
- "defmt 0.3.100",
+ "defmt 1.0.1",
  "vcell",
 ]
 
@@ -1885,7 +1885,7 @@ dependencies = [
 [[package]]
 name = "storage_bus"
 version = "0.1.0"
-source = "git+https://github.com/OpenDevicePartnership/embedded-mcu#146fda33807af6aeabcade513914da95c926fbc9"
+source = "git+https://github.com/OpenDevicePartnership/embedded-mcu#458f99699831ef5fbb557175334195cca7440f49"
 
 [[package]]
 name = "strsim"
