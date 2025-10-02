@@ -7,6 +7,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+bitfield.workspace = true
 bytemuck.workspace = true
 defmt = { workspace = true, optional = true }
 log = { workspace = true, optional = true }

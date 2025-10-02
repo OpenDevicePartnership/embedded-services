@@ -306,9 +306,9 @@ impl Timer {
                         return false;
                     }
 
-                    timer_state.timer_status.timer_expired = true;
+                    timer_state.timer_status.set_timer_expired(true);
                     if timer_state.is_active {
-                        timer_state.timer_status.timer_triggered_wake = true;
+                        timer_state.timer_status.set_timer_triggered_wake(true);
                         timer_state.persistent_storage.set_timer_wake_policy(AlarmExpiredWakePolicy::NEVER);
                         self.clear_expiration_time(&mut timer_state);
                         return true;

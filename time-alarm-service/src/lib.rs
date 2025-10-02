@@ -1,5 +1,6 @@
 #![no_std]
 
+use bitfield::bitfield;
 use core::any::Any;
 use core::array::TryFromSliceError;
 use core::borrow::Borrow;
@@ -15,6 +16,7 @@ use embedded_services::{GlobalRawMutex, comms::MailboxDelegateError};
 use embedded_mcu_hal::NvramStorage;
 use embedded_mcu_hal::time::{Datetime, DatetimeClock, DatetimeClockError};
 use embedded_services::{comms, error, info, trace};
+
 
 mod acpi_timestamp;
 use acpi_timestamp::{AcpiDaylightSavingsTimeStatus, AcpiTimeZone, AcpiTimestamp};
@@ -281,25 +283,15 @@ struct ClockState {
     tz_data: TimeZoneData,
 }
 
-// TODO see if there's some sort of bitfield crate that can make this cleaner
-#[derive(Copy, Clone, Debug, Default)]
-struct TimerStatus {
-    timer_expired: bool,
-    timer_triggered_wake: bool,
-}
-
-impl From<TimerStatus> for u32 {
-    fn from(value: TimerStatus) -> Self {
-        let mut result = 0u32;
-        if value.timer_expired {
-            result |= 0x1;
-        }
-        if value.timer_triggered_wake {
-            result |= 0x2;
-        }
-        result
-    }
-}
+bitfield!(
+    #[derive(Copy, Clone, Default, PartialEq, Eq)]
+    #[cfg_attr(feature = "defmt", derive(defmt::Format))]
+    pub struct TimerStatus(u32);
+    impl Debug;
+    bool;
+    timer_expired, set_timer_expired: 0;
+    timer_triggered_wake, set_timer_triggered_wake: 1;
+);
 
 // -------------------------------------------------
 
@@ -502,7 +494,7 @@ impl Service {
             }
             AcpiTimeAlarmDeviceCommand::GetWakeStatus(timer_id) => {
                 let status = self.timers.get_timer(timer_id).get_wake_status();
-                Ok(AcpiTimeAlarmCommandResult::U32(status.into()))
+                Ok(AcpiTimeAlarmCommandResult::U32(status.0))
             }
             AcpiTimeAlarmDeviceCommand::ClearWakeStatus(timer_id) => {
                 self.timers.get_timer(timer_id).clear_wake_status();
