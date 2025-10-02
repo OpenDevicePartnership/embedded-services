@@ -407,29 +407,34 @@ impl Service {
                     let acpi_result = self.handle_acpi_command(acpi_command).await;
                     match acpi_result {
                         Ok(response_payload) => {
-                            // TODO [COMMS] is it a problem that we're sending the response in two pieces? If yes, we may need to
-                            //      arrange it into a buffer or something. May not be worth solving if we're looking to pivot
-                            //      to using something like postcard for this, though.
-                            //
                             // TODO [COMMS] it seems like we're sort of conflating wire representation with message representation here -
                             //      is this really how we want to pass messages through the comms system? It seems like it makes it
-                            //      harder for other services to send messages to us.  May change with postcard?
+                            //      harder for other services to send messages to us - we're obligated to serialize/deserialize messages
+                            //      whenever we send them to another subsystem on the MCU rather than just passing around strongly-typed
+                            //      objects.  We may want to consider changing the comms system to allow passing strongly-typed objects and
+                            //      perhaps a trait that indicates if it's serializable for an off-system transport like eSPI?
                             //
                             self.send_acpi_response(respond_to_endpoint, &COMMAND_SUCCEEDED).await;
                             match response_payload {
                                 AcpiTimeAlarmCommandResult::Timestamp(timestamp) => {
-                                    self.send_acpi_response(respond_to_endpoint, &timestamp.as_bytes())
-                                        .await
+                                    let mut response = [0u8; 4 + core::mem::size_of::<AcpiTimestamp>()];
+                                    response[..4].copy_from_slice(&COMMAND_SUCCEEDED.to_le_bytes());
+                                    response[4..].copy_from_slice(&timestamp.as_bytes());
+                                    self.send_acpi_response(respond_to_endpoint, &response).await
                                 }
                                 AcpiTimeAlarmCommandResult::U32(value) => {
+                                    let mut response = [0u8; 8];
+                                    response[..4].copy_from_slice(&COMMAND_SUCCEEDED.to_le_bytes());
+                                    response[4..].copy_from_slice(&value.to_le_bytes());
                                     self.send_acpi_response(respond_to_endpoint, &value).await
                                 }
-                                AcpiTimeAlarmCommandResult::Valueless => (), // nothing more to send
+                                AcpiTimeAlarmCommandResult::Valueless => 
+                                    self.send_acpi_response(respond_to_endpoint, &COMMAND_SUCCEEDED.to_le_bytes()).await
                             }
                         }
                         Err(e) => {
                             error!("Error handling ACPI command: {:?}", e);
-                            self.send_acpi_response(respond_to_endpoint, &COMMAND_FAILED).await;
+                            self.send_acpi_response(respond_to_endpoint, &COMMAND_FAILED.to_le_bytes()).await;
                         }
                     }
                 }
