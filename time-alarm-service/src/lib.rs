@@ -410,10 +410,11 @@ impl Service {
                             //      objects.  We may want to consider changing the comms system to allow passing strongly-typed objects and
                             //      perhaps a trait that indicates if it's serializable for an off-system transport like eSPI?
                             //
-                            self.send_acpi_response(respond_to_endpoint, &COMMAND_SUCCEEDED).await;
                             match response_payload {
                                 AcpiTimeAlarmCommandResult::Timestamp(timestamp) => {
-                                    let mut response = [0u8; 4 + core::mem::size_of::<AcpiTimestamp>()];
+                                    // TODO I want to be able to say '4 + sizeof(decltype(timestamp.as_bytes()))' here but I don't know how to do that in rust - is there a cleaner way to learn the size of the return type of a function?
+                                    const ACPI_TIMESTAMP_BYTES_SIZE: usize = 16;
+                                    let mut response = [0u8; 4 + ACPI_TIMESTAMP_BYTES_SIZE];
                                     response[..4].copy_from_slice(&COMMAND_SUCCEEDED.to_le_bytes());
                                     response[4..].copy_from_slice(&timestamp.as_bytes());
                                     self.send_acpi_response(respond_to_endpoint, &response).await
@@ -586,7 +587,7 @@ async fn command_handler_task(service: &'static Service) {
     service.handle_requests().await;
 }
 
-#[embassy_executor::task]
+#[embassy_executor::task(pool_size = 2)]
 async fn timer_task(service: &'static Service, timer_id: AcpiTimerId) {
     info!("Starting time-alarm timer task");
     service.handle_timer(timer_id).await;
