@@ -21,7 +21,7 @@ use embedded_services::type_c::event::PortEvent;
 use embedded_services::{debug, error, info, trace, type_c, warn};
 use embedded_usb_pd::ado::Ado;
 use embedded_usb_pd::pdinfo::PowerPathStatus;
-use embedded_usb_pd::pdo::{Common, Rdo, sink, source};
+use embedded_usb_pd::pdo::{Common, Contract, Rdo, sink, source};
 use embedded_usb_pd::type_c::Current as TypecCurrent;
 use embedded_usb_pd::ucsi::lpm;
 use embedded_usb_pd::{DataRole, Error, LocalPortId, PdError, PlugOrientation, PowerRole};
@@ -324,7 +324,8 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
                     let rdo = Rdo::for_pdo(rdo_raw, pdo);
                     debug!("PDO: {:#?}", pdo);
                     debug!("RDO: {:#?}", rdo);
-                    port_status.available_source_contract = Some(PowerCapability::from(pdo));
+                    port_status.available_source_contract =
+                        PowerCapability::try_from(Contract::from_source(pdo, rdo)).ok();
                     port_status.dual_power = pdo.dual_role_power();
                 } else {
                     // active_rdo_contract doesn't contain the full picture
@@ -347,7 +348,7 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
                     let rdo = Rdo::for_pdo(rdo_raw, pdo);
                     debug!("PDO: {:#?}", pdo);
                     debug!("RDO: {:#?}", rdo);
-                    port_status.available_sink_contract = Some(PowerCapability::from(pdo));
+                    port_status.available_sink_contract = PowerCapability::try_from(Contract::from_sink(pdo, rdo)).ok();
                     port_status.dual_power = source_pdos[0].dual_role_power();
                     port_status.unconstrained_power = source_pdos[0].unconstrained_power();
                 }
