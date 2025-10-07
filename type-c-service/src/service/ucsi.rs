@@ -1,10 +1,10 @@
+use embedded_usb_pd::PdError;
 use embedded_usb_pd::ucsi::cci::Cci;
 use embedded_usb_pd::ucsi::ppm::set_notification_enable::NotificationEnable;
 use embedded_usb_pd::ucsi::ppm::state_machine::{
     GlobalInput as PpmInput, GlobalOutput as PpmOutput, GlobalStateMachine as StateMachine, InvalidTransition,
 };
-use embedded_usb_pd::ucsi::{lpm, ppm, GlobalCommand, ResponseData};
-use embedded_usb_pd::PdError;
+use embedded_usb_pd::ucsi::{GlobalCommand, ResponseData, lpm, ppm};
 
 use super::*;
 

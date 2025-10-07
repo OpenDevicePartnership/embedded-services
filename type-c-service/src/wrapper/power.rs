@@ -5,8 +5,8 @@ use embedded_services::{
     debug,
     ipc::deferred,
     power::policy::{
-        device::{CommandData, InternalResponseData},
         ConsumerPowerCapability, ProviderPowerCapability,
+        device::{CommandData, InternalResponseData},
     },
 };
 

@@ -1,6 +1,6 @@
 //! Power Delivery (PD) related functionality.
 
-use embedded_usb_pd::{ado::Ado, GlobalPortId, PdError};
+use embedded_usb_pd::{GlobalPortId, PdError, ado::Ado};
 
 use super::Service;
 

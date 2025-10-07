@@ -1,8 +1,8 @@
 use embedded_services::{
     debug, error,
     type_c::{
-        external::{self, ControllerCommandData},
         ControllerId,
+        external::{self, ControllerCommandData},
     },
 };
 

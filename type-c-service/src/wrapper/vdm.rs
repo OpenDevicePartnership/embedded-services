@@ -8,9 +8,9 @@ use embedded_services::{
 };
 use embedded_usb_pd::{Error, LocalPortId, PdError};
 
-use crate::wrapper::{message::vdm::OutputKind, DynPortState};
+use crate::wrapper::{DynPortState, message::vdm::OutputKind};
 
-use super::{message::vdm::Output, ControllerWrapper, FwOfferValidator};
+use super::{ControllerWrapper, FwOfferValidator, message::vdm::Output};
 
 impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, M, C, V> {
     /// Process a VDM event by retrieving the relevant VDM data from the `controller` for the appropriate `port`.

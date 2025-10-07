@@ -1,14 +1,14 @@
 //! [`crate::wrapper::ControllerWrapper`] message types
 use embedded_services::{
+    GlobalRawMutex,
     ipc::deferred,
     power::policy,
     type_c::{
         controller::{self, DpStatus, PortStatus},
         event::{PortNotificationSingle, PortStatusChanged},
     },
-    GlobalRawMutex,
 };
-use embedded_usb_pd::{ado::Ado, LocalPortId};
+use embedded_usb_pd::{LocalPortId, ado::Ado};
 
 /// Port status changed event data
 #[derive(Copy, Clone, Debug)]

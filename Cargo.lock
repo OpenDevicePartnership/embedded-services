@@ -671,7 +671,7 @@ dependencies = [
 [[package]]
 name = "embassy-imxrt"
 version = "0.1.0"
-source = "git+https://github.com/OpenDevicePartnership/embassy-imxrt#fc8399970ca596a45a4457d7f046a7e3f8d05667"
+source = "git+https://github.com/OpenDevicePartnership/embassy-imxrt#4699b3c023cd9276a7589c5cbdec8f6523a11739"
 dependencies = [
  "cfg-if",
  "cortex-m",
