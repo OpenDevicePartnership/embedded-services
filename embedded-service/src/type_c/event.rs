@@ -444,6 +444,12 @@ impl From<PortPending> for u32 {
     }
 }
 
+impl Default for PortPending {
+    fn default() -> Self {
+        Self::none()
+    }
+}
+
 impl FromIterator<usize> for PortPending {
     fn from_iter<T: IntoIterator<Item = usize>>(iter: T) -> Self {
         let mut flags = PortPending::none();

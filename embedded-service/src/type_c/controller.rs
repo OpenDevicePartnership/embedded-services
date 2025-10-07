@@ -17,8 +17,9 @@ use super::{ATTN_VDM_LEN, ControllerId, OTHER_VDM_LEN, external};
 use crate::ipc::deferred;
 use crate::power::policy;
 use crate::type_c::Cached;
+use crate::type_c::comms::CommsMessage;
 use crate::type_c::event::{PortEvent, PortPending};
-use crate::{GlobalRawMutex, IntrusiveNode, error, intrusive_list, trace};
+use crate::{GlobalRawMutex, IntrusiveNode, broadcaster::immediate as broadcaster, error, intrusive_list, trace};
 
 /// maximum number of data objects in a VDM
 pub const MAX_NUM_DATA_OBJECTS: usize = 7; // 7 VDOs of 4 bytes each
@@ -674,6 +675,8 @@ struct Context {
     port_events: Signal<GlobalRawMutex, PortPending>,
     /// Channel for receiving commands to the type-C service
     external_command: deferred::Channel<GlobalRawMutex, external::Command, external::Response<'static>>,
+    /// Event broadcaster
+    broadcaster: broadcaster::Immediate<CommsMessage>,
 }
 
 impl Context {
@@ -682,6 +685,7 @@ impl Context {
             controllers: intrusive_list::IntrusiveList::new(),
             port_events: Signal::new(),
             external_command: deferred::Channel::new(),
+            broadcaster: broadcaster::Immediate::default(),
         }
     }
 
@@ -739,6 +743,13 @@ pub(super) async fn get_num_ports() -> usize {
         .controllers
         .iter_only::<Device>()
         .fold(0, |acc, controller| acc + controller.num_ports())
+}
+
+/// Register a message receiver for type-C messages
+pub async fn register_message_receiver(
+    receiver: &'static broadcaster::Receiver<'_, CommsMessage>,
+) -> intrusive_list::Result<()> {
+    CONTEXT.get().await.broadcaster.register_receiver(receiver)
 }
 
 /// Default command timeout
@@ -1213,6 +1224,11 @@ impl ContextToken {
             PortResponseData::UcsiResponse(response) => response,
             _ => Err(PdError::InvalidResponse),
         }
+    }
+
+    /// Broadcast a type-C message to all subscribers
+    pub async fn broadcast_message(&self, message: CommsMessage) {
+        CONTEXT.get().await.broadcaster.broadcast(message).await;
     }
 }
 
