@@ -9,19 +9,16 @@ repository.workspace = true
 workspace = true
 
 [dependencies]
+cortex-m = { workspace = true, optional = true }
 crc = "3.2.1"
 defmt = { workspace = true, optional = true }
-embassy-executor.workspace = true
+embassy-imxrt = { workspace = true, optional = true, features = ["unstable-pac"] }
 embassy-sync.workspace = true
 embassy-time.workspace = true
 embedded-cfu-protocol.workspace = true
 embedded-services.workspace = true
 heapless.workspace = true
 log = { workspace = true, optional = true }
-embassy-imxrt = { workspace = true, optional = true, features = [
-    "unstable-pac",
-] }
-cortex-m = { workspace = true, optional = true }
 
 [features]
 # TODO find method to unblock CI gate without requiring chip specification at library level
@@ -31,17 +28,15 @@ cortex-m = ["dep:cortex-m"]
 
 defmt = [
     "dep:defmt",
-    "embedded-services/defmt",
-    "embassy-time/defmt",
     "embassy-sync/defmt",
-    "embassy-executor/defmt",
+    "embassy-time/defmt",
     "embedded-cfu-protocol/defmt",
+    "embedded-services/defmt",
 ]
 log = [
     "dep:log",
-    "embedded-services/log",
-    "embassy-time/log",
     "embassy-sync/log",
-    "embassy-executor/log",
+    "embassy-time/log",
     "embedded-cfu-protocol/log",
+    "embedded-services/log",
 ]
