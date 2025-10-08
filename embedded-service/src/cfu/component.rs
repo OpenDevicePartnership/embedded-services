@@ -40,13 +40,15 @@ pub struct InternalState {
 impl InternalState {
     /// Constructor for a given `state`
     pub fn new(state: ComponentState) -> Self {
-        Self {
-            state,
-            waiting_on_subs: false,
-        }
+        Self::new_inner(state, false)
     }
+
     /// Constructor that uses given values for both `state` and `waiting_on_subs`
     pub fn new_with_subcomponent_info(state: ComponentState, waiting_on_subs: bool) -> Self {
+        Self::new_inner(state, waiting_on_subs)
+    }
+
+    fn new_inner(state: ComponentState, waiting_on_subs: bool) -> Self {
         Self { state, waiting_on_subs }
     }
 }

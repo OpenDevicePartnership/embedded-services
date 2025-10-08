@@ -148,20 +148,14 @@ embedded_services::define_static_buffer!(acpi_buf, u8, [0u8; 133]);
 impl<'a> Context<'a> {
     /// Create a new context instance.
     pub fn new() -> Self {
-        Self {
-            fuel_gauges: IntrusiveList::new(),
-            state: Mutex::new(State::NotPresent),
-            battery_event: Channel::new(),
-            battery_response: Channel::new(),
-            no_op_retry_count: AtomicUsize::new(0),
-            config: Default::default(),
-            acpi_request: Signal::new(),
-            acpi_buf_owned_ref: acpi_buf::get_mut().unwrap(),
-            power_info: Mutex::new(PsuState::default()),
-        }
+        Self::new_inner(Default::default())
     }
 
     pub fn new_with_config(config: Config) -> Self {
+        Self::new_inner(config)
+    }
+
+    fn new_inner(config: Config) -> Self {
         Self {
             fuel_gauges: IntrusiveList::new(),
             state: Mutex::new(State::NotPresent),

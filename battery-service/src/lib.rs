@@ -26,14 +26,15 @@ pub struct Service<'a> {
 impl<'a> Service<'a> {
     /// Create a new battery service instance.
     pub fn new() -> Self {
-        Service {
-            endpoint: comms::Endpoint::uninit(comms::EndpointID::Internal(comms::Internal::Battery)),
-            context: context::Context::default(),
-        }
+        Self::new_inner(Default::default())
     }
 
     /// Create a new battery service instance with context configuration.
     pub fn new_with_ctx_config(config: context::Config) -> Self {
+        Self::new_inner(config)
+    }
+
+    fn new_inner(config: context::Config) -> Self {
         Service {
             endpoint: comms::Endpoint::uninit(comms::EndpointID::Internal(comms::Internal::Battery)),
             context: context::Context::new_with_config(config),
