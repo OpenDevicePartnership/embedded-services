@@ -1,9 +1,10 @@
-use embassy_futures::select::{select3, Either3};
+use embassy_futures::select::{Either3, select3};
 use embassy_sync::{
     mutex::Mutex,
     pubsub::{DynImmediatePublisher, DynSubscriber},
 };
 use embedded_services::{
+    GlobalRawMutex,
     comms::{self, EndpointID, Internal},
     debug, error, info, intrusive_list,
     ipc::deferred,
@@ -14,7 +15,6 @@ use embedded_services::{
         event::{PortNotificationSingle, PortStatusChanged},
         external,
     },
-    GlobalRawMutex,
 };
 use embedded_services::{power::policy as power_policy, type_c::Cached};
 use embedded_usb_pd::GlobalPortId;

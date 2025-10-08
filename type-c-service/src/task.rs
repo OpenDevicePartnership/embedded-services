@@ -1,10 +1,10 @@
 use core::future::Future;
 use embassy_sync::pubsub::PubSubChannel;
-use embedded_services::{error, info, power, GlobalRawMutex};
+use embedded_services::{GlobalRawMutex, error, info, power};
 use static_cell::StaticCell;
 
 use crate::service::config::Config;
-use crate::service::{Service, MAX_POWER_POLICY_EVENTS};
+use crate::service::{MAX_POWER_POLICY_EVENTS, Service};
 
 /// Task to run the Type-C service, takes a closure to customize the event loop
 pub async fn task_closure<'a, Fut: Future<Output = ()>, F: Fn(&'a Service) -> Fut>(config: Config, f: F) {
