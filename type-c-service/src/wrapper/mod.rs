@@ -18,21 +18,21 @@
 //! any caching/buffering of data, and notifies the type-C service implementation of the event if needed.
 use core::array::from_fn;
 use core::cell::RefMut;
-use core::future::{pending, Future};
+use core::future::{Future, pending};
 use core::ops::DerefMut;
 
-use embassy_futures::select::{select, select5, select_array, Either, Either5};
+use embassy_futures::select::{Either, Either5, select, select_array, select5};
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use embassy_sync::mutex::Mutex;
 use embassy_sync::signal::Signal;
 use embassy_time::Instant;
 use embedded_cfu_protocol::protocol_definitions::{FwUpdateOffer, FwUpdateOfferResponse, FwVersion};
+use embedded_services::GlobalRawMutex;
 use embedded_services::power::policy::device::StateKind;
 use embedded_services::power::policy::{self, action};
 use embedded_services::transformers::object::{Object, RefGuard, RefMutGuard};
 use embedded_services::type_c::controller::{self, Controller, PortStatus};
 use embedded_services::type_c::event::{PortEvent, PortNotificationSingle, PortPending, PortStatusChanged};
-use embedded_services::GlobalRawMutex;
 use embedded_services::{debug, error, info, trace, warn};
 use embedded_usb_pd::ado::Ado;
 use embedded_usb_pd::{Error, LocalPortId, PdError};
@@ -430,7 +430,7 @@ impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, 
                     }
                 }
                 Either5::Second((port, request)) => {
-                    return Ok(Event::PowerPolicyCommand(EventPowerPolicyCommand { port, request }))
+                    return Ok(Event::PowerPolicyCommand(EventPowerPolicyCommand { port, request }));
                 }
                 Either5::Third(request) => return Ok(Event::ControllerCommand(request)),
                 Either5::Fourth(event) => return Ok(Event::CfuEvent(event)),

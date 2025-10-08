@@ -12,31 +12,31 @@ use embassy_sync::blocking_mutex::raw::RawMutex;
 use embassy_time::Delay;
 use embedded_hal_async::i2c::I2c;
 use embedded_services::power::policy::PowerCapability;
+use embedded_services::type_c::ATTN_VDM_LEN;
 use embedded_services::type_c::controller::{
     self, AttnVdm, Controller, ControllerStatus, DpPinConfig, OtherVdm, PortStatus, SendVdm, TbtConfig,
     TypeCStateMachineState, UsbControlConfig,
 };
 use embedded_services::type_c::event::PortEvent;
-use embedded_services::type_c::ATTN_VDM_LEN;
 use embedded_services::{debug, error, info, trace, type_c, warn};
 use embedded_usb_pd::ado::Ado;
 use embedded_usb_pd::pdinfo::PowerPathStatus;
-use embedded_usb_pd::pdo::{sink, source, Common, Rdo};
+use embedded_usb_pd::pdo::{Common, Rdo, sink, source};
 use embedded_usb_pd::type_c::Current as TypecCurrent;
 use embedded_usb_pd::ucsi::lpm;
 use embedded_usb_pd::{DataRole, Error, LocalPortId, PdError, PlugOrientation, PowerRole};
+use tps6699x::MAX_SUPPORTED_PORTS;
 use tps6699x::asynchronous::embassy as tps6699x_drv;
 use tps6699x::asynchronous::fw_update::UpdateTarget;
 use tps6699x::asynchronous::fw_update::{
-    disable_all_interrupts, enable_port0_interrupts, BorrowedUpdater, BorrowedUpdaterInProgress,
+    BorrowedUpdater, BorrowedUpdaterInProgress, disable_all_interrupts, enable_port0_interrupts,
 };
 use tps6699x::command::{
-    vdms::{Version, INITIATOR_WAIT_TIME_MS, MAX_NUM_DATA_OBJECTS},
     ReturnValue,
+    vdms::{INITIATOR_WAIT_TIME_MS, MAX_NUM_DATA_OBJECTS, Version},
 };
 use tps6699x::fw_update::UpdateConfig as FwUpdateConfig;
 use tps6699x::registers::port_config::TypeCStateMachine;
-use tps6699x::MAX_SUPPORTED_PORTS;
 
 type Updater<'a, M, B> = BorrowedUpdaterInProgress<tps6699x_drv::Tps6699x<'a, M, B>>;
 

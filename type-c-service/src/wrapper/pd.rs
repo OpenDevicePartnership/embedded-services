@@ -2,8 +2,8 @@ use embassy_futures::yield_now;
 use embassy_sync::pubsub::WaitResult;
 use embassy_time::{Duration, Timer};
 use embedded_services::debug;
-use embedded_services::type_c::controller::{InternalResponseData, Response};
 use embedded_services::type_c::Cached;
+use embedded_services::type_c::controller::{InternalResponseData, Response};
 use embedded_usb_pd::constants::{T_SRC_TRANS_REQ_EPR_MS, T_SRC_TRANS_REQ_SPR_MS};
 use embedded_usb_pd::ucsi::{self, lpm};
 

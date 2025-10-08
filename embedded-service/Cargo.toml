@@ -19,25 +19,20 @@ chrono = { workspace = true, optional = true }
 critical-section.workspace = true
 defmt = { workspace = true, optional = true }
 document-features.workspace = true
-embassy-executor.workspace = true
-embassy-futures.workspace = true
 embassy-sync.workspace = true
 embassy-time.workspace = true
+embedded-batteries-async.workspace = true
 embedded-cfu-protocol.workspace = true
 embedded-hal-async.workspace = true
-embedded-hal-nb.workspace = true
 embedded-io-async.workspace = true
 embedded-io.workspace = true
-embedded-storage-async.workspace = true
-embedded-storage.workspace = true
 embedded-usb-pd.workspace = true
-embedded-batteries-async.workspace = true
-fixed.workspace = true
 heapless.workspace = true
 log = { workspace = true, optional = true }
-postcard.workspace = true
-rand_core.workspace = true
-serde.workspace = true
+
+[dependencies.serde]
+workspace = true
+features = ["serde_derive"]
 
 [target.'cfg(not(target_has_atomic = "ptr"))'.dependencies]
 portable-atomic.workspace = true
@@ -47,13 +42,13 @@ cortex-m-rt.workspace = true
 cortex-m.workspace = true
 
 [dev-dependencies]
-embassy-sync = { workspace = true, features = ["std"] }
 critical-section = { workspace = true, features = ["std"] }
-tokio = { workspace = true, features = ["rt", "macros", "time"] }
+embassy-futures.workspace = true
+embassy-sync = { workspace = true, features = ["std"] }
 embassy-time = { workspace = true, features = ["std"] }
 embassy-time-driver = { workspace = true }
-embassy-futures.workspace = true
 static_cell.workspace = true
+tokio = { workspace = true, features = ["rt", "macros", "time"] }
 
 [features]
 default = []
@@ -61,8 +56,6 @@ defmt = [
     "dep:defmt",
     "embassy-sync/defmt",
     "embassy-time/defmt",
-    "embassy-executor/defmt",
-    "embassy-futures/defmt",
     "embedded-usb-pd/defmt",
     "embedded-cfu-protocol/defmt",
 ]
@@ -70,7 +63,5 @@ log = [
     "dep:log",
     "embassy-sync/log",
     "embassy-time/log",
-    "embassy-executor/log",
-    "embassy-futures/log",
     "embedded-cfu-protocol/log",
 ]

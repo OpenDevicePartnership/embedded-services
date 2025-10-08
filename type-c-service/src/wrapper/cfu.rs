@@ -1,6 +1,6 @@
 //! CFU message bridge
 //! TODO: remove this once we have a more generic FW update implementation
-use embassy_futures::select::{select, Either};
+use embassy_futures::select::{Either, select};
 use embedded_cfu_protocol::protocol_definitions::*;
 use embedded_services::cfu::component::{InternalResponseData, RequestData};
 use embedded_services::power;

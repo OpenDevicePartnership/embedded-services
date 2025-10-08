@@ -52,14 +52,14 @@ use embedded_cfu_protocol::protocol_definitions::ComponentId;
 use embedded_services::{
     power,
     type_c::{
+        ControllerId,
         controller::PortStatus,
         event::{PortEvent, PortStatusChanged},
-        ControllerId,
     },
 };
-use embedded_usb_pd::{ado::Ado, GlobalPortId};
+use embedded_usb_pd::{GlobalPortId, ado::Ado};
 
-use crate::{wrapper::cfu, PortEventStreamer};
+use crate::{PortEventStreamer, wrapper::cfu};
 
 /// Per-port state
 pub struct PortState<'a> {
