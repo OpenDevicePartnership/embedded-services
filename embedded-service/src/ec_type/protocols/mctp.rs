@@ -80,6 +80,7 @@ pub fn handle_mctp_header(
         2 => crate::comms::EndpointID::Internal(crate::comms::Internal::Battery),
         3 => crate::comms::EndpointID::Internal(crate::comms::Internal::Thermal),
         4 => crate::comms::EndpointID::Internal(crate::comms::Internal::Debug),
+        5 => crate::comms::EndpointID::Internal(crate::comms::Internal::TimeAlarm), // TODO should this be an enum and/or should we implement EndpointId::from_mctp_id() or something?
         _ => return Err(MctpError::InvalidDestinationEndpoint),
     };
 
@@ -140,6 +141,7 @@ pub fn build_mctp_header(
         crate::comms::EndpointID::Internal(crate::comms::Internal::Battery) => ret[6] = 2,
         crate::comms::EndpointID::Internal(crate::comms::Internal::Thermal) => ret[6] = 3,
         crate::comms::EndpointID::Internal(crate::comms::Internal::Debug) => ret[6] = 4,
+        crate::comms::EndpointID::Internal(crate::comms::Internal::TimeAlarm) => ret[6] = 5, // TODO I don't love the duplication here - should we consolidate somewhere?
         _ => return Err(MctpError::InvalidDestinationEndpoint),
     }
 
