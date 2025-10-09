@@ -1,9 +1,8 @@
 #![no_std]
 
 use bitfield::bitfield;
-use core::any::Any;
 use core::array::TryFromSliceError;
-use core::borrow::Borrow;
+use core::borrow::{Borrow, BorrowMut};
 use core::cell::RefCell;
 use embassy_futures::select::{Either, select};
 use embassy_sync::blocking_mutex::Mutex;
@@ -12,7 +11,8 @@ use embassy_sync::once_lock::OnceLock;
 use embassy_sync::signal::Signal;
 use embedded_services::ec_type::message::AcpiMsgComms;
 use embedded_services::{GlobalRawMutex, comms::MailboxDelegateError};
-
+use embedded_services::buffer::OwnedRef;
+use embedded_services::ec_type::message::HostMsg;
 use embedded_mcu_hal::NvramStorage;
 use embedded_mcu_hal::time::{Datetime, DatetimeClock, DatetimeClockError};
 use embedded_services::{comms, error, info, trace};
@@ -339,7 +339,18 @@ pub struct Service {
     power_source_signal: Signal<GlobalRawMutex, AcpiTimerId>,
 
     timers: Timers,
+
+    acpi_buf_owned_ref: OwnedRef<'static, u8>
 }
+
+// TODO [STORAGE] This statically allocates a buffer oustide the Service struct to hold ACPI responses. This is a common pattern in this repo,
+//                but sort-of breaks the goal of allowing the caller to allocate storage.  It's not as punishing as statically allocating
+//                the Service struct at this layer because it doesn't prevent us from knowing the concrete type of any generics passed in,
+//                but it does mean we can't have multiple instances of the service and if we do we'll be at risk of crashing due to buffer
+//                contention.  For the clock this may not be an issue because there's typically only one clock, but we may want to explore
+//                options for better patterns for other service and adopt those here for uniformity.
+//
+embedded_services::define_static_buffer!(acpi_buf, u8, [0u8; 69]);
 
 impl Service {
     // TODO [DYN] if we want to allow taking the HAL traits as concrete types rather than as dyn references, we'll likely need to make this a macro
@@ -374,6 +385,7 @@ impl Service {
                 dc_expiration_storage,
                 dc_policy_storage,
             ),
+            acpi_buf_owned_ref: acpi_buf::get_mut().unwrap(),
         });
 
         // TODO [POWER_SOURCE] we need to subscribe to messages that tell us if we're on AC or DC power so we can decide which alarms to trigger - how do we do that?
@@ -397,9 +409,6 @@ impl Service {
 
             match select(acpi_command, power_source_change).await {
                 Either::First((respond_to_endpoint, acpi_command)) => {
-                    const COMMAND_SUCCEEDED: u32 = 1;
-                    const COMMAND_FAILED: u32 = 0;
-
                     let acpi_result = self.handle_acpi_command(acpi_command).await;
                     match acpi_result {
                         Ok(response_payload) => {
@@ -412,26 +421,18 @@ impl Service {
                             //
                             match response_payload {
                                 AcpiTimeAlarmCommandResult::Timestamp(timestamp) => {
-                                    // TODO I want to be able to say '4 + sizeof(decltype(timestamp.as_bytes()))' here but I don't know how to do that in rust - is there a cleaner way to learn the size of the return type of a function?
-                                    const ACPI_TIMESTAMP_BYTES_SIZE: usize = 16;
-                                    let mut response = [0u8; 4 + ACPI_TIMESTAMP_BYTES_SIZE];
-                                    response[..4].copy_from_slice(&COMMAND_SUCCEEDED.to_le_bytes());
-                                    response[4..].copy_from_slice(&timestamp.as_bytes());
-                                    self.send_acpi_response(respond_to_endpoint, &response).await
+                                    self.send_acpi_response(respond_to_endpoint, Some(&timestamp.as_bytes())).await
                                 }
                                 AcpiTimeAlarmCommandResult::U32(value) => {
-                                    let mut response = [0u8; 8];
-                                    response[..4].copy_from_slice(&COMMAND_SUCCEEDED.to_le_bytes());
-                                    response[4..].copy_from_slice(&value.to_le_bytes());
-                                    self.send_acpi_response(respond_to_endpoint, &value).await
+                                    self.send_acpi_response(respond_to_endpoint, Some(&value.to_le_bytes())).await
                                 }
                                 AcpiTimeAlarmCommandResult::Valueless => 
-                                    self.send_acpi_response(respond_to_endpoint, &COMMAND_SUCCEEDED.to_le_bytes()).await
+                                    self.send_acpi_response(respond_to_endpoint, None).await
                             }
                         }
                         Err(e) => {
                             error!("Error handling ACPI command: {:?}", e);
-                            self.send_acpi_response(respond_to_endpoint, &COMMAND_FAILED.to_le_bytes()).await;
+                            self.send_acpi_error(respond_to_endpoint).await;
                         }
                     }
                 }
@@ -464,9 +465,50 @@ impl Service {
         }
     }
 
-    async fn send_acpi_response(&self, destination: comms::EndpointID, response: &impl Any) {
+    async fn send_acpi_response(&self, destination: comms::EndpointID, data: Option<&[u8]>) {
+        let mut wire_message_len = core::mem::size_of::<u32>();
+        {
+            const COMMAND_SUCCEEDED: u32 = 1;
+            let mut buffer_access = self.acpi_buf_owned_ref.borrow_mut();
+            let buffer: &mut [u8] = buffer_access.borrow_mut();
+
+            buffer[..wire_message_len].copy_from_slice(&COMMAND_SUCCEEDED.to_le_bytes());
+
+            if let Some(data) = data {
+                if data.len() > (buffer.len() - wire_message_len) {
+                    panic!("ACPI response payload too large");
+                }
+                buffer[wire_message_len..(wire_message_len + data.len())].copy_from_slice(data);
+                wire_message_len += data.len();
+            }
+        }
+
+        let response = HostMsg::Response(AcpiMsgComms {
+            payload: acpi_buf::get(),
+            payload_len: wire_message_len
+        });
+
         self.endpoint
-            .send(destination, response)
+            .send(destination, &response)
+            .await
+            .expect("send returns Result<(), Infallible>");
+    }
+
+    async fn send_acpi_error(&self, destination: comms::EndpointID) {
+        let total_wire_message_len = core::mem::size_of::<u32>();
+        {
+            const COMMAND_FAILED: u32 = 0;
+            let mut buffer_access = self.acpi_buf_owned_ref.borrow_mut();
+            let buffer: &mut [u8] = buffer_access.borrow_mut();
+
+            buffer[..total_wire_message_len].copy_from_slice(&COMMAND_FAILED.to_le_bytes());
+        }
+        let response = HostMsg::Response(AcpiMsgComms {
+            payload: acpi_buf::get(),
+            payload_len: total_wire_message_len
+        });
+        self.endpoint
+            .send(destination, &response)
             .await
             .expect("send returns Result<(), Infallible>");
     }
