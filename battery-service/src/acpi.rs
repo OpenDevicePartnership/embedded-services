@@ -1,32 +1,32 @@
-use core::{borrow::BorrowMut, ops::Deref};
+#![allow(dead_code)]
+use core::ops::Deref;
 
-use embedded_batteries_async::acpi::{
-    BCT_RETURN_SIZE_BYTES, BMD_RETURN_SIZE_BYTES, BPC_RETURN_SIZE_BYTES, BPS_RETURN_SIZE_BYTES, BST_RETURN_SIZE_BYTES,
-    BTM_RETURN_SIZE_BYTES, Bct, BctReturnResult, BixReturn, Bma, BmcControlFlags, Btm, BtmReturnResult,
-    PSR_RETURN_SIZE_BYTES, Pif, PowerSourceState, PowerUnit, PsrReturn, STA_RETURN_SIZE_BYTES,
-};
+use embedded_batteries_async::acpi::{PowerSourceState, PowerUnit};
 use embedded_services::{
     debug,
-    ec_type::message::{AcpiMsgComms, HostMsg},
+    ec_type::message::{
+        STD_BIX_BATTERY_SIZE, STD_BIX_MODEL_SIZE, STD_BIX_OEM_SIZE, STD_BIX_SERIAL_SIZE, STD_PIF_MODEL_SIZE,
+        STD_PIF_OEM_SIZE, STD_PIF_SERIAL_SIZE, StdHostMsg, StdHostRequest,
+    },
     error, info,
     power::policy::PowerCapability,
     trace,
 };
+use mctp_rs::odp::{BixFixedStrings, PifFixedStrings};
 
 use crate::{
     context::PsuState,
-    device::{Device, DynamicBatteryMsgs, StaticBatteryMsgs},
+    device::{DeviceId, DynamicBatteryMsgs, StaticBatteryMsgs},
 };
 
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub(crate) struct Payload<'a> {
-    pub version: u8,
-    pub instance: u8,
-    pub reserved: u8,
     pub command: AcpiCmd,
+    pub status: u8,
     pub data: &'a [u8],
 }
 
+#[derive(Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub(crate) enum PayloadError {
     MalformedPayload,
@@ -34,35 +34,6 @@ pub(crate) enum PayloadError {
 }
 
 const ACPI_HEADER_SIZE: usize = 4;
-
-impl<'a> Payload<'a> {
-    pub(crate) fn from_raw(raw: &'a [u8], size: usize) -> Result<Self, PayloadError> {
-        Ok(Payload {
-            version: raw[0],
-            instance: raw[1],
-            reserved: raw[2],
-            command: AcpiCmd::try_from(raw[3])?,
-            data: &raw[4..size],
-        })
-    }
-
-    pub(crate) fn to_raw(&self, buf: &mut [u8]) -> Result<usize, PayloadError> {
-        buf[0] = self.version;
-        buf[1] = self.instance;
-        buf[2] = self.reserved;
-        buf[3] = self.command as u8;
-
-        if buf.len() < self.data.len() + 4 {
-            // 1 in the reserved field is an error to the host
-            buf[2] = 1;
-            return Err(PayloadError::BufTooSmall(ACPI_HEADER_SIZE));
-        }
-
-        buf[4..self.data.len() + 4].copy_from_slice(self.data);
-
-        Ok(self.data.len() + 4)
-    }
-}
 
 #[derive(Copy, Clone)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
@@ -108,7 +79,13 @@ impl TryFrom<u8> for AcpiCmd {
     }
 }
 
-pub(crate) fn compute_bst(bst_return: &mut embedded_batteries_async::acpi::BstReturn, cache: &DynamicBatteryMsgs) {
+impl From<AcpiCmd> for u8 {
+    fn from(value: AcpiCmd) -> Self {
+        value as u8
+    }
+}
+
+pub(crate) fn compute_bst(cache: &DynamicBatteryMsgs) -> embedded_batteries_async::acpi::BstReturn {
     let charging = if cache.battery_status & (1 << 6) == 0 {
         embedded_batteries_async::acpi::BatteryState::CHARGING
     } else {
@@ -116,528 +93,595 @@ pub(crate) fn compute_bst(bst_return: &mut embedded_batteries_async::acpi::BstRe
     };
 
     // TODO: add critical energy state and charge limiting state
-    bst_return.battery_state = charging;
-    bst_return.battery_remaining_capacity = cache.remaining_capacity_mwh;
-    bst_return.battery_present_rate = cache.current_ma.unsigned_abs().into();
-    bst_return.battery_present_voltage = cache.voltage_mv.into();
+    embedded_batteries_async::acpi::BstReturn {
+        battery_state: charging,
+        battery_remaining_capacity: cache.remaining_capacity_mwh,
+        battery_present_rate: cache.current_ma.unsigned_abs().into(),
+        battery_present_voltage: cache.voltage_mv.into(),
+    }
 }
 
 pub(crate) fn compute_bix<'a>(
     static_cache: &'a StaticBatteryMsgs,
     dynamic_cache: &'a DynamicBatteryMsgs,
-) -> BixReturn<'a> {
-    embedded_batteries_async::acpi::BixReturn {
+) -> Result<BixFixedStrings<STD_BIX_MODEL_SIZE, STD_BIX_SERIAL_SIZE, STD_BIX_BATTERY_SIZE, STD_BIX_OEM_SIZE>, ()> {
+    let mut bix_return =
+        BixFixedStrings::<STD_BIX_MODEL_SIZE, STD_BIX_SERIAL_SIZE, STD_BIX_BATTERY_SIZE, STD_BIX_OEM_SIZE> {
+            revision: 1,
+            power_unit: if static_cache.battery_mode.capacity_mode() {
+                PowerUnit::MilliWatts
+            } else {
+                PowerUnit::MilliAmps
+            },
+            design_capacity: static_cache.design_capacity_mwh,
+            last_full_charge_capacity: dynamic_cache.full_charge_capacity_mwh,
+            battery_technology: embedded_batteries_async::acpi::BatteryTechnology::Secondary,
+            design_voltage: static_cache.design_voltage_mv.into(),
+            design_cap_of_warning: static_cache.design_cap_warning,
+            design_cap_of_low: static_cache.design_cap_low,
+            cycle_count: dynamic_cache.cycle_count.into(),
+            measurement_accuracy: u32::from(100 - dynamic_cache.max_error_pct) * 1000u32,
+            max_sampling_time: static_cache.max_sample_time,
+            min_sampling_time: static_cache.min_sample_time,
+            max_averaging_interval: static_cache.max_averaging_interval,
+            min_averaging_interval: static_cache.min_averaging_interval,
+            battery_capacity_granularity_1: static_cache.cap_granularity_1,
+            battery_capacity_granularity_2: static_cache.cap_granularity_2,
+            model_number: [0u8; STD_BIX_MODEL_SIZE],
+            serial_number: [0u8; STD_BIX_SERIAL_SIZE],
+            battery_type: [0u8; STD_BIX_BATTERY_SIZE],
+            oem_info: [0u8; STD_BIX_OEM_SIZE],
+            battery_swapping_capability: embedded_batteries_async::acpi::BatterySwapCapability::NonSwappable,
+        };
+    bix_return.model_number[..core::cmp::min(STD_BIX_MODEL_SIZE - 1, static_cache.device_name.len() - 1)]
+        .copy_from_slice(
+            static_cache.device_name[..core::cmp::min(STD_BIX_MODEL_SIZE - 1, static_cache.device_name.len() - 1)]
+                .try_into()
+                .map_err(|_| ())?,
+        );
+    bix_return.serial_number[..core::cmp::min(STD_BIX_SERIAL_SIZE - 1, static_cache.serial_num.len() - 1)]
+        .copy_from_slice(
+            static_cache.serial_num[..core::cmp::min(STD_BIX_SERIAL_SIZE - 1, static_cache.serial_num.len() - 1)]
+                .try_into()
+                .map_err(|_| ())?,
+        );
+    bix_return.battery_type[..core::cmp::min(STD_BIX_BATTERY_SIZE - 1, static_cache.device_chemistry.len() - 1)]
+        .copy_from_slice(
+            static_cache.device_chemistry
+                [..core::cmp::min(STD_BIX_BATTERY_SIZE - 1, static_cache.device_chemistry.len() - 1)]
+                .try_into()
+                .map_err(|_| ())?,
+        );
+    bix_return.oem_info[..core::cmp::min(STD_BIX_OEM_SIZE - 1, static_cache.manufacturer_name.len() - 1)]
+        .copy_from_slice(
+            static_cache.manufacturer_name
+                [..core::cmp::min(STD_BIX_OEM_SIZE - 1, static_cache.manufacturer_name.len() - 1)]
+                .try_into()
+                .map_err(|_| ())?,
+        );
+    Ok(bix_return)
+}
+
+pub(crate) fn compute_bps(dynamic_cache: &DynamicBatteryMsgs) -> embedded_batteries_async::acpi::Bps {
+    // TODO: period values are correct for bq40z50, add to config to support other fuel gauges
+    embedded_batteries_async::acpi::Bps {
         revision: 1,
-        power_unit: if static_cache.battery_mode.capacity_mode() {
-            PowerUnit::MilliWatts
-        } else {
-            PowerUnit::MilliAmps
-        },
-        design_capacity: static_cache.design_capacity_mwh,
-        last_full_charge_capacity: dynamic_cache.full_charge_capacity_mwh,
-        battery_technology: embedded_batteries_async::acpi::BatteryTechnology::Secondary,
-        design_voltage: static_cache.design_voltage_mv.into(),
-        design_cap_of_warning: static_cache.design_cap_warning,
-        design_cap_of_low: static_cache.design_cap_low,
-        cycle_count: dynamic_cache.cycle_count.into(),
-        measurement_accuracy: u32::from(100 - dynamic_cache.max_error_pct) * 1000u32,
-        max_sampling_time: static_cache.max_sample_time,
-        min_sampling_time: static_cache.min_sample_time,
-        max_averaging_interval: static_cache.max_averaging_interval,
-        min_averaging_interval: static_cache.min_averaging_interval,
-        battery_capacity_granularity_1: static_cache.cap_granularity_1,
-        battery_capacity_granularity_2: static_cache.cap_granularity_2,
-        model_number: &static_cache.device_name[..7],
-        serial_number: &static_cache.serial_num,
-        battery_type: &static_cache.device_chemistry,
-        oem_info: &static_cache.manufacturer_name[..7],
-        battery_swapping_capability: embedded_batteries_async::acpi::BatterySwapCapability::NonSwappable,
+        instantaneous_peak_power_level: dynamic_cache.max_power_mw,
+        instantaneous_peak_power_period: 10,
+        sustainable_peak_power_level: dynamic_cache.sus_power_mw,
+        sustainable_peak_power_period: 10000,
     }
 }
 
-pub(crate) fn compute_bps(bps_return: &mut embedded_batteries_async::acpi::Bps, dynamic_cache: &DynamicBatteryMsgs) {
-    // TODO: period values are correct for bq40z50, add to config to support other fuel gauges
-    bps_return.revision = 1;
-    bps_return.instantaneous_peak_power_level = dynamic_cache.max_power_mw;
-    bps_return.instantaneous_peak_power_period = 10;
-    bps_return.sustainable_peak_power_level = dynamic_cache.sus_power_mw;
-    bps_return.sustainable_peak_power_period = 10000;
-}
-
-pub(crate) fn compute_bpc(bpc_return: &mut embedded_batteries_async::acpi::Bpc, static_cache: &StaticBatteryMsgs) {
-    bpc_return.revision = 1;
-    bpc_return.power_threshold_support = static_cache.power_threshold_support;
-    bpc_return.max_instantaneous_peak_power_threshold = static_cache.max_instant_pwr_threshold;
-    bpc_return.max_sustainable_peak_power_threshold = static_cache.max_sus_pwr_threshold;
+pub(crate) fn compute_bpc(static_cache: &StaticBatteryMsgs) -> embedded_batteries_async::acpi::Bpc {
+    embedded_batteries_async::acpi::Bpc {
+        revision: 1,
+        power_threshold_support: static_cache.power_threshold_support,
+        max_instantaneous_peak_power_threshold: static_cache.max_instant_pwr_threshold,
+        max_sustainable_peak_power_threshold: static_cache.max_sus_pwr_threshold,
+    }
 }
 
 pub(crate) fn compute_bmd(
-    bmd_return: &mut embedded_batteries_async::acpi::Bmd,
     static_cache: &StaticBatteryMsgs,
     dynamic_cache: &DynamicBatteryMsgs,
-) {
-    bmd_return.status_flags = dynamic_cache.bmd_status;
-    bmd_return.capability_flags = static_cache.bmd_capability;
-    bmd_return.recalibrate_count = static_cache.bmd_recalibrate_count;
-    bmd_return.quick_recalibrate_time = static_cache.bmd_quick_recalibrate_time;
-    bmd_return.slow_recalibrate_time = static_cache.bmd_slow_recalibrate_time;
+) -> embedded_batteries_async::acpi::Bmd {
+    embedded_batteries_async::acpi::Bmd {
+        status_flags: dynamic_cache.bmd_status,
+        capability_flags: static_cache.bmd_capability,
+        recalibrate_count: static_cache.bmd_recalibrate_count,
+        quick_recalibrate_time: static_cache.bmd_quick_recalibrate_time,
+        slow_recalibrate_time: static_cache.bmd_slow_recalibrate_time,
+    }
 }
 
 pub(crate) fn compute_bct(
     payload: &embedded_batteries_async::acpi::Bct,
-    bct_return: &mut embedded_batteries_async::acpi::BctReturnResult,
     _dynamic_cache: &DynamicBatteryMsgs,
-) {
+) -> embedded_batteries_async::acpi::BctReturnResult {
     // Just echo back charge level for now
     // TODO: Actually compute time from charge level
-    *bct_return = embedded_batteries_async::acpi::BctReturnResult::from(payload.charge_level_percent);
+    embedded_batteries_async::acpi::BctReturnResult::from(payload.charge_level_percent)
 }
 
 pub(crate) fn compute_btm(
     payload: &embedded_batteries_async::acpi::Btm,
-    btm_return: &mut embedded_batteries_async::acpi::BtmReturnResult,
     _dynamic_cache: &DynamicBatteryMsgs,
-) {
+) -> embedded_batteries_async::acpi::BtmReturnResult {
     // Just echo back charge level for now
     // TODO: Actually compute time from charge level
-    *btm_return = embedded_batteries_async::acpi::BtmReturnResult::from(payload.discharge_rate);
+    embedded_batteries_async::acpi::BtmReturnResult::from(payload.discharge_rate)
 }
 
-pub(crate) fn compute_sta(sta_return: &mut embedded_batteries_async::acpi::StaReturn) {
+pub(crate) fn compute_sta() -> embedded_batteries_async::acpi::StaReturn {
     // TODO: Grab real state values
-    *sta_return = embedded_batteries_async::acpi::StaReturn::all();
+    embedded_batteries_async::acpi::StaReturn::all()
 }
 
-pub(crate) fn compute_psr(psr_return: &mut embedded_batteries_async::acpi::PsrReturn, psu_state: &PsuState) {
+pub(crate) fn compute_psr(psu_state: &PsuState) -> embedded_batteries_async::acpi::PsrReturn {
     // TODO: Refactor to check if battery if force discharged,
     // which should give an offline result even when the PSU is attached.
-    psr_return.power_source = if psu_state.psu_connected {
-        embedded_batteries_async::acpi::PowerSource::Online
-    } else {
-        embedded_batteries_async::acpi::PowerSource::Offline
-    };
+    embedded_batteries_async::acpi::PsrReturn {
+        power_source: if psu_state.psu_connected {
+            embedded_batteries_async::acpi::PowerSource::Online
+        } else {
+            embedded_batteries_async::acpi::PowerSource::Offline
+        },
+    }
 }
 
-pub(crate) fn compute_pif<'a>(psu_state: &PsuState) -> Pif<'a> {
+pub(crate) fn compute_pif(
+    psu_state: &PsuState,
+) -> PifFixedStrings<STD_PIF_MODEL_SIZE, STD_PIF_SERIAL_SIZE, STD_PIF_OEM_SIZE> {
     // TODO: Grab real values from power policy
     let capability = psu_state.power_capability.unwrap_or(PowerCapability {
         voltage_mv: 0,
         current_ma: 0,
     });
 
-    Pif {
+    PifFixedStrings {
         power_source_state: PowerSourceState::empty(),
         max_output_power: capability.max_power_mw(),
         max_input_power: capability.max_power_mw(),
-        model_number: &[],
-        serial_number: &[],
-        oem_info: &[],
+        model_number: [0u8; STD_PIF_MODEL_SIZE],
+        serial_number: [0u8; STD_PIF_SERIAL_SIZE],
+        oem_info: [0u8; STD_PIF_OEM_SIZE],
     }
 }
 
-impl<'a> crate::context::Context<'a> {
-    async fn send_acpi_response(&self, payload: &crate::acpi::Payload<'_>) {
-        let payload_len: usize;
+impl crate::context::Context {
+    // TODO Move these to a trait
+    pub(super) async fn bix_handler(&self, request: &mut StdHostRequest) {
+        trace!("Battery service: got BIX command!");
+        // Enough space for all string fields to have 7 bytes + 1 null terminator byte
+        match request.payload {
+            mctp_rs::odp::Odp::BatteryGetBixRequest { battery_id } => {
+                if let Some(fg) = self.get_fuel_gauge(DeviceId(battery_id)) {
+                    let static_cache_guard = fg.get_static_battery_cache_guarded().await;
+                    let dynamic_cache_guard = fg.get_dynamic_battery_cache_guarded().await;
+                    request.payload = mctp_rs::odp::Odp::BatteryGetBixResponse {
+                        bix: match compute_bix(static_cache_guard.deref(), dynamic_cache_guard.deref()) {
+                            Ok(bix) => bix,
+                            Err(()) => {
+                                error!("Battery service: Failed to compute BIX");
+                                // Drop locks before next await point to eliminate possibility of deadlock
+                                drop(static_cache_guard);
+                                drop(dynamic_cache_guard);
 
-        {
-            let mut buf_access = self.get_acpi_buf_owned_ref().borrow_mut();
+                                request.status = 1;
+                                request.payload = mctp_rs::odp::Odp::ErrorResponse {};
 
-            match payload.to_raw(buf_access.borrow_mut()) {
-                Ok(payload_len_raw) => payload_len = payload_len_raw,
-                Err(PayloadError::BufTooSmall(payload_len_raw)) => {
-                    error!("payload to_raw error, buffer too small");
-                    payload_len = payload_len_raw;
-                }
-                Err(PayloadError::MalformedPayload) => {
-                    error!("payload to_raw error, sending empty response");
-                    payload_len = 0;
+                                super::comms_send(
+                                    crate::EndpointID::External(embedded_services::comms::External::Host),
+                                    request,
+                                )
+                                .await
+                                .unwrap();
+                                debug!("response sent to espi_service");
+                                return;
+                            }
+                        },
+                    };
+                    // Drop locks before next await point to eliminate possibility of deadlock
+                    drop(static_cache_guard);
+                    drop(dynamic_cache_guard);
+
+                    request.status = 0;
+                    super::comms_send(
+                        crate::EndpointID::External(embedded_services::comms::External::Host),
+                        &StdHostMsg::Response(*request),
+                    )
+                    .await
+                    .unwrap();
+
+                    debug!("response sent to espi_service");
+                } else {
+                    error!("Battery service: FG not found when trying to process ACPI cmd!");
                 }
             }
+            _ => error!("Battery service: command and body mismatch!"),
         }
+    }
 
-        let acpi_response = AcpiMsgComms {
-            payload: crate::context::acpi_buf::get(),
-            payload_len,
-        };
-
+    pub(super) async fn bst_handler(&self, request: &mut StdHostRequest) {
+        trace!("Battery service: got BST command!");
+        match request.payload {
+            mctp_rs::odp::Odp::BatteryGetBstRequest { battery_id } => {
+                if let Some(fg) = self.get_fuel_gauge(DeviceId(battery_id)) {
+                    request.payload = mctp_rs::odp::Odp::BatteryGetBstResponse {
+                        bst: compute_bst(&fg.get_dynamic_battery_cache().await),
+                    };
+                    request.status = 0;
+                } else {
+                    error!("Battery service: FG not found when trying to process ACPI cmd!");
+                    request.status = 1;
+                    request.payload = mctp_rs::odp::Odp::ErrorResponse {};
+                }
+            }
+            _ => error!("Battery service: command and body mismatch!"),
+        }
         super::comms_send(
             crate::EndpointID::External(embedded_services::comms::External::Host),
-            &HostMsg::Response(acpi_response),
+            &StdHostMsg::Response(*request),
         )
         .await
         .unwrap();
 
-        debug!("response sent to espi_service");
+        trace!("response sent to espi_service");
     }
 
-    pub(super) async fn bix_handler(&self, fg: &Device, payload: &crate::acpi::Payload<'_>) {
-        trace!("Battery service: got BIX command!");
-        // Enough space for all string fields to have 7 bytes + 1 null terminator byte
-        let mut bix_data = [0u8; 100];
-        let static_cache_guard = fg.get_static_battery_cache_guarded().await;
-        let dynamic_cache_guard = fg.get_dynamic_battery_cache_guarded().await;
-        let bix_return = compute_bix(static_cache_guard.deref(), dynamic_cache_guard.deref());
-
-        let model_num_size = bix_return.model_number.len();
-        let serial_num_size = bix_return.serial_number.len();
-        let battery_type_size = bix_return.battery_type.len();
-        let oem_info_size = bix_return.oem_info.len();
-
-        bix_return
-            .to_bytes(
-                &mut bix_data,
-                model_num_size,
-                serial_num_size,
-                battery_type_size,
-                oem_info_size,
-            )
-            .unwrap_or_else(|_| error!("Computing BIX return failed!"));
-
-        // Drop locks before next await point to eliminate possibility of deadlock
-        drop(static_cache_guard);
-        drop(dynamic_cache_guard);
-        let response = crate::acpi::Payload {
-            version: 1,
-            instance: 1,
-            reserved: 0,
-            command: payload.command,
-            data: &bix_data,
-        };
-
-        self.send_acpi_response(&response).await;
-    }
-
-    pub(super) async fn bst_handler(&self, fg: &Device, payload: &crate::acpi::Payload<'_>) {
-        trace!("Battery service: got BST command!");
-        let cache = fg.get_dynamic_battery_cache().await;
-        let mut bst_data = embedded_batteries_async::acpi::BstReturn::default();
-        compute_bst(&mut bst_data, &cache);
-        let bst_data: &[u8; BST_RETURN_SIZE_BYTES] = zerocopy::transmute_ref!(&bst_data);
-        let response = crate::acpi::Payload {
-            version: 1,
-            instance: 1,
-            reserved: 0,
-            command: payload.command,
-            data: bst_data,
-        };
-        self.send_acpi_response(&response).await;
-    }
-
-    pub(super) async fn psr_handler(&self, _fg: &Device, payload: &crate::acpi::Payload<'_>) {
+    pub(super) async fn psr_handler(&self, request: &mut StdHostRequest) {
         trace!("Battery service: got PSR command!");
 
-        let mut psr_data = PsrReturn::default();
+        match request.payload {
+            mctp_rs::odp::Odp::BatteryGetPsrRequest { battery_id } => {
+                if let Some(_fg) = self.get_fuel_gauge(DeviceId(battery_id)) {
+                    request.payload = mctp_rs::odp::Odp::BatteryGetPsrResponse {
+                        psr: compute_psr(&self.get_power_info().await),
+                    };
+                    request.status = 0;
+                } else {
+                    error!("Battery service: FG not found when trying to process ACPI cmd!");
+                    request.status = 1;
+                    request.payload = mctp_rs::odp::Odp::ErrorResponse {};
+                }
+            }
+            _ => error!("Battery service: command and body mismatch!"),
+        }
 
-        compute_psr(&mut psr_data, &self.get_power_info().await);
-
-        let psr_data: &[u8; PSR_RETURN_SIZE_BYTES] = zerocopy::transmute_ref!(&psr_data);
-
-        let response = crate::acpi::Payload {
-            version: 1,
-            instance: 1,
-            reserved: 0,
-            command: payload.command,
-            data: psr_data,
-        };
-
-        self.send_acpi_response(&response).await;
+        super::comms_send(
+            crate::EndpointID::External(embedded_services::comms::External::Host),
+            &StdHostMsg::Response(*request),
+        )
+        .await
+        .unwrap();
+        trace!("response sent to espi_service");
     }
 
-    pub(super) async fn pif_handler(&self, _fg: &Device, payload: &crate::acpi::Payload<'_>) {
+    pub(super) async fn pif_handler(&self, request: &mut StdHostRequest) {
         trace!("Battery service: got PIF command!");
-        // Enough space for all string fields to have 7 bytes + 1 null terminator byte
-        let mut pif_data = [0u8; 36];
-        let pif_return = compute_pif(&self.get_power_info().await);
 
-        let model_num_size = pif_return.model_number.len();
-        let serial_num_size = pif_return.serial_number.len();
-        let oem_info_size = pif_return.oem_info.len();
-        pif_return
-            .to_bytes(&mut pif_data, model_num_size, serial_num_size, oem_info_size)
-            .unwrap_or_else(|_| error!("Computing PIF return failed!"));
+        match request.payload {
+            mctp_rs::odp::Odp::BatteryGetPifRequest { battery_id } => {
+                if let Some(_fg) = self.get_fuel_gauge(DeviceId(battery_id)) {
+                    request.payload = mctp_rs::odp::Odp::BatteryGetPifResponse {
+                        pif: compute_pif(&self.get_power_info().await),
+                    };
+                    request.status = 0;
+                } else {
+                    error!("Battery service: FG not found when trying to process ACPI cmd!");
+                    request.status = 1;
+                    request.payload = mctp_rs::odp::Odp::ErrorResponse {};
+                }
+            }
+            _ => error!("Battery service: command and body mismatch!"),
+        }
 
-        let response = crate::acpi::Payload {
-            version: 1,
-            instance: 1,
-            reserved: 0,
-            command: payload.command,
-            data: &pif_data,
-        };
-
-        self.send_acpi_response(&response).await;
+        super::comms_send(
+            crate::EndpointID::External(embedded_services::comms::External::Host),
+            &StdHostMsg::Response(*request),
+        )
+        .await
+        .unwrap();
+        trace!("response sent to espi_service");
     }
 
-    pub(super) async fn bps_handler(&self, fg: &Device, payload: &crate::acpi::Payload<'_>) {
+    pub(super) async fn bps_handler(&self, request: &mut StdHostRequest) {
         trace!("Battery service: got BPS command!");
 
-        let mut bps_data = embedded_batteries_async::acpi::Bps::default();
+        match request.payload {
+            mctp_rs::odp::Odp::BatteryGetBpsRequest { battery_id } => {
+                if let Some(fg) = self.get_fuel_gauge(DeviceId(battery_id)) {
+                    request.payload = mctp_rs::odp::Odp::BatteryGetBpsResponse {
+                        bps: compute_bps(&fg.get_dynamic_battery_cache().await),
+                    };
+                    request.status = 0;
+                } else {
+                    error!("Battery service: FG not found when trying to process ACPI cmd!");
+                    request.status = 1;
+                    request.payload = mctp_rs::odp::Odp::ErrorResponse {};
+                }
+            }
+            _ => error!("Battery service: command and body mismatch!"),
+        }
 
-        let cache = fg.get_dynamic_battery_cache().await;
-        compute_bps(&mut bps_data, &cache);
-        let bps_data: &[u8; BPS_RETURN_SIZE_BYTES] = zerocopy::transmute_ref!(&bps_data);
-
-        let response = crate::acpi::Payload {
-            version: 1,
-            instance: 1,
-            reserved: 0,
-            command: payload.command,
-            data: bps_data,
-        };
-        self.send_acpi_response(&response).await;
+        super::comms_send(
+            crate::EndpointID::External(embedded_services::comms::External::Host),
+            &StdHostMsg::Response(*request),
+        )
+        .await
+        .unwrap();
     }
 
-    pub(super) async fn btp_handler(&self, _fg: &Device, payload: &crate::acpi::Payload<'_>) {
+    pub(super) async fn btp_handler(&self, request: &mut StdHostRequest) {
         trace!("Battery service: got BTP command!");
 
-        // TODO: Save trip point
+        match request.payload {
+            mctp_rs::odp::Odp::BatterySetBtpRequest { battery_id, btp } => {
+                if let Some(_fg) = self.get_fuel_gauge(DeviceId(battery_id)) {
+                    // TODO: Save trip point
+                    info!("Battery service: New BTP {}", btp.trip_point);
+                    request.payload = mctp_rs::odp::Odp::BatterySetBtpResponse {};
+                    request.status = 0;
+                } else {
+                    error!("Battery service: FG not found when trying to process ACPI cmd!");
+                    request.status = 1;
+                    request.payload = mctp_rs::odp::Odp::ErrorResponse {};
+                }
+            }
+            _ => error!("Battery service: command and body mismatch!"),
+        }
 
-        // 0 for success, 1 for failure
-        let ret_status = 0u8;
-
-        let response = crate::acpi::Payload {
-            version: 1,
-            instance: 1,
-            reserved: ret_status,
-            command: payload.command,
-            data: &[],
-        };
-
-        self.send_acpi_response(&response).await;
+        super::comms_send(
+            crate::EndpointID::External(embedded_services::comms::External::Host),
+            &StdHostMsg::Response(*request),
+        )
+        .await
+        .unwrap();
     }
 
-    pub(super) async fn bpt_handler(&self, _fg: &Device, payload: &crate::acpi::Payload<'_>) {
+    pub(super) async fn bpt_handler(&self, request: &mut StdHostRequest) {
         trace!("Battery service: got BPT command!");
 
-        // 0 for success, 1 for failure
-        let mut ret_status = 1u8;
-
-        if payload.data.len() >= 12 {
-            // TODO: Save power threshold somewhere
-            // Safe from panics as length is verified above.
-            let threshold_id = u32::from_le_bytes(payload.data[4..8].try_into().unwrap());
-            let threshold_value = u32::from_le_bytes(payload.data[8..12].try_into().unwrap());
-            info!("Threshold ID: {}, Threshold value: {}", threshold_id, threshold_value);
-            ret_status = 0;
-        } else {
-            error!("Malformed BPT command")
+        match request.payload {
+            mctp_rs::odp::Odp::BatterySetBptRequest { battery_id, bpt } => {
+                if let Some(_fg) = self.get_fuel_gauge(DeviceId(battery_id)) {
+                    info!(
+                        "Battery service: Threshold ID: {:?}, Threshold value: {:?}",
+                        bpt.threshold_id as u32, bpt.threshold_value
+                    );
+                    request.payload = mctp_rs::odp::Odp::BatterySetBptResponse {};
+                    request.status = 0;
+                } else {
+                    error!("Battery service: FG not found when trying to process ACPI cmd!");
+                    request.status = 1;
+                    request.payload = mctp_rs::odp::Odp::ErrorResponse {};
+                }
+            }
+            _ => error!("Battery service: command and body mismatch!"),
         }
 
-        let response = crate::acpi::Payload {
-            version: 1,
-            instance: 1,
-            reserved: ret_status,
-            command: payload.command,
-            data: &[],
-        };
-
-        self.send_acpi_response(&response).await;
+        super::comms_send(
+            crate::EndpointID::External(embedded_services::comms::External::Host),
+            &StdHostMsg::Response(*request),
+        )
+        .await
+        .unwrap();
     }
 
-    pub(super) async fn bpc_handler(&self, fg: &Device, payload: &crate::acpi::Payload<'_>) {
+    pub(super) async fn bpc_handler(&self, request: &mut StdHostRequest) {
         trace!("Battery service: got BPC command!");
 
-        let mut bpc_data = embedded_batteries_async::acpi::Bpc::default();
+        match request.payload {
+            mctp_rs::odp::Odp::BatteryGetBpcRequest { battery_id } => {
+                if let Some(fg) = self.get_fuel_gauge(DeviceId(battery_id)) {
+                    // TODO: Save trip point
+                    request.payload = mctp_rs::odp::Odp::BatteryGetBpcResponse {
+                        bpc: compute_bpc(&fg.get_static_battery_cache().await),
+                    };
+                    request.status = 0;
+                } else {
+                    error!("Battery service: FG not found when trying to process ACPI cmd!");
+                    request.status = 1;
+                    request.payload = mctp_rs::odp::Odp::ErrorResponse {};
+                }
+            }
+            _ => error!("Battery service: command and body mismatch!"),
+        }
 
-        let cache = fg.get_static_battery_cache().await;
-        compute_bpc(&mut bpc_data, &cache);
-        let bpc_data: &[u8; BPC_RETURN_SIZE_BYTES] = zerocopy::transmute_ref!(&bpc_data);
-
-        let response = crate::acpi::Payload {
-            version: 1,
-            instance: 1,
-            reserved: 0,
-            command: payload.command,
-            data: bpc_data,
-        };
-
-        self.send_acpi_response(&response).await;
+        super::comms_send(
+            crate::EndpointID::External(embedded_services::comms::External::Host),
+            &StdHostMsg::Response(*request),
+        )
+        .await
+        .unwrap();
     }
 
-    pub(super) async fn bmc_handler(&self, _fg: &Device, payload: &crate::acpi::Payload<'_>) {
+    pub(super) async fn bmc_handler(&self, request: &mut StdHostRequest) {
         trace!("Battery service: got BMC command!");
 
-        // 0 for success, 1 for failure
-        let mut ret_status = 1u8;
-
-        if payload.data.len() >= 4 {
-            // TODO: Save power threshold somewhere
-            // Safe from panics as length is verified above.
-            let raw_bmc_control_flags =
-                BmcControlFlags::from_bits_truncate(u32::from_le_bytes(payload.data[..4].try_into().unwrap()));
-            info!("Recvd BMC flags: {}", raw_bmc_control_flags.bits());
-            ret_status = 0;
-        } else {
-            error!("Malformed BMC command")
+        match request.payload {
+            mctp_rs::odp::Odp::BatterySetBmcRequest { battery_id, bmc } => {
+                if let Some(_fg) = self.get_fuel_gauge(DeviceId(battery_id)) {
+                    info!("Battery service: Bmc {}", bmc.maintenance_control_flags.bits());
+                    request.payload = mctp_rs::odp::Odp::BatterySetBmcResponse {};
+                    request.status = 0;
+                } else {
+                    error!("Battery service: FG not found when trying to process ACPI cmd!");
+                    request.status = 1;
+                    request.payload = mctp_rs::odp::Odp::ErrorResponse {};
+                }
+            }
+            _ => error!("Battery service: command and body mismatch!"),
         }
 
-        let response = crate::acpi::Payload {
-            version: 1,
-            instance: 1,
-            reserved: ret_status,
-            command: payload.command,
-            data: &[],
-        };
-
-        self.send_acpi_response(&response).await;
+        super::comms_send(
+            crate::EndpointID::External(embedded_services::comms::External::Host),
+            &StdHostMsg::Response(*request),
+        )
+        .await
+        .unwrap();
     }
 
-    pub(super) async fn bmd_handler(&self, fg: &Device, payload: &crate::acpi::Payload<'_>) {
+    pub(super) async fn bmd_handler(&self, request: &mut StdHostRequest) {
         trace!("Battery service: got BMD command!");
-        let mut bmd_data = embedded_batteries_async::acpi::Bmd::default();
-        let static_cache = fg.get_static_battery_cache().await;
-        let dynamic_cache = fg.get_dynamic_battery_cache().await;
-        compute_bmd(&mut bmd_data, &static_cache, &dynamic_cache);
-        let bmd_data: &[u8; BMD_RETURN_SIZE_BYTES] = zerocopy::transmute_ref!(&bmd_data);
 
-        let response = crate::acpi::Payload {
-            version: 1,
-            instance: 1,
-            reserved: 0,
-            command: payload.command,
-            data: bmd_data,
-        };
+        match request.payload {
+            mctp_rs::odp::Odp::BatteryGetBmdRequest { battery_id } => {
+                if let Some(fg) = self.get_fuel_gauge(DeviceId(battery_id)) {
+                    let static_cache = fg.get_static_battery_cache().await;
+                    let dynamic_cache = fg.get_dynamic_battery_cache().await;
+                    request.payload = mctp_rs::odp::Odp::BatteryGetBmdResponse {
+                        bmd: compute_bmd(&static_cache, &dynamic_cache),
+                    };
+                    request.status = 0;
+                } else {
+                    error!("Battery service: FG not found when trying to process ACPI cmd!");
+                    request.status = 1;
+                    request.payload = mctp_rs::odp::Odp::ErrorResponse {};
+                }
+            }
+            _ => error!("Battery service: command and body mismatch!"),
+        }
 
-        self.send_acpi_response(&response).await;
+        super::comms_send(
+            crate::EndpointID::External(embedded_services::comms::External::Host),
+            &StdHostMsg::Response(*request),
+        )
+        .await
+        .unwrap();
     }
 
-    pub(super) async fn bct_handler(&self, fg: &Device, payload: &crate::acpi::Payload<'_>) {
+    pub(super) async fn bct_handler(&self, request: &mut StdHostRequest) {
         trace!("Battery service: got BCT command!");
 
-        let mut ret_status = 1;
-        let mut bct_data = BctReturnResult::default();
-
-        if payload.data.len() >= 4 {
-            // TODO: Save power threshold somewhere
-            // Safe from panics as length is verified above.
-            let raw_bct = Bct {
-                charge_level_percent: u32::from_le_bytes(payload.data[..4].try_into().unwrap()),
-            };
-            info!("Recvd BCT charge_level_percent: {}", raw_bct.charge_level_percent);
-            compute_bct(&raw_bct, &mut bct_data, &fg.get_dynamic_battery_cache().await);
-            ret_status = 0;
-        } else {
-            error!("Malformed BCT command")
+        match request.payload {
+            mctp_rs::odp::Odp::BatteryGetBctRequest { battery_id, bct } => {
+                if let Some(fg) = self.get_fuel_gauge(DeviceId(battery_id)) {
+                    info!("Recvd BCT charge_level_percent: {}", bct.charge_level_percent);
+                    request.payload = mctp_rs::odp::Odp::BatteryGetBctResponse {
+                        bct_response: compute_bct(&bct, &fg.get_dynamic_battery_cache().await),
+                    };
+                    request.status = 0;
+                } else {
+                    error!("Battery service: FG not found when trying to process ACPI cmd!");
+                    request.status = 1;
+                    request.payload = mctp_rs::odp::Odp::ErrorResponse {};
+                }
+            }
+            _ => error!("Battery service: command and body mismatch!"),
         }
 
-        let bct_return: &[u8; BCT_RETURN_SIZE_BYTES] = &bct_data.into();
-
-        let response = crate::acpi::Payload {
-            version: 1,
-            instance: 1,
-            reserved: ret_status,
-            command: payload.command,
-            data: bct_return,
-        };
-
-        self.send_acpi_response(&response).await;
+        super::comms_send(
+            crate::EndpointID::External(embedded_services::comms::External::Host),
+            &StdHostMsg::Response(*request),
+        )
+        .await
+        .unwrap();
     }
 
-    pub(super) async fn btm_handler(&self, fg: &Device, payload: &crate::acpi::Payload<'_>) {
+    pub(super) async fn btm_handler(&self, request: &mut StdHostRequest) {
         trace!("Battery service: got BTM command!");
 
-        let mut ret_status = 1;
-        let mut btm_data = BtmReturnResult::default();
-
-        if payload.data.len() >= 4 {
-            // TODO: Save power threshold somewhere
-            // Safe from panics as length is verified above.
-            let raw_btm = Btm {
-                discharge_rate: u32::from_le_bytes(payload.data[..4].try_into().unwrap()),
-            };
-            info!("Recvd BTM discharge_rate: {}", raw_btm.discharge_rate);
-            compute_btm(&raw_btm, &mut btm_data, &fg.get_dynamic_battery_cache().await);
-            ret_status = 0;
-        } else {
-            error!("Malformed BTM command")
+        match request.payload {
+            mctp_rs::odp::Odp::BatteryGetBtmRequest { battery_id, btm } => {
+                if let Some(fg) = self.get_fuel_gauge(DeviceId(battery_id)) {
+                    info!("Recvd BTM discharge_rate: {}", btm.discharge_rate);
+                    request.payload = mctp_rs::odp::Odp::BatteryGetBtmResponse {
+                        btm_response: compute_btm(&btm, &fg.get_dynamic_battery_cache().await),
+                    };
+                    request.status = 0;
+                } else {
+                    error!("Battery service: FG not found when trying to process ACPI cmd!");
+                    request.status = 1;
+                    request.payload = mctp_rs::odp::Odp::ErrorResponse {};
+                }
+            }
+            _ => error!("Battery service: command and body mismatch!"),
         }
 
-        let btm_return: &[u8; BTM_RETURN_SIZE_BYTES] = &btm_data.into();
-
-        let response = crate::acpi::Payload {
-            version: 1,
-            instance: 1,
-            reserved: ret_status,
-            command: payload.command,
-            data: btm_return,
-        };
-
-        self.send_acpi_response(&response).await;
+        super::comms_send(
+            crate::EndpointID::External(embedded_services::comms::External::Host),
+            &StdHostMsg::Response(*request),
+        )
+        .await
+        .unwrap();
     }
 
-    pub(super) async fn bms_handler(&self, _fg: &Device, payload: &crate::acpi::Payload<'_>) {
+    pub(super) async fn bms_handler(&self, request: &mut StdHostRequest) {
         trace!("Battery service: got BMS command!");
 
-        let mut ret_status = 1;
-
-        if payload.data.len() >= 4 {
-            // TODO: Set sampling time
-            // Safe from panics as length is verified above.
-            let sampling_time = u32::from_le_bytes(payload.data[..4].try_into().unwrap());
-            info!("Recvd BMS sampling_time: {}", sampling_time);
-            ret_status = 0;
-        } else {
-            error!("Malformed BMS command")
+        match request.payload {
+            mctp_rs::odp::Odp::BatterySetBmsRequest { battery_id, bms } => {
+                if let Some(_fg) = self.get_fuel_gauge(DeviceId(battery_id)) {
+                    info!("Recvd BMS sampling_time: {}", bms.sampling_time_ms);
+                    request.payload = mctp_rs::odp::Odp::BatterySetBmsResponse { status: 0 };
+                    request.status = 0;
+                } else {
+                    error!("Battery service: FG not found when trying to process ACPI cmd!");
+                    request.status = 1;
+                    request.payload = mctp_rs::odp::Odp::BatterySetBmsResponse { status: 1 };
+                }
+            }
+            _ => error!("Battery service: command and body mismatch!"),
         }
 
-        let response = crate::acpi::Payload {
-            version: 1,
-            instance: 1,
-            reserved: ret_status,
-            command: payload.command,
-            // Weirdly, BMS is a method with a dedicated result status in the data field.
-            // We use the reserved field for our own return value, so just mirror it here.
-            data: &u32::to_le_bytes(u32::from(ret_status)),
-        };
-
-        self.send_acpi_response(&response).await;
+        super::comms_send(
+            crate::EndpointID::External(embedded_services::comms::External::Host),
+            &StdHostMsg::Response(*request),
+        )
+        .await
+        .unwrap();
     }
 
-    pub(super) async fn bma_handler(&self, _fg: &Device, payload: &crate::acpi::Payload<'_>) {
+    pub(super) async fn bma_handler(&self, request: &mut StdHostRequest) {
         trace!("Battery service: got BMA command!");
 
-        let mut ret_status = 1;
-
-        if payload.data.len() >= 4 {
-            // TODO: Save power threshold somewhere
-            // Safe from panics as length is verified above.
-            let raw_bma = Bma {
-                averaging_interval_ms: u32::from_le_bytes(payload.data[..4].try_into().unwrap()),
-            };
-            info!("Recvd BMA averaging_interval_ms: {}", raw_bma.averaging_interval_ms);
-            ret_status = 0;
-        } else {
-            error!("Malformed BMA command")
+        match request.payload {
+            mctp_rs::odp::Odp::BatterySetBmaRequest { battery_id, bma } => {
+                if let Some(_fg) = self.get_fuel_gauge(DeviceId(battery_id)) {
+                    info!("Recvd BMA averaging_interval_ms: {}", bma.averaging_interval_ms);
+                    request.payload = mctp_rs::odp::Odp::BatterySetBmaResponse { status: 0 };
+                    request.status = 0;
+                } else {
+                    error!("Battery service: FG not found when trying to process ACPI cmd!");
+                    request.status = 1;
+                    request.payload = mctp_rs::odp::Odp::BatterySetBmaResponse { status: 1 };
+                }
+            }
+            _ => error!("Battery service: command and body mismatch!"),
         }
 
-        let response = crate::acpi::Payload {
-            version: 1,
-            instance: 1,
-            reserved: ret_status,
-            command: payload.command,
-            // Weirdly, BMA is a method with a dedicated result status in the data field.
-            // We use the reserved field for our own return value, so just mirror it here.
-            data: &u32::to_le_bytes(u32::from(ret_status)),
-        };
-
-        self.send_acpi_response(&response).await;
+        super::comms_send(
+            crate::EndpointID::External(embedded_services::comms::External::Host),
+            &StdHostMsg::Response(*request),
+        )
+        .await
+        .unwrap();
     }
 
-    pub(super) async fn sta_handler(&self, _fg: &Device, payload: &crate::acpi::Payload<'_>) {
+    pub(super) async fn sta_handler(&self, request: &mut StdHostRequest) {
         trace!("Battery service: got STA command!");
 
-        let mut sta_data = embedded_batteries_async::acpi::StaReturn::default();
+        match request.payload {
+            mctp_rs::odp::Odp::BatteryGetStaRequest { battery_id } => {
+                if let Some(_fg) = self.get_fuel_gauge(DeviceId(battery_id)) {
+                    request.payload = mctp_rs::odp::Odp::BatteryGetStaResponse { sta: compute_sta() };
+                    request.status = 0;
+                } else {
+                    error!("Battery service: FG not found when trying to process ACPI cmd!");
+                    request.status = 1;
+                    request.payload = mctp_rs::odp::Odp::ErrorResponse {};
+                }
+            }
+            _ => error!("Battery service: command and body mismatch!"),
+        }
 
-        compute_sta(&mut sta_data);
-        let sta_data: &[u8; STA_RETURN_SIZE_BYTES] = zerocopy::transmute_ref!(&sta_data);
-
-        let response = crate::acpi::Payload {
-            version: 1,
-            instance: 1,
-            reserved: 0,
-            command: payload.command,
-            data: sta_data,
-        };
-
-        self.send_acpi_response(&response).await;
+        super::comms_send(
+            crate::EndpointID::External(embedded_services::comms::External::Host),
+            &StdHostMsg::Response(*request),
+        )
+        .await
+        .unwrap();
     }
 }

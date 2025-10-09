@@ -7,7 +7,7 @@ use embassy_futures::select::select;
 use embassy_sync::once_lock::OnceLock;
 use embedded_services::{
     comms::{self, EndpointID},
-    ec_type::message::AcpiMsgComms,
+    ec_type::message::StdHostRequest,
     error, info, trace,
 };
 
@@ -18,12 +18,12 @@ pub mod device;
 pub mod wrapper;
 
 /// Standard Battery Service.
-pub struct Service<'a> {
+pub struct Service {
     pub endpoint: comms::Endpoint,
-    pub context: context::Context<'a>,
+    pub context: context::Context,
 }
 
-impl<'a> Service<'a> {
+impl Service {
     /// Create a new battery service instance.
     pub fn new() -> Self {
         Self::new_inner(Default::default())
@@ -48,7 +48,7 @@ impl<'a> Service<'a> {
     }
 
     /// Wait for next event.
-    pub async fn wait_next(&self) -> Event<'a> {
+    pub async fn wait_next(&self) -> Event {
         match select(self.context.wait_event(), self.context.wait_acpi_cmd()).await {
             embassy_futures::select::Either::First(event) => Event::StateMachine(event),
             embassy_futures::select::Either::Second(acpi_msg) => Event::AcpiRequest(acpi_msg),
@@ -56,41 +56,41 @@ impl<'a> Service<'a> {
     }
 
     /// Process battery service event.
-    pub async fn process_event(&self, event: Event<'a>) {
+    pub async fn process_event(&self, event: Event) {
         match event {
             Event::StateMachine(event) => {
                 trace!("Battery service: state machine event recvd {:?}", event);
                 self.context.process(event).await
             }
-            Event::AcpiRequest(acpi_msg) => {
+            Event::AcpiRequest(mut acpi_msg) => {
                 trace!("Battery service: ACPI cmd recvd");
-                self.context.process_acpi_cmd(acpi_msg).await
+                self.context.process_acpi_cmd(&mut acpi_msg).await
             }
         }
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub enum Event<'a> {
+pub enum Event {
     StateMachine(BatteryEvent),
-    AcpiRequest(AcpiMsgComms<'a>),
+    AcpiRequest(StdHostRequest),
 }
 
-impl<'a> Default for Service<'a> {
+impl Default for Service {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<'a> comms::MailboxDelegate for Service<'a> {
+impl comms::MailboxDelegate for Service {
     fn receive(&self, message: &comms::Message) -> Result<(), comms::MailboxDelegateError> {
         if let Some(event) = message.data.get::<BatteryEvent>() {
             self.context.send_event_no_wait(*event).map_err(|e| match e {
                 embassy_sync::channel::TrySendError::Full(_) => comms::MailboxDelegateError::BufferFull,
             })?
-        } else if let Some(acpi_cmd) = message.data.get::<AcpiMsgComms>() {
-            self.context.send_acpi_cmd(acpi_cmd.clone());
+        } else if let Some(acpi_cmd) = message.data.get::<StdHostRequest>() {
+            self.context.send_acpi_cmd(*acpi_cmd);
         } else if let Some(power_policy_msg) = message.data.get::<embedded_services::power::policy::CommsMessage>() {
             self.context.set_power_info(&power_policy_msg.data)?;
         }

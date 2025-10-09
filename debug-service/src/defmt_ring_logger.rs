@@ -3,29 +3,21 @@ use bbq2::{
     queue::BBQueue,
     traits::{coordination::cas::AtomicCoord, notifier::maitake::MaiNotSpsc, storage::Inline},
 };
+use core::borrow::Borrow;
 use core::{
     borrow::BorrowMut,
     ops::DerefMut,
     sync::atomic::{AtomicBool, Ordering},
 };
+use embedded_services::ec_type::message::{StdHostPayload, StdHostRequest};
+
+use crate::{frame_available, shared_buffer};
 
 static RTT_INITIALIZED: AtomicBool = AtomicBool::new(false);
 static mut ENCODER: defmt::Encoder = defmt::Encoder::new();
 static mut RESTORE_STATE: critical_section::RestoreState = critical_section::RestoreState::invalid();
 
 type Queue = BBQueue<Inline<4096>, AtomicCoord, MaiNotSpsc>;
-
-// Maximum number of bytes to request per defmt frame write grant.
-// This decouples the logger from any external protocol-specific size constants.
-// Each BBQueue "frame" is created by requesting a framed write grant of at most
-// DEFMT_MAX_BYTES and then committing it atomically. A commit publishes the frame
-// in one shot to the consumer; there is no concept of a "partial" frame being
-// visible. This guarantees:
-// - Per-frame upper bound: at most 1024 bytes are ever committed in a single frame.
-// - No partial publication: a frame is either not yet committed or fully committed.
-// If a defmt log event were to exceed this size, it will be split across multiple
-// BBQueue frames (each ≤ 1024). The consumer always observes complete frames.
-const DEFMT_MAX_BYTES: u16 = 1024;
 
 static DEFMT_BUFFER: Queue = Queue::new();
 static mut WRITE_GRANT: Option<FramedGrantW<&'static Queue>> = None;
@@ -66,7 +58,7 @@ unsafe fn get_write_grant() -> Option<(&'static mut [u8], &'static mut usize)> {
 
     let write_grant = match write_grant {
         Some(wg) => wg,
-        wg @ None => wg.insert(unsafe { get_producer() }.grant(DEFMT_MAX_BYTES).ok()?),
+        wg @ None => wg.insert(unsafe { get_producer() }.grant(crate::DEFMT_MAX_BYTES).ok()?),
     };
 
     Some((write_grant.deref_mut(), unsafe { &mut *&raw mut WRITTEN }))
@@ -176,26 +168,22 @@ unsafe fn write(bytes: &[u8]) {
     }
 }
 
-// Static buffer for ACPI-style messages carrying defmt frames
-embedded_services::define_static_buffer!(defmt_acpi_buf, u8, [0u8; DEFMT_MAX_BYTES as usize]);
-
 #[embassy_executor::task]
 pub async fn defmt_to_host_task() {
     embedded_services::info!("defmt to host task start");
     use crate::debug_service::{host_endpoint_id, response_notify_signal};
     use embedded_services::comms::{self, EndpointID, Internal};
-    use embedded_services::ec_type::message::{AcpiMsgComms, HostMsg, NotificationMsg};
+    use embedded_services::ec_type::message::HostMsg;
 
     let framed_consumer = DEFMT_BUFFER.framed_consumer();
 
     let host_ep = host_endpoint_id().await;
 
     // Acquire the staging buffer once; we own it for the task lifetime.
-    let acpi_owned = defmt_acpi_buf::get_mut().expect("defmt staging buffer already initialized elsewhere");
+    let acpi_owned = crate::owned_buffer();
 
     loop {
         // Wait for a complete defmt frame to be available (do not release yet)
-        embedded_services::info!("waiting for defmt frame");
         let frame = framed_consumer.wait_read().await;
 
         // Copy frame bytes into the static ACPI buffer.
@@ -207,39 +195,46 @@ pub async fn defmt_to_host_task() {
             let mut access = acpi_owned.borrow_mut();
             let buf: &mut [u8] = BorrowMut::borrow_mut(&mut access);
 
-            // Prepend 4 byte header
-            buf[0] = 1;
-            buf[1] = 0;
-            buf[2] = 0;
-            buf[3] = 1;
-            buf[4..copy_len + 4].copy_from_slice(&frame[..copy_len]);
+            buf[..copy_len].copy_from_slice(&frame[..copy_len]);
         }
-        embedded_services::info!("got frame: bytes={}, copy_len={}", frame.len(), copy_len);
 
         frame.release();
-        embedded_services::info!("released defmt frame (staged {} bytes)", copy_len);
+        embedded_services::trace!("released defmt frame (staged {} bytes)", copy_len);
 
         // Notify the host that data is available
-        let _ = comms::send(
+        // No notification for now until that's sorted. Host will periodically poll
+        // TODO: Revisit once host notifications are stabilized.
+        /*let _ = comms::send(
             EndpointID::Internal(Internal::Debug),
             host_ep,
             &HostMsg::Notification(NotificationMsg { offset: 20 }),
         )
-        .await;
+        .await;*/
 
         // Wait for host notification/ack via the debug service
+        frame_available(true);
         let _n = response_notify_signal().wait().await;
-        embedded_services::info!("host ack received, sending defmt response");
+        frame_available(false);
+        embedded_services::trace!("host ack received, sending defmt response");
 
         // Send the staged defmt bytes frame as an ACPI-style message.
         // Scope the message so the shared borrow is dropped before we clear the buffer.
         {
-            let msg = HostMsg::Response(AcpiMsgComms {
-                payload: defmt_acpi_buf::get(),
-                payload_len: copy_len + 4,
+            let msg = HostMsg::Response(StdHostRequest {
+                command: embedded_services::ec_type::message::OdpCommand::Debug(
+                    embedded_services::ec_type::protocols::debug::DebugCmd::GetMsgs,
+                ),
+                status: 0,
+                payload: StdHostPayload::DebugGetMsgsResponse {
+                    debug_buf: {
+                        let access = shared_buffer().borrow();
+                        let slice: &[u8] = access.borrow();
+                        slice.try_into().unwrap()
+                    },
+                },
             });
             let _ = comms::send(EndpointID::Internal(Internal::Debug), host_ep, &msg).await;
-            embedded_services::info!("sent {} defmt bytes to host", copy_len);
+            embedded_services::trace!("sent {} defmt bytes to host", copy_len);
         }
 
         // Clear the staged portion of the buffer
@@ -248,5 +243,39 @@ pub async fn defmt_to_host_task() {
             let buf: &mut [u8] = BorrowMut::borrow_mut(&mut access);
             buf[..copy_len].fill(0);
         }
+    }
+}
+
+#[embassy_executor::task]
+pub async fn no_avail_to_host_task() {
+    embedded_services::define_static_buffer!(no_avail_acpi_buf, u8, [0u8; 12]);
+
+    embedded_services::info!("no avail to host task start");
+    use crate::debug_service::{host_endpoint_id, no_avail_notify_signal};
+    use embedded_services::comms::{self, EndpointID, Internal};
+    use embedded_services::ec_type::message::HostMsg;
+
+    let host_ep = host_endpoint_id().await;
+
+    let acpi_owned = no_avail_acpi_buf::get_mut().expect("defmt staging buffer already initialized elsewhere");
+    {
+        let mut access = acpi_owned.borrow_mut();
+        let buf: &mut [u8] = BorrowMut::borrow_mut(&mut access);
+        // Use 0xDEADBEEF to signify no frame available
+        buf[4..12].copy_from_slice(&0xDEADBEEFu64.to_be_bytes());
+    }
+
+    let msg = HostMsg::Response(StdHostRequest {
+        command: embedded_services::ec_type::message::OdpCommand::Debug(
+            embedded_services::ec_type::protocols::debug::DebugCmd::GetMsgs,
+        ),
+        status: 1,
+        payload: StdHostPayload::ErrorResponse {},
+    });
+
+    // Send DEADBEEF if host requests frame but non available
+    loop {
+        no_avail_notify_signal().wait().await;
+        let _ = comms::send(EndpointID::Internal(Internal::Debug), host_ep, &msg).await;
     }
 }

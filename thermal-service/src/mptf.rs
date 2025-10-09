@@ -3,9 +3,8 @@
 //! Transport services such as eSPI and SSH would need to ensure messages are sent to the Thermal service in this format.
 //!
 //! This interface is subject to change as the eSPI OOB service is developed
-use crate::mctp;
 use crate::{self as ts, fan, sensor, utils};
-use embassy_futures::select::Either;
+use embedded_services::ec_type::message::{StdHostPayload, StdHostRequest};
 use embedded_services::{comms, error};
 
 /// MPTF Standard UUIDs which the thermal service understands
@@ -158,52 +157,343 @@ pub enum Notify {
     Critical,
 }
 
-async fn sensor_get_tmp(tzid: InstanceId) -> Response {
-    match ts::execute_sensor_request(sensor::DeviceId(tzid), sensor::Request::GetTemp).await {
-        Ok(ts::sensor::ResponseData::Temp(temp)) => {
-            Response::new(Status::Success, ResponseData::GetTmp(utils::c_to_dk(temp)))
+async fn sensor_get_tmp(request: &mut StdHostRequest) {
+    match request.payload {
+        mctp_rs::odp::Odp::ThermalGetTmpRequest { instance_id } => {
+            match ts::execute_sensor_request(sensor::DeviceId(instance_id), sensor::Request::GetTemp).await {
+                Ok(ts::sensor::ResponseData::Temp(temp)) => {
+                    request.payload = StdHostPayload::ThermalGetTmpResponse {
+                        temperature: utils::c_to_dk(temp),
+                    };
+                    request.status = 0;
+                }
+                _ => {
+                    request.payload = StdHostPayload::ErrorResponse {};
+                    request.status = 1;
+                }
+            }
         }
-        _ => Response::new(Status::HardwareError, ResponseData::GetTmp(0)),
+        _ => error!("Thermal Service: Host message header and payload mismatch"),
     }
 }
 
-async fn sensor_get_warn_thrs(tzid: InstanceId) -> Response {
-    let low = ts::execute_sensor_request(
-        sensor::DeviceId(tzid),
-        sensor::Request::GetThreshold(sensor::ThresholdType::WarnLow),
-    )
-    .await;
-    let high = ts::execute_sensor_request(
-        sensor::DeviceId(tzid),
-        sensor::Request::GetThreshold(sensor::ThresholdType::WarnHigh),
-    )
-    .await;
-
-    match (low, high) {
-        (Ok(sensor::ResponseData::Threshold(low)), Ok(sensor::ResponseData::Threshold(high))) => Response::new(
-            Status::Success,
-            ResponseData::GetThrs(Status::Success, 0, utils::c_to_dk(low), utils::c_to_dk(high)),
-        ),
-        _ => Response::new(Status::Success, ResponseData::GetThrs(Status::HardwareError, 0, 0, 0)),
+async fn get_var_handler(request: &mut StdHostRequest) {
+    match request.payload {
+        mctp_rs::odp::Odp::ThermalGetVarRequest {
+            instance_id,
+            len: _,
+            var_uuid,
+        } => match var_uuid {
+            uuid_standard::CRT_TEMP => {
+                let Response { status: _, data } = sensor_get_thrs(instance_id, sensor::ThresholdType::Critical).await;
+                if let ResponseData::GetVar(Status::Success, val) = data {
+                    request.status = Status::Success.into();
+                    request.payload = mctp_rs::odp::Odp::ThermalGetVarResponse {
+                        status: Status::Success.into(),
+                        val,
+                    }
+                } else if let ResponseData::GetVar(error, val) = data {
+                    request.payload = mctp_rs::odp::Odp::ThermalGetVarResponse {
+                        status: error.into(),
+                        val,
+                    }
+                }
+            }
+            uuid_standard::PROC_HOT_TEMP => {
+                let Response { status: _, data } = sensor_get_thrs(instance_id, sensor::ThresholdType::Prochot).await;
+                if let ResponseData::GetVar(Status::Success, val) = data {
+                    request.status = Status::Success.into();
+                    request.payload = mctp_rs::odp::Odp::ThermalGetVarResponse {
+                        status: Status::Success.into(),
+                        val,
+                    }
+                } else if let ResponseData::GetVar(error, val) = data {
+                    request.payload = mctp_rs::odp::Odp::ThermalGetVarResponse {
+                        status: error.into(),
+                        val,
+                    }
+                }
+            }
+            // TODO: Add a SetProfileId request type? But for sensor or fan?
+            uuid_standard::PROFILE_TYPE => {
+                todo!()
+            }
+            uuid_standard::FAN_ON_TEMP => {
+                let Response { status: _, data } = fan_get_temp(instance_id, fan::Request::GetOnTemp).await;
+                if let ResponseData::GetVar(Status::Success, val) = data {
+                    request.status = Status::Success.into();
+                    request.payload = mctp_rs::odp::Odp::ThermalGetVarResponse {
+                        status: Status::Success.into(),
+                        val,
+                    }
+                } else if let ResponseData::GetVar(error, val) = data {
+                    request.payload = mctp_rs::odp::Odp::ThermalGetVarResponse {
+                        status: error.into(),
+                        val,
+                    }
+                }
+            }
+            uuid_standard::FAN_RAMP_TEMP => {
+                let Response { status: _, data } = fan_get_temp(instance_id, fan::Request::GetRampTemp).await;
+                if let ResponseData::GetVar(Status::Success, val) = data {
+                    request.status = Status::Success.into();
+                    request.payload = mctp_rs::odp::Odp::ThermalGetVarResponse {
+                        status: Status::Success.into(),
+                        val,
+                    }
+                } else if let ResponseData::GetVar(error, val) = data {
+                    request.payload = mctp_rs::odp::Odp::ThermalGetVarResponse {
+                        status: error.into(),
+                        val,
+                    }
+                }
+            }
+            uuid_standard::FAN_MAX_TEMP => {
+                let Response { status: _, data } = fan_get_temp(instance_id, fan::Request::GetMaxTemp).await;
+                if let ResponseData::GetVar(Status::Success, val) = data {
+                    request.status = Status::Success.into();
+                    request.payload = mctp_rs::odp::Odp::ThermalGetVarResponse {
+                        status: Status::Success.into(),
+                        val,
+                    }
+                } else if let ResponseData::GetVar(error, val) = data {
+                    request.payload = mctp_rs::odp::Odp::ThermalGetVarResponse {
+                        status: error.into(),
+                        val,
+                    }
+                }
+            }
+            uuid_standard::FAN_MIN_RPM => {
+                let Response { status: _, data } = fan_get_rpm(instance_id, fan::Request::GetMinRpm).await;
+                if let ResponseData::GetVar(Status::Success, val) = data {
+                    request.status = Status::Success.into();
+                    request.payload = mctp_rs::odp::Odp::ThermalGetVarResponse {
+                        status: Status::Success.into(),
+                        val,
+                    }
+                } else if let ResponseData::GetVar(error, val) = data {
+                    request.payload = mctp_rs::odp::Odp::ThermalGetVarResponse {
+                        status: error.into(),
+                        val,
+                    }
+                }
+            }
+            uuid_standard::FAN_MAX_RPM => {
+                let Response { status: _, data } = fan_get_rpm(instance_id, fan::Request::GetMaxRpm).await;
+                if let ResponseData::GetVar(Status::Success, val) = data {
+                    request.status = Status::Success.into();
+                    request.payload = mctp_rs::odp::Odp::ThermalGetVarResponse {
+                        status: Status::Success.into(),
+                        val,
+                    }
+                } else if let ResponseData::GetVar(error, val) = data {
+                    request.status = error.into();
+                    request.payload = mctp_rs::odp::Odp::ThermalGetVarResponse {
+                        status: error.into(),
+                        val,
+                    }
+                }
+            }
+            uuid_standard::FAN_CURRENT_RPM => {
+                let Response { status: _, data } = fan_get_rpm(instance_id, fan::Request::GetRpm).await;
+                if let ResponseData::GetVar(Status::Success, val) = data {
+                    request.payload = mctp_rs::odp::Odp::ThermalGetVarResponse {
+                        status: Status::Success.into(),
+                        val,
+                    }
+                } else if let ResponseData::GetVar(error, val) = data {
+                    request.status = error.into();
+                    request.payload = mctp_rs::odp::Odp::ThermalGetVarResponse {
+                        status: error.into(),
+                        val,
+                    }
+                }
+            }
+            // TODO: Allow OEM to handle these?
+            uuid => {
+                error!("Received GetVar for unrecognized UUID: {:?}", uuid);
+                request.status = Status::InvalidParameter.into();
+                request.payload = mctp_rs::odp::Odp::ThermalGetVarResponse {
+                    status: Status::InvalidParameter.into(),
+                    val: 0,
+                }
+            }
+        },
+        _ => error!("Thermal Service: Host message header and payload mismatch"),
     }
 }
 
-async fn sensor_set_warn_thrs(tzid: InstanceId, _timeout: Dword, low: Dword, high: Dword) -> Response {
-    let low_res = ts::execute_sensor_request(
-        sensor::DeviceId(tzid),
-        sensor::Request::SetThreshold(sensor::ThresholdType::WarnLow, utils::dk_to_c(low)),
-    )
-    .await;
-    let high_res = ts::execute_sensor_request(
-        sensor::DeviceId(tzid),
-        sensor::Request::SetThreshold(sensor::ThresholdType::WarnHigh, utils::dk_to_c(high)),
-    )
-    .await;
+async fn set_var_handler(request: &mut StdHostRequest) {
+    match request.payload {
+        mctp_rs::odp::Odp::ThermalSetVarRequest {
+            instance_id,
+            len: _,
+            var_uuid,
+            set_var,
+        } => match var_uuid {
+            uuid_standard::CRT_TEMP => {
+                let Response { status: _, data } =
+                    sensor_set_thrs(instance_id, sensor::ThresholdType::Critical, set_var).await;
+                if let ResponseData::SetVar(Status::Success) = data {
+                    request.status = Status::Success.into();
+                    request.payload = mctp_rs::odp::Odp::ThermalSetVarResponse {
+                        status: Status::Success.into(),
+                    }
+                } else if let ResponseData::SetVar(error) = data {
+                    request.payload = mctp_rs::odp::Odp::ThermalSetVarResponse { status: error.into() }
+                }
+            }
+            uuid_standard::PROC_HOT_TEMP => {
+                let Response { status: _, data } =
+                    sensor_set_thrs(instance_id, sensor::ThresholdType::Prochot, set_var).await;
+                if let ResponseData::SetVar(Status::Success) = data {
+                    request.status = Status::Success.into();
+                    request.payload = mctp_rs::odp::Odp::ThermalSetVarResponse {
+                        status: Status::Success.into(),
+                    }
+                } else if let ResponseData::SetVar(error) = data {
+                    request.payload = mctp_rs::odp::Odp::ThermalSetVarResponse { status: error.into() }
+                }
+            }
+            // TODO: Add a SetProfileId request type? But for sensor or fan?
+            uuid_standard::PROFILE_TYPE => {
+                todo!()
+            }
+            uuid_standard::FAN_ON_TEMP => {
+                let Response { status: _, data } =
+                    fan_set_var(instance_id, fan::Request::SetOnTemp(utils::dk_to_c(set_var))).await;
+                if let ResponseData::SetVar(Status::Success) = data {
+                    request.status = Status::Success.into();
+                    request.payload = mctp_rs::odp::Odp::ThermalSetVarResponse {
+                        status: Status::Success.into(),
+                    }
+                } else if let ResponseData::SetVar(error) = data {
+                    request.payload = mctp_rs::odp::Odp::ThermalSetVarResponse { status: error.into() }
+                }
+            }
+            uuid_standard::FAN_RAMP_TEMP => {
+                let Response { status: _, data } =
+                    fan_set_var(instance_id, fan::Request::SetRampTemp(utils::dk_to_c(set_var))).await;
+                if let ResponseData::SetVar(Status::Success) = data {
+                    request.status = Status::Success.into();
+                    request.payload = mctp_rs::odp::Odp::ThermalSetVarResponse {
+                        status: Status::Success.into(),
+                    }
+                } else if let ResponseData::SetVar(error) = data {
+                    request.payload = mctp_rs::odp::Odp::ThermalSetVarResponse { status: error.into() }
+                }
+            }
+            uuid_standard::FAN_MAX_TEMP => {
+                let Response { status: _, data } =
+                    fan_set_var(instance_id, fan::Request::SetMaxTemp(utils::dk_to_c(set_var))).await;
+                if let ResponseData::SetVar(Status::Success) = data {
+                    request.status = Status::Success.into();
+                    request.payload = mctp_rs::odp::Odp::ThermalSetVarResponse {
+                        status: Status::Success.into(),
+                    }
+                } else if let ResponseData::SetVar(error) = data {
+                    request.payload = mctp_rs::odp::Odp::ThermalSetVarResponse { status: error.into() }
+                }
+            }
+            // TODO: What does it mean to set the min/max RPM? Aren't these hardware defined?
+            uuid_standard::FAN_MIN_RPM => {
+                todo!()
+            }
+            // TODO: What does it mean to set the min/max RPM? Aren't these hardware defined?
+            uuid_standard::FAN_MAX_RPM => {
+                todo!()
+            }
+            uuid_standard::FAN_CURRENT_RPM => {
+                let Response { status: _, data } = fan_set_var(instance_id, fan::Request::SetRpm(set_var as u16)).await;
+                if let ResponseData::SetVar(Status::Success) = data {
+                    request.payload = mctp_rs::odp::Odp::ThermalSetVarResponse {
+                        status: Status::Success.into(),
+                    }
+                } else if let ResponseData::SetVar(error) = data {
+                    request.status = error.into();
+                    request.payload = mctp_rs::odp::Odp::ThermalSetVarResponse { status: error.into() }
+                }
+            }
+            // TODO: Allow OEM to handle these?
+            uuid => {
+                error!("Received SetVar for unrecognized UUID: {:?}", uuid);
+                request.status = Status::InvalidParameter.into();
+                request.payload = mctp_rs::odp::Odp::ThermalSetVarResponse {
+                    status: Status::InvalidParameter.into(),
+                }
+            }
+        },
+        _ => error!("Thermal Service: Host message header and payload mismatch"),
+    }
+}
 
-    if low_res.is_ok() && high_res.is_ok() {
-        Response::new(Status::Success, ResponseData::SetThrs(Status::Success))
-    } else {
-        Response::new(Status::Success, ResponseData::SetThrs(Status::HardwareError))
+async fn sensor_get_warn_thrs(request: &mut StdHostRequest) {
+    match request.payload {
+        mctp_rs::odp::Odp::ThermalGetThrsRequest { instance_id } => {
+            let low = ts::execute_sensor_request(
+                sensor::DeviceId(instance_id),
+                sensor::Request::GetThreshold(sensor::ThresholdType::WarnLow),
+            )
+            .await;
+            let high = ts::execute_sensor_request(
+                sensor::DeviceId(instance_id),
+                sensor::Request::GetThreshold(sensor::ThresholdType::WarnHigh),
+            )
+            .await;
+
+            match (low, high) {
+                (Ok(sensor::ResponseData::Threshold(low)), Ok(sensor::ResponseData::Threshold(high))) => {
+                    request.payload = StdHostPayload::ThermalGetThrsResponse {
+                        status: 0,
+                        timeout: 0,
+                        low: utils::c_to_dk(low),
+                        high: utils::c_to_dk(high),
+                    };
+                    request.status = 0;
+                }
+                _ => {
+                    request.payload = StdHostPayload::ThermalGetThrsResponse {
+                        status: 1,
+                        timeout: 0,
+                        low: 0,
+                        high: 0,
+                    };
+                    request.status = 1;
+                }
+            }
+        }
+        _ => error!("Thermal Service: Host message header and payload mismatch"),
+    }
+}
+
+async fn sensor_set_warn_thrs(request: &mut StdHostRequest) {
+    match request.payload {
+        mctp_rs::odp::Odp::ThermalSetThrsRequest {
+            instance_id,
+            timeout: _,
+            low,
+            high,
+        } => {
+            let low_res = ts::execute_sensor_request(
+                sensor::DeviceId(instance_id),
+                sensor::Request::SetThreshold(sensor::ThresholdType::WarnLow, utils::dk_to_c(low)),
+            )
+            .await;
+            let high_res = ts::execute_sensor_request(
+                sensor::DeviceId(instance_id),
+                sensor::Request::SetThreshold(sensor::ThresholdType::WarnHigh, utils::dk_to_c(high)),
+            )
+            .await;
+
+            if low_res.is_ok() && high_res.is_ok() {
+                request.payload = mctp_rs::odp::Odp::ThermalSetThrsResponse { status: 0 };
+                request.status = 0;
+            } else {
+                request.payload = mctp_rs::odp::Odp::ThermalSetThrsResponse { status: 1 };
+                request.status = 1;
+            }
+        }
+        _ => error!("Thermal Service: Host message header and payload mismatch"),
     }
 }
 
@@ -260,123 +550,31 @@ async fn fan_set_var(instance: u8, fan_request: fan::Request) -> Response {
     }
 }
 
-async fn process_request(request: Request) -> Response {
-    match request {
-        Request::GetTmp(tzid) => sensor_get_tmp(tzid).await,
-        Request::GetThrs(tzid) => sensor_get_warn_thrs(tzid).await,
-        Request::SetThrs(tzid, timeout, low, high) => sensor_set_warn_thrs(tzid, timeout, low, high).await,
-
-        // TODO: How do we handle this genericly?
-        Request::SetScp(_tzid, _policy_id, _acoustic_lim, _power_lim) => todo!(),
-
-        Request::GetVar(instance, _len, uuid_standard::CRT_TEMP) => {
-            sensor_get_thrs(instance, sensor::ThresholdType::Critical).await
-        }
-        Request::GetVar(instance, _len, uuid_standard::PROC_HOT_TEMP) => {
-            sensor_get_thrs(instance, sensor::ThresholdType::Prochot).await
-        }
-
-        // TODO: Add a GetProfileId request type? But of sensor or fan?
-        Request::GetVar(_instance, _len, uuid_standard::PROFILE_TYPE) => todo!(),
-
-        Request::GetVar(instance, _len, uuid_standard::FAN_ON_TEMP) => {
-            fan_get_temp(instance, fan::Request::GetOnTemp).await
-        }
-        Request::GetVar(instance, _len, uuid_standard::FAN_RAMP_TEMP) => {
-            fan_get_temp(instance, fan::Request::GetRampTemp).await
-        }
-        Request::GetVar(instance, _len, uuid_standard::FAN_MAX_TEMP) => {
-            fan_get_temp(instance, fan::Request::GetMaxTemp).await
-        }
-        Request::GetVar(instance, _len, uuid_standard::FAN_MIN_RPM) => {
-            fan_get_rpm(instance, fan::Request::GetMinRpm).await
-        }
-        Request::GetVar(instance, _len, uuid_standard::FAN_MAX_RPM) => {
-            fan_get_rpm(instance, fan::Request::GetMaxRpm).await
-        }
-        Request::GetVar(instance, _len, uuid_standard::FAN_CURRENT_RPM) => {
-            fan_get_rpm(instance, fan::Request::GetRpm).await
-        }
-
-        Request::SetVar(instance, _len, uuid_standard::CRT_TEMP, temp_dk) => {
-            sensor_set_thrs(instance, sensor::ThresholdType::Critical, temp_dk).await
-        }
-        Request::SetVar(instance, _len, uuid_standard::PROC_HOT_TEMP, temp_dk) => {
-            sensor_set_thrs(instance, sensor::ThresholdType::Prochot, temp_dk).await
-        }
-
-        // TODO: Add a SetProfileId request type? But for sensor or fan?
-        Request::SetVar(_instance, _len, uuid_standard::PROFILE_TYPE, _profile_id) => todo!(),
-
-        Request::SetVar(instance, _len, uuid_standard::FAN_ON_TEMP, temp_dk) => {
-            fan_set_var(instance, fan::Request::SetOnTemp(utils::dk_to_c(temp_dk))).await
-        }
-        Request::SetVar(instance, _len, uuid_standard::FAN_RAMP_TEMP, temp_dk) => {
-            fan_set_var(instance, fan::Request::SetRampTemp(utils::dk_to_c(temp_dk))).await
-        }
-        Request::SetVar(instance, _len, uuid_standard::FAN_MAX_TEMP, temp_dk) => {
-            fan_set_var(instance, fan::Request::SetMaxTemp(utils::dk_to_c(temp_dk))).await
-        }
-
-        // TODO: What does it mean to set the min/max RPM? Aren't these hardware defined?
-        Request::SetVar(_instance, _len, uuid_standard::FAN_MIN_RPM, _rpm) => todo!(),
-        Request::SetVar(_instance, _len, uuid_standard::FAN_MAX_RPM, _rpm) => todo!(),
-
-        Request::SetVar(instance, _len, uuid_standard::FAN_CURRENT_RPM, rpm) => {
-            fan_set_var(instance, fan::Request::SetRpm(rpm as u16)).await
-        }
-
-        // TODO: Allow OEM to handle these?
-        Request::GetVar(_instance, _len, uuid) => {
-            error!("Received GetVar for unrecognized UUID: {:?}", uuid);
-            Response::new(
-                Status::InvalidParameter,
-                ResponseData::GetVar(Status::InvalidParameter, 0),
-            )
-        }
-        Request::SetVar(_instance, _len, uuid, _value) => {
-            error!("Received SetVar for unrecognized UUID: {:?}", uuid);
-            Response::new(
-                Status::InvalidParameter,
-                ResponseData::GetVar(Status::InvalidParameter, 0),
-            )
-        }
+async fn process_request(request: &mut StdHostRequest) {
+    match request.command {
+        embedded_services::ec_type::message::OdpCommand::Thermal(thermal_msg) => match thermal_msg {
+            embedded_services::ec_type::protocols::mptf::ThermalCmd::GetTmp => sensor_get_tmp(request).await,
+            embedded_services::ec_type::protocols::mptf::ThermalCmd::SetThrs => sensor_set_warn_thrs(request).await,
+            embedded_services::ec_type::protocols::mptf::ThermalCmd::GetThrs => sensor_get_warn_thrs(request).await,
+            // TODO: How do we handle this genericly?
+            embedded_services::ec_type::protocols::mptf::ThermalCmd::SetScp => todo!(),
+            embedded_services::ec_type::protocols::mptf::ThermalCmd::GetVar => get_var_handler(request).await,
+            embedded_services::ec_type::protocols::mptf::ThermalCmd::SetVar => set_var_handler(request).await,
+        },
+        _ => error!("Thermal Service: Recvd other subsystem host message"),
     }
 }
 
 #[embassy_executor::task]
 pub async fn handle_requests() {
     loop {
-        let request = embassy_futures::select::select(ts::wait_mptf_request(), ts::wait_mctp_payload()).await;
-        let send_result = match request {
-            // Already in MPTF request format, handle as-is
-            Either::First(request) => {
-                let response = process_request(request).await;
-                ts::send_service_msg(comms::EndpointID::External(comms::External::Host), &response).await
-            }
-
-            // A raw MCTP payload which we need to parse properly then encode the response packet back into
-            Either::Second(mctp_payload) => {
-                let request = Request::try_from(mctp_payload);
-                let response = match request {
-                    // Packet is OK
-                    Ok(request) => {
-                        let response = process_request(request).await;
-                        mctp::AcpiMsgComms::from(response)
-                    }
-                    // Packet is malformed
-                    Err(payload_error) => {
-                        error!("Thermal received malformed packet");
-                        mctp::AcpiMsgComms::from(payload_error)
-                    }
-                };
-                ts::send_service_msg(
-                    comms::EndpointID::External(comms::External::Host),
-                    &embedded_services::ec_type::message::HostMsg::Response(response),
-                )
-                .await
-            }
-        };
+        let mut request = ts::wait_mctp_payload().await;
+        process_request(&mut request).await;
+        let send_result = ts::send_service_msg(
+            comms::EndpointID::External(comms::External::Host),
+            &embedded_services::ec_type::message::HostMsg::Response(request),
+        )
+        .await;
 
         if send_result.is_err() {
             error!("Failed to send response to MPTF request!");

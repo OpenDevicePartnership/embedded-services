@@ -1,8 +1,24 @@
 use embassy_sync::{once_lock::OnceLock, signal::Signal};
 use embedded_services::GlobalRawMutex;
+use embedded_services::buffer::{OwnedRef, SharedRef};
 use embedded_services::comms::{self, EndpointID, Internal};
-use embedded_services::ec_type::message::AcpiMsgComms;
+use embedded_services::ec_type::message::StdHostRequest;
 use embedded_services::{debug, error};
+
+// Maximum number of bytes to request per defmt frame write grant.
+// This decouples the logger from any external protocol-specific size constants.
+// Each BBQueue "frame" is created by requesting a framed write grant of at most
+// DEFMT_MAX_BYTES and then committing it atomically. A commit publishes the frame
+// in one shot to the consumer; there is no concept of a "partial" frame being
+// visible. This guarantees:
+// - Per-frame upper bound: at most 1024 bytes are ever committed in a single frame.
+// - No partial publication: a frame is either not yet committed or fully committed.
+// If a defmt log event were to exceed this size, it will be split across multiple
+// BBQueue frames (each ≤ 1024). The consumer always observes complete frames.
+pub(crate) const DEFMT_MAX_BYTES: u16 = embedded_services::ec_type::message::STD_DEBUG_BUF_SIZE as u16;
+
+// Static buffer for ACPI-style messages carrying defmt frames
+embedded_services::define_static_buffer!(defmt_acpi_buf, u8, [0u8; DEFMT_MAX_BYTES as usize]);
 
 /// Debug service that bridges an internal endpoint to an external transport.
 ///
@@ -29,6 +45,8 @@ pub struct Service {
     // The external transport endpoint through which host traffic flows.
     // This is provided by the platform and may map to eSPI/USB/etc.
     transport: comms::Endpoint,
+    // Hack
+    frame_available: core::sync::atomic::AtomicBool,
 }
 
 impl Service {
@@ -36,6 +54,7 @@ impl Service {
         Service {
             endpoint: comms::Endpoint::uninit(EndpointID::Internal(Internal::Debug)),
             transport: endpoint,
+            frame_available: core::sync::atomic::AtomicBool::new(false),
         }
     }
 
@@ -50,15 +69,16 @@ impl Service {
 
 impl comms::MailboxDelegate for Service {
     fn receive(&self, message: &comms::Message) -> Result<(), comms::MailboxDelegateError> {
-        if let Some(acpi) = message.data.get::<AcpiMsgComms>() {
+        if let Some(_request) = message.data.get::<StdHostRequest>() {
             // Host sent an ACPI/MCTP request (e.g. GetDebugBuffer). Treat this as the
             // trigger to send the staged debug buffer back to the host.
-            debug!(
-                "Received host ACPI request for debug buffer (len={}) from {:?}",
-                acpi.payload_len, message.from
-            );
+            embedded_services::trace!("Received host ACPI request for debug buffer from {:?}", message.from);
             // We only use the signal as a wakeup; the defmt task ignores any payload here.
-            response_notify_signal().signal(());
+            if self.frame_available.load(core::sync::atomic::Ordering::SeqCst) {
+                response_notify_signal().signal(());
+            } else {
+                no_avail_notify_signal().signal(());
+            }
         } else {
             error!("Received unknown message from host");
         }
@@ -73,8 +93,28 @@ static DEBUG_SERVICE: OnceLock<Service> = OnceLock::new();
 // We only need a wake-up, so the payload is unit `()` to avoid lifetime coupling.
 static RESP_NOTIFY: OnceLock<Signal<GlobalRawMutex, ()>> = OnceLock::new();
 
+// For no frame avail task
+static NO_AVAIL_NOTIFY: OnceLock<Signal<GlobalRawMutex, ()>> = OnceLock::new();
+
+pub(crate) fn owned_buffer() -> OwnedRef<'static, u8> {
+    defmt_acpi_buf::get_mut().expect("defmt staging buffer already initialized elsewhere")
+}
+
+pub(crate) fn shared_buffer() -> SharedRef<'static, u8> {
+    defmt_acpi_buf::get()
+}
+
+pub(crate) fn frame_available(avail: bool) {
+    let s = DEBUG_SERVICE.try_get().expect("Debug service must be init");
+    s.frame_available.store(avail, core::sync::atomic::Ordering::SeqCst);
+}
+
 pub(crate) fn response_notify_signal() -> &'static Signal<GlobalRawMutex, ()> {
     RESP_NOTIFY.get_or_init(Signal::new)
+}
+
+pub(crate) fn no_avail_notify_signal() -> &'static Signal<GlobalRawMutex, ()> {
+    NO_AVAIL_NOTIFY.get_or_init(Signal::new)
 }
 
 /// Returns the endpoint ID of the transport used by the debug service.

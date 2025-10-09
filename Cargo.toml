@@ -74,3 +74,4 @@ tps6699x = { git = "https://github.com/OpenDevicePartnership/tps6699x" }
 tokio = { version = "1.42.0" }
 zerocopy = "0.8.26"
 uuid = { version = "=1.17.0", default-features = false }
+mctp-rs = { git = "https://github.com/dymk/mctp-rs" }

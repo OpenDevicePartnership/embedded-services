@@ -22,6 +22,7 @@ embedded-hal.workspace = true
 embedded-services.workspace = true
 log = { workspace = true, optional = true }
 zerocopy.workspace = true
+mctp-rs = { workspace = true, features = ["espi", "odp"] }
 
 [features]
 default = []
@@ -32,6 +33,7 @@ defmt = [
     "embassy-sync/defmt",
     "embassy-executor/defmt",
     "embedded-batteries-async/defmt",
+    "mctp-rs/defmt",
 ]
 log = [
     "dep:log",
