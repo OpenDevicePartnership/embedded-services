@@ -5,15 +5,15 @@ use embedded_services::{
     power::policy::PowerCapability,
     type_c::{
         controller::{
-            AttnVdm, Contract, ControllerStatus, DpConfig, DpPinConfig, DpStatus, OtherVdm, PdStateMachineConfig,
-            PortStatus, RetimerFwUpdateState, SendVdm, TbtConfig, TypeCStateMachineState, UsbControlConfig,
+            AttnVdm, ControllerStatus, DpConfig, DpPinConfig, DpStatus, OtherVdm, PdStateMachineConfig, PortStatus,
+            RetimerFwUpdateState, SendVdm, TbtConfig, TypeCStateMachineState, UsbControlConfig,
         },
         event::PortEvent,
     },
 };
-use embedded_usb_pd::type_c::Current;
 use embedded_usb_pd::{Error, ado::Ado};
 use embedded_usb_pd::{LocalPortId, PdError};
+use embedded_usb_pd::{PowerRole, type_c::Current};
 use embedded_usb_pd::{type_c::ConnectionState, ucsi::lpm};
 use log::{debug, info, trace};
 use std::cell::Cell;
@@ -34,19 +34,19 @@ impl ControllerState {
     }
 
     /// Simulate a connection
-    pub async fn connect(&self, contract: Contract, debug: bool, unconstrained: bool) {
+    pub async fn connect(&self, role: PowerRole, capability: PowerCapability, debug: bool, unconstrained: bool) {
         let mut status = PortStatus::new();
         status.connection_state = Some(if debug {
             ConnectionState::DebugAccessory
         } else {
             ConnectionState::Attached
         });
-        match contract {
-            Contract::Source(capability) => {
+        match role {
+            PowerRole::Source => {
                 status.available_source_contract = Some(capability);
                 status.unconstrained_power = unconstrained;
             }
-            Contract::Sink(capability) => {
+            PowerRole::Sink => {
                 status.available_sink_contract = Some(capability);
                 status.unconstrained_power = unconstrained;
             }
@@ -62,7 +62,7 @@ impl ControllerState {
 
     /// Simulate a sink connecting
     pub async fn connect_sink(&self, capability: PowerCapability, unconstrained: bool) {
-        self.connect(Contract::Sink(capability), false, unconstrained).await;
+        self.connect(PowerRole::Sink, capability, false, unconstrained).await;
     }
 
     /// Simulate a disconnection
@@ -76,7 +76,7 @@ impl ControllerState {
 
     /// Simulate a debug accessory source connecting
     pub async fn connect_debug_accessory_source(&self, current: Current) {
-        self.connect(Contract::Sink(current.into()), true, false).await;
+        self.connect(PowerRole::Source, current.into(), true, false).await;
     }
 
     /// Simulate a PD alert

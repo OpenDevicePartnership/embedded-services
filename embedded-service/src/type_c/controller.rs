@@ -23,16 +23,6 @@ use crate::{GlobalRawMutex, IntrusiveNode, error, intrusive_list, trace};
 /// maximum number of data objects in a VDM
 pub const MAX_NUM_DATA_OBJECTS: usize = 7; // 7 VDOs of 4 bytes each
 
-/// Power contract
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub enum Contract {
-    /// Contract as sink
-    Sink(policy::PowerCapability),
-    /// Constract as source
-    Source(policy::PowerCapability),
-}
-
 /// Port status
 #[derive(Copy, Clone, Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
