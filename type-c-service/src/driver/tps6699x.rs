@@ -324,8 +324,7 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
                     let rdo = Rdo::for_pdo(rdo_raw, pdo);
                     debug!("PDO: {:#?}", pdo);
                     debug!("RDO: {:#?}", rdo);
-                    port_status.available_source_contract =
-                        PowerCapability::try_from(Contract::from_source(pdo, rdo)).ok();
+                    port_status.available_source_contract = Contract::from_source(pdo, rdo).try_into().ok();
                     port_status.dual_power = pdo.dual_role_power();
                 } else {
                     // active_rdo_contract doesn't contain the full picture
@@ -348,7 +347,7 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
                     let rdo = Rdo::for_pdo(rdo_raw, pdo);
                     debug!("PDO: {:#?}", pdo);
                     debug!("RDO: {:#?}", rdo);
-                    port_status.available_sink_contract = PowerCapability::try_from(Contract::from_sink(pdo, rdo)).ok();
+                    port_status.available_sink_contract = Contract::from_sink(pdo, rdo).try_into().ok();
                     port_status.dual_power = source_pdos[0].dual_role_power();
                     port_status.unconstrained_power = source_pdos[0].unconstrained_power();
                 }
