@@ -13,6 +13,7 @@ members = [
     "platform-service",
     "power-button-service",
     "power-policy-service",
+    "time-alarm-service",
     "type-c-service",
     "debug-service",
 ]
@@ -34,6 +35,7 @@ bitfield = "0.17.0"
 bitflags = "2.8.0"
 bitvec = { version = "1.0.1", default-features = false }
 block-device-driver = "0.2"
+bytemuck = {version = "1.23.2", features=[ "derive" ]}
 cfg-if = "1.0.0"
 chrono = { version = "0.4", default-features = false }
 cortex-m = "0.7.6"
@@ -54,6 +56,7 @@ embedded-hal-async = "1.0"
 embedded-hal-nb = "1.0"
 embedded-io = "0.6.1"
 embedded-io-async = "0.6.1"
+embedded-mcu-hal = { git = "https://github.com/OpenDevicePartnership/embedded-mcu" }
 embedded-services = { path = "./embedded-service" }
 embedded-storage = "0.3"
 embedded-storage-async = "0.4.1"
