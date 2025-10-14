@@ -160,14 +160,14 @@ impl Default for AlarmExpiredWakePolicy {
 enum AcpiTimeAlarmDeviceCommand {
     // Notably missing from the ACPI spec here is _GCP / 'Get Capabilities'.  It just returns a constant and is expected to be implemented wholly in the ACPI ASL code.
 
-    GetRealTime,                                                // 1: _GRT --> AcpiTimestamp,                 failure: valid bit = 0 in returned timestamp
-    SetRealTime(AcpiTimestamp),                                 // 2: _SRT --> u32 (bool),                    failure: u32::MAX
-    GetWakeStatus(AcpiTimerId),                                 // 3: _GWS --> u32 (bitmask),                 failure: infallible
-    ClearWakeStatus(AcpiTimerId),                               // 4: _CWS --> u32 (bool),                    failure: 1
-    SetExpiredTimerPolicy(AcpiTimerId, AlarmExpiredWakePolicy), // 5: _STP --> u32 (bool),                    failure: 1
+    GetRealTime,                                                // 2: _GRT --> AcpiTimestamp,                 failure: valid bit = 0 in returned timestamp
+    SetRealTime(AcpiTimestamp),                                 // 3: _SRT --> u32 (bool),                    failure: u32::MAX
+    GetWakeStatus(AcpiTimerId),                                 // 4: _GWS --> u32 (bitmask),                 failure: infallible
+    ClearWakeStatus(AcpiTimerId),                               // 5: _CWS --> u32 (bool),                    failure: 1
     SetTimerValue(AcpiTimerId, AlarmTimerSeconds),              // 6: _STV --> u32 (bool),                    failure: 1,
-    GetExpiredTimerPolicy(AcpiTimerId),                         // 7: _TIP --> u32 (AlarmExpiredWakePolicy)   failure: infallible
-    GetTimerValue(AcpiTimerId),                                 // 8: _TIV --> u32 (AlarmTimerSeconds),       failure: infallible, u32::MAX if disabled
+    GetTimerValue(AcpiTimerId),                                 // 7: _TIV --> u32 (AlarmTimerSeconds),       failure: infallible, u32::MAX if disabled
+    SetExpiredTimerPolicy(AcpiTimerId, AlarmExpiredWakePolicy), // 8: _STP --> u32 (bool),                    failure: 1
+    GetExpiredTimerPolicy(AcpiTimerId),                         // 9: _TIP --> u32 (AlarmExpiredWakePolicy)   failure: infallible
 
     RespondToInvalidCommand // Not an ACPI method. Used internally to indicate that an invalid command was received, and we must respond with an error asynchronously.
 }
@@ -190,25 +190,25 @@ impl AcpiTimeAlarmDeviceCommand {
                                 .expect("Should never fail because if there were less than 4 bytes, parsing the command code would have failed. If there were exactly four bytes, this will return an empty slice, not None.");
 
         match command_code {
-            1 => Ok(AcpiTimeAlarmDeviceCommand::GetRealTime),
-            2 => Ok(AcpiTimeAlarmDeviceCommand::SetRealTime(AcpiTimestamp::try_from_bytes(
+            2 => Ok(AcpiTimeAlarmDeviceCommand::GetRealTime),
+            3 => Ok(AcpiTimeAlarmDeviceCommand::SetRealTime(AcpiTimestamp::try_from_bytes(
                 bytes,
             )?)),
             _ => {
                 let (timer_id, bytes) = AcpiTimerId::try_from_bytes(bytes)?;
                 match command_code {
-                    3 => Ok(AcpiTimeAlarmDeviceCommand::GetWakeStatus(timer_id)),
-                    4 => Ok(AcpiTimeAlarmDeviceCommand::ClearWakeStatus(timer_id)),
-                    5 => Ok(AcpiTimeAlarmDeviceCommand::SetExpiredTimerPolicy(
-                        timer_id,
-                        AlarmExpiredWakePolicy(u32::from_le_bytes(bytes.try_into()?)),
-                    )),
+                    4 => Ok(AcpiTimeAlarmDeviceCommand::GetWakeStatus(timer_id)),
+                    5 => Ok(AcpiTimeAlarmDeviceCommand::ClearWakeStatus(timer_id)),
                     6 => Ok(AcpiTimeAlarmDeviceCommand::SetTimerValue(
                         timer_id,
                         AlarmTimerSeconds(u32::from_le_bytes(bytes.try_into()?)),
                     )),
-                    7 => Ok(AcpiTimeAlarmDeviceCommand::GetExpiredTimerPolicy(timer_id)),
-                    8 => Ok(AcpiTimeAlarmDeviceCommand::GetTimerValue(timer_id)),
+                    7 => Ok(AcpiTimeAlarmDeviceCommand::GetTimerValue(timer_id)),
+                    8 => Ok(AcpiTimeAlarmDeviceCommand::SetExpiredTimerPolicy(
+                        timer_id,
+                        AlarmExpiredWakePolicy(u32::from_le_bytes(bytes.try_into()?)),
+                    )),
+                    9 => Ok(AcpiTimeAlarmDeviceCommand::GetExpiredTimerPolicy(timer_id)),
                     _ => Err(TimeAlarmError::UnknownCommand),
                 }
             }
