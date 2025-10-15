@@ -158,8 +158,7 @@ impl Default for AlarmExpiredWakePolicy {
 #[rustfmt::skip]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 enum AcpiTimeAlarmDeviceCommand {
-    // Notably missing from the ACPI spec here is _GCP / 'Get Capabilities'.  It just returns a constant and is expected to be implemented wholly in the ACPI ASL code.
-
+    GetCapabilities,                                            // 1: _GCP --> u32 (bitmask),                 failure: infallible
     GetRealTime,                                                // 2: _GRT --> AcpiTimestamp,                 failure: valid bit = 0 in returned timestamp
     SetRealTime(AcpiTimestamp),                                 // 3: _SRT --> u32 (bool),                    failure: u32::MAX
     GetWakeStatus(AcpiTimerId),                                 // 4: _GWS --> u32 (bitmask),                 failure: infallible
@@ -190,6 +189,7 @@ impl AcpiTimeAlarmDeviceCommand {
                                 .expect("Should never fail because if there were less than 4 bytes, parsing the command code would have failed. If there were exactly four bytes, this will return an empty slice, not None.");
 
         match command_code {
+            1 => Ok(AcpiTimeAlarmDeviceCommand::GetCapabilities),
             2 => Ok(AcpiTimeAlarmDeviceCommand::GetRealTime),
             3 => Ok(AcpiTimeAlarmDeviceCommand::SetRealTime(AcpiTimestamp::try_from_bytes(
                 bytes,
@@ -296,6 +296,24 @@ bitfield!(
     timer_expired, set_timer_expired: 0;
     timer_triggered_wake, set_timer_triggered_wake: 1;
 );
+// -------------------------------------------------
+
+bitfield!(
+    #[derive(Copy, Clone, Default, PartialEq, Eq)]
+    #[cfg_attr(feature = "defmt", derive(defmt::Format))]
+    pub struct TimeAlarmDeviceCapabilities(u32);
+    impl Debug;
+    bool;
+    ac_wake_implemented, set_ac_wake_implemented: 0;
+    dc_wake_implemented, set_dc_wake_implemented: 1;
+    realtime_implemented, set_realtime_implemented: 2;
+    realtime_accuracy_in_milliseconds, set_realtime_accuracy_in_milliseconds: 3;
+    get_wake_status_supported, set_get_wake_status_supported: 4;
+    ac_s4_wake_supported, set_ac_s4_wake_supported: 5;
+    ac_s5_wake_supported, set_ac_s5_wake_supported: 6;
+    dc_s4_wake_supported, set_dc_s4_wake_supported: 7;
+    dc_s5_wake_supported, set_dc_s5_wake_supported: 8;
+);
 
 // -------------------------------------------------
 
@@ -340,7 +358,9 @@ pub struct Service {
 
     timers: Timers,
 
-    acpi_buf_owned_ref: OwnedRef<'static, u8>
+    acpi_buf_owned_ref: OwnedRef<'static, u8>,
+
+    capabilities: TimeAlarmDeviceCapabilities,
 }
 
 // TODO [STORAGE] This statically allocates a buffer oustide the Service struct to hold ACPI responses. This is a common pattern in this repo,
@@ -386,6 +406,20 @@ impl Service {
                 dc_policy_storage,
             ),
             acpi_buf_owned_ref: acpi_buf::get_mut().unwrap(),
+            capabilities: {
+                // TODO [CONFIG] We could consider making some of these user-configurable, e.g. if we want to support devices that don't have a battery
+                let mut caps = TimeAlarmDeviceCapabilities(0);
+                caps.set_ac_wake_implemented(true);
+                caps.set_dc_wake_implemented(true);
+                caps.set_realtime_implemented(true);
+                caps.set_realtime_accuracy_in_milliseconds(false);
+                caps.set_get_wake_status_supported(true);
+                caps.set_ac_s4_wake_supported(true);
+                caps.set_ac_s5_wake_supported(true);
+                caps.set_dc_s4_wake_supported(true);
+                caps.set_dc_s5_wake_supported(true);
+                caps
+            },
         });
 
         // TODO [POWER_SOURCE] we need to subscribe to messages that tell us if we're on AC or DC power so we can decide which alarms to trigger - how do we do that?
@@ -519,6 +553,7 @@ impl Service {
     ) -> Result<AcpiTimeAlarmCommandResult, TimeAlarmError> {
         info!("Received Time-Alarm Device command: {:?}", command);
         match command {
+            AcpiTimeAlarmDeviceCommand::GetCapabilities => Ok(AcpiTimeAlarmCommandResult::U32(self.capabilities.0)),
             AcpiTimeAlarmDeviceCommand::GetRealTime => self.clock_state.lock(|clock_state| {
                 let clock_state = clock_state.borrow();
                 let datetime = clock_state.datetime_clock.get_current_datetime()?;
