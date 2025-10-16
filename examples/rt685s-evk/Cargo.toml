@@ -29,13 +29,9 @@ embassy-imxrt = { git = "https://github.com/OpenDevicePartnership/embassy-imxrt"
     "mimxrt685s",
 ] }
 
-embassy-embedded-hal = { version = "0.5.0", features = [
-    "defmt",
-] }
+embassy-embedded-hal = { version = "0.5.0", features = ["defmt"] }
 
-embassy-sync = { version = "0.7.2", features = [
-    "defmt",
-] }
+embassy-sync = { version = "0.7.2", features = ["defmt"] }
 embassy-executor = { version = "0.9.1", features = [
     "arch-cortex-m",
     "executor-thread",

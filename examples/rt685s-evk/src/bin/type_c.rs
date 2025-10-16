@@ -11,9 +11,9 @@ use embassy_imxrt::{bind_interrupts, peripherals};
 use embassy_sync::mutex::Mutex;
 use embassy_time::{self as _, Delay};
 use embedded_cfu_protocol::protocol_definitions::{FwUpdateOffer, FwUpdateOfferResponse, FwVersion, HostToken};
+use embedded_services::GlobalRawMutex;
 use embedded_services::power::policy::DeviceId as PowerId;
 use embedded_services::type_c::{self, Cached, ControllerId};
-use embedded_services::{GlobalRawMutex, comms};
 use embedded_services::{error, info};
 use embedded_usb_pd::GlobalPortId;
 use static_cell::StaticCell;
@@ -47,78 +47,6 @@ type BusDevice<'a> = I2cDevice<'a, GlobalRawMutex, BusMaster<'a>>;
 type Wrapper<'a> = Tps6699xWrapper<'a, GlobalRawMutex, BusDevice<'a>, Validator>;
 type Controller<'a> = tps6699x::controller::Controller<GlobalRawMutex, BusDevice<'a>>;
 type Interrupt<'a> = tps6699x::Interrupt<'a, GlobalRawMutex, BusDevice<'a>>;
-
-/// Battery mock that receives messages from power policy
-mod battery {
-    use defmt::{info, trace};
-    use embedded_services::comms;
-    use embedded_services::power::policy;
-
-    pub struct Device {
-        pub tp: comms::Endpoint,
-    }
-
-    impl Device {
-        pub fn new() -> Self {
-            Self {
-                tp: comms::Endpoint::uninit(comms::EndpointID::Internal(comms::Internal::Battery)),
-            }
-        }
-    }
-
-    impl comms::MailboxDelegate for Device {
-        fn receive(&self, message: &comms::Message) -> Result<(), comms::MailboxDelegateError> {
-            trace!("Got message");
-
-            let message = message
-                .data
-                .get::<policy::CommsMessage>()
-                .ok_or(comms::MailboxDelegateError::MessageNotFound)?;
-
-            match message.data {
-                policy::CommsData::ConsumerDisconnected(id) => {
-                    info!("Consumer disconnected: {}", id.0);
-                    Ok(())
-                }
-                policy::CommsData::ConsumerConnected(id, capability) => {
-                    info!("Consumer connected: {} {:?}", id.0, capability);
-                    Ok(())
-                }
-                _ => Ok(()),
-            }
-        }
-    }
-}
-
-/// Debug accesory listener mock
-mod debug {
-    use defmt::{info, trace};
-    use embedded_services::comms;
-    use embedded_services::type_c;
-
-    pub struct Device {
-        pub tp: comms::Endpoint,
-    }
-
-    impl Device {
-        pub fn new() -> Self {
-            Self {
-                tp: comms::Endpoint::uninit(comms::EndpointID::Internal(comms::Internal::Usbc)),
-            }
-        }
-    }
-
-    impl comms::MailboxDelegate for Device {
-        fn receive(&self, message: &comms::Message) -> Result<(), comms::MailboxDelegateError> {
-            trace!("Got message");
-            if let Some(message) = message.data.get::<type_c::comms::DebugAccessoryMessage>() {
-                info!("Debug accessory message: {:?}", message);
-            }
-
-            Ok(())
-        }
-    }
-}
 
 #[embassy_executor::task]
 async fn pd_controller_task(controller: &'static Wrapper<'static>) {
@@ -199,17 +127,6 @@ async fn main(spawner: Spawner) {
 
     pd_controller.register().await.unwrap();
     spawner.must_spawn(pd_controller_task(pd_controller));
-
-    static BATTERY: StaticCell<battery::Device> = StaticCell::new();
-    let battery = BATTERY.init(battery::Device::new());
-
-    comms::register_endpoint(battery, &battery.tp).await.unwrap();
-
-    static DEBUG_ACCESSORY: StaticCell<debug::Device> = StaticCell::new();
-    let debug_accessory = DEBUG_ACCESSORY.init(debug::Device::new());
-    comms::register_endpoint(debug_accessory, &debug_accessory.tp)
-        .await
-        .unwrap();
 
     // Sync our internal state with the hardware
     type_c::external::sync_controller_state(CONTROLLER0_ID).await.unwrap();
