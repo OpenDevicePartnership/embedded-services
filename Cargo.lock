@@ -2036,7 +2036,6 @@ dependencies = [
  "embedded-usb-pd",
  "heapless",
  "log",
- "static_cell",
  "tokio",
  "tps6699x",
 ]
