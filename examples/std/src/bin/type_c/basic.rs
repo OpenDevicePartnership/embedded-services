@@ -1,8 +1,8 @@
 use embassy_executor::{Executor, Spawner};
 use embassy_sync::once_lock::OnceLock;
 use embassy_time::Timer;
-use embedded_services::power;
 use embedded_services::type_c::{Cached, ControllerId, controller};
+use embedded_services::{IntrusiveList, power};
 use embedded_usb_pd::ucsi::lpm;
 use embedded_usb_pd::{GlobalPortId, PdError as Error};
 use log::*;
@@ -124,13 +124,13 @@ mod test_controller {
 }
 
 #[embassy_executor::task]
-async fn controller_task() {
+async fn controller_task(controller_list: &'static IntrusiveList) {
     static CONTROLLER: OnceLock<test_controller::Controller> = OnceLock::new();
 
     static PORTS: [GlobalPortId; 2] = [PORT0_ID, PORT1_ID];
 
     let controller = CONTROLLER.get_or_init(|| test_controller::Controller::new(CONTROLLER0_ID, POWER0_ID, &PORTS));
-    controller::register_controller(controller).unwrap();
+    controller::register_controller(controller_list, controller).unwrap();
 
     loop {
         controller.process().await;
@@ -141,24 +141,35 @@ async fn controller_task() {
 async fn task(spawner: Spawner) {
     embedded_services::init().await;
 
-    controller::init();
+    static CONTROLLER_LIST: StaticCell<IntrusiveList> = StaticCell::new();
+
+    let controller_list = CONTROLLER_LIST.init(IntrusiveList::new());
 
     info!("Starting controller task");
-    spawner.must_spawn(controller_task());
+    spawner.must_spawn(controller_task(controller_list));
     // Wait for controller to be registered
     Timer::after_secs(1).await;
 
-    let context = controller::ContextToken::create().unwrap();
+    let context = controller::Context::new();
 
-    context.reset_controller(CONTROLLER0_ID).await.unwrap();
+    context.reset_controller(controller_list, CONTROLLER0_ID).await.unwrap();
 
-    let status = context.get_controller_status(CONTROLLER0_ID).await.unwrap();
+    let status = context
+        .get_controller_status(controller_list, CONTROLLER0_ID)
+        .await
+        .unwrap();
     info!("Controller 0 status: {status:#?}");
 
-    let status = context.get_port_status(PORT0_ID, Cached(true)).await.unwrap();
+    let status = context
+        .get_port_status(controller_list, PORT0_ID, Cached(true))
+        .await
+        .unwrap();
     info!("Port 0 status: {status:#?}");
 
-    let status = context.get_port_status(PORT1_ID, Cached(true)).await.unwrap();
+    let status = context
+        .get_port_status(controller_list, PORT1_ID, Cached(true))
+        .await
+        .unwrap();
     info!("Port 1 status: {status:#?}");
 }
 

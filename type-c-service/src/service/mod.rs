@@ -30,10 +30,6 @@ pub mod vdm;
 
 const MAX_SUPPORTED_PORTS: usize = 4;
 
-/// Maximum number of power policy events to buffer
-/// Arbitrary number, but power policy events in general shouldn't be too frequent
-pub const MAX_POWER_POLICY_EVENTS: usize = 4;
-
 /// Type-C service state
 #[derive(Default)]
 struct State {
@@ -47,8 +43,10 @@ struct State {
 
 /// Type-C service
 pub struct Service<'a> {
-    /// Type-C context token
-    context: type_c::controller::ContextToken,
+    /// Type-C context
+    context: &'a type_c::controller::Context,
+    /// Controller intrusive list
+    controllers: &'a intrusive_list::IntrusiveList,
     /// Current state
     state: Mutex<GlobalRawMutex, State>,
     /// Config
@@ -90,16 +88,19 @@ impl<'a> Service<'a> {
     /// Create a new service the given configuration
     pub fn create(
         config: config::Config,
+        context: &'a embedded_services::type_c::controller::Context,
+        controller_list: &'a intrusive_list::IntrusiveList,
         power_policy_publisher: DynImmediatePublisher<'a, power_policy::CommsMessage>,
         power_policy_subscriber: DynSubscriber<'a, power_policy::CommsMessage>,
-    ) -> Option<Self> {
-        Some(Self {
-            context: type_c::controller::ContextToken::create()?,
+    ) -> Self {
+        Self {
+            context,
             state: Mutex::new(State::default()),
             config,
             power_policy_event_publisher: power_policy_publisher.into(),
             power_policy_event_subscriber: Mutex::new(power_policy_subscriber),
-        })
+            controllers: controller_list,
+        }
     }
 
     /// Get the cached port status
@@ -160,16 +161,22 @@ impl<'a> Service<'a> {
     }
 
     /// Process external commands
-    async fn process_external_command(&self, command: &external::Command) -> external::Response<'static> {
+    async fn process_external_command(
+        &self,
+        controllers: &intrusive_list::IntrusiveList,
+        command: &external::Command,
+    ) -> external::Response<'static> {
         match command {
             external::Command::Controller(command) => self.process_external_controller_command(command).await,
-            external::Command::Port(command) => self.process_external_port_command(command).await,
-            external::Command::Ucsi(command) => external::Response::Ucsi(self.process_ucsi_command(command).await),
+            external::Command::Port(command) => self.process_external_port_command(command, controllers).await,
+            external::Command::Ucsi(command) => {
+                external::Response::Ucsi(self.process_ucsi_command(controllers, command).await)
+            }
         }
     }
 
     /// Wait for the next event
-    pub async fn wait_next(&self) -> Result<Event<'_>, Error> {
+    pub async fn wait_next(&self, controllers: &intrusive_list::IntrusiveList) -> Result<Event<'_>, Error> {
         loop {
             match select3(
                 self.wait_port_flags(),
@@ -180,7 +187,7 @@ impl<'a> Service<'a> {
             {
                 Either3::First(mut stream) => {
                     if let Some((port_id, event)) = stream
-                        .next(|port_id| self.context.get_port_event(GlobalPortId(port_id as u8)))
+                        .next(|port_id| self.context.get_port_event(controllers, GlobalPortId(port_id as u8)))
                         .await?
                     {
                         let port_id = GlobalPortId(port_id as u8);
@@ -188,7 +195,7 @@ impl<'a> Service<'a> {
                         match event {
                             PortEventVariant::StatusChanged(status_event) => {
                                 // Return a port status changed event
-                                let status = self.context.get_port_status(port_id, Cached(true)).await?;
+                                let status = self.context.get_port_status(controllers, port_id, Cached(true)).await?;
                                 return Ok(Event::PortStatusChanged(port_id, status_event, status));
                             }
                             PortEventVariant::Notification(notification) => {
@@ -210,7 +217,11 @@ impl<'a> Service<'a> {
     }
 
     /// Process the given event
-    pub async fn process_event(&self, event: Event<'_>) -> Result<(), Error> {
+    pub async fn process_event(
+        &self,
+        event: Event<'_>,
+        controllers: &intrusive_list::IntrusiveList,
+    ) -> Result<(), Error> {
         match event {
             Event::PortStatusChanged(port, event_kind, status) => {
                 trace!("Port{}: Processing port status changed", port.0);
@@ -223,7 +234,7 @@ impl<'a> Service<'a> {
             }
             Event::ExternalCommand(request) => {
                 trace!("Processing external command");
-                let response = self.process_external_command(&request.command).await;
+                let response = self.process_external_command(controllers, &request.command).await;
                 request.respond(response);
                 Ok(())
             }
@@ -235,9 +246,9 @@ impl<'a> Service<'a> {
     }
 
     /// Combined processing function
-    pub async fn process_next_event(&self) -> Result<(), Error> {
-        let event = self.wait_next().await?;
-        self.process_event(event).await
+    pub async fn process_next_event(&self, controllers: &intrusive_list::IntrusiveList) -> Result<(), Error> {
+        let event = self.wait_next(controllers).await?;
+        self.process_event(event, controllers).await
     }
 
     /// Register the Type-C service with the power policy service

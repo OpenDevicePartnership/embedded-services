@@ -1,7 +1,6 @@
 #![no_std]
 pub mod driver;
 pub mod service;
-pub mod task;
 pub mod wrapper;
 
 use core::future::Future;
@@ -9,7 +8,6 @@ use core::future::Future;
 use embedded_services::type_c::event::{
     PortEvent, PortNotification, PortNotificationSingle, PortPendingIter, PortStatusChanged,
 };
-pub use task::task;
 
 /// Enum to contain all port event variants
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]

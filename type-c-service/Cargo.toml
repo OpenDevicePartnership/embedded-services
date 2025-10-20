@@ -26,7 +26,6 @@ embedded-services.workspace = true
 embedded-usb-pd.workspace = true
 heapless.workspace = true
 log = { workspace = true, optional = true }
-static_cell = { workspace = true }
 tps6699x = { workspace = true, features = ["embassy"] }
 
 [dev-dependencies]
@@ -40,6 +39,7 @@ embassy-executor = { workspace = true, features = [
 ] }
 embassy-futures.workspace = true
 tokio = { workspace = true, features = ["rt", "macros", "time"] }
+static_cell.workspace = true
 
 [features]
 default = []

@@ -27,12 +27,12 @@ use embassy_sync::mutex::Mutex;
 use embassy_sync::signal::Signal;
 use embassy_time::Instant;
 use embedded_cfu_protocol::protocol_definitions::{FwUpdateOffer, FwUpdateOfferResponse, FwVersion};
-use embedded_services::GlobalRawMutex;
 use embedded_services::power::policy::device::StateKind;
 use embedded_services::power::policy::{self, action};
 use embedded_services::sync::Lockable;
 use embedded_services::type_c::controller::{self, Controller, PortStatus};
 use embedded_services::type_c::event::{PortEvent, PortNotificationSingle, PortPending, PortStatusChanged};
+use embedded_services::{GlobalRawMutex, intrusive_list};
 use embedded_services::{debug, error, info, trace, warn};
 use embedded_usb_pd::ado::Ado;
 use embedded_usb_pd::{Error, LocalPortId, PdError};
@@ -301,7 +301,9 @@ where
         if events != PortEvent::none() {
             let mut pending = PortPending::none();
             pending.pend_port(global_port_id.0 as usize);
-            self.registration.pd_controller.notify_ports(pending);
+            self.registration
+                .pd_controller
+                .notify_ports(self.registration.context, pending);
             trace!("P{}: Notified service for events: {:#?}", global_port_id.0, events);
         }
 
@@ -336,7 +338,9 @@ where
         // Pend this port
         let mut pending = PortPending::none();
         pending.pend_port(global_port_id.0 as usize);
-        self.registration.pd_controller.notify_ports(pending);
+        self.registration
+            .pd_controller
+            .notify_ports(self.registration.context, pending);
         Ok(())
     }
 
@@ -593,7 +597,11 @@ where
     }
 
     /// Register all devices with their respective services
-    pub async fn register(&'static self) -> Result<(), Error<<C::Inner as Controller>::BusError>> {
+    pub async fn register(
+        &'static self,
+        controllers: &intrusive_list::IntrusiveList,
+    ) -> Result<(), Error<<C::Inner as Controller>::BusError>> {
+        // TODO: Unify these devices?
         for device in self.registration.power_devices {
             policy::register_device(device).map_err(|_| {
                 error!(
@@ -605,7 +613,7 @@ where
             })?;
         }
 
-        controller::register_controller(self.registration.pd_controller).map_err(|_| {
+        controller::register_controller(controllers, self.registration.pd_controller).map_err(|_| {
             error!(
                 "Controller{}: Failed to register PD controller",
                 self.registration.pd_controller.id().0

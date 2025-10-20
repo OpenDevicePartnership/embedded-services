@@ -51,7 +51,9 @@ where
 
         let mut pending = PortPending::none();
         pending.pend_port(global_port_id.0 as usize);
-        self.registration.pd_controller.notify_ports(pending);
+        self.registration
+            .pd_controller
+            .notify_ports(self.registration.context, pending);
         Ok(())
     }
 }
