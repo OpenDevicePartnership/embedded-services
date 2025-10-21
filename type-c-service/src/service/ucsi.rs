@@ -1,5 +1,3 @@
-use core::mem;
-use embedded_services::type_c::event::{PortPending, PortPendingIter};
 use embedded_services::warn;
 use embedded_usb_pd::PdError;
 use embedded_usb_pd::ucsi::cci::{Cci, GlobalCci};
@@ -19,10 +17,8 @@ pub(super) struct State {
     ppm_state_machine: StateMachine,
     /// Currently enabled notifications
     notifications_enabled: NotificationEnable,
-    // Pending connector changes
-    pending_ports: PortPending,
-    /// Iterator to implement round robin over pending port events
-    pending_ports_iter: Option<PortPendingIter>,
+    /// Queued pending port notifications
+    pending_ports: heapless::Deque<GlobalPortId, MAX_SUPPORTED_PORTS>,
 }
 
 impl<'a> Service<'a> {
@@ -30,6 +26,7 @@ impl<'a> Service<'a> {
     async fn process_ppm_reset(&self, state: &mut State) {
         debug!("Resetting PPM");
         state.notifications_enabled = NotificationEnable::default();
+        state.pending_ports.clear();
     }
 
     /// Set notification enable implementation
@@ -81,58 +78,33 @@ impl<'a> Service<'a> {
 
     /// Upate the CCI connector change field based on the current pending port
     fn set_cci_connector_change(&self, state: &mut State, cci: &mut GlobalCci) {
-        if let Some(current_port) = state.pending_ports_iter.and_then(|mut iter| iter.next()) {
+        if let Some(current_port) = state.pending_ports.front() {
             // UCSI connector numbers are 1-based
-            cci.set_connector_change(GlobalPortId(current_port as u8 + 1));
+            cci.set_connector_change(GlobalPortId(current_port.0 + 1));
         } else {
+            // 0 is used to indicate no pending connector changes
             cci.set_connector_change(GlobalPortId(0));
-        }
-    }
-
-    /// Start a new round robin over pending ports, notifying OPM if requested
-    async fn start_connector_changed_notify(&self, state: &mut State, notify_opm: bool) {
-        let mut iter = mem::take(&mut state.pending_ports).into_iter();
-
-        state.pending_ports_iter = Some(iter);
-        if let Some(port_id) = iter.next() {
-            // Notify OPM if requested
-            self.context
-                .broadcast_message(comms::CommsMessage::UcsiCci(comms::UcsiCiMessage {
-                    port: GlobalPortId(port_id as u8),
-                    notify_opm,
-                }))
-                .await;
         }
     }
 
     /// Acknowledge the current connector change and move to the next if present
     async fn ack_connector_change(&self, state: &mut State, cci: &mut GlobalCci) {
-        if let Some(current_port) = state.pending_ports_iter.as_mut().and_then(|iter| iter.next()) {
-            state.pending_ports.clear_port(current_port);
-
-            if let Some(next_port) = state.pending_ports_iter.and_then(|mut iter| iter.next()) {
-                // More pending ports
-                debug!("ACK_CCI processed, next pending port: {}", next_port);
+        // Pop the just acknowledged port and move to the next if present
+        if let Some(_current_port) = state.pending_ports.pop_front() {
+            if let Some(next_port) = state.pending_ports.front() {
+                debug!("ACK_CCI processed, next pending port: {}", next_port.0);
                 self.context
-                    .broadcast_message(comms::CommsMessage::UcsiCci(comms::UcsiCiMessage {
-                        port: GlobalPortId(next_port as u8),
+                    .broadcast_message(comms::CommsMessage::UcsiCci(comms::UcsiConnectorChange {
+                        port: *next_port,
                         // False here because the OPM gets notified by the CCI, don't need a separate notification
                         notify_opm: false,
                     }))
                     .await;
-            } else if !state.pending_ports.is_none() {
-                // More pending ports, restart the round robin
-                debug!("ACK_CCI processed, restarting UCSI event round robin");
-                self.start_connector_changed_notify(state, false).await;
             } else {
-                // No more pending ports, end the round robin
                 debug!("ACK_CCI processed, no more pending ports");
-                state.pending_ports_iter = None;
             }
         } else {
-            // Got an ACK_CCI with no pending ports, fail gracefully and produce a warning
             warn!("Received ACK_CCI with no pending connector changes");
-            state.pending_ports_iter = None;
         }
 
         self.set_cci_connector_change(state, cci);
@@ -242,7 +214,8 @@ impl<'a> Service<'a> {
         }
     }
 
-    pub(super) async fn process_ucsi_event(&self, port_id: GlobalPortId, port_event: PortStatusChanged) {
+    /// Convert from general PD events into UCSI-specific events
+    pub(super) async fn generate_ucsi_event(&self, port_id: GlobalPortId, port_event: PortStatusChanged) {
         let state = &mut self.state.lock().await.ucsi;
         let mut ucsi_event = ConnectorStatusChange::default();
 
@@ -262,19 +235,31 @@ impl<'a> Service<'a> {
             ucsi_event.set_battery_charging_status_change(true);
         }
 
-        if !ucsi_event.filter_enabled(state.notifications_enabled).is_none() {
-            state.pending_ports.pend_port(port_id.0 as usize);
-            debug!(
-                "Port{}: Queuing UCSI connector change event: {:?}",
-                port_id.0, ucsi_event
-            );
+        if ucsi_event.filter_enabled(state.notifications_enabled).is_none() {
+            trace!("Port{}: event received, but no UCSI notifications enabled", port_id.0);
+            return;
         }
 
-        if state.pending_ports_iter.is_none() && !state.pending_ports.is_none() {
-            // Start a new round robin pass and broadcast the initial event
-            // Subsequent events will be broadcast when ACK_CC_CI is processed
-            self.start_connector_changed_notify(state, state.notifications_enabled.connect_change())
+        if state.pending_ports.iter().any(|pending| *pending == port_id) {
+            // Already have a pending event for this port, don't need to process it twice
+            return;
+        }
+
+        // Only notifiy the OPM if we don't have any pending events
+        // Once the OPM starts processing events, the next pending port will be sent as part
+        // of the CCI response to the ACK_CC_CI command. See [`Self::set_cci_connector_change`]
+        let notify_opm = state.pending_ports.is_empty();
+        if state.pending_ports.push_back(port_id).is_ok() {
+            self.context
+                .broadcast_message(comms::CommsMessage::UcsiCci(comms::UcsiConnectorChange {
+                    port: port_id,
+                    notify_opm,
+                }))
                 .await;
+        } else {
+            // This shouldn't happen because we have a single slot per port
+            // Would likely indicate that an invalid port ID got in somehow
+            error!("Pending UCSI events overflow");
         }
     }
 }

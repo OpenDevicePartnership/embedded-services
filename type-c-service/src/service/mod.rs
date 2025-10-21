@@ -154,7 +154,7 @@ impl<'a> Service<'a> {
         }
 
         self.set_cached_port_status(port_id, status).await?;
-        self.process_ucsi_event(port_id, event).await;
+        self.generate_ucsi_event(port_id, event).await;
 
         Ok(())
     }
