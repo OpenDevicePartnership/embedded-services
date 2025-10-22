@@ -88,7 +88,7 @@ async fn controller_task(state: &'static mock_controller::ControllerState) {
 
         let output = output.unwrap();
         if let Output::PdAlert(OutputPdAlert { port, ado }) = &output {
-            info!("{:?}: PD alert received: {:?}", port, ado);
+            info!("{port:?}: PD alert received: {ado:?}");
         }
 
         if let Err(e) = wrapper.finalize(output).await {
