@@ -1041,8 +1041,8 @@ impl<
             OdpCommandCode::BatteryGetBstResponse => Self::BatteryGetBstResponse {
                 bst: embedded_batteries_async::acpi::BstReturn {
                     battery_state: BatteryState::from_bits_retain(safe_get_dword(buffer, 0)?),
-                    battery_present_rate: safe_get_dword(buffer, 4)?,
-                    battery_remaining_capacity: safe_get_dword(buffer, 8)?,
+                    battery_remaining_capacity: safe_get_dword(buffer, 4)?,
+                    battery_present_rate: safe_get_dword(buffer, 8)?,
                     battery_present_voltage: safe_get_dword(buffer, 12)?,
                 },
             },
