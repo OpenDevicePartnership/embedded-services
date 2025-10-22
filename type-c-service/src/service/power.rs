@@ -63,8 +63,8 @@ impl<'a> Service<'a> {
                     // If it switches to sourcing then the system will no longer be unconstrained
                     // So set that port to constrained and unconstrain all others
                     info!(
-                        "Setting port{} to constrained, all others unconstrained",
-                        unconstrained_index
+                        "Setting {} to constrained, all others unconstrained",
+                        GlobalPortId(unconstrained_index as u8)
                     );
                     for port_index in 0..num_ports {
                         self.context

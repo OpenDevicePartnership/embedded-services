@@ -42,9 +42,9 @@ mod debug {
         fn receive(&self, message: &comms::Message) -> Result<(), comms::MailboxDelegateError> {
             if let Some(message) = message.data.get::<DebugAccessoryMessage>() {
                 if message.connected {
-                    info!("Port{}: Debug accessory connected", message.port.0);
+                    info!("{}: Debug accessory connected", message.port);
                 } else {
-                    info!("Port{}: Debug accessory disconnected", message.port.0);
+                    info!("{}: Debug accessory disconnected", message.port);
                 }
             }
 
@@ -88,7 +88,7 @@ async fn controller_task(state: &'static mock_controller::ControllerState) {
 
         let output = output.unwrap();
         if let Output::PdAlert(OutputPdAlert { port, ado }) = &output {
-            info!("Port{}: PD alert received: {:?}", port.0, ado);
+            info!("{}: PD alert received: {:?}", port, ado);
         }
 
         if let Err(e) = wrapper.finalize(output).await {

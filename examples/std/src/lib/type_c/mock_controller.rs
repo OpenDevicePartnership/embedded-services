@@ -182,10 +182,10 @@ impl embedded_services::type_c::controller::Controller for Controller<'_> {
     async fn get_pd_alert(&mut self, port: LocalPortId) -> Result<Option<Ado>, Error<Self::BusError>> {
         let pd_alert = self.state.pd_alert.lock().await;
         if let Some(ado) = *pd_alert {
-            debug!("Port{}: Get PD alert: {ado:#?}", port.0);
+            debug!("{}: Get PD alert: {ado:#?}", port);
             Ok(Some(ado))
         } else {
-            debug!("Port{}: No PD alert", port.0);
+            debug!("{}: No PD alert", port);
             Ok(None)
         }
     }
@@ -224,32 +224,32 @@ impl embedded_services::type_c::controller::Controller for Controller<'_> {
         port: LocalPortId,
         voltage_mv: Option<u16>,
     ) -> Result<(), Error<Self::BusError>> {
-        debug!("Set max sink voltage for port {}: {:?}", port.0, voltage_mv);
+        debug!("Set max sink voltage for {}: {:?}", port, voltage_mv);
         Ok(())
     }
 
     async fn reconfigure_retimer(&mut self, port: LocalPortId) -> Result<(), Error<Self::BusError>> {
-        debug!("reconfigure_retimer(port: {port:?})");
+        debug!("reconfigure_retimer(port: {port})");
         Ok(())
     }
 
     async fn clear_dead_battery_flag(&mut self, port: LocalPortId) -> Result<(), Error<Self::BusError>> {
-        debug!("clear_dead_battery_flag(port: {port:?})");
+        debug!("clear_dead_battery_flag(port: {port})");
         Ok(())
     }
 
     async fn get_other_vdm(&mut self, port: LocalPortId) -> Result<OtherVdm, Error<Self::BusError>> {
-        debug!("Get other VDM for port {port:?}");
+        debug!("Get other VDM for {port}");
         Ok(OtherVdm::default())
     }
 
     async fn get_attn_vdm(&mut self, port: LocalPortId) -> Result<AttnVdm, Error<Self::BusError>> {
-        debug!("Get attention VDM for port {port:?}");
+        debug!("Get attention VDM for {port}");
         Ok(AttnVdm::default())
     }
 
     async fn send_vdm(&mut self, port: LocalPortId, tx_vdm: SendVdm) -> Result<(), Error<Self::BusError>> {
-        debug!("Send VDM for port {port:?}: {tx_vdm:?}");
+        debug!("Send VDM for {port}: {tx_vdm:?}");
         Ok(())
     }
 
@@ -259,14 +259,14 @@ impl embedded_services::type_c::controller::Controller for Controller<'_> {
         config: UsbControlConfig,
     ) -> Result<(), Error<Self::BusError>> {
         debug!(
-            "set_usb_control(port: {port:?}, usb2: {}, usb3: {}, usb4: {})",
+            "set_usb_control(port: {port}, usb2: {}, usb3: {}, usb4: {})",
             config.usb2_enabled, config.usb3_enabled, config.usb4_enabled
         );
         Ok(())
     }
 
     async fn get_dp_status(&mut self, port: LocalPortId) -> Result<DpStatus, Error<Self::BusError>> {
-        debug!("Get DisplayPort status for port {port:?}");
+        debug!("Get DisplayPort status for {port}");
         Ok(DpStatus {
             alt_mode_entered: false,
             dfp_d_pin_cfg: DpPinConfig::default(),
@@ -275,19 +275,19 @@ impl embedded_services::type_c::controller::Controller for Controller<'_> {
 
     async fn set_dp_config(&mut self, port: LocalPortId, config: DpConfig) -> Result<(), Error<Self::BusError>> {
         debug!(
-            "Set DisplayPort config for port {port:?}: enable={}, pin_cfg={:?}",
+            "Set DisplayPort config for {port}: enable={}, pin_cfg={:?}",
             config.enable, config.dfp_d_pin_cfg
         );
         Ok(())
     }
 
     async fn execute_drst(&mut self, port: LocalPortId) -> Result<(), Error<Self::BusError>> {
-        debug!("Execute PD Data Reset for port {port:?}");
+        debug!("Execute PD Data Reset for {port}");
         Ok(())
     }
 
     async fn set_tbt_config(&mut self, port: LocalPortId, config: TbtConfig) -> Result<(), Error<Self::BusError>> {
-        debug!("Set Thunderbolt config for port {port:?}: {config:?}");
+        debug!("Set Thunderbolt config for {port}: {config:?}");
         Ok(())
     }
 
@@ -296,7 +296,7 @@ impl embedded_services::type_c::controller::Controller for Controller<'_> {
         port: LocalPortId,
         config: PdStateMachineConfig,
     ) -> Result<(), Error<Self::BusError>> {
-        debug!("Set PD State Machine config for port {port:?}: {config:?}");
+        debug!("Set PD State Machine config for {port}: {config:?}");
         Ok(())
     }
 
@@ -305,7 +305,7 @@ impl embedded_services::type_c::controller::Controller for Controller<'_> {
         port: LocalPortId,
         state: TypeCStateMachineState,
     ) -> Result<(), Error<Self::BusError>> {
-        debug!("Set Type-C State Machine state for port {port:?}: {state:?}");
+        debug!("Set Type-C State Machine state for {port}: {state:?}");
         Ok(())
     }
 
@@ -313,7 +313,7 @@ impl embedded_services::type_c::controller::Controller for Controller<'_> {
         &mut self,
         command: lpm::LocalCommand,
     ) -> Result<Option<lpm::ResponseData>, Error<Self::BusError>> {
-        debug!("Execute UCSI command for port {:?}: {command:?}", command.port());
+        debug!("Execute UCSI command for {}: {command:?}", command.port());
         match command.operation() {
             lpm::CommandData::GetConnectorStatus => Ok(Some(lpm::ResponseData::GetConnectorStatus(
                 lpm::get_connector_status::ResponseData::default(),

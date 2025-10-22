@@ -40,6 +40,13 @@ pub enum Error {
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct DeviceId(pub u8);
 
+#[cfg(not(feature = "defmt"))]
+impl core::fmt::Display for DeviceId {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "DeviceId({})", self.0)
+    }
+}
+
 /// Amount of power that a device can provider or consume
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]

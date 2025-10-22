@@ -136,7 +136,7 @@ impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, 
     ) -> Result<(), Error<<C as Controller>::BusError>> {
         let state = power.state().await.kind();
         if state == StateKind::ConnectedConsumer {
-            info!("Port{}: Disconnect from ConnectedConsumer", port.0);
+            info!("{}: Disconnect from ConnectedConsumer", port);
             if controller.enable_sink_path(port, false).await.is_err() {
                 error!("Error disabling sink path");
                 return PdError::Failed.into();
@@ -153,7 +153,7 @@ impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, 
         capability: ProviderPowerCapability,
         _controller: &mut C,
     ) -> Result<(), Error<C::BusError>> {
-        info!("Port{}: Connect as provider: {:#?}", port.0, capability);
+        info!("{}: Connect as provider: {:#?}", port, capability);
         // TODO: double check explicit contract handling
         Ok(())
     }
@@ -190,16 +190,16 @@ impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, 
         port: LocalPortId,
         command: &CommandData,
     ) -> InternalResponseData {
-        trace!("Processing power command: device{} {:#?}", port.0, command);
+        trace!("Processing power command: {} {:#?}", port, command);
         if state.controller_state().fw_update_state.in_progress() {
-            debug!("Port{}: Firmware update in progress", port.0);
+            debug!("{}: Firmware update in progress", port);
             return Err(policy::Error::Busy);
         }
 
         let power = match self.get_power_device(port) {
             Some(power) => power,
             None => {
-                error!("Port{}: Error getting power device for port", port.0);
+                error!("{}: Error getting power device for port", port);
                 return Err(policy::Error::InvalidDevice);
             }
         };
@@ -207,8 +207,8 @@ impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, 
         match command {
             policy::device::CommandData::ConnectAsConsumer(capability) => {
                 info!(
-                    "Port{}: Connect as consumer: {:?}, enable input switch",
-                    port.0, capability
+                    "{}: Connect as consumer: {:?}, enable input switch",
+                    port, capability
                 );
                 if controller.enable_sink_path(port, true).await.is_err() {
                     error!("Error enabling sink path");
