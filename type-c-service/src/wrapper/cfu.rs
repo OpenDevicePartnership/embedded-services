@@ -136,10 +136,7 @@ impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, 
 
                         // Sync to bring the controller to a known state with all services
                         match self.sync_state_internal(controller, state).await {
-                            Ok(_) => debug!(
-                                "{:?}: Synced state after detaching power device",
-                                controller_id
-                            ),
+                            Ok(_) => debug!("{:?}: Synced state after detaching power device", controller_id),
                             Err(Error::Pd(e)) => error!(
                                 "{:?}: Failed to sync state after detaching power device: {:?}",
                                 controller_id, e

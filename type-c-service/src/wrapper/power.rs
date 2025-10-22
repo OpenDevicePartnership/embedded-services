@@ -207,10 +207,7 @@ impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, 
 
         match command {
             policy::device::CommandData::ConnectAsConsumer(capability) => {
-                info!(
-                    "{:?}: Connect as consumer: {:?}, enable input switch",
-                    port, capability
-                );
+                info!("{:?}: Connect as consumer: {:?}, enable input switch", port, capability);
                 if controller.enable_sink_path(port, true).await.is_err() {
                     error!("Error enabling sink path");
                     return Err(policy::Error::Failed);
