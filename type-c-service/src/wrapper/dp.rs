@@ -11,7 +11,7 @@ impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, 
         controller: &mut C,
         port: LocalPortId,
     ) -> Result<OutputDpStatusChanged, Error<<C as Controller>::BusError>> {
-        trace!("Processing DP status update event on {}", port);
+        trace!("Processing DP status update event on {:?}", port);
 
         let status = controller.get_dp_status(port).await?;
         Ok(OutputDpStatusChanged { port, status })

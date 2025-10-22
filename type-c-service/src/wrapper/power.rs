@@ -136,7 +136,7 @@ impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, 
     ) -> Result<(), Error<<C as Controller>::BusError>> {
         let state = power.state().await.kind();
         if state == StateKind::ConnectedConsumer {
-            info!("{}: Disconnect from ConnectedConsumer", port);
+            info!("{:?}: Disconnect from ConnectedConsumer", port);
             if controller.enable_sink_path(port, false).await.is_err() {
                 error!("Error disabling sink path");
                 return PdError::Failed.into();
@@ -153,7 +153,7 @@ impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, 
         capability: ProviderPowerCapability,
         _controller: &mut C,
     ) -> Result<(), Error<C::BusError>> {
-        info!("{}: Connect as provider: {:#?}", port, capability);
+        info!("{:?}: Connect as provider: {:#?}", port, capability);
         // TODO: double check explicit contract handling
         Ok(())
     }
@@ -177,8 +177,9 @@ impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, 
         });
         // DROP SAFETY: Select over drop safe futures
         let (request, local_id) = select_array(futures).await;
-        trace!("Power command: device{} {:#?}", local_id, request.command);
-        (LocalPortId(local_id as u8), request)
+        let local_id = LocalPortId(local_id as u8);
+        trace!("Power command: {:?} {:#?}", local_id, request.command);
+        (local_id, request)
     }
 
     /// Process a power command
@@ -190,16 +191,16 @@ impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, 
         port: LocalPortId,
         command: &CommandData,
     ) -> InternalResponseData {
-        trace!("Processing power command: {} {:#?}", port, command);
+        trace!("Processing power command: {:?} {:#?}", port, command);
         if state.controller_state().fw_update_state.in_progress() {
-            debug!("{}: Firmware update in progress", port);
+            debug!("{:?}: Firmware update in progress", port);
             return Err(policy::Error::Busy);
         }
 
         let power = match self.get_power_device(port) {
             Some(power) => power,
             None => {
-                error!("{}: Error getting power device for port", port);
+                error!("{:?}: Error getting power device for port", port);
                 return Err(policy::Error::InvalidDevice);
             }
         };
@@ -207,7 +208,7 @@ impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, 
         match command {
             policy::device::CommandData::ConnectAsConsumer(capability) => {
                 info!(
-                    "{}: Connect as consumer: {:?}, enable input switch",
+                    "{:?}: Connect as consumer: {:?}, enable input switch",
                     port, capability
                 );
                 if controller.enable_sink_path(port, true).await.is_err() {

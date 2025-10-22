@@ -72,14 +72,14 @@ mod test_controller {
         async fn process_ucsi_command(&self, command: &lpm::GlobalCommand) -> ucsi::GlobalResponse {
             match command.operation() {
                 lpm::CommandData::ConnectorReset => {
-                    info!("Reset for {}", command.port());
+                    info!("Reset for {:?}", command.port());
                     ucsi::Response {
                         cci: ucsi::cci::Cci::new_cmd_complete(),
                         data: None,
                     }
                 }
                 rest => {
-                    info!("UCSI command {:#?} for {}", rest, command.port());
+                    info!("UCSI command {:#?} for {:?}", rest, command.port());
                     ucsi::Response {
                         cci: ucsi::cci::Cci::new_cmd_complete(),
                         data: None,
@@ -94,11 +94,11 @@ mod test_controller {
         ) -> Result<controller::PortResponseData, Error> {
             Ok(match command.data {
                 controller::PortCommandData::PortStatus(Cached(true)) => {
-                    info!("Port status for {}", command.port);
+                    info!("Port status for {:?}", command.port);
                     controller::PortResponseData::PortStatus(PortStatus::new())
                 }
                 _ => {
-                    info!("Port command for {}", command.port);
+                    info!("Port command for {:?}", command.port);
                     controller::PortResponseData::Complete
                 }
             })

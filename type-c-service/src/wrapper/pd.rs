@@ -28,7 +28,7 @@ impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, 
                 Some(WaitResult::Message(alert)) => return Ok(Some(alert)),
                 None => return Ok(None),
                 Some(WaitResult::Lagged(count)) => {
-                    warn!("{}: Lagged PD alert channel: {}", local_port, count);
+                    warn!("{:?}: Lagged PD alert channel: {}", local_port, count);
                     // Yield to avoid starving other tasks since we're in a loop and try_next_message isn't async
                     yield_now().await;
                 }
@@ -62,13 +62,13 @@ impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, 
             } else {
                 T_SRC_TRANS_REQ_SPR_MS
             };
-            debug!("{}: Sink ready timeout started for {}ms", port, timeout_ms);
+            debug!("{:?}: Sink ready timeout started for {}ms", port, timeout_ms);
             *deadline = Some(Instant::now() + Duration::from_millis(timeout_ms as u64));
         } else if deadline.is_some()
             && (!status.is_connected() || status.available_sink_contract.is_none() || sink_ready)
         {
             // Clear the timeout
-            debug!("{}: Sink ready timeout cleared", port);
+            debug!("{:?}: Sink ready timeout cleared", port);
             *deadline = None;
         }
         Ok(())
@@ -89,7 +89,7 @@ impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, 
 
             if let Some(deadline) = deadline {
                 Timer::at(deadline).await;
-                debug!("{}: Sink ready timeout reached", LocalPortId(i as u8));
+                debug!("{:?}: Sink ready timeout reached", LocalPortId(i as u8));
                 self.state.lock().await.port_states_mut()[i].sink_ready_deadline = None;
             } else {
                 pending::<()>().await;
@@ -120,9 +120,9 @@ impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, 
         let power_device = self.get_power_device(local_port).ok_or(PdError::InvalidPort)?;
 
         let state = power_device.state().await;
-        debug!("{}: Current state: {:#?}", local_port, state);
+        debug!("{:?}: Current state: {:#?}", local_port, state);
         if let Ok(connected_consumer) = power_device.try_device_action::<action::ConnectedConsumer>().await {
-            debug!("{}: Set max sink voltage, connected consumer found", local_port);
+            debug!("{:?}: Set max sink voltage, connected consumer found", local_port);
             if voltage_mv.is_some()
                 && voltage_mv
                     < power_device
@@ -133,7 +133,7 @@ impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, 
                 // New max voltage is lower than current consumer capability which will trigger a renegociation
                 // So disconnect first
                 debug!(
-                    "{}: Disconnecting consumer before setting max sink voltage",
+                    "{:?}: Disconnecting consumer before setting max sink voltage",
                     local_port
                 );
                 let _ = connected_consumer.disconnect().await;
@@ -278,7 +278,7 @@ impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, 
             }
             controller::PortCommandData::GetOtherVdm => match controller.get_other_vdm(local_port).await {
                 Ok(vdm) => {
-                    debug!("{}: Other VDM: {:?}", local_port, vdm);
+                    debug!("{:?}: Other VDM: {:?}", local_port, vdm);
                     Ok(controller::PortResponseData::OtherVdm(vdm))
                 }
                 Err(e) => match e {
@@ -288,7 +288,7 @@ impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, 
             },
             controller::PortCommandData::GetAttnVdm => match controller.get_attn_vdm(local_port).await {
                 Ok(vdm) => {
-                    debug!("{}: Attention VDM: {:?}", local_port, vdm);
+                    debug!("{:?}: Attention VDM: {:?}", local_port, vdm);
                     Ok(controller::PortResponseData::AttnVdm(vdm))
                 }
                 Err(e) => match e {
@@ -314,7 +314,7 @@ impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, 
             }
             controller::PortCommandData::GetDpStatus => match controller.get_dp_status(local_port).await {
                 Ok(status) => {
-                    debug!("{}: DP Status: {:?}", local_port, status);
+                    debug!("{:?}: DP Status: {:?}", local_port, status);
                     Ok(controller::PortResponseData::DpStatus(status))
                 }
                 Err(e) => match e {

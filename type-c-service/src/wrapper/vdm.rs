@@ -20,7 +20,7 @@ impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, 
         port: LocalPortId,
         event: VdmNotification,
     ) -> Result<Output, Error<<C as Controller>::BusError>> {
-        trace!("Processing VDM event: {:?} on {}", event, port);
+        trace!("Processing VDM event: {:?} on {:?}", event, port);
         let kind = match event {
             VdmNotification::Entered => OutputKind::Entered(controller.get_other_vdm(port).await?),
             VdmNotification::Exited => OutputKind::Exited(controller.get_other_vdm(port).await?),

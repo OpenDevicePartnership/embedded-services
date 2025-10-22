@@ -182,10 +182,10 @@ impl embedded_services::type_c::controller::Controller for Controller<'_> {
     async fn get_pd_alert(&mut self, port: LocalPortId) -> Result<Option<Ado>, Error<Self::BusError>> {
         let pd_alert = self.state.pd_alert.lock().await;
         if let Some(ado) = *pd_alert {
-            debug!("{}: Get PD alert: {ado:#?}", port);
+            debug!("{:?}: Get PD alert: {ado:#?}", port);
             Ok(Some(ado))
         } else {
-            debug!("{}: No PD alert", port);
+            debug!("{:?}: No PD alert", port);
             Ok(None)
         }
     }
@@ -224,7 +224,7 @@ impl embedded_services::type_c::controller::Controller for Controller<'_> {
         port: LocalPortId,
         voltage_mv: Option<u16>,
     ) -> Result<(), Error<Self::BusError>> {
-        debug!("Set max sink voltage for {}: {:?}", port, voltage_mv);
+        debug!("Set max sink voltage for {:?}: {:?}", port, voltage_mv);
         Ok(())
     }
 
@@ -313,7 +313,7 @@ impl embedded_services::type_c::controller::Controller for Controller<'_> {
         &mut self,
         command: lpm::LocalCommand,
     ) -> Result<Option<lpm::ResponseData>, Error<Self::BusError>> {
-        debug!("Execute UCSI command for {}: {command:?}", command.port());
+        debug!("Execute UCSI command for {:?}: {command:?}", command.port());
         match command.operation() {
             lpm::CommandData::GetConnectorStatus => Ok(Some(lpm::ResponseData::GetConnectorStatus(
                 lpm::get_connector_status::ResponseData::default(),
