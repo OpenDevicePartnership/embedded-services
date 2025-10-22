@@ -115,6 +115,11 @@ who = "Robert Zieba <robertzieba@microsoft.com>"
 criteria = "safe-to-run"
 version = "0.31.1"
 
+[[audits.glob]]
+who = "Billy Price <williamp@microsoft.com>"
+criteria = "safe-to-run"
+delta = "0.3.2 -> 0.3.3"
+
 [[audits.half]]
 who = "Robert Zieba <robertzieba@microsoft.com>"
 criteria = "safe-to-deploy"
@@ -237,10 +242,30 @@ who = "Jerry Xie <jerryxie@microsoft.com>"
 criteria = "safe-to-deploy"
 version = "1.0.4"
 
+[[audits.regex]]
+who = "Billy Price <williamp@microsoft.com>"
+criteria = "safe-to-run"
+delta = "1.11.1 -> 1.12.2"
+
+[[audits.rstest]]
+who = "Billy Price <williamp@microsoft.com>"
+criteria = "safe-to-run"
+delta = "0.22.0 -> 0.26.1"
+
+[[audits.rstest_macros]]
+who = "Billy Price <williamp@microsoft.com>"
+criteria = "safe-to-run"
+delta = "0.22.0 -> 0.26.1"
+
 [[audits.rtt-target]]
 who = "Jerry Xie <jerryxie@microsoft.com>"
 criteria = "safe-to-deploy"
 version = "0.6.1"
+
+[[audits.semver]]
+who = "Billy Price <williamp@microsoft.com>"
+criteria = "safe-to-run"
+delta = "1.0.26 -> 1.0.27"
 
 [[audits.serde_spanned]]
 who = "jerrysxie <jerryxie@microsoft.com>"
