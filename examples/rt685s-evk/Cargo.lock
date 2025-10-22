@@ -724,8 +724,10 @@ dependencies = [
  "embedded-usb-pd",
  "heapless",
  "mctp-rs",
+ "num_enum",
  "portable-atomic",
  "serde",
+ "uuid",
 ]
 
 [[package]]
@@ -1006,7 +1008,7 @@ checksum = "f5e54036fe321fd421e10d732f155734c4e4afd610dd556d9a82833ab3ee0bed"
 [[package]]
 name = "mctp-rs"
 version = "0.1.0"
-source = "git+https://github.com/dymk/mctp-rs#fce150ecf9dfec38d08a862c839515b92b9df43d"
+source = "git+https://github.com/dymk/mctp-rs#4456c65131366acd5e605c7d88a707881fa9e9f0"
 dependencies = [
  "bit-register 0.1.0 (git+https://github.com/OpenDevicePartnership/odp-utilities)",
  "defmt 0.3.100",
@@ -1015,7 +1017,6 @@ dependencies = [
  "num_enum",
  "smbus-pec",
  "thiserror 2.0.16",
- "uuid",
 ]
 
 [[package]]

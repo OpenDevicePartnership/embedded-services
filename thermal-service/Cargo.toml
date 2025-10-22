@@ -21,7 +21,7 @@ heapless.workspace = true
 uuid.workspace = true
 embedded-fans-async = "0.2.0"
 embedded-sensors-hal-async = "0.3.0"
-mctp-rs = { workspace = true, features = ["espi", "odp"] }
+mctp-rs = { workspace = true, features = ["espi"] }
 
 [features]
 default = []

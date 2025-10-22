@@ -593,7 +593,6 @@ checksum = "31e14d288a59ef41f4e05468eae9b1c9fef6866977cea86d3f1a1ced295b6cab"
 dependencies = [
  "bitfield-struct",
  "bitflags 2.9.4",
- "defmt 0.3.100",
  "embedded-hal 1.0.0",
  "zerocopy",
 ]
@@ -743,8 +742,10 @@ dependencies = [
  "heapless",
  "log",
  "mctp-rs",
+ "num_enum",
  "portable-atomic",
  "serde",
+ "uuid",
 ]
 
 [[package]]
@@ -1029,15 +1030,13 @@ dependencies = [
 [[package]]
 name = "mctp-rs"
 version = "0.1.0"
-source = "git+https://github.com/dymk/mctp-rs#fce150ecf9dfec38d08a862c839515b92b9df43d"
+source = "git+https://github.com/dymk/mctp-rs#4456c65131366acd5e605c7d88a707881fa9e9f0"
 dependencies = [
  "bit-register 0.1.0 (git+https://github.com/OpenDevicePartnership/odp-utilities)",
- "embedded-batteries",
  "espi-device",
  "num_enum",
  "smbus-pec",
  "thiserror 2.0.16",
- "uuid",
 ]
 
 [[package]]
