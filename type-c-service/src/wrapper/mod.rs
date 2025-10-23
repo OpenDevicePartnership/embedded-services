@@ -139,7 +139,7 @@ impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, 
             let mut status_changed = port_state.sw_status_event;
             let local_port = LocalPortId(i as u8);
             let status = controller.get_port_status(local_port).await?;
-            trace!("Port{} status: {:#?}", i, status);
+            trace!("{:?} status: {:#?}", local_port, status);
 
             let previous_status = port_state.status;
 
@@ -158,7 +158,7 @@ impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, 
             port_state.sw_status_event = status_changed;
             if port_state.sw_status_event != PortStatusChanged::none() {
                 // Have a status changed event, notify
-                trace!("Port{} status changed: {:#?}", i, status);
+                trace!("{:?} status changed: {:#?}", local_port, status);
                 self.sw_status_event.signal(());
             }
         }
@@ -174,7 +174,7 @@ impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, 
         status: &PortStatus,
     ) -> Result<(), Error<<C as Controller>::BusError>> {
         if port.0 as usize >= self.registration.num_ports() {
-            error!("Invalid port {}", port.0);
+            error!("Invalid {:?}", port);
             return PdError::InvalidPort.into();
         }
 
@@ -227,12 +227,12 @@ impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, 
             .map_err(Error::Pd)?;
 
         let status = controller.get_port_status(local_port_id).await?;
-        trace!("Port{} status: {:#?}", global_port_id.0, status);
+        trace!("{:?} status: {:#?}", global_port_id, status);
 
         let power = self
             .get_power_device(local_port_id)
             .ok_or(Error::Pd(PdError::InvalidPort))?;
-        trace!("Port{} status events: {:#?}", global_port_id.0, status_event);
+        trace!("{:?} status events: {:#?}", global_port_id, status_event);
         if status_event.plug_inserted_or_removed() {
             self.process_plug_event(controller, power, local_port_id, &status)
                 .await?;
@@ -292,7 +292,7 @@ impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, 
             let mut pending = PortPending::none();
             pending.pend_port(global_port_id.0 as usize);
             self.registration.pd_controller.notify_ports(pending).await;
-            trace!("P{}: Notified service for events: {:#?}", global_port_id.0, events);
+            trace!("{:?}: Notified service for events: {:#?}", global_port_id, events);
         }
 
         Ok(())
@@ -436,7 +436,7 @@ impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, 
                 Either5::Fourth(event) => return Ok(Event::CfuEvent(event)),
                 Either5::Fifth(port) => {
                     // Sink ready timeout event
-                    debug!("Port{0}: Sink ready timeout", port.0);
+                    debug!("{:?}: Sink ready timeout", port);
                     self.state.lock().await.port_states_mut()[port.0 as usize].sink_ready_deadline = None;
                     let mut status_event = PortStatusChanged::none();
                     status_event.set_sink_ready(true);
@@ -456,7 +456,7 @@ impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, 
         match notification {
             PortNotificationSingle::Alert => {
                 let ado = controller.get_pd_alert(port).await?;
-                trace!("Port{}: PD alert: {:#?}", port.0, ado);
+                trace!("{:?}: PD alert: {:#?}", port, ado);
                 if let Some(ado) = ado {
                     Ok(Output::PdAlert(OutputPdAlert { port, ado }))
                 } else {
@@ -473,7 +473,7 @@ impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, 
                 .map(Output::DpStatusUpdate),
             rest => {
                 // Nothing currently implemented for these
-                trace!("Port{}: Notification: {:#?}", port.0, rest);
+                trace!("{:?}: Notification: {:#?}", port, rest);
                 Ok(Output::Nop)
             }
         }
@@ -590,9 +590,9 @@ impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, 
         for device in self.registration.power_devices {
             policy::register_device(device).await.map_err(|_| {
                 error!(
-                    "Controller{}: Failed to register power device {}",
-                    self.registration.pd_controller.id().0,
-                    device.id().0
+                    "{:?}: Failed to register power device {:?}",
+                    self.registration.pd_controller.id(),
+                    device.id()
                 );
                 Error::Pd(PdError::Failed)
             })?;
@@ -602,8 +602,8 @@ impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, 
             .await
             .map_err(|_| {
                 error!(
-                    "Controller{}: Failed to register PD controller",
-                    self.registration.pd_controller.id().0
+                    "{:?}: Failed to register PD controller",
+                    self.registration.pd_controller.id()
                 );
                 Error::Pd(PdError::Failed)
             })?;
@@ -613,8 +613,8 @@ impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, 
             .await
             .map_err(|_| {
                 error!(
-                    "Controller{}: Failed to register CFU device",
-                    self.registration.pd_controller.id().0
+                    "{:?}: Failed to register CFU device",
+                    self.registration.pd_controller.id()
                 );
                 Error::Pd(PdError::Failed)
             })?;

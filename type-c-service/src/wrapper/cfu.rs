@@ -128,25 +128,22 @@ impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, 
             let controller_id = self.registration.pd_controller.id();
             let mut detached_all = true;
             for power in self.registration.power_devices {
-                info!("Controller{}: checking power device", controller_id.0);
+                info!("{:?}: checking power device", controller_id);
                 if power.state().await != power::policy::device::State::Detached {
-                    info!("Controller{}: Detaching power device", controller_id.0);
+                    info!("{:?}: Detaching power device", controller_id);
                     if let Err(e) = power.detach().await {
-                        error!("Controller{}: Failed to detach power device: {:?}", controller_id.0, e);
+                        error!("{:?}: Failed to detach power device: {:?}", controller_id, e);
 
                         // Sync to bring the controller to a known state with all services
                         match self.sync_state_internal(controller, state).await {
-                            Ok(_) => debug!(
-                                "Controller{}: Synced state after detaching power device",
-                                controller_id.0
-                            ),
+                            Ok(_) => debug!("{:?}: Synced state after detaching power device", controller_id),
                             Err(Error::Pd(e)) => error!(
-                                "Controller{}: Failed to sync state after detaching power device: {:?}",
-                                controller_id.0, e
+                                "{:?}: Failed to sync state after detaching power device: {:?}",
+                                controller_id, e
                             ),
                             Err(Error::Bus(_)) => error!(
-                                "Controller{}: Failed to sync state after detaching power device, bus error",
-                                controller_id.0
+                                "{:?}: Failed to sync state after detaching power device, bus error",
+                                controller_id
                             ),
                         }
 
@@ -158,8 +155,8 @@ impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, 
 
             if !detached_all {
                 error!(
-                    "Controller{}: Failed to detach all power devices, rejecting offer",
-                    controller_id.0
+                    "{:?}: Failed to detach all power devices, rejecting offer",
+                    controller_id
                 );
                 return InternalResponseData::ContentResponse(FwUpdateContentResponse::new(
                     content.header.sequence_num,

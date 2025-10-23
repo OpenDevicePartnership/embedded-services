@@ -294,21 +294,21 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
         }
 
         let status = self.tps6699x.get_port_status(port).await?;
-        trace!("Port{} status: {:#?}", port.0, status);
+        trace!("{:?} status: {:#?}", port, status);
 
         let pd_status = self.tps6699x.get_pd_status(port).await?;
-        trace!("Port{} PD status: {:#?}", port.0, pd_status);
+        trace!("{:?} PD status: {:#?}", port, pd_status);
 
         let port_control = self.tps6699x.get_port_control(port).await?;
-        trace!("Port{} control: {:#?}", port.0, port_control);
+        trace!("{:?} control: {:#?}", port, port_control);
 
         let mut port_status = PortStatus::default();
 
         let plug_present = status.plug_present();
         port_status.connection_state = status.connection_state().try_into().ok();
 
-        debug!("Port{} Plug present: {}", port.0, plug_present);
-        debug!("Port{} Valid connection: {}", port.0, port_status.is_connected());
+        debug!("{:?} Plug present: {}", port, plug_present);
+        debug!("{:?} Valid connection: {}", port, port_status.is_connected());
 
         if port_status.is_connected() {
             // Determine current contract if any
@@ -339,7 +339,7 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
 
                     if num_sprs == 0 {
                         // USB PD spec requires at least one source PDO be present, something is really wrong
-                        error!("Port{} no source PDOs found", port.0);
+                        error!("{:?} no source PDOs found", port);
                         return Err(PdError::InvalidParams.into());
                     }
 
@@ -354,7 +354,7 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
             } else if pd_status.is_source() {
                 // Implicit source contract
                 let current = TypecCurrent::try_from(port_control.typec_current()).map_err(Error::Pd)?;
-                debug!("Port{} type-C source current: {:#?}", port.0, current);
+                debug!("{:?} type-C source current: {:#?}", port, current);
                 let new_contract = Some(PowerCapability::from(current));
                 port_status.available_source_contract = new_contract;
             } else {
@@ -362,11 +362,11 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
                 let pull = pd_status.cc_pull_up();
                 let new_contract = if pull == PdCcPullUp::NoPull {
                     // No pull up means no contract
-                    debug!("Port{} no pull up", port.0);
+                    debug!("{:?} no pull up", port);
                     None
                 } else {
                     let current = TypecCurrent::try_from(pd_status.cc_pull_up()).map_err(Error::Pd)?;
-                    debug!("Port{} type-C sink current: {:#?}", port.0, current);
+                    debug!("{:?} type-C sink current: {:#?}", port, current);
                     Some(PowerCapability::from(current))
                 };
                 port_status.available_sink_contract = new_contract;
@@ -390,12 +390,12 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
 
             // Update alt-mode status
             let alt_mode = self.tps6699x.get_alt_mode_status(port).await?;
-            debug!("Port{} alt mode: {:#?}", port.0, alt_mode);
+            debug!("{:?} alt mode: {:#?}", port, alt_mode);
             port_status.alt_mode = alt_mode;
 
             // Update power path status
             let power_path = self.tps6699x.get_power_path_status(port).await?;
-            trace!("Port{} power source: {:#?}", port.0, power_path);
+            trace!("{:?} power source: {:#?}", port, power_path);
             port_status.power_path = match port {
                 PORT0 => PowerPathStatus::new(
                     power_path.pa_ext_vbus_sw() == PpExtVbusSw::EnabledInput,
@@ -407,7 +407,7 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
                 ),
                 _ => Err(PdError::InvalidPort)?,
             };
-            debug!("Port{} power path: {:#?}", port.0, port_status.power_path);
+            debug!("{:?} power path: {:#?}", port, port_status.power_path);
         }
 
         Ok(port_status)
@@ -449,7 +449,7 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
         match self.tps6699x.execute_muxr(port, input).await? {
             ReturnValue::Success => Ok(()),
             r => {
-                debug!("Error executing MuxR on port {}: {:#?}", port.0, r);
+                debug!("Error executing MuxR on {:?}: {:#?}", port, r);
                 Err(Error::Pd(PdError::InvalidResponse))
             }
         }
@@ -459,19 +459,19 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
         match self.tps6699x.execute_dbfg(port).await? {
             ReturnValue::Success => Ok(()),
             r => {
-                debug!("Error executing DBfg on port {}: {:#?}", port.0, r);
+                debug!("Error executing DBfg on {:?}: {:#?}", port, r);
                 Err(Error::Pd(PdError::InvalidResponse))
             }
         }
     }
 
     async fn enable_sink_path(&mut self, port: LocalPortId, enable: bool) -> Result<(), Error<Self::BusError>> {
-        debug!("Port{} enable sink path: {}", port.0, enable);
+        debug!("{:?} enable sink path: {}", port, enable);
         match self.tps6699x.enable_sink_path(port, enable).await {
             // Temporary workaround for autofet rejection
             // Tracking bug: https://github.com/OpenDevicePartnership/embedded-services/issues/268
             Err(Error::Pd(PdError::Rejected)) | Err(Error::Pd(PdError::Timeout)) => {
-                info!("Port{} autofet rejection, ignored", port.0);
+                info!("{:?} autofet rejection, ignored", port);
                 Ok(())
             }
             rest => rest,
@@ -638,7 +638,7 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
         match self.tps6699x.send_vdms(port, input).await? {
             ReturnValue::Success => Ok(()),
             r => {
-                debug!("Error executing VDMs on port {}: {:#?}", port.0, r);
+                debug!("Error executing VDMs on {:?}: {:#?}", port, r);
                 Err(Error::Pd(PdError::InvalidResponse))
             }
         }
@@ -675,7 +675,7 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
 
     async fn get_dp_status(&mut self, port: LocalPortId) -> Result<controller::DpStatus, Error<Self::BusError>> {
         let dp_status = self.tps6699x.get_dp_status(port).await?;
-        debug!("Port{} DP status: {:#?}", port.0, dp_status);
+        debug!("{:?} DP status: {:#?}", port, dp_status);
 
         let alt_mode_entered = dp_status.dp_mode_active() != 0;
 
@@ -694,7 +694,7 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
         port: LocalPortId,
         config: controller::DpConfig,
     ) -> Result<(), Error<Self::BusError>> {
-        debug!("Port{} setting DP config: {:#?}", port.0, config);
+        debug!("{:?} setting DP config: {:#?}", port, config);
 
         let mut dp_config_reg = self.tps6699x.get_dp_config(port).await?;
 
@@ -712,14 +712,14 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
         match self.tps6699x.execute_drst(port).await? {
             ReturnValue::Success => Ok(()),
             r => {
-                debug!("Error executing DRST on port {}: {:#?}", port.0, r);
+                debug!("Error executing DRST on {:?}: {:#?}", port, r);
                 Err(Error::Pd(PdError::InvalidResponse))
             }
         }
     }
 
     async fn set_tbt_config(&mut self, port: LocalPortId, config: TbtConfig) -> Result<(), Error<Self::BusError>> {
-        debug!("Port{} setting TBT config: {:#?}", port.0, config);
+        debug!("{:?} setting TBT config: {:#?}", port, config);
 
         let mut config_reg = self.tps6699x.lock_inner().await.get_tbt_config(port).await?;
 
@@ -734,7 +734,7 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
         port: LocalPortId,
         config: controller::PdStateMachineConfig,
     ) -> Result<(), Error<Self::BusError>> {
-        debug!("Port{} setting PD state machine config: {:#?}", port.0, config);
+        debug!("{:?} setting PD state machine config: {:#?}", port, config);
 
         let mut config_reg = self.tps6699x.lock_inner().await.get_port_config(port).await?;
 
@@ -748,7 +748,7 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
         port: LocalPortId,
         state: controller::TypeCStateMachineState,
     ) -> Result<(), Error<Self::BusError>> {
-        debug!("Port{} setting Type-C state machine state: {:#?}", port.0, state);
+        debug!("{:?} setting Type-C state machine state: {:#?}", port, state);
 
         let mut config_reg = self.tps6699x.lock_inner().await.get_port_config(port).await?;
         let typec_state = match state {

@@ -137,9 +137,9 @@ impl<'a> Service<'a> {
     ) -> Result<(), Error> {
         let old_status = self.get_cached_port_status(port_id).await?;
 
-        debug!("Port{}: Event: {:#?}", port_id.0, event);
-        debug!("Port{} Previous status: {:#?}", port_id.0, old_status);
-        debug!("Port{} Status: {:#?}", port_id.0, status);
+        debug!("{:?}: Event: {:#?}", port_id, event);
+        debug!("{:?} Previous status: {:#?}", port_id, old_status);
+        debug!("{:?} Status: {:#?}", port_id, status);
 
         let connection_changed = status.is_connected() != old_status.is_connected();
         if connection_changed && (status.is_debug_accessory() || old_status.is_debug_accessory()) {
@@ -150,9 +150,9 @@ impl<'a> Service<'a> {
             };
 
             if status.is_connected() {
-                debug!("Port{}: Debug accessory connected", port_id.0);
+                debug!("{:?}: Debug accessory connected", port_id);
             } else {
-                debug!("Port{}: Debug accessory disconnected", port_id.0);
+                debug!("{:?}: Debug accessory disconnected", port_id);
             }
 
             if self.tp.send(EndpointID::Internal(Internal::Usbc), &msg).await.is_err() {
@@ -219,12 +219,12 @@ impl<'a> Service<'a> {
     pub async fn process_event(&self, event: Event<'_>) -> Result<(), Error> {
         match event {
             Event::PortStatusChanged(port, event_kind, status) => {
-                trace!("Port{}: Processing port status changed", port.0);
+                trace!("{:?}: Processing port status changed", port);
                 self.process_port_event(port, event_kind, status).await
             }
             Event::PortNotification(port, notification) => {
                 // Other port notifications
-                info!("Port{}: Got port notification: {:?}", port.0, notification);
+                info!("{:?}: Got port notification: {:?}", port, notification);
                 Ok(())
             }
             Event::ExternalCommand(request) => {
