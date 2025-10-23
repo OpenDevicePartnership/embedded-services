@@ -29,10 +29,12 @@ embedded-io.workspace = true
 embedded-usb-pd.workspace = true
 heapless.workspace = true
 log = { workspace = true, optional = true }
+num_enum.workspace = true
+uuid.workspace = true
 
 [dependencies.mctp-rs]
 workspace = true
-features = ["espi", "odp"]
+features = ["espi"]
 
 [dependencies.serde]
 workspace = true
@@ -51,6 +53,7 @@ embassy-futures.workspace = true
 embassy-sync = { workspace = true, features = ["std"] }
 embassy-time = { workspace = true, features = ["std"] }
 embassy-time-driver = { workspace = true }
+rstest.workspace = true
 static_cell.workspace = true
 tokio = { workspace = true, features = ["rt", "macros", "time"] }
 

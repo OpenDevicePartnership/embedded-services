@@ -1,8 +1,6 @@
 //! EC Internal Messages
 
-use mctp_rs::odp::OdpCommandCode;
-
-use crate::ec_type::protocols::{acpi, debug, mptf};
+use crate::ec_type::protocols::{acpi, debug, mctp::OdpCommandCode, mptf};
 
 #[allow(missing_docs)]
 #[derive(Clone, Copy, Debug)]
@@ -152,7 +150,7 @@ pub const STD_PIF_OEM_SIZE: usize = 8;
 pub const STD_DEBUG_BUF_SIZE: usize = 128;
 
 /// Standard ODP Host Payload
-pub type StdHostPayload = mctp_rs::odp::Odp<
+pub type StdHostPayload = crate::ec_type::protocols::mctp::Odp<
     STD_BIX_MODEL_SIZE,
     STD_BIX_SERIAL_SIZE,
     STD_BIX_BATTERY_SIZE,

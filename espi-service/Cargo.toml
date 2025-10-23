@@ -19,7 +19,7 @@ embassy-sync.workspace = true
 embassy-imxrt = { workspace = true, features = ["mimxrt633s"] }
 embassy-executor.workspace = true
 embassy-futures.workspace = true
-mctp-rs = { workspace = true, features = ["espi", "odp"] }
+mctp-rs = { workspace = true, features = ["espi"] }
 
 [target.'cfg(target_os = "none")'.dependencies]
 embassy-executor = { workspace = true, features = [

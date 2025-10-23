@@ -8,11 +8,11 @@ use embedded_services::{
         STD_BIX_BATTERY_SIZE, STD_BIX_MODEL_SIZE, STD_BIX_OEM_SIZE, STD_BIX_SERIAL_SIZE, STD_PIF_MODEL_SIZE,
         STD_PIF_OEM_SIZE, STD_PIF_SERIAL_SIZE, StdHostMsg, StdHostRequest,
     },
+    ec_type::protocols::mctp,
     error, info,
     power::policy::PowerCapability,
     trace,
 };
-use mctp_rs::odp::{BixFixedStrings, PifFixedStrings};
 
 use crate::{
     context::PsuState,
@@ -104,9 +104,10 @@ pub(crate) fn compute_bst(cache: &DynamicBatteryMsgs) -> embedded_batteries_asyn
 pub(crate) fn compute_bix<'a>(
     static_cache: &'a StaticBatteryMsgs,
     dynamic_cache: &'a DynamicBatteryMsgs,
-) -> Result<BixFixedStrings<STD_BIX_MODEL_SIZE, STD_BIX_SERIAL_SIZE, STD_BIX_BATTERY_SIZE, STD_BIX_OEM_SIZE>, ()> {
+) -> Result<mctp::BixFixedStrings<STD_BIX_MODEL_SIZE, STD_BIX_SERIAL_SIZE, STD_BIX_BATTERY_SIZE, STD_BIX_OEM_SIZE>, ()>
+{
     let mut bix_return =
-        BixFixedStrings::<STD_BIX_MODEL_SIZE, STD_BIX_SERIAL_SIZE, STD_BIX_BATTERY_SIZE, STD_BIX_OEM_SIZE> {
+        mctp::BixFixedStrings::<STD_BIX_MODEL_SIZE, STD_BIX_SERIAL_SIZE, STD_BIX_BATTERY_SIZE, STD_BIX_OEM_SIZE> {
             revision: 1,
             power_unit: if static_cache.battery_mode.capacity_mode() {
                 PowerUnit::MilliWatts
@@ -232,14 +233,14 @@ pub(crate) fn compute_psr(psu_state: &PsuState) -> embedded_batteries_async::acp
 
 pub(crate) fn compute_pif(
     psu_state: &PsuState,
-) -> PifFixedStrings<STD_PIF_MODEL_SIZE, STD_PIF_SERIAL_SIZE, STD_PIF_OEM_SIZE> {
+) -> mctp::PifFixedStrings<STD_PIF_MODEL_SIZE, STD_PIF_SERIAL_SIZE, STD_PIF_OEM_SIZE> {
     // TODO: Grab real values from power policy
     let capability = psu_state.power_capability.unwrap_or(PowerCapability {
         voltage_mv: 0,
         current_ma: 0,
     });
 
-    PifFixedStrings {
+    mctp::PifFixedStrings {
         power_source_state: PowerSourceState::empty(),
         max_output_power: capability.max_power_mw(),
         max_input_power: capability.max_power_mw(),
@@ -255,11 +256,11 @@ impl crate::context::Context {
         trace!("Battery service: got BIX command!");
         // Enough space for all string fields to have 7 bytes + 1 null terminator byte
         match request.payload {
-            mctp_rs::odp::Odp::BatteryGetBixRequest { battery_id } => {
+            mctp::Odp::BatteryGetBixRequest { battery_id } => {
                 if let Some(fg) = self.get_fuel_gauge(DeviceId(battery_id)) {
                     let static_cache_guard = fg.get_static_battery_cache_guarded().await;
                     let dynamic_cache_guard = fg.get_dynamic_battery_cache_guarded().await;
-                    request.payload = mctp_rs::odp::Odp::BatteryGetBixResponse {
+                    request.payload = mctp::Odp::BatteryGetBixResponse {
                         bix: match compute_bix(static_cache_guard.deref(), dynamic_cache_guard.deref()) {
                             Ok(bix) => bix,
                             Err(()) => {
@@ -269,7 +270,7 @@ impl crate::context::Context {
                                 drop(dynamic_cache_guard);
 
                                 request.status = 1;
-                                request.payload = mctp_rs::odp::Odp::ErrorResponse {};
+                                request.payload = mctp::Odp::ErrorResponse {};
 
                                 super::comms_send(
                                     crate::EndpointID::External(embedded_services::comms::External::Host),
@@ -306,16 +307,16 @@ impl crate::context::Context {
     pub(super) async fn bst_handler(&self, request: &mut StdHostRequest) {
         trace!("Battery service: got BST command!");
         match request.payload {
-            mctp_rs::odp::Odp::BatteryGetBstRequest { battery_id } => {
+            mctp::Odp::BatteryGetBstRequest { battery_id } => {
                 if let Some(fg) = self.get_fuel_gauge(DeviceId(battery_id)) {
-                    request.payload = mctp_rs::odp::Odp::BatteryGetBstResponse {
+                    request.payload = mctp::Odp::BatteryGetBstResponse {
                         bst: compute_bst(&fg.get_dynamic_battery_cache().await),
                     };
                     request.status = 0;
                 } else {
                     error!("Battery service: FG not found when trying to process ACPI cmd!");
                     request.status = 1;
-                    request.payload = mctp_rs::odp::Odp::ErrorResponse {};
+                    request.payload = mctp::Odp::ErrorResponse {};
                 }
             }
             _ => error!("Battery service: command and body mismatch!"),
@@ -334,16 +335,16 @@ impl crate::context::Context {
         trace!("Battery service: got PSR command!");
 
         match request.payload {
-            mctp_rs::odp::Odp::BatteryGetPsrRequest { battery_id } => {
+            mctp::Odp::BatteryGetPsrRequest { battery_id } => {
                 if let Some(_fg) = self.get_fuel_gauge(DeviceId(battery_id)) {
-                    request.payload = mctp_rs::odp::Odp::BatteryGetPsrResponse {
+                    request.payload = mctp::Odp::BatteryGetPsrResponse {
                         psr: compute_psr(&self.get_power_info().await),
                     };
                     request.status = 0;
                 } else {
                     error!("Battery service: FG not found when trying to process ACPI cmd!");
                     request.status = 1;
-                    request.payload = mctp_rs::odp::Odp::ErrorResponse {};
+                    request.payload = mctp::Odp::ErrorResponse {};
                 }
             }
             _ => error!("Battery service: command and body mismatch!"),
@@ -362,16 +363,16 @@ impl crate::context::Context {
         trace!("Battery service: got PIF command!");
 
         match request.payload {
-            mctp_rs::odp::Odp::BatteryGetPifRequest { battery_id } => {
+            mctp::Odp::BatteryGetPifRequest { battery_id } => {
                 if let Some(_fg) = self.get_fuel_gauge(DeviceId(battery_id)) {
-                    request.payload = mctp_rs::odp::Odp::BatteryGetPifResponse {
+                    request.payload = mctp::Odp::BatteryGetPifResponse {
                         pif: compute_pif(&self.get_power_info().await),
                     };
                     request.status = 0;
                 } else {
                     error!("Battery service: FG not found when trying to process ACPI cmd!");
                     request.status = 1;
-                    request.payload = mctp_rs::odp::Odp::ErrorResponse {};
+                    request.payload = mctp::Odp::ErrorResponse {};
                 }
             }
             _ => error!("Battery service: command and body mismatch!"),
@@ -390,16 +391,16 @@ impl crate::context::Context {
         trace!("Battery service: got BPS command!");
 
         match request.payload {
-            mctp_rs::odp::Odp::BatteryGetBpsRequest { battery_id } => {
+            mctp::Odp::BatteryGetBpsRequest { battery_id } => {
                 if let Some(fg) = self.get_fuel_gauge(DeviceId(battery_id)) {
-                    request.payload = mctp_rs::odp::Odp::BatteryGetBpsResponse {
+                    request.payload = mctp::Odp::BatteryGetBpsResponse {
                         bps: compute_bps(&fg.get_dynamic_battery_cache().await),
                     };
                     request.status = 0;
                 } else {
                     error!("Battery service: FG not found when trying to process ACPI cmd!");
                     request.status = 1;
-                    request.payload = mctp_rs::odp::Odp::ErrorResponse {};
+                    request.payload = mctp::Odp::ErrorResponse {};
                 }
             }
             _ => error!("Battery service: command and body mismatch!"),
@@ -417,16 +418,16 @@ impl crate::context::Context {
         trace!("Battery service: got BTP command!");
 
         match request.payload {
-            mctp_rs::odp::Odp::BatterySetBtpRequest { battery_id, btp } => {
+            mctp::Odp::BatterySetBtpRequest { battery_id, btp } => {
                 if let Some(_fg) = self.get_fuel_gauge(DeviceId(battery_id)) {
                     // TODO: Save trip point
                     info!("Battery service: New BTP {}", btp.trip_point);
-                    request.payload = mctp_rs::odp::Odp::BatterySetBtpResponse {};
+                    request.payload = mctp::Odp::BatterySetBtpResponse {};
                     request.status = 0;
                 } else {
                     error!("Battery service: FG not found when trying to process ACPI cmd!");
                     request.status = 1;
-                    request.payload = mctp_rs::odp::Odp::ErrorResponse {};
+                    request.payload = mctp::Odp::ErrorResponse {};
                 }
             }
             _ => error!("Battery service: command and body mismatch!"),
@@ -444,18 +445,18 @@ impl crate::context::Context {
         trace!("Battery service: got BPT command!");
 
         match request.payload {
-            mctp_rs::odp::Odp::BatterySetBptRequest { battery_id, bpt } => {
+            mctp::Odp::BatterySetBptRequest { battery_id, bpt } => {
                 if let Some(_fg) = self.get_fuel_gauge(DeviceId(battery_id)) {
                     info!(
                         "Battery service: Threshold ID: {:?}, Threshold value: {:?}",
                         bpt.threshold_id as u32, bpt.threshold_value
                     );
-                    request.payload = mctp_rs::odp::Odp::BatterySetBptResponse {};
+                    request.payload = mctp::Odp::BatterySetBptResponse {};
                     request.status = 0;
                 } else {
                     error!("Battery service: FG not found when trying to process ACPI cmd!");
                     request.status = 1;
-                    request.payload = mctp_rs::odp::Odp::ErrorResponse {};
+                    request.payload = mctp::Odp::ErrorResponse {};
                 }
             }
             _ => error!("Battery service: command and body mismatch!"),
@@ -473,17 +474,17 @@ impl crate::context::Context {
         trace!("Battery service: got BPC command!");
 
         match request.payload {
-            mctp_rs::odp::Odp::BatteryGetBpcRequest { battery_id } => {
+            mctp::Odp::BatteryGetBpcRequest { battery_id } => {
                 if let Some(fg) = self.get_fuel_gauge(DeviceId(battery_id)) {
                     // TODO: Save trip point
-                    request.payload = mctp_rs::odp::Odp::BatteryGetBpcResponse {
+                    request.payload = mctp::Odp::BatteryGetBpcResponse {
                         bpc: compute_bpc(&fg.get_static_battery_cache().await),
                     };
                     request.status = 0;
                 } else {
                     error!("Battery service: FG not found when trying to process ACPI cmd!");
                     request.status = 1;
-                    request.payload = mctp_rs::odp::Odp::ErrorResponse {};
+                    request.payload = mctp::Odp::ErrorResponse {};
                 }
             }
             _ => error!("Battery service: command and body mismatch!"),
@@ -501,15 +502,15 @@ impl crate::context::Context {
         trace!("Battery service: got BMC command!");
 
         match request.payload {
-            mctp_rs::odp::Odp::BatterySetBmcRequest { battery_id, bmc } => {
+            mctp::Odp::BatterySetBmcRequest { battery_id, bmc } => {
                 if let Some(_fg) = self.get_fuel_gauge(DeviceId(battery_id)) {
                     info!("Battery service: Bmc {}", bmc.maintenance_control_flags.bits());
-                    request.payload = mctp_rs::odp::Odp::BatterySetBmcResponse {};
+                    request.payload = mctp::Odp::BatterySetBmcResponse {};
                     request.status = 0;
                 } else {
                     error!("Battery service: FG not found when trying to process ACPI cmd!");
                     request.status = 1;
-                    request.payload = mctp_rs::odp::Odp::ErrorResponse {};
+                    request.payload = mctp::Odp::ErrorResponse {};
                 }
             }
             _ => error!("Battery service: command and body mismatch!"),
@@ -527,18 +528,18 @@ impl crate::context::Context {
         trace!("Battery service: got BMD command!");
 
         match request.payload {
-            mctp_rs::odp::Odp::BatteryGetBmdRequest { battery_id } => {
+            mctp::Odp::BatteryGetBmdRequest { battery_id } => {
                 if let Some(fg) = self.get_fuel_gauge(DeviceId(battery_id)) {
                     let static_cache = fg.get_static_battery_cache().await;
                     let dynamic_cache = fg.get_dynamic_battery_cache().await;
-                    request.payload = mctp_rs::odp::Odp::BatteryGetBmdResponse {
+                    request.payload = mctp::Odp::BatteryGetBmdResponse {
                         bmd: compute_bmd(&static_cache, &dynamic_cache),
                     };
                     request.status = 0;
                 } else {
                     error!("Battery service: FG not found when trying to process ACPI cmd!");
                     request.status = 1;
-                    request.payload = mctp_rs::odp::Odp::ErrorResponse {};
+                    request.payload = mctp::Odp::ErrorResponse {};
                 }
             }
             _ => error!("Battery service: command and body mismatch!"),
@@ -556,17 +557,17 @@ impl crate::context::Context {
         trace!("Battery service: got BCT command!");
 
         match request.payload {
-            mctp_rs::odp::Odp::BatteryGetBctRequest { battery_id, bct } => {
+            mctp::Odp::BatteryGetBctRequest { battery_id, bct } => {
                 if let Some(fg) = self.get_fuel_gauge(DeviceId(battery_id)) {
                     info!("Recvd BCT charge_level_percent: {}", bct.charge_level_percent);
-                    request.payload = mctp_rs::odp::Odp::BatteryGetBctResponse {
+                    request.payload = mctp::Odp::BatteryGetBctResponse {
                         bct_response: compute_bct(&bct, &fg.get_dynamic_battery_cache().await),
                     };
                     request.status = 0;
                 } else {
                     error!("Battery service: FG not found when trying to process ACPI cmd!");
                     request.status = 1;
-                    request.payload = mctp_rs::odp::Odp::ErrorResponse {};
+                    request.payload = mctp::Odp::ErrorResponse {};
                 }
             }
             _ => error!("Battery service: command and body mismatch!"),
@@ -584,17 +585,17 @@ impl crate::context::Context {
         trace!("Battery service: got BTM command!");
 
         match request.payload {
-            mctp_rs::odp::Odp::BatteryGetBtmRequest { battery_id, btm } => {
+            mctp::Odp::BatteryGetBtmRequest { battery_id, btm } => {
                 if let Some(fg) = self.get_fuel_gauge(DeviceId(battery_id)) {
                     info!("Recvd BTM discharge_rate: {}", btm.discharge_rate);
-                    request.payload = mctp_rs::odp::Odp::BatteryGetBtmResponse {
+                    request.payload = mctp::Odp::BatteryGetBtmResponse {
                         btm_response: compute_btm(&btm, &fg.get_dynamic_battery_cache().await),
                     };
                     request.status = 0;
                 } else {
                     error!("Battery service: FG not found when trying to process ACPI cmd!");
                     request.status = 1;
-                    request.payload = mctp_rs::odp::Odp::ErrorResponse {};
+                    request.payload = mctp::Odp::ErrorResponse {};
                 }
             }
             _ => error!("Battery service: command and body mismatch!"),
@@ -612,15 +613,15 @@ impl crate::context::Context {
         trace!("Battery service: got BMS command!");
 
         match request.payload {
-            mctp_rs::odp::Odp::BatterySetBmsRequest { battery_id, bms } => {
+            mctp::Odp::BatterySetBmsRequest { battery_id, bms } => {
                 if let Some(_fg) = self.get_fuel_gauge(DeviceId(battery_id)) {
                     info!("Recvd BMS sampling_time: {}", bms.sampling_time_ms);
-                    request.payload = mctp_rs::odp::Odp::BatterySetBmsResponse { status: 0 };
+                    request.payload = mctp::Odp::BatterySetBmsResponse { status: 0 };
                     request.status = 0;
                 } else {
                     error!("Battery service: FG not found when trying to process ACPI cmd!");
                     request.status = 1;
-                    request.payload = mctp_rs::odp::Odp::BatterySetBmsResponse { status: 1 };
+                    request.payload = mctp::Odp::BatterySetBmsResponse { status: 1 };
                 }
             }
             _ => error!("Battery service: command and body mismatch!"),
@@ -638,15 +639,15 @@ impl crate::context::Context {
         trace!("Battery service: got BMA command!");
 
         match request.payload {
-            mctp_rs::odp::Odp::BatterySetBmaRequest { battery_id, bma } => {
+            mctp::Odp::BatterySetBmaRequest { battery_id, bma } => {
                 if let Some(_fg) = self.get_fuel_gauge(DeviceId(battery_id)) {
                     info!("Recvd BMA averaging_interval_ms: {}", bma.averaging_interval_ms);
-                    request.payload = mctp_rs::odp::Odp::BatterySetBmaResponse { status: 0 };
+                    request.payload = mctp::Odp::BatterySetBmaResponse { status: 0 };
                     request.status = 0;
                 } else {
                     error!("Battery service: FG not found when trying to process ACPI cmd!");
                     request.status = 1;
-                    request.payload = mctp_rs::odp::Odp::BatterySetBmaResponse { status: 1 };
+                    request.payload = mctp::Odp::BatterySetBmaResponse { status: 1 };
                 }
             }
             _ => error!("Battery service: command and body mismatch!"),
@@ -664,14 +665,14 @@ impl crate::context::Context {
         trace!("Battery service: got STA command!");
 
         match request.payload {
-            mctp_rs::odp::Odp::BatteryGetStaRequest { battery_id } => {
+            mctp::Odp::BatteryGetStaRequest { battery_id } => {
                 if let Some(_fg) = self.get_fuel_gauge(DeviceId(battery_id)) {
-                    request.payload = mctp_rs::odp::Odp::BatteryGetStaResponse { sta: compute_sta() };
+                    request.payload = mctp::Odp::BatteryGetStaResponse { sta: compute_sta() };
                     request.status = 0;
                 } else {
                     error!("Battery service: FG not found when trying to process ACPI cmd!");
                     request.status = 1;
-                    request.payload = mctp_rs::odp::Odp::ErrorResponse {};
+                    request.payload = mctp::Odp::ErrorResponse {};
                 }
             }
             _ => error!("Battery service: command and body mismatch!"),

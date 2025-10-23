@@ -9,7 +9,7 @@ use embassy_sync::once_lock::OnceLock;
 use embedded_services::buffer::OwnedRef;
 use embedded_services::comms::{self, EndpointID, External, Internal};
 use embedded_services::ec_type::message::{HostMsg, NotificationMsg, StdHostMsg, StdHostPayload, StdHostRequest};
-use embedded_services::ec_type::protocols::mctp::build_mctp_header;
+use embedded_services::ec_type::protocols::mctp;
 use embedded_services::{GlobalRawMutex, debug, ec_type, error, info, trace};
 use mctp_rs::smbus_espi::SmbusEspiMedium;
 use mctp_rs::smbus_espi::SmbusEspiReplyContext;
@@ -192,14 +192,14 @@ impl Service<'_> {
             }, // Medium-specific context
         };
 
-        let header = mctp_rs::odp::OdpHeader {
+        let header = mctp::OdpHeader {
             request_bit: false,
             datagram_bit: false,
             service: match endpoint {
-                EndpointID::Internal(Internal::Battery) => mctp_rs::odp::OdpService::Battery,
-                EndpointID::Internal(Internal::Thermal) => mctp_rs::odp::OdpService::Thermal,
-                EndpointID::Internal(Internal::Debug) => mctp_rs::odp::OdpService::Debug,
-                _ => mctp_rs::odp::OdpService::Debug,
+                EndpointID::Internal(Internal::Battery) => mctp::OdpService::Battery,
+                EndpointID::Internal(Internal::Thermal) => mctp::OdpService::Thermal,
+                EndpointID::Internal(Internal::Debug) => mctp::OdpService::Debug,
+                _ => mctp::OdpService::Debug,
             },
             command_code: response.command.into(),
             completion_code: Default::default(),
@@ -247,8 +247,8 @@ impl Service<'_> {
     fn send_mctp_error_response(&self, endpoint: EndpointID, espi: &mut espi::Espi<'static>) {
         // SAFETY: Unwrap is safe here as battery will always be supported.
         // Data is ACPI payload [version, instance, reserved (error status), command]
-        let (final_packet, final_packet_size) =
-            build_mctp_header(&[0, 0, 0, 1], 4, endpoint, true, true).expect("Unexpected error building MCTP header");
+        let (final_packet, final_packet_size) = mctp::build_mctp_header(&[0, 0, 0, 1], 4, endpoint, true, true)
+            .expect("Unexpected error building MCTP header");
 
         if let Err(e) = self.write_to_hw(espi, &final_packet[..final_packet_size]) {
             error!("Critical error sending error response: {:?}", e);
@@ -420,13 +420,13 @@ async fn process_controller_event(
                                         payload: body,
                                     };
                                     endpoint = match header.service {
-                                        mctp_rs::odp::OdpService::Battery => {
+                                        mctp::OdpService::Battery => {
                                             EndpointID::Internal(embedded_services::comms::Internal::Battery)
                                         }
-                                        mctp_rs::odp::OdpService::Thermal => {
+                                        mctp::OdpService::Thermal => {
                                             EndpointID::Internal(embedded_services::comms::Internal::Thermal)
                                         }
-                                        mctp_rs::odp::OdpService::Debug => {
+                                        mctp::OdpService::Debug => {
                                             EndpointID::Internal(embedded_services::comms::Internal::Debug)
                                         }
                                     };
