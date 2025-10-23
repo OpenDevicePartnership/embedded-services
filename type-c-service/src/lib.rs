@@ -9,7 +9,7 @@ use core::future::Future;
 use embedded_services::type_c::event::{
     PortEvent, PortNotification, PortNotificationSingle, PortPendingIter, PortStatusChanged,
 };
-pub use task::task;
+// pub use task::task;
 
 /// Enum to contain all port event variants
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]

@@ -1,8 +1,6 @@
 //! PD controller related code
 use core::future::Future;
-use core::sync::atomic::{AtomicBool, Ordering};
 
-use embassy_sync::once_lock::OnceLock;
 use embassy_sync::signal::Signal;
 use embassy_time::{Duration, with_timeout};
 use embedded_usb_pd::ucsi::{self, lpm};
@@ -499,8 +497,8 @@ impl<'a> Device<'a> {
     }
 
     /// Notify that there are pending events on one or more ports
-    pub async fn notify_ports(&self, pending: PortPending) {
-        CONTEXT.get().await.notify_ports(pending);
+    pub async fn notify_ports(&self, ctx: &Context, pending: PortPending) {
+        ctx.notify_ports(pending);
     }
 
     /// Number of ports on this controller
@@ -669,17 +667,16 @@ pub trait Controller {
 }
 
 /// Internal context for managing PD controllers
-struct Context {
-    controllers: intrusive_list::IntrusiveList,
+pub struct Context {
     port_events: Signal<GlobalRawMutex, PortPending>,
     /// Channel for receiving commands to the type-C service
     external_command: deferred::Channel<GlobalRawMutex, external::Command, external::Response<'static>>,
 }
 
 impl Context {
-    fn new() -> Self {
+    /// Creates a new Type-C controller context.
+    pub fn new() -> Self {
         Self {
-            controllers: intrusive_list::IntrusiveList::new(),
             port_events: Signal::new(),
             external_command: deferred::Channel::new(),
         }
@@ -687,7 +684,7 @@ impl Context {
 
     /// Notify that there are pending events on one or more ports
     /// Each bit corresponds to a global port ID
-    fn notify_ports(&self, pending: PortPending) {
+    pub fn notify_ports(&self, pending: PortPending) {
         let raw_pending: u32 = pending.into();
         trace!("Notify ports: {:#x}", raw_pending);
         // Early exit if no events
@@ -702,74 +699,15 @@ impl Context {
                 pending
             });
     }
-}
-
-static CONTEXT: OnceLock<Context> = OnceLock::new();
-
-/// Initialize the PD controller context
-pub fn init() {
-    CONTEXT.get_or_init(Context::new);
-}
-
-/// Register a PD controller
-pub async fn register_controller(controller: &'static impl DeviceContainer) -> Result<(), intrusive_list::Error> {
-    CONTEXT
-        .get()
-        .await
-        .controllers
-        .push(controller.get_pd_controller_device())
-}
-
-pub(super) async fn lookup_controller(controller_id: ControllerId) -> Result<&'static Device<'static>, PdError> {
-    CONTEXT
-        .get()
-        .await
-        .controllers
-        .into_iter()
-        .filter_map(|node| node.data::<Device>())
-        .find(|controller| controller.id == controller_id)
-        .ok_or(PdError::InvalidController)
-}
-
-/// Get total number of ports on the system
-pub(super) async fn get_num_ports() -> usize {
-    CONTEXT
-        .get()
-        .await
-        .controllers
-        .iter_only::<Device>()
-        .fold(0, |acc, controller| acc + controller.num_ports())
-}
-
-/// Default command timeout
-/// set to high value since this is intended to prevent an unresponsive device from blocking the service implementation
-const DEFAULT_TIMEOUT: Duration = Duration::from_millis(5000);
-
-/// Type to provide access to the PD controller context for service implementations
-pub struct ContextToken(());
-
-impl ContextToken {
-    /// Create a new context token, returning None if this function has been called before
-    pub fn create() -> Option<Self> {
-        static INIT: AtomicBool = AtomicBool::new(false);
-        if INIT.load(Ordering::SeqCst) {
-            return None;
-        }
-
-        INIT.store(true, Ordering::SeqCst);
-        Some(ContextToken(()))
-    }
 
     /// Send a command to the given controller with no timeout
     pub async fn send_controller_command_no_timeout(
         &self,
+        controllers: &intrusive_list::IntrusiveList,
         controller_id: ControllerId,
         command: InternalCommandData,
     ) -> Result<InternalResponseData<'static>, PdError> {
-        let node = CONTEXT
-            .get()
-            .await
-            .controllers
+        let node = controllers
             .into_iter()
             .find(|node| {
                 if let Some(controller) = node.data::<Device>() {
@@ -797,12 +735,13 @@ impl ContextToken {
     /// Send a command to the given controller with a timeout
     pub async fn send_controller_command(
         &self,
+        controllers: &intrusive_list::IntrusiveList,
         controller_id: ControllerId,
         command: InternalCommandData,
     ) -> Result<InternalResponseData<'static>, PdError> {
         match with_timeout(
             DEFAULT_TIMEOUT,
-            self.send_controller_command_no_timeout(controller_id, command),
+            self.send_controller_command_no_timeout(controllers, controller_id, command),
         )
         .await
         {
@@ -812,17 +751,22 @@ impl ContextToken {
     }
 
     /// Reset the given controller
-    pub async fn reset_controller(&self, controller_id: ControllerId) -> Result<(), PdError> {
-        self.send_controller_command(controller_id, InternalCommandData::Reset)
+    pub async fn reset_controller(
+        &self,
+        controllers: &intrusive_list::IntrusiveList,
+        controller_id: ControllerId,
+    ) -> Result<(), PdError> {
+        self.send_controller_command(controllers, controller_id, InternalCommandData::Reset)
             .await
             .map(|_| ())
     }
 
-    async fn find_node_by_port(&self, port_id: GlobalPortId) -> Result<&IntrusiveNode, PdError> {
-        CONTEXT
-            .get()
-            .await
-            .controllers
+    async fn find_node_by_port(
+        &self,
+        controllers: &intrusive_list::IntrusiveList,
+        port_id: GlobalPortId,
+    ) -> Result<&IntrusiveNode, PdError> {
+        controllers
             .into_iter()
             .find(|node| {
                 if let Some(controller) = node.data::<Device>() {
@@ -837,10 +781,11 @@ impl ContextToken {
     /// Send a command to the given port
     pub async fn send_port_command_ucsi_no_timeout(
         &self,
+        controllers: &intrusive_list::IntrusiveList,
         port_id: GlobalPortId,
         command: lpm::CommandData,
     ) -> Result<ucsi::GlobalResponse, PdError> {
-        let node = self.find_node_by_port(port_id).await?;
+        let node = self.find_node_by_port(controllers, port_id).await?;
 
         match node
             .data::<Device>()
@@ -859,12 +804,13 @@ impl ContextToken {
     /// Send a command to the given port with a timeout
     pub async fn send_port_command_ucsi(
         &self,
+        controllers: &intrusive_list::IntrusiveList,
         port_id: GlobalPortId,
         command: lpm::CommandData,
     ) -> Result<ucsi::GlobalResponse, PdError> {
         match with_timeout(
             DEFAULT_TIMEOUT,
-            self.send_port_command_ucsi_no_timeout(port_id, command),
+            self.send_port_command_ucsi_no_timeout(controllers, port_id, command),
         )
         .await
         {
@@ -876,10 +822,11 @@ impl ContextToken {
     /// Send a command to the given port with no timeout
     pub async fn send_port_command_no_timeout(
         &self,
+        controllers: &intrusive_list::IntrusiveList,
         port_id: GlobalPortId,
         command: PortCommandData,
     ) -> Result<PortResponseData, PdError> {
-        let node = self.find_node_by_port(port_id).await?;
+        let node = self.find_node_by_port(controllers, port_id).await?;
 
         match node
             .data::<Device>()
@@ -901,10 +848,16 @@ impl ContextToken {
     /// Send a command to the given port with a timeout
     pub async fn send_port_command(
         &self,
+        controllers: &intrusive_list::IntrusiveList,
         port_id: GlobalPortId,
         command: PortCommandData,
     ) -> Result<PortResponseData, PdError> {
-        match with_timeout(DEFAULT_TIMEOUT, self.send_port_command_no_timeout(port_id, command)).await {
+        match with_timeout(
+            DEFAULT_TIMEOUT,
+            self.send_port_command_no_timeout(controllers, port_id, command),
+        )
+        .await
+        {
             Ok(response) => response,
             Err(_) => Err(PdError::Timeout),
         }
@@ -912,12 +865,19 @@ impl ContextToken {
 
     /// Get the current port events
     pub async fn get_unhandled_events(&self) -> PortPending {
-        CONTEXT.get().await.port_events.wait().await
+        self.port_events.wait().await
     }
 
     /// Get the unhandled events for the given port
-    pub async fn get_port_event(&self, port: GlobalPortId) -> Result<PortEvent, PdError> {
-        match self.send_port_command(port, PortCommandData::ClearEvents).await? {
+    pub async fn get_port_event(
+        &self,
+        controllers: &intrusive_list::IntrusiveList,
+        port: GlobalPortId,
+    ) -> Result<PortEvent, PdError> {
+        match self
+            .send_port_command(controllers, port, PortCommandData::ClearEvents)
+            .await?
+        {
             PortResponseData::ClearEvents(event) => Ok(event),
             r => {
                 error!("Invalid response: expected clear events, got {:?}", r);
@@ -927,9 +887,14 @@ impl ContextToken {
     }
 
     /// Get the current port status
-    pub async fn get_port_status(&self, port: GlobalPortId, cached: Cached) -> Result<PortStatus, PdError> {
+    pub async fn get_port_status(
+        &self,
+        controllers: &intrusive_list::IntrusiveList,
+        port: GlobalPortId,
+        cached: Cached,
+    ) -> Result<PortStatus, PdError> {
         match self
-            .send_port_command(port, PortCommandData::PortStatus(cached))
+            .send_port_command(controllers, port, PortCommandData::PortStatus(cached))
             .await?
         {
             PortResponseData::PortStatus(status) => Ok(status),
@@ -941,8 +906,15 @@ impl ContextToken {
     }
 
     /// Get the oldest unhandled PD alert for the given port
-    pub async fn get_pd_alert(&self, port: GlobalPortId) -> Result<Option<Ado>, PdError> {
-        match self.send_port_command(port, PortCommandData::GetPdAlert).await? {
+    pub async fn get_pd_alert(
+        &self,
+        controllers: &intrusive_list::IntrusiveList,
+        port: GlobalPortId,
+    ) -> Result<Option<Ado>, PdError> {
+        match self
+            .send_port_command(controllers, port, PortCommandData::GetPdAlert)
+            .await?
+        {
             PortResponseData::PdAlert(alert) => Ok(alert),
             r => {
                 error!("Invalid response: expected PD alert, got {:?}", r);
@@ -952,9 +924,13 @@ impl ContextToken {
     }
 
     /// Get the retimer fw update status
-    pub async fn get_rt_fw_update_status(&self, port: GlobalPortId) -> Result<RetimerFwUpdateState, PdError> {
+    pub async fn get_rt_fw_update_status(
+        &self,
+        controllers: &intrusive_list::IntrusiveList,
+        port: GlobalPortId,
+    ) -> Result<RetimerFwUpdateState, PdError> {
         match self
-            .send_port_command(port, PortCommandData::RetimerFwUpdateGetState)
+            .send_port_command(controllers, port, PortCommandData::RetimerFwUpdateGetState)
             .await?
         {
             PortResponseData::RtFwUpdateStatus(status) => Ok(status),
@@ -963,9 +939,13 @@ impl ContextToken {
     }
 
     /// Set the retimer fw update state
-    pub async fn set_rt_fw_update_state(&self, port: GlobalPortId) -> Result<(), PdError> {
+    pub async fn set_rt_fw_update_state(
+        &self,
+        controllers: &intrusive_list::IntrusiveList,
+        port: GlobalPortId,
+    ) -> Result<(), PdError> {
         match self
-            .send_port_command(port, PortCommandData::RetimerFwUpdateSetState)
+            .send_port_command(controllers, port, PortCommandData::RetimerFwUpdateSetState)
             .await?
         {
             PortResponseData::Complete => Ok(()),
@@ -974,9 +954,13 @@ impl ContextToken {
     }
 
     /// Clear the retimer fw update state
-    pub async fn clear_rt_fw_update_state(&self, port: GlobalPortId) -> Result<(), PdError> {
+    pub async fn clear_rt_fw_update_state(
+        &self,
+        controllers: &intrusive_list::IntrusiveList,
+        port: GlobalPortId,
+    ) -> Result<(), PdError> {
         match self
-            .send_port_command(port, PortCommandData::RetimerFwUpdateClearState)
+            .send_port_command(controllers, port, PortCommandData::RetimerFwUpdateClearState)
             .await?
         {
             PortResponseData::Complete => Ok(()),
@@ -985,9 +969,13 @@ impl ContextToken {
     }
 
     /// Set the retimer compliance
-    pub async fn set_rt_compliance(&self, port: GlobalPortId) -> Result<(), PdError> {
+    pub async fn set_rt_compliance(
+        &self,
+        controllers: &intrusive_list::IntrusiveList,
+        port: GlobalPortId,
+    ) -> Result<(), PdError> {
         match self
-            .send_port_command(port, PortCommandData::SetRetimerCompliance)
+            .send_port_command(controllers, port, PortCommandData::SetRetimerCompliance)
             .await?
         {
             PortResponseData::Complete => Ok(()),
@@ -996,9 +984,13 @@ impl ContextToken {
     }
 
     /// Reconfigure the retimer for the given port.
-    pub async fn reconfigure_retimer(&self, port: GlobalPortId) -> Result<(), PdError> {
+    pub async fn reconfigure_retimer(
+        &self,
+        controllers: &intrusive_list::IntrusiveList,
+        port: GlobalPortId,
+    ) -> Result<(), PdError> {
         match self
-            .send_port_command(port, PortCommandData::ReconfigureRetimer)
+            .send_port_command(controllers, port, PortCommandData::ReconfigureRetimer)
             .await?
         {
             PortResponseData::Complete => Ok(()),
@@ -1009,9 +1001,14 @@ impl ContextToken {
     /// Set the maximum sink voltage for the given port.
     ///
     /// See [`PortCommandData::SetMaxSinkVoltage`] for details on the `max_voltage_mv` parameter.
-    pub async fn set_max_sink_voltage(&self, port: GlobalPortId, max_voltage_mv: Option<u16>) -> Result<(), PdError> {
+    pub async fn set_max_sink_voltage(
+        &self,
+        controllers: &intrusive_list::IntrusiveList,
+        port: GlobalPortId,
+        max_voltage_mv: Option<u16>,
+    ) -> Result<(), PdError> {
         match self
-            .send_port_command(port, PortCommandData::SetMaxSinkVoltage(max_voltage_mv))
+            .send_port_command(controllers, port, PortCommandData::SetMaxSinkVoltage(max_voltage_mv))
             .await?
         {
             PortResponseData::Complete => Ok(()),
@@ -1020,9 +1017,13 @@ impl ContextToken {
     }
 
     /// Clear the dead battery flag for the given port.
-    pub async fn clear_dead_battery_flag(&self, port: GlobalPortId) -> Result<(), PdError> {
+    pub async fn clear_dead_battery_flag(
+        &self,
+        controllers: &intrusive_list::IntrusiveList,
+        port: GlobalPortId,
+    ) -> Result<(), PdError> {
         match self
-            .send_port_command(port, PortCommandData::ClearDeadBatteryFlag)
+            .send_port_command(controllers, port, PortCommandData::ClearDeadBatteryFlag)
             .await?
         {
             PortResponseData::Complete => Ok(()),
@@ -1033,10 +1034,11 @@ impl ContextToken {
     /// Get current controller status
     pub async fn get_controller_status(
         &self,
+        controllers: &intrusive_list::IntrusiveList,
         controller_id: ControllerId,
     ) -> Result<ControllerStatus<'static>, PdError> {
         match self
-            .send_controller_command(controller_id, InternalCommandData::Status)
+            .send_controller_command(controllers, controller_id, InternalCommandData::Status)
             .await?
         {
             InternalResponseData::Status(status) => Ok(status),
@@ -1048,9 +1050,14 @@ impl ContextToken {
     }
 
     /// Set unconstrained power for the given port
-    pub async fn set_unconstrained_power(&self, port: GlobalPortId, unconstrained: bool) -> Result<(), PdError> {
+    pub async fn set_unconstrained_power(
+        &self,
+        controllers: &intrusive_list::IntrusiveList,
+        port: GlobalPortId,
+        unconstrained: bool,
+    ) -> Result<(), PdError> {
         match self
-            .send_port_command(port, PortCommandData::SetUnconstrainedPower(unconstrained))
+            .send_port_command(controllers, port, PortCommandData::SetUnconstrainedPower(unconstrained))
             .await?
         {
             PortResponseData::Complete => Ok(()),
@@ -1059,9 +1066,13 @@ impl ContextToken {
     }
 
     /// Sync controller state
-    pub async fn sync_controller_state(&self, controller_id: ControllerId) -> Result<(), PdError> {
+    pub async fn sync_controller_state(
+        &self,
+        controllers: &intrusive_list::IntrusiveList,
+        controller_id: ControllerId,
+    ) -> Result<(), PdError> {
         match self
-            .send_controller_command(controller_id, InternalCommandData::SyncState)
+            .send_controller_command(controllers, controller_id, InternalCommandData::SyncState)
             .await?
         {
             InternalResponseData::Complete => Ok(()),
@@ -1076,22 +1087,19 @@ impl ContextToken {
     pub async fn wait_external_command(
         &self,
     ) -> deferred::Request<'_, GlobalRawMutex, external::Command, external::Response<'static>> {
-        CONTEXT.get().await.external_command.receive().await
-    }
-
-    /// Notify that there are pending events on one or more ports
-    pub async fn notify_ports(&self, pending: PortPending) {
-        CONTEXT.get().await.notify_ports(pending);
-    }
-
-    /// Get the number of ports on the system
-    pub async fn get_num_ports(&self) -> usize {
-        get_num_ports().await
+        self.external_command.receive().await
     }
 
     /// Get the other vdm for the given port
-    pub async fn get_other_vdm(&self, port: GlobalPortId) -> Result<OtherVdm, PdError> {
-        match self.send_port_command(port, PortCommandData::GetOtherVdm).await? {
+    pub async fn get_other_vdm(
+        &self,
+        controllers: &intrusive_list::IntrusiveList,
+        port: GlobalPortId,
+    ) -> Result<OtherVdm, PdError> {
+        match self
+            .send_port_command(controllers, port, PortCommandData::GetOtherVdm)
+            .await?
+        {
             PortResponseData::OtherVdm(vdm) => Ok(vdm),
             r => {
                 error!("Invalid response: expected other VDM, got {:?}", r);
@@ -1101,8 +1109,15 @@ impl ContextToken {
     }
 
     /// Get the attention vdm for the given port
-    pub async fn get_attn_vdm(&self, port: GlobalPortId) -> Result<AttnVdm, PdError> {
-        match self.send_port_command(port, PortCommandData::GetAttnVdm).await? {
+    pub async fn get_attn_vdm(
+        &self,
+        controllers: &intrusive_list::IntrusiveList,
+        port: GlobalPortId,
+    ) -> Result<AttnVdm, PdError> {
+        match self
+            .send_port_command(controllers, port, PortCommandData::GetAttnVdm)
+            .await?
+        {
             PortResponseData::AttnVdm(vdm) => Ok(vdm),
             r => {
                 error!("Invalid response: expected attention VDM, got {:?}", r);
@@ -1112,17 +1127,30 @@ impl ContextToken {
     }
 
     /// Send VDM to the given port
-    pub async fn send_vdm(&self, port: GlobalPortId, tx_vdm: SendVdm) -> Result<(), PdError> {
-        match self.send_port_command(port, PortCommandData::SendVdm(tx_vdm)).await? {
+    pub async fn send_vdm(
+        &self,
+        controllers: &intrusive_list::IntrusiveList,
+        port: GlobalPortId,
+        tx_vdm: SendVdm,
+    ) -> Result<(), PdError> {
+        match self
+            .send_port_command(controllers, port, PortCommandData::SendVdm(tx_vdm))
+            .await?
+        {
             PortResponseData::Complete => Ok(()),
             _ => Err(PdError::InvalidResponse),
         }
     }
 
     /// Set USB control configuration for the given port
-    pub async fn set_usb_control(&self, port: GlobalPortId, config: UsbControlConfig) -> Result<(), PdError> {
+    pub async fn set_usb_control(
+        &self,
+        controllers: &intrusive_list::IntrusiveList,
+        port: GlobalPortId,
+        config: UsbControlConfig,
+    ) -> Result<(), PdError> {
         match self
-            .send_port_command(port, PortCommandData::SetUsbControl(config))
+            .send_port_command(controllers, port, PortCommandData::SetUsbControl(config))
             .await?
         {
             PortResponseData::Complete => Ok(()),
@@ -1131,8 +1159,15 @@ impl ContextToken {
     }
 
     /// Get DisplayPort status for the given port
-    pub async fn get_dp_status(&self, port: GlobalPortId) -> Result<DpStatus, PdError> {
-        match self.send_port_command(port, PortCommandData::GetDpStatus).await? {
+    pub async fn get_dp_status(
+        &self,
+        controllers: &intrusive_list::IntrusiveList,
+        port: GlobalPortId,
+    ) -> Result<DpStatus, PdError> {
+        match self
+            .send_port_command(controllers, port, PortCommandData::GetDpStatus)
+            .await?
+        {
             PortResponseData::DpStatus(status) => Ok(status),
             r => {
                 error!("Invalid response: expected DP status, got {:?}", r);
@@ -1142,9 +1177,14 @@ impl ContextToken {
     }
 
     /// Set DisplayPort configuration for the given port
-    pub async fn set_dp_config(&self, port: GlobalPortId, config: DpConfig) -> Result<(), PdError> {
+    pub async fn set_dp_config(
+        &self,
+        controllers: &intrusive_list::IntrusiveList,
+        port: GlobalPortId,
+        config: DpConfig,
+    ) -> Result<(), PdError> {
         match self
-            .send_port_command(port, PortCommandData::SetDpConfig(config))
+            .send_port_command(controllers, port, PortCommandData::SetDpConfig(config))
             .await?
         {
             PortResponseData::Complete => Ok(()),
@@ -1153,17 +1193,29 @@ impl ContextToken {
     }
 
     /// Execute PD Data Reset for the given port
-    pub async fn execute_drst(&self, port: GlobalPortId) -> Result<(), PdError> {
-        match self.send_port_command(port, PortCommandData::ExecuteDrst).await? {
+    pub async fn execute_drst(
+        &self,
+        controllers: &intrusive_list::IntrusiveList,
+        port: GlobalPortId,
+    ) -> Result<(), PdError> {
+        match self
+            .send_port_command(controllers, port, PortCommandData::ExecuteDrst)
+            .await?
+        {
             PortResponseData::Complete => Ok(()),
             _ => Err(PdError::InvalidResponse),
         }
     }
 
     /// Set Thunderbolt configuration for the given port
-    pub async fn set_tbt_config(&self, port: GlobalPortId, config: TbtConfig) -> Result<(), PdError> {
+    pub async fn set_tbt_config(
+        &self,
+        controllers: &intrusive_list::IntrusiveList,
+        port: GlobalPortId,
+        config: TbtConfig,
+    ) -> Result<(), PdError> {
         match self
-            .send_port_command(port, PortCommandData::SetTbtConfig(config))
+            .send_port_command(controllers, port, PortCommandData::SetTbtConfig(config))
             .await?
         {
             PortResponseData::Complete => Ok(()),
@@ -1174,11 +1226,12 @@ impl ContextToken {
     /// Set PD state-machine configuration for the given port
     pub async fn set_pd_state_machine_config(
         &self,
+        controllers: &intrusive_list::IntrusiveList,
         port: GlobalPortId,
         config: PdStateMachineConfig,
     ) -> Result<(), PdError> {
         match self
-            .send_port_command(port, PortCommandData::SetPdStateMachineConfig(config))
+            .send_port_command(controllers, port, PortCommandData::SetPdStateMachineConfig(config))
             .await?
         {
             PortResponseData::Complete => Ok(()),
@@ -1189,11 +1242,12 @@ impl ContextToken {
     /// Set Type-C state-machine configuration for the given port
     pub async fn set_type_c_state_machine_config(
         &self,
+        controllers: &intrusive_list::IntrusiveList,
         port: GlobalPortId,
         state: TypeCStateMachineState,
     ) -> Result<(), PdError> {
         match self
-            .send_port_command(port, PortCommandData::SetTypeCStateMachineConfig(state))
+            .send_port_command(controllers, port, PortCommandData::SetTypeCStateMachineConfig(state))
             .await?
         {
             PortResponseData::Complete => Ok(()),
@@ -1204,10 +1258,15 @@ impl ContextToken {
     /// Execute the given UCSI command
     pub async fn execute_ucsi_command(
         &self,
+        controllers: &intrusive_list::IntrusiveList,
         command: lpm::GlobalCommand,
     ) -> Result<Option<lpm::ResponseData>, PdError> {
         match self
-            .send_port_command(command.port(), PortCommandData::ExecuteUcsiCommand(command.operation()))
+            .send_port_command(
+                controllers,
+                command.port(),
+                PortCommandData::ExecuteUcsiCommand(command.operation()),
+            )
             .await?
         {
             PortResponseData::UcsiResponse(response) => response,
@@ -1216,12 +1275,16 @@ impl ContextToken {
     }
 }
 
+/// Default command timeout
+/// set to high value since this is intended to prevent an unresponsive device from blocking the service implementation
+const DEFAULT_TIMEOUT: Duration = Duration::from_millis(5000);
+
 /// Execute an external port command
 pub(super) async fn execute_external_port_command(
+    ctx: &Context,
     command: external::Command,
 ) -> Result<external::PortResponseData, PdError> {
-    let context = CONTEXT.get().await;
-    match context.external_command.execute(command).await {
+    match ctx.external_command.execute(command).await {
         external::Response::Port(response) => response,
         r => {
             error!("Invalid response: expected external port, got {:?}", r);
@@ -1232,10 +1295,10 @@ pub(super) async fn execute_external_port_command(
 
 /// Execute an external controller command
 pub(super) async fn execute_external_controller_command(
+    ctx: &Context,
     command: external::Command,
 ) -> Result<external::ControllerResponseData<'static>, PdError> {
-    let context = CONTEXT.get().await;
-    match context.external_command.execute(command).await {
+    match ctx.external_command.execute(command).await {
         external::Response::Controller(response) => response,
         r => {
             error!("Invalid response: expected external controller, got {:?}", r);
@@ -1245,9 +1308,11 @@ pub(super) async fn execute_external_controller_command(
 }
 
 /// Execute an external UCSI command
-pub(super) async fn execute_external_ucsi_command(command: ucsi::GlobalCommand) -> external::UcsiResponse {
-    let context = CONTEXT.get().await;
-    match context.external_command.execute(external::Command::Ucsi(command)).await {
+pub(super) async fn execute_external_ucsi_command(
+    ctx: &Context,
+    command: ucsi::GlobalCommand,
+) -> external::UcsiResponse {
+    match ctx.external_command.execute(external::Command::Ucsi(command)).await {
         external::Response::Ucsi(response) => response,
         r => {
             error!("Invalid response: expected external UCSI, got {:?}", r);
@@ -1259,4 +1324,30 @@ pub(super) async fn execute_external_ucsi_command(command: ucsi::GlobalCommand) 
             }
         }
     }
+}
+
+/// Register a PD controller
+pub async fn register_controller(
+    controllers: &intrusive_list::IntrusiveList,
+    controller: &'static impl DeviceContainer,
+) -> Result<(), intrusive_list::Error> {
+    controllers.push(controller.get_pd_controller_device())
+}
+
+pub(super) async fn lookup_controller(
+    controllers: &intrusive_list::IntrusiveList,
+    controller_id: ControllerId,
+) -> Result<&'static Device<'static>, PdError> {
+    controllers
+        .into_iter()
+        .filter_map(|node| node.data::<Device>())
+        .find(|controller| controller.id == controller_id)
+        .ok_or(PdError::InvalidController)
+}
+
+/// Get total number of ports on the system
+pub(super) async fn get_num_ports(controllers: &intrusive_list::IntrusiveList) -> usize {
+    controllers
+        .iter_only::<Device>()
+        .fold(0, |acc, controller| acc + controller.num_ports())
 }

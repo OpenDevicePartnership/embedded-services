@@ -70,5 +70,4 @@ pub async fn init() {
     cfu::init();
     keyboard::init();
     power::policy::init();
-    type_c::controller::init();
 }
