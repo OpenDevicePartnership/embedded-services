@@ -76,6 +76,27 @@ impl<B: I2cSlaveAsync> Host<B> {
         Ok(())
     }
 
+    async fn process_output_report(&self) -> Result<hid::Request<'static>, Error<B::Error>> {
+        let mut borrow = self.buffer.borrow_mut();
+        let buffer: &mut [u8] = borrow.borrow_mut();
+
+        self.read_bus(DATA_READ_TIMEOUT_MS, &mut buffer[..2]).await?;
+
+        let length = u16::from_le_bytes([buffer[0], buffer[1]]);
+        if buffer.len() < length as usize {
+            error!("Output report buffer overrun: {}", length);
+            return Err(Error::Hid(hid::Error::InvalidSize(length as usize, buffer.len())));
+        }
+
+        trace!("Reading {} bytes", length);
+        self.read_bus(DATA_READ_TIMEOUT_MS, &mut buffer[2..length as usize])
+            .await?;
+        Ok(hid::Request::OutputReport(
+            Some(hid::ReportId(buffer[2])),
+            self.buffer.reference().slice(3..length as usize),
+        ))
+    }
+
     async fn process_command(&self, device: &hid::Device) -> Result<hid::Command<'static>, Error<B::Error>> {
         trace!("Waiting for command");
         let mut cmd = [0u8; 2];
@@ -172,6 +193,8 @@ impl<B: I2cSlaveAsync> Host<B> {
                 hid::Request::InputReport
             } else if reg == device.regs.command_reg {
                 hid::Request::Command(self.process_command(device).await?)
+            } else if reg == device.regs.output_reg {
+                self.process_output_report().await?
             } else {
                 error!("Unexpected request address {:#x}", reg);
                 return Err(Error::Hid(hid::Error::InvalidRegisterAddress));
