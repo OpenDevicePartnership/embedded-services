@@ -18,7 +18,7 @@ use embedded_services::type_c::controller::{
     TypeCStateMachineState, UsbControlConfig,
 };
 use embedded_services::type_c::event::PortEvent;
-use embedded_services::{debug, error, info, trace, type_c, warn};
+use embedded_services::{debug, error, trace, type_c, warn};
 use embedded_usb_pd::ado::Ado;
 use embedded_usb_pd::pdinfo::PowerPathStatus;
 use embedded_usb_pd::pdo::{Common, Contract, Rdo, sink, source};
@@ -467,15 +467,7 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
 
     async fn enable_sink_path(&mut self, port: LocalPortId, enable: bool) -> Result<(), Error<Self::BusError>> {
         debug!("Port{} enable sink path: {}", port.0, enable);
-        match self.tps6699x.enable_sink_path(port, enable).await {
-            // Temporary workaround for autofet rejection
-            // Tracking bug: https://github.com/OpenDevicePartnership/embedded-services/issues/268
-            Err(Error::Pd(PdError::Rejected)) | Err(Error::Pd(PdError::Timeout)) => {
-                info!("Port{} autofet rejection, ignored", port.0);
-                Ok(())
-            }
-            rest => rest,
-        }
+        self.tps6699x.enable_sink_path(port, enable).await
     }
 
     async fn get_pd_alert(&mut self, port: LocalPortId) -> Result<Option<Ado>, Error<Self::BusError>> {
