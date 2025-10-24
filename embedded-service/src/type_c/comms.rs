@@ -15,7 +15,7 @@ pub struct DebugAccessoryMessage {
 /// UCSI connector change message
 #[derive(Copy, Clone, Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct UcsiConnectorChange {
+pub struct UsciChangeIndicator {
     /// Port
     pub port: GlobalPortId,
     /// Notify OPM
@@ -29,5 +29,5 @@ pub enum CommsMessage {
     /// Debug accessory message
     DebugAccessory(DebugAccessoryMessage),
     /// UCSI CCI message
-    UcsiCci(UcsiConnectorChange),
+    UcsiCci(UsciChangeIndicator),
 }

@@ -92,9 +92,9 @@ impl<'a> Service<'a> {
         // Pop the just acknowledged port and move to the next if present
         if let Some(_current_port) = state.pending_ports.pop_front() {
             if let Some(next_port) = state.pending_ports.front() {
-                debug!("ACK_CCI processed, next pending port: {}", next_port.0);
+                debug!("ACK_CCI processed, next pending port: {:?}", next_port);
                 self.context
-                    .broadcast_message(comms::CommsMessage::UcsiCci(comms::UcsiConnectorChange {
+                    .broadcast_message(comms::CommsMessage::UcsiCci(comms::UsciChangeIndicator {
                         port: *next_port,
                         // False here because the OPM gets notified by the CCI, don't need a separate notification
                         notify_opm: false,
@@ -236,7 +236,7 @@ impl<'a> Service<'a> {
         }
 
         if ucsi_event.filter_enabled(state.notifications_enabled).is_none() {
-            trace!("Port{}: event received, but no UCSI notifications enabled", port_id.0);
+            trace!("{:?}: event received, but no UCSI notifications enabled", port_id);
             return;
         }
 
@@ -251,7 +251,7 @@ impl<'a> Service<'a> {
         let notify_opm = state.pending_ports.is_empty();
         if state.pending_ports.push_back(port_id).is_ok() {
             self.context
-                .broadcast_message(comms::CommsMessage::UcsiCci(comms::UcsiConnectorChange {
+                .broadcast_message(comms::CommsMessage::UcsiCci(comms::UsciChangeIndicator {
                     port: port_id,
                     notify_opm,
                 }))
