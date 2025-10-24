@@ -1254,6 +1254,7 @@ dependencies = [
 name = "keyboard-service"
 version = "0.1.0"
 dependencies = [
+ "bitflags 2.9.4",
  "defmt 0.3.100",
  "embassy-executor",
  "embassy-futures",
