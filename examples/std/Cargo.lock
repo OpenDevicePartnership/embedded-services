@@ -760,7 +760,7 @@ dependencies = [
 [[package]]
 name = "embedded-usb-pd"
 version = "0.1.0"
-source = "git+https://github.com/OpenDevicePartnership/embedded-usb-pd#80741b7552849a965d3bd95c85f57642783138e0"
+source = "git+https://github.com/OpenDevicePartnership/embedded-usb-pd#7b618f5689cef191171d81d33a2fa6b5af46d33f"
 dependencies = [
  "aquamarine",
  "bincode",
