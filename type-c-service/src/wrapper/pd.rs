@@ -39,7 +39,7 @@ impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, 
     /// Check the sink ready timeout
     ///
     /// After accepting a sink contract (new contract as consumer), the PD spec guarantees that the
-    /// source will be available to provide power after `tSrcTransReq`. This allows us to handle transitions
+    /// source will be available to provide power after `tPSTransition`. This allows us to handle transitions
     /// even for controllers that might not always broadcast sink ready events.
     pub(super) async fn check_sink_ready_timeout(
         &self,
