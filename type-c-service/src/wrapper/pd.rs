@@ -57,6 +57,7 @@ impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, 
 
         if new_contract && !sink_ready {
             // Start the timeout
+            // Double the spec maximum transition time to provide a safety margin for hardware/controller delays our out-of-spec controllers.
             let timeout_ms = if status.epr {
                 T_PS_TRANSITION_EPR_MS
             } else {
