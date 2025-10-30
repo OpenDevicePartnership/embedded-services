@@ -34,8 +34,7 @@ use embedded_services::transformers::object::{Object, RefGuard, RefMutGuard};
 use embedded_services::type_c::controller::{self, Controller, PortStatus};
 use embedded_services::type_c::event::{PortEvent, PortNotificationSingle, PortPending, PortStatusChanged};
 use embedded_services::{debug, error, info, trace, warn};
-use embedded_usb_pd::ado::Ado;
-use embedded_usb_pd::{Error, LocalPortId, PdError};
+use embedded_usb_pd::{Error, LocalPortId, PdError, ado::Ado, vdm::Svid};
 
 use crate::wrapper::backing::DynPortState;
 use crate::wrapper::message::*;
@@ -54,6 +53,9 @@ pub const DEFAULT_FW_UPDATE_TICK_INTERVAL_MS: u64 = 5000;
 /// Default number of ticks before we consider a firmware update to have timed out
 /// 300 seconds at 5 seconds per tick
 pub const DEFAULT_FW_UPDATE_TIMEOUT_TICKS: u8 = 60;
+
+/// Microsoft SVID
+pub const EX_MDM_SVID: Svid = Svid(0x045Eu16);
 
 /// Trait for validating firmware versions before applying an update
 // TODO: remove this once we have a better framework for OEM customization
@@ -471,6 +473,10 @@ impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, 
                 .process_dp_status_update(controller, port)
                 .await
                 .map(Output::DpStatusUpdate),
+            PortNotificationSingle::DiscoverModeCompleted => self
+                .process_disc_mode_completed_event(controller, port, EX_MDM_SVID)
+                .await
+                .map(|vdos| Ok(Output::DiscModeCompleted(vdos)))?,
             rest => {
                 // Nothing currently implemented for these
                 trace!("Port{}: Notification: {:#?}", port.0, rest);
@@ -567,6 +573,10 @@ impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, 
                 // Nothing to do here
                 Ok(())
             }
+            Output::DiscModeCompleted(vdos) => self
+                .finalize_disc_mode_completed(state.deref_mut().deref_mut(), vdos)
+                .await
+                .map_err(Error::Pd),
         }
     }
 

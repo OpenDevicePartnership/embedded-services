@@ -18,6 +18,8 @@ pub struct ControllerId(pub u8);
 pub const OTHER_VDM_LEN: usize = 29;
 /// Length of the Attention VDM data
 pub const ATTN_VDM_LEN: usize = 9;
+/// Length of the Rx discover mode VDO (32u) data
+pub const DISCOVERED_MODES_LEN: usize = 7;
 
 impl TryFrom<Contract> for policy::PowerCapability {
     type Error = ();

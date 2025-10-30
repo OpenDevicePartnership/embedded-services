@@ -4,7 +4,7 @@ use embedded_services::{
     ipc::deferred,
     power::policy,
     type_c::{
-        controller::{self, DpStatus, PortStatus},
+        controller::{self, DpStatus, PortStatus, RxModeVdos},
         event::{PortNotificationSingle, PortStatusChanged},
     },
 };
@@ -147,6 +147,16 @@ pub struct OutputDpStatusChanged {
     pub status: DpStatus,
 }
 
+/// discover mode completed output data
+#[derive(Copy, Clone, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct OutputDiscModeVdos {
+    /// Port ID
+    pub port: LocalPortId,
+    /// discover mode vdos
+    pub vdos: RxModeVdos,
+}
+
 /// [`crate::wrapper::ControllerWrapper`] output
 pub enum Output<'a> {
     /// No-op when nothing specific is needed
@@ -167,4 +177,6 @@ pub enum Output<'a> {
     CfuResponse(embedded_services::cfu::component::InternalResponseData),
     /// Dp status update
     DpStatusUpdate(OutputDpStatusChanged),
+    /// Discover mode VDOs
+    DiscModeCompleted(OutputDiscModeVdos),
 }
