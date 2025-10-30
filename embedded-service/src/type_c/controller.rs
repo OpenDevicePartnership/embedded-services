@@ -2,6 +2,13 @@
 use core::future::Future;
 use core::sync::atomic::{AtomicBool, Ordering};
 
+use super::{ATTN_VDM_LEN, ControllerId, DISCOVERED_MODES_LEN, OTHER_VDM_LEN, external};
+use crate::ipc::deferred;
+use crate::power::policy;
+use crate::type_c::Cached;
+use crate::type_c::comms::CommsMessage;
+use crate::type_c::event::{PortEvent, PortPending};
+use crate::{GlobalRawMutex, IntrusiveNode, broadcaster::immediate as broadcaster, error, intrusive_list, trace};
 use embassy_sync::once_lock::OnceLock;
 use embassy_sync::signal::Signal;
 use embassy_time::{Duration, with_timeout};
@@ -11,15 +18,8 @@ use embedded_usb_pd::{
     ado::Ado,
     pdinfo::{AltMode, PowerPathStatus},
     type_c::ConnectionState,
+    vdm::Svid,
 };
-
-use super::{ATTN_VDM_LEN, ControllerId, OTHER_VDM_LEN, external};
-use crate::ipc::deferred;
-use crate::power::policy;
-use crate::type_c::Cached;
-use crate::type_c::comms::CommsMessage;
-use crate::type_c::event::{PortEvent, PortPending};
-use crate::{GlobalRawMutex, IntrusiveNode, broadcaster::immediate as broadcaster, error, intrusive_list, trace};
 
 /// maximum number of data objects in a VDM
 pub const MAX_NUM_DATA_OBJECTS: usize = 7; // 7 VDOs of 4 bytes each
@@ -119,6 +119,14 @@ impl From<[u8; OTHER_VDM_LEN]> for OtherVdm {
     fn from(data: [u8; OTHER_VDM_LEN]) -> Self {
         Self { data }
     }
+}
+
+/// Rx discover mode Vdos
+#[derive(Copy, Clone, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct RxModeVdos {
+    /// Rx discover mode VDOs
+    pub vdo: [u32; DISCOVERED_MODES_LEN],
 }
 
 /// Attention Vdm data
@@ -667,6 +675,12 @@ pub trait Controller {
         &mut self,
         command: lpm::LocalCommand,
     ) -> impl Future<Output = Result<Option<lpm::ResponseData>, Error<Self::BusError>>>;
+    /// Get the Rx discover mode VDOs for the given port
+    fn get_rx_disc_mode_vdos(
+        &mut self,
+        port: LocalPortId,
+        svid: Svid,
+    ) -> impl Future<Output = Result<RxModeVdos, Error<Self::BusError>>>;
 }
 
 /// Internal context for managing PD controllers

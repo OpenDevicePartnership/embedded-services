@@ -1,16 +1,19 @@
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use embedded_services::{
-    trace,
+    error, trace,
     type_c::{
         controller::Controller,
         event::{PortPending, VdmNotification},
     },
 };
-use embedded_usb_pd::{Error, LocalPortId, PdError};
+use embedded_usb_pd::{Error, LocalPortId, PdError, vdm::Svid};
 
 use crate::wrapper::{DynPortState, message::vdm::OutputKind};
 
-use super::{ControllerWrapper, FwOfferValidator, message::vdm::Output};
+use super::{
+    ControllerWrapper, FwOfferValidator,
+    message::{OutputDiscModeVdos, vdm::Output},
+};
 
 impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, M, C, V> {
     /// Process a VDM event by retrieving the relevant VDM data from the `controller` for the appropriate `port`.
@@ -45,6 +48,51 @@ impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, 
             OutputKind::ReceivedAttn(_) => notification.set_custom_mode_attention_received(true),
         }
 
+        let mut pending = PortPending::none();
+        pending.pend_port(global_port_id.0 as usize);
+        self.registration.pd_controller.notify_ports(pending).await;
+        Ok(())
+    }
+
+    /// Process a notification event by retrieving the relevant VDO data from the `controller` for the appropriate `port`.
+    pub(super) async fn process_disc_mode_completed_event(
+        &self,
+        controller: &mut C,
+        port: LocalPortId,
+        svid: Svid,
+    ) -> Result<OutputDiscModeVdos, Error<<C as Controller>::BusError>> {
+        trace!("Processing Discover Mode Completed event on port {}", port.0);
+        match controller.get_rx_disc_mode_vdos(port, svid).await {
+            Ok(disc_mode_vdos) => Ok(OutputDiscModeVdos {
+                port,
+                vdos: disc_mode_vdos,
+            }),
+            Err(err) => {
+                error!("Failed to get discover mode VDOs on port {}", port.0);
+                Err(err)
+            }
+        }
+    }
+
+    /// Finalize a Discover Mode output by notifying the service.
+    pub(super) async fn finalize_disc_mode_completed(
+        &self,
+        state: &mut dyn DynPortState<'_>,
+        output: OutputDiscModeVdos,
+    ) -> Result<(), PdError> {
+        trace!("Finalizing Discover Mode output");
+        let port_index = output.port.0 as usize;
+        if port_index >= state.num_ports() {
+            return Err(PdError::InvalidPort.into());
+        }
+        let global_port_id = self.registration.pd_controller.lookup_global_port(output.port)?;
+        let port_index = output.port.0 as usize;
+
+        // Pend the notification
+        let port_state = &mut state.port_states_mut()[port_index];
+        port_state.pending_events.notification.set_discover_mode_completed(true);
+
+        // Pend this port
         let mut pending = PortPending::none();
         pending.pend_port(global_port_id.0 as usize);
         self.registration.pd_controller.notify_ports(pending).await;
