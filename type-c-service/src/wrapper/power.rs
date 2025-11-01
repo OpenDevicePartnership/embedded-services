@@ -12,7 +12,10 @@ use embedded_services::{
 
 use super::*;
 
-impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, M, C, V> {
+impl<'device, M: RawMutex, C: Lockable, V: FwOfferValidator> ControllerWrapper<'device, M, C, V>
+where
+    <C as Lockable>::Inner: Controller,
+{
     /// Return the power device for the given port
     pub fn get_power_device(&self, port: LocalPortId) -> Option<&policy::device::Device> {
         self.registration.power_devices.get(port.0 as usize)
@@ -23,7 +26,7 @@ impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, 
         &self,
         power: &policy::device::Device,
         status: &PortStatus,
-    ) -> Result<(), Error<<C as Controller>::BusError>> {
+    ) -> Result<(), Error<<C::Inner as Controller>::BusError>> {
         info!("Process new consumer contract");
 
         let current_state = power.state().await.kind();
@@ -74,7 +77,7 @@ impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, 
         &self,
         power: &policy::device::Device,
         status: &PortStatus,
-    ) -> Result<(), Error<<C as Controller>::BusError>> {
+    ) -> Result<(), Error<<C::Inner as Controller>::BusError>> {
         info!("Process New provider contract");
 
         let current_state = power.state().await.kind();
@@ -131,9 +134,9 @@ impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, 
     async fn process_disconnect(
         &self,
         port: LocalPortId,
-        controller: &mut C,
+        controller: &mut C::Inner,
         power: &policy::device::Device,
-    ) -> Result<(), Error<<C as Controller>::BusError>> {
+    ) -> Result<(), Error<<C::Inner as Controller>::BusError>> {
         let state = power.state().await.kind();
         if state == StateKind::ConnectedConsumer {
             info!("Port{}: Disconnect from ConnectedConsumer", port.0);
@@ -151,8 +154,8 @@ impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, 
         &self,
         port: LocalPortId,
         capability: ProviderPowerCapability,
-        _controller: &mut C,
-    ) -> Result<(), Error<C::BusError>> {
+        _controller: &mut C::Inner,
+    ) -> Result<(), Error<<C::Inner as Controller>::BusError>> {
         info!("Port{}: Connect as provider: {:#?}", port.0, capability);
         // TODO: double check explicit contract handling
         Ok(())
@@ -185,7 +188,7 @@ impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, 
     /// Returns no error because this is a top-level function
     pub(super) async fn process_power_command(
         &self,
-        controller: &mut C,
+        controller: &mut C::Inner,
         state: &mut dyn DynPortState<'_>,
         port: LocalPortId,
         command: &CommandData,

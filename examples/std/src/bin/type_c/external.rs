@@ -1,5 +1,6 @@
 //! Low-level example of external messaging with a simple type-C service
 use embassy_executor::{Executor, Spawner};
+use embassy_sync::mutex::Mutex;
 use embassy_time::Timer;
 use embedded_services::{
     GlobalRawMutex, power,
@@ -11,9 +12,9 @@ use static_cell::StaticCell;
 use std_examples::type_c::mock_controller;
 use type_c_service::wrapper::backing::Storage;
 
-const CONTROLLER0: ControllerId = ControllerId(0);
-const PORT0: GlobalPortId = GlobalPortId(0);
-const POWER0: power::policy::DeviceId = power::policy::DeviceId(0);
+const CONTROLLER0_ID: ControllerId = ControllerId(0);
+const PORT0_ID: GlobalPortId = GlobalPortId(0);
+const POWER0_ID: power::policy::DeviceId = power::policy::DeviceId(0);
 
 #[embassy_executor::task]
 async fn controller_task() {
@@ -22,16 +23,18 @@ async fn controller_task() {
 
     static STORAGE: StaticCell<Storage<1, GlobalRawMutex>> = StaticCell::new();
     let backing_storage = STORAGE.init(Storage::new(
-        CONTROLLER0,
+        CONTROLLER0_ID,
         0, // CFU component ID (unused)
-        [(PORT0, POWER0)],
+        [(PORT0_ID, POWER0_ID)],
     ));
     static REFERENCED: StaticCell<type_c_service::wrapper::backing::ReferencedStorage<1, GlobalRawMutex>> =
         StaticCell::new();
     let referenced = REFERENCED.init(backing_storage.create_referenced());
 
+    static CONTROLLER: StaticCell<Mutex<GlobalRawMutex, mock_controller::Controller>> = StaticCell::new();
+    let controller = CONTROLLER.init(Mutex::new(mock_controller::Controller::new(state)));
+
     static WRAPPER: StaticCell<mock_controller::Wrapper> = StaticCell::new();
-    let controller = mock_controller::Controller::new(state);
     let wrapper = WRAPPER.init(
         mock_controller::Wrapper::try_new(controller, referenced, crate::mock_controller::Validator)
             .expect("Failed to create wrapper"),

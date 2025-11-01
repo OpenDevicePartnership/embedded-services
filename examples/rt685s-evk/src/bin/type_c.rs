@@ -18,7 +18,8 @@ use embedded_services::{error, info};
 use embedded_usb_pd::GlobalPortId;
 use static_cell::StaticCell;
 use tps6699x::asynchronous::embassy as tps6699x;
-use type_c_service::driver::tps6699x::{self as tps6699x_driver, Tps6699xWrapper};
+use type_c_service::driver::tps6699x::{self as tps6699x_drv};
+use type_c_service::wrapper::ControllerWrapper;
 use type_c_service::wrapper::backing::{ReferencedStorage, Storage};
 
 extern crate rt685s_evk_example;
@@ -44,7 +45,8 @@ impl type_c_service::wrapper::FwOfferValidator for Validator {
 
 type BusMaster<'a> = I2cMaster<'a, Async>;
 type BusDevice<'a> = I2cDevice<'a, GlobalRawMutex, BusMaster<'a>>;
-type Wrapper<'a> = Tps6699xWrapper<'a, GlobalRawMutex, BusDevice<'a>, Validator>;
+type Tps6699xMutex<'a> = Mutex<GlobalRawMutex, tps6699x_drv::Tps6699x<'a, GlobalRawMutex, BusDevice<'a>>>;
+type Wrapper<'a> = ControllerWrapper<'a, GlobalRawMutex, Tps6699xMutex<'a>, Validator>;
 type Controller<'a> = tps6699x::controller::Controller<GlobalRawMutex, BusDevice<'a>>;
 type Interrupt<'a> = tps6699x::Interrupt<'a, GlobalRawMutex, BusDevice<'a>>;
 
@@ -121,12 +123,14 @@ async fn main(spawner: Spawner) {
     let referenced = REFERENCED.init(storage.create_referenced());
 
     info!("Spawining PD controller task");
-    static PD_CONTROLLER: StaticCell<Wrapper> = StaticCell::new();
-    let pd_controller =
-        PD_CONTROLLER.init(tps6699x_driver::tps66994(tps6699x, referenced, Default::default(), Validator).unwrap());
+    static CONTROLLER_MUTEX: StaticCell<Tps6699xMutex<'_>> = StaticCell::new();
+    let controller_mutex = CONTROLLER_MUTEX.init(Mutex::new(tps6699x_drv::tps66994(tps6699x, Default::default())));
 
-    pd_controller.register().await.unwrap();
-    spawner.must_spawn(pd_controller_task(pd_controller));
+    static WRAPPER: StaticCell<Wrapper> = StaticCell::new();
+    let wrapper = WRAPPER.init(ControllerWrapper::try_new(controller_mutex, referenced, Validator).unwrap());
+
+    wrapper.register().await.unwrap();
+    spawner.must_spawn(pd_controller_task(wrapper));
 
     // Sync our internal state with the hardware
     type_c::external::sync_controller_state(CONTROLLER0_ID).await.unwrap();

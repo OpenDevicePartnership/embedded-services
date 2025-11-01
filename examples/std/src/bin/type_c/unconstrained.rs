@@ -1,4 +1,5 @@
 use embassy_executor::{Executor, Spawner};
+use embassy_sync::mutex::Mutex;
 use embassy_time::Timer;
 use embedded_services::GlobalRawMutex;
 use embedded_services::power::policy::PowerCapability;
@@ -10,20 +11,20 @@ use static_cell::StaticCell;
 use std_examples::type_c::mock_controller;
 use type_c_service::wrapper::backing::{ReferencedStorage, Storage};
 
-const CONTROLLER0: ControllerId = ControllerId(0);
-const PORT0: GlobalPortId = GlobalPortId(0);
-const POWER0: power::policy::DeviceId = power::policy::DeviceId(0);
-const CFU0: u8 = 0x00;
+const CONTROLLER0_ID: ControllerId = ControllerId(0);
+const PORT0_ID: GlobalPortId = GlobalPortId(0);
+const POWER0_ID: power::policy::DeviceId = power::policy::DeviceId(0);
+const CFU0_ID: u8 = 0x00;
 
-const CONTROLLER1: ControllerId = ControllerId(1);
-const PORT1: GlobalPortId = GlobalPortId(1);
-const POWER1: power::policy::DeviceId = power::policy::DeviceId(1);
-const CFU1: u8 = 0x01;
+const CONTROLLER1_ID: ControllerId = ControllerId(1);
+const PORT1_ID: GlobalPortId = GlobalPortId(1);
+const POWER1_ID: power::policy::DeviceId = power::policy::DeviceId(1);
+const CFU1_ID: u8 = 0x01;
 
-const CONTROLLER2: ControllerId = ControllerId(2);
-const PORT2: GlobalPortId = GlobalPortId(2);
-const POWER2: power::policy::DeviceId = power::policy::DeviceId(2);
-const CFU2: u8 = 0x02;
+const CONTROLLER2_ID: ControllerId = ControllerId(2);
+const PORT2_ID: GlobalPortId = GlobalPortId(2);
+const POWER2_ID: power::policy::DeviceId = power::policy::DeviceId(2);
+const CFU2_ID: u8 = 0x02;
 
 const DELAY_MS: u64 = 1000;
 
@@ -45,13 +46,14 @@ async fn task(spawner: Spawner) {
     controller::init();
 
     static STORAGE: StaticCell<Storage<1, GlobalRawMutex>> = StaticCell::new();
-    let storage = STORAGE.init(Storage::new(CONTROLLER0, CFU0, [(PORT0, POWER0)]));
+    let storage = STORAGE.init(Storage::new(CONTROLLER0_ID, CFU0_ID, [(PORT0_ID, POWER0_ID)]));
     static REFERENCED: StaticCell<ReferencedStorage<1, GlobalRawMutex>> = StaticCell::new();
     let referenced = REFERENCED.init(storage.create_referenced());
 
     static STATE0: StaticCell<mock_controller::ControllerState> = StaticCell::new();
     let state0 = STATE0.init(mock_controller::ControllerState::new());
-    let controller0 = mock_controller::Controller::new(state0);
+    static CONTROLLER0: StaticCell<Mutex<GlobalRawMutex, mock_controller::Controller>> = StaticCell::new();
+    let controller0 = CONTROLLER0.init(Mutex::new(mock_controller::Controller::new(state0)));
     static WRAPPER0: StaticCell<mock_controller::Wrapper> = StaticCell::new();
     let wrapper0 = WRAPPER0.init(
         mock_controller::Wrapper::try_new(controller0, referenced, crate::mock_controller::Validator)
@@ -59,13 +61,14 @@ async fn task(spawner: Spawner) {
     );
 
     static STORAGE1: StaticCell<Storage<1, GlobalRawMutex>> = StaticCell::new();
-    let storage1 = STORAGE1.init(Storage::new(CONTROLLER1, CFU1, [(PORT1, POWER1)]));
+    let storage1 = STORAGE1.init(Storage::new(CONTROLLER1_ID, CFU1_ID, [(PORT1_ID, POWER1_ID)]));
     static REFERENCED1: StaticCell<ReferencedStorage<1, GlobalRawMutex>> = StaticCell::new();
     let referenced1 = REFERENCED1.init(storage1.create_referenced());
 
     static STATE1: StaticCell<mock_controller::ControllerState> = StaticCell::new();
     let state1 = STATE1.init(mock_controller::ControllerState::new());
-    let controller1 = mock_controller::Controller::new(state1);
+    static CONTROLLER1: StaticCell<Mutex<GlobalRawMutex, mock_controller::Controller>> = StaticCell::new();
+    let controller1 = CONTROLLER1.init(Mutex::new(mock_controller::Controller::new(state1)));
     static WRAPPER1: StaticCell<mock_controller::Wrapper> = StaticCell::new();
     let wrapper1 = WRAPPER1.init(
         mock_controller::Wrapper::try_new(controller1, referenced1, crate::mock_controller::Validator)
@@ -73,13 +76,14 @@ async fn task(spawner: Spawner) {
     );
 
     static STORAGE2: StaticCell<Storage<1, GlobalRawMutex>> = StaticCell::new();
-    let storage2 = STORAGE2.init(Storage::new(CONTROLLER2, CFU2, [(PORT2, POWER2)]));
+    let storage2 = STORAGE2.init(Storage::new(CONTROLLER2_ID, CFU2_ID, [(PORT2_ID, POWER2_ID)]));
     static REFERENCED2: StaticCell<ReferencedStorage<1, GlobalRawMutex>> = StaticCell::new();
     let referenced2 = REFERENCED2.init(storage2.create_referenced());
 
     static STATE2: StaticCell<mock_controller::ControllerState> = StaticCell::new();
     let state2 = STATE2.init(mock_controller::ControllerState::new());
-    let controller2 = mock_controller::Controller::new(state2);
+    static CONTROLLER2: StaticCell<Mutex<GlobalRawMutex, mock_controller::Controller>> = StaticCell::new();
+    let controller2 = CONTROLLER2.init(Mutex::new(mock_controller::Controller::new(state2)));
     static WRAPPER2: StaticCell<mock_controller::Wrapper> = StaticCell::new();
     let wrapper2 = WRAPPER2.init(
         mock_controller::Wrapper::try_new(controller2, referenced2, crate::mock_controller::Validator)

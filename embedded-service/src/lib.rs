@@ -23,7 +23,7 @@ pub mod init;
 pub mod ipc;
 pub mod keyboard;
 pub mod power;
-pub mod transformers;
+pub mod sync;
 pub mod type_c;
 
 /// Global Mutex type, ThreadModeRawMutex is used in a microcontroller context, whereas CriticalSectionRawMutex is used

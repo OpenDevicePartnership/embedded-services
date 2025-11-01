@@ -8,10 +8,10 @@ use embedded_usb_pd::{GlobalPortId, PdError as Error};
 use log::*;
 use static_cell::StaticCell;
 
-const CONTROLLER0: ControllerId = ControllerId(0);
-const PORT0: GlobalPortId = GlobalPortId(0);
-const PORT1: GlobalPortId = GlobalPortId(1);
-const POWER0: power::policy::DeviceId = power::policy::DeviceId(0);
+const CONTROLLER0_ID: ControllerId = ControllerId(0);
+const PORT0_ID: GlobalPortId = GlobalPortId(0);
+const PORT1_ID: GlobalPortId = GlobalPortId(1);
+const POWER0_ID: power::policy::DeviceId = power::policy::DeviceId(0);
 
 mod test_controller {
     use embedded_services::type_c::controller::{ControllerStatus, PortStatus};
@@ -127,9 +127,9 @@ mod test_controller {
 async fn controller_task() {
     static CONTROLLER: OnceLock<test_controller::Controller> = OnceLock::new();
 
-    static PORTS: [GlobalPortId; 2] = [PORT0, PORT1];
+    static PORTS: [GlobalPortId; 2] = [PORT0_ID, PORT1_ID];
 
-    let controller = CONTROLLER.get_or_init(|| test_controller::Controller::new(CONTROLLER0, POWER0, &PORTS));
+    let controller = CONTROLLER.get_or_init(|| test_controller::Controller::new(CONTROLLER0_ID, POWER0_ID, &PORTS));
     controller::register_controller(controller).await.unwrap();
 
     loop {
@@ -150,31 +150,15 @@ async fn task(spawner: Spawner) {
 
     let context = controller::ContextToken::create().unwrap();
 
-    context.reset_controller(CONTROLLER0).await.unwrap();
-    info!("Reset controller done");
-    context
-        .execute_ucsi_command(lpm::GlobalCommand::new(PORT0, lpm::CommandData::ConnectorReset))
-        .await
-        .unwrap()
-        .unwrap();
+    context.reset_controller(CONTROLLER0_ID).await.unwrap();
 
-    info!("Reset port 0 done");
-
-    context
-        .execute_ucsi_command(lpm::GlobalCommand::new(PORT1, lpm::CommandData::ConnectorReset))
-        .await
-        .unwrap()
-        .unwrap();
-
-    info!("Reset port 1 done");
-
-    let status = context.get_controller_status(CONTROLLER0).await.unwrap();
+    let status = context.get_controller_status(CONTROLLER0_ID).await.unwrap();
     info!("Controller 0 status: {status:#?}");
 
-    let status = context.get_port_status(PORT0, Cached(true)).await.unwrap();
+    let status = context.get_port_status(PORT0_ID, Cached(true)).await.unwrap();
     info!("Port 0 status: {status:#?}");
 
-    let status = context.get_port_status(PORT1, Cached(true)).await.unwrap();
+    let status = context.get_port_status(PORT1_ID, Cached(true)).await.unwrap();
     info!("Port 1 status: {status:#?}");
 }
 

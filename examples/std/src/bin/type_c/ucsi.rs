@@ -1,4 +1,5 @@
 use embassy_executor::{Executor, Spawner};
+use embassy_sync::mutex::Mutex;
 use embedded_services::GlobalRawMutex;
 use embedded_services::power::policy::{self, PowerCapability};
 use embedded_services::type_c::ControllerId;
@@ -15,25 +16,26 @@ use std_examples::type_c::mock_controller;
 use type_c_service::service::config::Config;
 use type_c_service::wrapper::backing::{ReferencedStorage, Storage};
 
-const CONTROLLER0: ControllerId = ControllerId(0);
-const CONTROLLER1: ControllerId = ControllerId(1);
-const PORT0: GlobalPortId = GlobalPortId(0);
-const POWER0: policy::DeviceId = policy::DeviceId(0);
-const PORT1: GlobalPortId = GlobalPortId(1);
-const POWER1: policy::DeviceId = policy::DeviceId(1);
-const CFU0: u8 = 0x00;
-const CFU1: u8 = 0x01;
+const CONTROLLER0_ID: ControllerId = ControllerId(0);
+const CONTROLLER1_ID: ControllerId = ControllerId(1);
+const PORT0_ID: GlobalPortId = GlobalPortId(0);
+const POWER0_ID: policy::DeviceId = policy::DeviceId(0);
+const PORT1_ID: GlobalPortId = GlobalPortId(1);
+const POWER1_ID: policy::DeviceId = policy::DeviceId(1);
+const CFU0_ID: u8 = 0x00;
+const CFU1_ID: u8 = 0x01;
 
 #[embassy_executor::task]
 async fn opm_task(spawner: Spawner) {
     static STORAGE0: StaticCell<Storage<1, GlobalRawMutex>> = StaticCell::new();
-    let storage0 = STORAGE0.init(Storage::new(CONTROLLER0, CFU0, [(PORT0, POWER0)]));
+    let storage0 = STORAGE0.init(Storage::new(CONTROLLER0_ID, CFU0_ID, [(PORT0_ID, POWER0_ID)]));
     static REFERENCED0: StaticCell<ReferencedStorage<1, GlobalRawMutex>> = StaticCell::new();
     let referenced0 = REFERENCED0.init(storage0.create_referenced());
 
     static STATE0: StaticCell<mock_controller::ControllerState> = StaticCell::new();
     let state0 = STATE0.init(mock_controller::ControllerState::new());
-    let controller0 = mock_controller::Controller::new(state0);
+    static CONTROLLER0: StaticCell<Mutex<GlobalRawMutex, mock_controller::Controller>> = StaticCell::new();
+    let controller0 = CONTROLLER0.init(Mutex::new(mock_controller::Controller::new(state0)));
     static WRAPPER0: StaticCell<mock_controller::Wrapper> = StaticCell::new();
     let wrapper0 = WRAPPER0.init(
         mock_controller::Wrapper::try_new(controller0, referenced0, mock_controller::Validator)
@@ -42,13 +44,14 @@ async fn opm_task(spawner: Spawner) {
     spawner.must_spawn(wrapper_task(wrapper0));
 
     static STORAGE1: StaticCell<Storage<1, GlobalRawMutex>> = StaticCell::new();
-    let storage1 = STORAGE1.init(Storage::new(CONTROLLER1, CFU1, [(PORT1, POWER1)]));
+    let storage1 = STORAGE1.init(Storage::new(CONTROLLER1_ID, CFU1_ID, [(PORT1_ID, POWER1_ID)]));
     static REFERENCED1: StaticCell<ReferencedStorage<1, GlobalRawMutex>> = StaticCell::new();
     let referenced1 = REFERENCED1.init(storage1.create_referenced());
 
     static STATE1: StaticCell<mock_controller::ControllerState> = StaticCell::new();
     let state1 = STATE1.init(mock_controller::ControllerState::new());
-    let controller1 = mock_controller::Controller::new(state1);
+    static CONTROLLER1: StaticCell<Mutex<GlobalRawMutex, mock_controller::Controller>> = StaticCell::new();
+    let controller1 = CONTROLLER1.init(Mutex::new(mock_controller::Controller::new(state1)));
     static WRAPPER1: StaticCell<mock_controller::Wrapper> = StaticCell::new();
     let wrapper1 = WRAPPER1.init(
         mock_controller::Wrapper::try_new(controller1, referenced1, mock_controller::Validator)

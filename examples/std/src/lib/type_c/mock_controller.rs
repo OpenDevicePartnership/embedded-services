@@ -336,4 +336,5 @@ impl type_c_service::wrapper::FwOfferValidator for Validator {
     }
 }
 
-pub type Wrapper<'a> = type_c_service::wrapper::ControllerWrapper<'a, GlobalRawMutex, Controller<'a>, Validator>;
+pub type Wrapper<'a> =
+    type_c_service::wrapper::ControllerWrapper<'a, GlobalRawMutex, Mutex<GlobalRawMutex, Controller<'a>>, Validator>;
