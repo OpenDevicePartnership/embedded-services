@@ -1,8 +1,8 @@
 use embassy_executor::{Executor, Spawner};
 use embassy_sync::once_lock::OnceLock;
 use embassy_time::Timer;
-use embedded_services::power;
 use embedded_services::type_c::{Cached, ControllerId, controller};
+use embedded_services::{IntrusiveList, power};
 use embedded_usb_pd::ucsi::lpm;
 use embedded_usb_pd::{GlobalPortId, PdError as Error};
 use log::*;
@@ -124,13 +124,15 @@ mod test_controller {
 }
 
 #[embassy_executor::task]
-async fn controller_task() {
+async fn controller_task(controller_list: &'static IntrusiveList) {
     static CONTROLLER: OnceLock<test_controller::Controller> = OnceLock::new();
 
     static PORTS: [GlobalPortId; 2] = [PORT0, PORT1];
 
     let controller = CONTROLLER.get_or_init(|| test_controller::Controller::new(CONTROLLER0, POWER0, &PORTS));
-    controller::register_controller(controller).await.unwrap();
+    controller::register_controller(controller_list, controller)
+        .await
+        .unwrap();
 
     loop {
         controller.process().await;
@@ -141,19 +143,24 @@ async fn controller_task() {
 async fn task(spawner: Spawner) {
     embedded_services::init().await;
 
-    controller::init();
+    static CONTROLLER_LIST: StaticCell<IntrusiveList> = StaticCell::new();
+
+    let controller_list = CONTROLLER_LIST.init(IntrusiveList::new());
 
     info!("Starting controller task");
-    spawner.must_spawn(controller_task());
+    spawner.must_spawn(controller_task(controller_list));
     // Wait for controller to be registered
     Timer::after_secs(1).await;
 
-    let context = controller::ContextToken::create().unwrap();
+    let context = controller::Context::new();
 
-    context.reset_controller(CONTROLLER0).await.unwrap();
+    context.reset_controller(controller_list, CONTROLLER0).await.unwrap();
     info!("Reset controller done");
     context
-        .execute_ucsi_command(lpm::GlobalCommand::new(PORT0, lpm::CommandData::ConnectorReset))
+        .execute_ucsi_command(
+            controller_list,
+            lpm::GlobalCommand::new(PORT0, lpm::CommandData::ConnectorReset),
+        )
         .await
         .unwrap()
         .unwrap();
@@ -161,20 +168,32 @@ async fn task(spawner: Spawner) {
     info!("Reset port 0 done");
 
     context
-        .execute_ucsi_command(lpm::GlobalCommand::new(PORT1, lpm::CommandData::ConnectorReset))
+        .execute_ucsi_command(
+            controller_list,
+            lpm::GlobalCommand::new(PORT1, lpm::CommandData::ConnectorReset),
+        )
         .await
         .unwrap()
         .unwrap();
 
     info!("Reset port 1 done");
 
-    let status = context.get_controller_status(CONTROLLER0).await.unwrap();
+    let status = context
+        .get_controller_status(controller_list, CONTROLLER0)
+        .await
+        .unwrap();
     info!("Controller 0 status: {status:#?}");
 
-    let status = context.get_port_status(PORT0, Cached(true)).await.unwrap();
+    let status = context
+        .get_port_status(controller_list, PORT0, Cached(true))
+        .await
+        .unwrap();
     info!("Port 0 status: {status:#?}");
 
-    let status = context.get_port_status(PORT1, Cached(true)).await.unwrap();
+    let status = context
+        .get_port_status(controller_list, PORT1, Cached(true))
+        .await
+        .unwrap();
     info!("Port 1 status: {status:#?}");
 }
 

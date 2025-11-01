@@ -154,6 +154,7 @@ pub trait DynPortState<'a> {
 
 /// Service registration objects
 pub struct Registration<'a> {
+    pub context: &'a embedded_services::type_c::controller::Context,
     pub pd_controller: &'a embedded_services::type_c::controller::Device<'a>,
     pub cfu_device: &'a embedded_services::cfu::component::CfuDevice,
     pub power_devices: &'a [embedded_services::power::policy::device::Device],
@@ -171,6 +172,7 @@ const MAX_BUFFERED_PD_ALERTS: usize = 4;
 /// Base storage
 pub struct Storage<const N: usize, M: RawMutex> {
     // Registration-related
+    context: &'static embedded_services::type_c::controller::Context,
     controller_id: ControllerId,
     pd_ports: [GlobalPortId; N],
     cfu_device: embedded_services::cfu::component::CfuDevice,
@@ -182,11 +184,13 @@ pub struct Storage<const N: usize, M: RawMutex> {
 
 impl<const N: usize, M: RawMutex> Storage<N, M> {
     pub fn new(
+        context: &'static embedded_services::type_c::controller::Context,
         controller_id: ControllerId,
         cfu_id: ComponentId,
         ports: [(GlobalPortId, power::policy::DeviceId); N],
     ) -> Self {
         Self {
+            context,
             controller_id,
             pd_ports: ports.map(|(port, _)| port),
             cfu_device: embedded_services::cfu::component::CfuDevice::new(cfu_id),
@@ -231,6 +235,7 @@ impl<'a, const N: usize, M: RawMutex> ReferencedStorage<'a, N, M> {
     {
         self.state.try_borrow_mut().ok().map(|state| Backing {
             registration: Registration {
+                context: self.storage.context,
                 pd_controller: &self.pd_controller,
                 cfu_device: &self.storage.cfu_device,
                 power_devices: &self.storage.power_devices,

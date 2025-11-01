@@ -36,10 +36,10 @@ impl<'a> Service<'a> {
     }
 
     /// PPM get capabilities implementation
-    async fn process_get_capabilities(&self) -> ppm::ResponseData {
+    async fn process_get_capabilities(&self, controllers: &intrusive_list::IntrusiveList) -> ppm::ResponseData {
         debug!("Get PPM capabilities: {:?}", self.config.ucsi_capabilities);
         let mut capabilities = self.config.ucsi_capabilities;
-        capabilities.num_connectors = external::get_num_ports().await as u8;
+        capabilities.num_connectors = external::get_num_ports(controllers).await as u8;
         ppm::ResponseData::GetCapability(capabilities)
     }
 
@@ -47,6 +47,7 @@ impl<'a> Service<'a> {
         &self,
         state: &mut State,
         command: &ucsi::ppm::Command,
+        controllers: &intrusive_list::IntrusiveList,
     ) -> Result<Option<ppm::ResponseData>, PdError> {
         match command {
             ppm::Command::SetNotificationEnable(enable) => {
@@ -54,7 +55,7 @@ impl<'a> Service<'a> {
                     .await;
                 Ok(None)
             }
-            ppm::Command::GetCapability => Ok(Some(self.process_get_capabilities().await)),
+            ppm::Command::GetCapability => Ok(Some(self.process_get_capabilities(controllers).await)),
             _ => Ok(None), // Other commands are currently no-ops
         }
     }
@@ -62,6 +63,7 @@ impl<'a> Service<'a> {
     async fn process_lpm_command(
         &self,
         command: &ucsi::lpm::GlobalCommand,
+        controllers: &intrusive_list::IntrusiveList,
     ) -> Result<Option<lpm::ResponseData>, PdError> {
         debug!("Processing LPM command: {:?}", command);
         if matches!(command.operation(), lpm::CommandData::GetConnectorCapability) {
@@ -69,10 +71,10 @@ impl<'a> Service<'a> {
             if let Some(capabilities) = &self.config.ucsi_port_capabilities {
                 Ok(Some(lpm::ResponseData::GetConnectorCapability(*capabilities)))
             } else {
-                self.context.execute_ucsi_command(*command).await
+                self.context.execute_ucsi_command(controllers, *command).await
             }
         } else {
-            self.context.execute_ucsi_command(*command).await
+            self.context.execute_ucsi_command(controllers, *command).await
         }
     }
 
@@ -111,7 +113,11 @@ impl<'a> Service<'a> {
     }
 
     /// Process an external UCSI command
-    pub(super) async fn process_ucsi_command(&self, command: &GlobalCommand) -> external::UcsiResponse {
+    pub(super) async fn process_ucsi_command(
+        &self,
+        controllers: &intrusive_list::IntrusiveList,
+        command: &GlobalCommand,
+    ) -> external::UcsiResponse {
         let state = &mut self.state.lock().await.ucsi;
         let mut next_input = Some(PpmInput::Command(command));
         let mut response: external::UcsiResponse = external::UcsiResponse {
@@ -151,13 +157,13 @@ impl<'a> Service<'a> {
                         match command {
                             ucsi::GlobalCommand::PpmCommand(ppm_command) => {
                                 response.data = self
-                                    .process_ppm_command(state, ppm_command)
+                                    .process_ppm_command(state, ppm_command, controllers)
                                     .await
                                     .map(|inner| inner.map(ResponseData::Ppm));
                             }
                             ucsi::GlobalCommand::LpmCommand(lpm_command) => {
                                 response.data = self
-                                    .process_lpm_command(lpm_command)
+                                    .process_lpm_command(lpm_command, controllers)
                                     .await
                                     .map(|inner| inner.map(ResponseData::Lpm));
                             }
