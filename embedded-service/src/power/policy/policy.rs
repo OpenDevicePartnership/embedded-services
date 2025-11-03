@@ -2,7 +2,9 @@
 
 use crate::GlobalRawMutex;
 use crate::broadcaster::immediate as broadcaster;
+use crate::power::policy::device::DeviceTrait;
 use crate::power::policy::{CommsMessage, ConsumerPowerCapability, ProviderPowerCapability};
+use crate::sync::Lockable;
 use embassy_sync::channel::Channel;
 
 use super::charger::ChargerResponse;
@@ -99,14 +101,47 @@ impl<const POLICY_CHANNEL_SIZE: usize> Context<POLICY_CHANNEL_SIZE> {
         }
     }
 
-    /// Register a device with the power policy service
-    pub fn register_device(
-        &self,
-        device: &'static impl device::DeviceContainer<POLICY_CHANNEL_SIZE>,
-    ) -> Result<(), intrusive_list::Error> {
-        let device = device.get_power_policy_device();
-        if self.get_device(device.id()).is_ok() {
-            return Err(intrusive_list::Error::NodeAlreadyInList);
+
+/// Init power policy service
+pub fn init() {}
+
+/// Register a device with the power policy service
+pub async fn register_device<C: Lockable + 'static>(
+    device: &'static impl device::DeviceContainer<C>,
+) -> Result<(), intrusive_list::Error>
+where
+    C::Inner: DeviceTrait,
+{
+    let device = device.get_power_policy_device();
+    if get_device::<C>(device.id()).await.is_some() {
+        return Err(intrusive_list::Error::NodeAlreadyInList);
+    }
+
+    CONTEXT.devices.push(device)
+}
+
+/// Register a charger with the power policy service
+pub fn register_charger(device: &'static impl charger::ChargerContainer) -> Result<(), intrusive_list::Error> {
+    let device = device.get_charger();
+    if get_charger(device.id()).is_some() {
+        return Err(intrusive_list::Error::NodeAlreadyInList);
+    }
+
+    CONTEXT.chargers.push(device)
+}
+
+/// Find a device by its ID
+async fn get_device<C: Lockable + 'static>(id: DeviceId) -> Option<&'static device::Device<'static, C>>
+where
+    C::Inner: DeviceTrait,
+{
+    for device in &CONTEXT.get().await.devices {
+        if let Some(data) = device.data::<device::Device<'static, C>>() {
+            if data.id() == id {
+                return Some(data);
+            }
+        } else {
+            error!("Non-device located in devices list");
         }
 
         self.power_devices.push(device)
@@ -228,7 +263,18 @@ impl<const POLICY_CHANNEL_SIZE: usize> Context<POLICY_CHANNEL_SIZE> {
 
     /// Send a response to a power policy request
     pub async fn send_response(&self, response: Result<ResponseData, Error>) {
-        self.policy_response.send(response).await
+        CONTEXT.policy_response.send(response).await
+    }
+
+    /// Get a device by its ID
+    pub async fn get_device<C: Lockable + 'static>(
+        &self,
+        id: DeviceId,
+    ) -> Result<&'static device::Device<'static, C>, Error>
+    where
+        C::Inner: DeviceTrait,
+    {
+        get_device(id).await.ok_or(Error::InvalidDevice)
     }
 
     /// Provides access to the device list
@@ -242,19 +288,25 @@ impl<const POLICY_CHANNEL_SIZE: usize> Context<POLICY_CHANNEL_SIZE> {
     }
 
     /// Try to provide access to the actions available to the policy for the given state and device
-    pub async fn try_policy_action<S: action::Kind>(
+    pub async fn try_policy_action<C: Lockable + 'static, S: action::Kind>(
         &self,
         id: DeviceId,
-    ) -> Result<action::policy::Policy<'_, S, POLICY_CHANNEL_SIZE>, Error> {
-        self.get_device(id)?.try_policy_action().await
+    ) -> Result<action::policy::Policy<'static, C, S>, Error>
+    where
+        C::Inner: DeviceTrait,
+    {
+        self.get_device(id).await?.try_policy_action().await
     }
 
     /// Provide access to current policy actions
-    pub async fn policy_action(
+    pub async fn policy_action<C: Lockable + 'static>(
         &self,
         id: DeviceId,
-    ) -> Result<action::policy::AnyState<'_, POLICY_CHANNEL_SIZE>, Error> {
-        Ok(self.get_device(id)?.policy_action().await)
+    ) -> Result<action::policy::AnyState<'static, C>, Error>
+    where
+        C::Inner: DeviceTrait,
+    {
+        Ok(self.get_device(id).await?.policy_action().await)
     }
 
     /// Broadcast a power policy message to all subscribers
