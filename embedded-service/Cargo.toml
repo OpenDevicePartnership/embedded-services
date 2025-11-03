@@ -21,6 +21,7 @@ defmt = { workspace = true, optional = true }
 document-features.workspace = true
 embassy-sync.workspace = true
 embassy-time.workspace = true
+embassy-futures.workspace = true
 embedded-batteries-async.workspace = true
 embedded-cfu-protocol.workspace = true
 embedded-hal-async.workspace = true
@@ -49,7 +50,6 @@ cortex-m.workspace = true
 
 [dev-dependencies]
 critical-section = { workspace = true, features = ["std"] }
-embassy-futures.workspace = true
 embassy-sync = { workspace = true, features = ["std"] }
 embassy-time = { workspace = true, features = ["std", "generic-queue-8"] }
 embassy-time-driver = { workspace = true }

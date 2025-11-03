@@ -198,19 +198,11 @@ where
             }
 
             state.current_consumer_state = None;
+            let consumer_device = self.context.get_device(current_consumer.device_id).await?;
             // Disconnect the current consumer if needed
-            if let Ok(consumer) = self
-                .context
-                .try_policy_action::<action::ConnectedConsumer>(current_consumer.device_id)
-                .await
-            {
-                info!(
-                    "Device {}, disconnecting current consumer",
-                    current_consumer.device_id.0
-                );
-                // disconnect current consumer and set idle
-                consumer.disconnect().await?;
-            }
+            info!("Device{}: Disconnecting current consumer", current_consumer.device_id.0);
+            // disconnect current consumer and set idle
+            consumer_device.device.lock().await.disconnect().await?;
 
             // If no chargers are registered, they won't receive the new power capability.
             // Also, if chargers return UnpoweredAck, that means the charger isn't powered.
@@ -227,28 +219,26 @@ where
         }
 
         info!("Device {}, connecting new consumer", new_consumer.device_id.0);
-        if let Ok(idle) = self
-            .context
-            .try_policy_action::<action::Idle>(new_consumer.device_id)
-            .await
-        {
-            idle.connect_consumer(new_consumer.consumer_power_capability).await?;
-            self.post_consumer_connected(state, new_consumer).await?;
-        } else if let Ok(provider) = self
-            .context
-            .try_policy_action::<action::ConnectedProvider>(new_consumer.device_id)
-            .await
-        {
-            provider
+        let device = self.context.get_device(new_consumer.device_id).await?;
+        let device_state = device.state().await;
+
+        if matches!(device_state, device::State::Idle | device::State::ConnectedConsumer(_)) {
+            device
+                .device
+                .lock()
+                .await
                 .connect_consumer(new_consumer.consumer_power_capability)
                 .await?;
-            state.current_consumer_state = Some(new_consumer);
             self.post_consumer_connected(state, new_consumer).await?;
+            Ok(())
         } else {
-            error!("Error obtaining device in idle state");
+            error!(
+                "Device{}: Not ready to connect consumer, state: {:#?}",
+                device.id().0,
+                device_state
+            );
+            Err(Error::InvalidState(device::StateKind::Idle, device_state.kind()))
         }
-
-        Ok(())
     }
 
     /// Determines and connects the best external power

@@ -2,6 +2,7 @@
 <<<<<<< HEAD
 =======
 use core::marker::PhantomData;
+use core::pin::pin;
 use core::sync::atomic::{AtomicBool, Ordering};
 >>>>>>> 34701dd (Add device and receiver arguments to context token)
 
@@ -9,11 +10,12 @@ use crate::broadcaster::immediate as broadcaster;
 use crate::power::policy::device::DeviceTrait;
 use crate::power::policy::{CommsMessage, ConsumerPowerCapability, ProviderPowerCapability};
 use crate::sync::Lockable;
+use embassy_futures::select::select_slice;
 use embassy_sync::once_lock::OnceLock;
 
 use super::charger::ChargerResponse;
 use super::device::{self};
-use super::{DeviceId, Error, action, charger};
+use super::{DeviceId, Error, charger};
 use crate::power::policy::charger::ChargerResponseData::Ack;
 use crate::{error, intrusive_list};
 
@@ -26,7 +28,7 @@ pub enum RequestData {
     /// Notify that available power for consumption has changed
     UpdatedConsumerCapability(Option<ConsumerPowerCapability>),
     /// Request the given amount of power to provider
-    RequestedProviderCapability(ProviderPowerCapability),
+    RequestedProviderCapability(Option<ProviderPowerCapability>),
     /// Notify that a device cannot consume or provide power anymore
     Disconnected,
     /// Notify that a device has detached
@@ -93,12 +95,12 @@ pub trait EventSender {
     }
 
     /// Wrapper to simplify attempting to send this event
-    fn try_on_request_provider_capability(&mut self, cap: ProviderPowerCapability) -> Option<()> {
+    fn try_on_request_provider_capability(&mut self, cap: Option<ProviderPowerCapability>) -> Option<()> {
         self.try_send(RequestData::RequestedProviderCapability(cap))
     }
 
     /// Wrapper to simplify sending this event
-    fn on_request_provider_capability(&mut self, cap: ProviderPowerCapability) -> impl Future<Output = ()> {
+    fn on_request_provider_capability(&mut self, cap: Option<ProviderPowerCapability>) -> impl Future<Output = ()> {
         self.send(RequestData::RequestedProviderCapability(cap))
     }
 
@@ -126,9 +128,9 @@ pub trait EventSender {
 /// Receiver trait used by a policy implementation
 pub trait EventReceiver {
     /// Attempt to get a pending event
-    fn try_next(&mut self) -> Option<RequestData>;
+    fn try_next(&self) -> Option<RequestData>;
     /// Wait for the next event
-    fn wait_next(&mut self) -> impl Future<Output = RequestData>;
+    fn wait_next(&self) -> impl Future<Output = RequestData>;
 }
 
 /// Power policy context
@@ -382,22 +384,30 @@ where
         &self.charger_devices
     }
 
-    /// Try to provide access to the actions available to the policy for the given state and device
-    pub async fn try_policy_action<S: action::Kind>(
-        &self,
-        id: DeviceId,
-    ) -> Result<action::policy::Policy<'static, D, R, S>, Error> {
-        self.get_device(id).await?.try_policy_action().await
-    }
-
-    /// Provide access to current policy actions
-    pub async fn policy_action(&self, id: DeviceId) -> Result<action::policy::AnyState<'static, D, R>, Error> {
-        Ok(self.get_device(id).await?.policy_action().await)
-    }
-
     /// Broadcast a power policy message to all subscribers
     pub async fn broadcast_message(&self, message: CommsMessage) {
         self.broadcaster.broadcast(message).await;
+    }
+
+    /// Get the next pending device event
+    pub async fn wait_request(&self) -> Request {
+        let mut futures = heapless::Vec::<_, 16>::new();
+        for device in self.devices().await.iter_only::<device::Device<'static, D, R>>() {
+            // TODO: check this at compile time
+            let _ = futures.push(async { device.receiver.wait_next().await });
+        }
+
+        let (event, index) = select_slice(pin!(&mut futures)).await;
+        let device = self
+            .devices()
+            .await
+            .iter_only::<device::Device<'static, D, R>>()
+            .nth(index)
+            .unwrap();
+        Request {
+            id: device.id(),
+            data: event,
+        }
     }
 }
 

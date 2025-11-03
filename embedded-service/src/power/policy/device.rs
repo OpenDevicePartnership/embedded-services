@@ -1,9 +1,7 @@
 //! Device struct and methods
-use core::ops::DerefMut;
-
 use embassy_sync::mutex::Mutex;
 
-use super::{DeviceId, Error, action};
+use super::{DeviceId, Error};
 use crate::power::policy::policy::EventReceiver;
 use crate::power::policy::{ConsumerPowerCapability, ProviderPowerCapability};
 use crate::sync::Lockable;
@@ -52,7 +50,7 @@ impl State {
 /// Internal device state for power policy
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-struct InternalState {
+pub struct InternalState {
     /// Current state of the device
     pub state: State,
     /// Current consumer capability
@@ -131,7 +129,7 @@ where
     /// Device ID
     id: DeviceId,
     /// Current state of the device
-    state: Mutex<GlobalRawMutex, InternalState>,
+    pub state: Mutex<GlobalRawMutex, InternalState>,
     /// Reference to hardware
     pub device: &'a C,
     /// Event receiver
@@ -194,36 +192,6 @@ where
     /// Returns true if the device is currently providing power
     pub async fn is_provider(&self) -> bool {
         self.state().await.kind() == StateKind::ConnectedProvider
-    }
-
-    /// Internal function to set device state
-    pub(super) async fn set_state(&self, new_state: State) {
-        let mut lock = self.state.lock().await;
-        let state = lock.deref_mut();
-        state.state = new_state;
-    }
-
-    /// Try to provide access to the policy actions for the given state
-    /// Implemented here for lifetime reasons
-    pub(super) async fn try_policy_action<S: action::Kind>(
-        &self,
-    ) -> Result<action::policy::Policy<'_, C, R, S>, Error> {
-        let state = self.state().await.kind();
-        if S::kind() != state {
-            return Err(Error::InvalidState(S::kind(), state));
-        }
-        Ok(action::policy::Policy::new(self))
-    }
-
-    /// Provide access to the current policy actions
-    /// Implemented here for lifetime reasons
-    pub(super) async fn policy_action(&self) -> action::policy::AnyState<'_, C, R> {
-        match self.state().await.kind() {
-                action::policy::AnyState::ConnectedProvider(action::policy::Policy::new(self))
-            StateKind::ConnectedConsumer => {
-                action::policy::AnyState::ConnectedConsumer(action::policy::Policy::new(self))
-            }
-        }
     }
 }
 

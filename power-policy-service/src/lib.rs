@@ -2,9 +2,9 @@
 use core::ops::DerefMut;
 use embassy_sync::mutex::Mutex;
 use embedded_services::GlobalRawMutex;
-use embedded_services::power::policy::device::{Device, DeviceTrait};
+use embedded_services::power::policy::device::{Device, DeviceTrait, State};
 use embedded_services::power::policy::policy::EventReceiver;
-use embedded_services::power::policy::{action, policy, *};
+use embedded_services::power::policy::{policy, *};
 use embedded_services::sync::Lockable;
 use embedded_services::{comms, error, info};
 
@@ -70,14 +70,34 @@ where
         Ok(())
     }
 
-    async fn process_notify_consumer_power_capability(&self) -> Result<(), Error> {
-        self.update_current_consumer().await?;
-        Ok(())
+    async fn process_notify_consumer_power_capability(
+        &self,
+        device: DeviceId,
+        capability: Option<ConsumerPowerCapability>,
+    ) -> Result<(), Error> {
+        let device = self.context.get_device(device).await?;
+        match device.state().await {
+            State::Idle | State::ConnectedConsumer(_) | State::ConnectedProvider(_) => {
+                device.state.lock().await.consumer_capability = capability;
+                self.update_current_consumer().await
+            }
+            State::Detached => device.device.lock().await.disconnect().await,
+        }
     }
 
-    async fn process_request_provider_power_capabilities(&self, device: DeviceId) -> Result<(), Error> {
-        self.connect_provider(device).await;
-        Ok(())
+    async fn process_request_provider_power_capabilities(
+        &self,
+        device: DeviceId,
+        capability: Option<ProviderPowerCapability>,
+    ) -> Result<(), Error> {
+        let device = self.context.get_device(device).await?;
+        match device.state().await {
+            State::Idle | State::ConnectedConsumer(_) | State::ConnectedProvider(_) => {
+                device.state.lock().await.requested_provider_capability = capability;
+                self.connect_provider(device.id()).await
+            }
+            State::Detached => device.device.lock().await.disconnect().await,
+        }
     }
 
     async fn process_notify_disconnect(&self, device: &device::Device<POLICY_CHANNEL_SIZE>) -> Result<(), Error> {
@@ -143,7 +163,8 @@ where
                     device.id().0,
                     capability,
                 );
-                self.process_notify_consumer_power_capability().await
+                self.process_notify_consumer_power_capability(device.id(), capability)
+                    .await
             }
             policy::RequestData::RequestedProviderCapability(capability) => {
                 info!(
@@ -151,7 +172,8 @@ where
                     device.id().0,
                     capability,
                 );
-                self.process_request_provider_power_capabilities(device.id()).await
+                self.process_request_provider_power_capabilities(device.id(), capability)
+                    .await
             }
             policy::RequestData::Disconnected => {
                 info!("Received notify disconnect from device {}", device.id().0);

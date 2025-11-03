@@ -30,21 +30,15 @@ where
     D::Inner: DeviceTrait,
 {
     /// Attempt to connect the requester as a provider
-    pub(super) async fn connect_provider(&self, requester_id: DeviceId) {
+    pub(super) async fn connect_provider(&self, requester_id: DeviceId) -> Result<(), Error> {
         trace!("Device{}: Attempting to connect as provider", requester_id.0);
-        let requester = match self.context.get_device(requester_id) {
-            Ok(device) => device,
-            Err(_) => {
-                error!("Device{}: Invalid device", requester_id.0);
-                return;
-            }
-        };
+        let requester = self.context.get_device(requester_id).await?;
         let requested_power_capability = match requester.requested_provider_capability().await {
             Some(cap) => cap,
             // Requester is no longer requesting power
             _ => {
-                info!("Device{}: No-longer requesting power", requester.id().0);
-                return;
+                error!("Device{}: No-longer requesting power", requester.id().0);
+                return Err(Error::CannotProvide(None));
             }
         };
         let mut state = self.state.lock().await;
@@ -90,36 +84,20 @@ where
             }
         };
 
-        let connected = if let Ok(action) = self.context.try_policy_action::<action::Idle>(requester.id()).await {
-            if let Err(e) = action.connect_provider(target_power).await {
-                error!("Device{}: Failed to connect as provider, {:#?}", requester.id().0, e);
-            } else {
-                self.post_provider_connected(&mut state, requester.id(), target_power)
-                    .await;
-            }
-            Ok(())
-        } else if let Ok(action) = self
-            .context
-            .try_policy_action::<action::ConnectedProvider>(requester.id())
-            .await
-        {
-            if let Err(e) = action.connect_provider(target_power).await {
-                error!("Device{}: Failed to connect as provider, {:#?}", requester.id().0, e);
-            } else {
-                self.post_provider_connected(&mut state, requester.id(), target_power)
-                    .await;
-            }
-            Ok(())
+        let device = self.context.get_device(requester_id).await?;
+        let state = device.state().await;
+        if matches!(state, device::State::Idle | device::State::ConnectedProvider(_)) {
+            device.device.lock().await.connect_provider(target_power).await
         } else {
+            error!(
+                "Device{}: Cannot provide, device is in state {:#?}",
+                device.id().0,
+                state
+            );
             Err(Error::InvalidState(
                 device::StateKind::Idle,
                 requester.state().await.kind(),
             ))
-        };
-
-        // Don't need to do anything special, the device is responsible for attempting to reconnect
-        if let Err(e) = connected {
-            error!("Device{}: Failed to connect as provider, {:#?}", requester.id().0, e);
         }
     }
 
