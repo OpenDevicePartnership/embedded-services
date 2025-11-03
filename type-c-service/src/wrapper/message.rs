@@ -31,12 +31,11 @@ pub struct EventPortNotification {
 }
 
 /// Power policy command event data
-pub struct EventPowerPolicyCommand<'a> {
+pub struct EventPowerPolicyCommand {
     /// Port ID
     pub port: LocalPortId,
     /// Power policy request
-    pub request:
-        deferred::Request<'a, GlobalRawMutex, policy::device::CommandData, policy::device::InternalResponseData>,
+    pub request: policy::device::CommandData,
 }
 
 /// CFU events
@@ -58,7 +57,7 @@ pub enum Event<'a> {
     /// Port notification
     PortNotification(EventPortNotification),
     /// Power policy command received
-    PowerPolicyCommand(EventPowerPolicyCommand<'a>),
+    PowerPolicyCommand(EventPowerPolicyCommand),
     /// Command from TCPM
     ControllerCommand(deferred::Request<'a, GlobalRawMutex, controller::Command, controller::Response<'static>>),
     /// Cfu event
@@ -88,12 +87,9 @@ pub struct OutputPdAlert {
 }
 
 /// Power policy command output data
-pub struct OutputPowerPolicyCommand<'a> {
+pub struct OutputPowerPolicyCommand {
     /// Port ID
     pub port: LocalPortId,
-    /// Power policy request
-    pub request:
-        deferred::Request<'a, GlobalRawMutex, policy::device::CommandData, policy::device::InternalResponseData>,
     /// Response
     pub response: policy::device::InternalResponseData,
 }
@@ -158,7 +154,7 @@ pub enum Output<'a> {
     /// Vendor-defined messaging.
     Vdm(vdm::Output),
     /// Power policy command received
-    PowerPolicyCommand(OutputPowerPolicyCommand<'a>),
+    PowerPolicyCommand(OutputPowerPolicyCommand),
     /// TPCM command response
     ControllerCommand(OutputControllerCommand<'a>),
     /// CFU recovery tick

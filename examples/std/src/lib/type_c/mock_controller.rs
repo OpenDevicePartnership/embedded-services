@@ -1,8 +1,8 @@
-use embassy_sync::{mutex::Mutex, signal::Signal};
+use embassy_sync::{channel, mutex::Mutex, signal::Signal};
 use embedded_cfu_protocol::protocol_definitions::{FwUpdateOfferResponse, HostToken};
 use embedded_services::{
     GlobalRawMutex,
-    power::policy::PowerCapability,
+    power::policy::{PowerCapability, policy},
     type_c::{
         controller::{
             AttnVdm, ControllerStatus, DpConfig, DpPinConfig, DpStatus, OtherVdm, PdStateMachineConfig, PortStatus,
@@ -16,9 +16,6 @@ use embedded_usb_pd::{LocalPortId, PdError};
 use embedded_usb_pd::{PowerRole, type_c::Current};
 use embedded_usb_pd::{type_c::ConnectionState, ucsi::lpm};
 use log::{debug, info, trace};
-use std::cell::Cell;
-
-const POWER_POLICY_CHANNEL_SIZE: usize = 1;
 
 pub struct ControllerState {
     events: Signal<GlobalRawMutex, PortEvent>,
@@ -43,22 +40,24 @@ impl ControllerState {
         } else {
             ConnectionState::Attached
         });
+
+        let mut events = PortEvent::none();
         match role {
             PowerRole::Source => {
                 status.available_source_contract = Some(capability);
                 status.unconstrained_power = unconstrained;
+                events.status.set_new_power_contract_as_provider(true);
             }
             PowerRole::Sink => {
                 status.available_sink_contract = Some(capability);
                 status.unconstrained_power = unconstrained;
+                events.status.set_new_power_contract_as_consumer(true);
+                events.status.set_sink_ready(true);
             }
         }
         *self.status.lock().await = status;
 
-        let mut events = PortEvent::none();
         events.status.set_plug_inserted_or_removed(true);
-        events.status.set_new_power_contract_as_consumer(true);
-        events.status.set_sink_ready(true);
         self.events.signal(events);
     }
 
@@ -99,19 +98,19 @@ impl Default for ControllerState {
 
 pub struct Controller<'a> {
     state: &'a ControllerState,
-    events: Cell<PortEvent>,
+    events: PortEvent,
 }
 
 impl<'a> Controller<'a> {
     pub fn new(state: &'a ControllerState) -> Self {
         Self {
             state,
-            events: Cell::new(PortEvent::none()),
+            events: PortEvent::none(),
         }
     }
 
     /// Function to demonstrate calling functions directly on the controller
-    pub fn custom_function(&self) {
+    pub fn custom_function(&mut self) {
         info!("Custom function called on controller");
     }
 }
@@ -122,14 +121,14 @@ impl embedded_services::type_c::controller::Controller for Controller<'_> {
     async fn wait_port_event(&mut self) -> Result<(), Error<Self::BusError>> {
         let events = self.state.events.wait().await;
         trace!("Port event: {events:#?}");
-        self.events.set(events);
+        self.events = self.events.union(events);
         Ok(())
     }
 
     async fn clear_port_events(&mut self, _port: LocalPortId) -> Result<PortEvent, Error<Self::BusError>> {
-        let events = self.events.get();
+        let events = self.events;
         debug!("Clear port events: {events:#?}");
-        self.events.set(PortEvent::none());
+        self.events = PortEvent::none();
         Ok(events)
     }
 
@@ -342,6 +341,7 @@ pub type Wrapper<'a> = type_c_service::wrapper::ControllerWrapper<
     'a,
     GlobalRawMutex,
     Mutex<GlobalRawMutex, Controller<'a>>,
+    channel::DynamicSender<'a, policy::RequestData>,
+    channel::DynamicReceiver<'a, policy::RequestData>,
     Validator,
-    POWER_POLICY_CHANNEL_SIZE,
 >;
