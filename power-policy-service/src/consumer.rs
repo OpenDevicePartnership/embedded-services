@@ -29,14 +29,17 @@ fn cmp_consumer_capability(
     (a.capability, a_is_current).cmp(&(b.capability, b_is_current))
 }
 
-impl<const POLICY_CHANNEL_SIZE: usize> PowerPolicy<POLICY_CHANNEL_SIZE> {
+impl<D: Lockable + 'static, R: EventReceiver + 'static> PowerPolicy<D, R>
+where
+    D::Inner: DeviceTrait,
+{
     /// Iterate over all devices to determine what is best power port provides the highest power
     async fn find_best_consumer(&self, state: &InternalState) -> Result<Option<AvailableConsumer>, Error> {
         let mut best_consumer = None;
         let current_consumer_id = state.current_consumer_state.map(|f| f.device_id);
 
-        for node in self.context.devices() {
-            let device = node.data::<Device<POLICY_CHANNEL_SIZE>>().ok_or(Error::InvalidDevice)?;
+        for node in self.context.devices().await {
+            let device = node.data::<Device<D, R>>().ok_or(Error::InvalidDevice)?;
 
             let consumer_capability = device.consumer_capability().await;
             // Don't consider consumers below minimum threshold
@@ -89,8 +92,8 @@ impl<const POLICY_CHANNEL_SIZE: usize> PowerPolicy<POLICY_CHANNEL_SIZE> {
     async fn update_unconstrained_state(&self, state: &mut InternalState) -> Result<(), Error> {
         // Count how many available unconstrained devices we have
         let mut unconstrained_new = UnconstrainedState::default();
-        for node in self.context.devices() {
-            let device = node.data::<Device<POLICY_CHANNEL_SIZE>>().ok_or(Error::InvalidDevice)?;
+        for node in self.context.devices().await {
+            let device = node.data::<Device<D, R>>().ok_or(Error::InvalidDevice)?;
             if let Some(capability) = device.consumer_capability().await {
                 if capability.flags.unconstrained_power() {
                     unconstrained_new.available += 1;

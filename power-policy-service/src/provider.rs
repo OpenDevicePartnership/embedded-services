@@ -25,7 +25,10 @@ pub(super) struct State {
     state: PowerState,
 }
 
-impl<const POLICY_CHANNEL_SIZE: usize> PowerPolicy<POLICY_CHANNEL_SIZE> {
+impl<D: Lockable + 'static, R: EventReceiver + 'static> PowerPolicy<D, R>
+where
+    D::Inner: DeviceTrait,
+{
     /// Attempt to connect the requester as a provider
     pub(super) async fn connect_provider(&self, requester_id: DeviceId) {
         trace!("Device{}: Attempting to connect as provider", requester_id.0);
@@ -48,11 +51,7 @@ impl<const POLICY_CHANNEL_SIZE: usize> PowerPolicy<POLICY_CHANNEL_SIZE> {
         let mut total_power_mw = 0;
 
         // Determine total requested power draw
-        for device in self
-            .context
-            .devices()
-            .iter_only::<device::Device<POLICY_CHANNEL_SIZE>>()
-        {
+        for device in self.context.devices().await.iter_only::<device::Device<D, R>>() {
             let target_provider_cap = if device.id() == requester_id {
                 // Use the requester's requested power capability
                 // this handles both new connections and upgrade requests
