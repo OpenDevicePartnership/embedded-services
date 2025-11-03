@@ -199,43 +199,6 @@ where
         state.state = new_state;
     }
 
-    /// Internal function to set consumer capability
-    pub(super) async fn update_consumer_capability(&self, capability: Option<ConsumerPowerCapability>) {
-        let mut lock = self.state.lock().await;
-        let state = lock.deref_mut();
-        state.consumer_capability = capability;
-    }
-
-    /// Internal function to set requested provider capability
-    pub(super) async fn update_requested_provider_capability(&self, capability: Option<ProviderPowerCapability>) {
-        let mut lock = self.state.lock().await;
-        let state = lock.deref_mut();
-        state.requested_provider_capability = capability;
-    }
-
-    /// Try to provide access to the device actions for the given state
-    pub async fn try_device_action<S: action::Kind>(&self) -> Result<action::device::Device<'_, C, S>, Error> {
-        let state = self.state().await.kind();
-        if S::kind() != state {
-            return Err(Error::InvalidState(S::kind(), state));
-        }
-        Ok(action::device::Device::new(self))
-    }
-
-    /// Provide access to the current device state
-    pub async fn device_action(&self) -> action::device::AnyState<'_, C> {
-        match self.state().await.kind() {
-            StateKind::Detached => action::device::AnyState::Detached(action::device::Device::new(self)),
-            StateKind::Idle => action::device::AnyState::Idle(action::device::Device::new(self)),
-            StateKind::ConnectedProvider => {
-                action::device::AnyState::ConnectedProvider(action::device::Device::new(self))
-            }
-            StateKind::ConnectedConsumer => {
-                action::device::AnyState::ConnectedConsumer(action::device::Device::new(self))
-            }
-        }
-    }
-
     /// Try to provide access to the policy actions for the given state
     /// Implemented here for lifetime reasons
     pub(super) async fn try_policy_action<S: action::Kind>(&self) -> Result<action::policy::Policy<'_, C, S>, Error> {
@@ -254,16 +217,6 @@ where
             StateKind::ConnectedConsumer => {
                 action::policy::AnyState::ConnectedConsumer(action::policy::Policy::new(self))
             }
-        }
-    }
-
-    /// Detach the device, this action is available in all states
-    pub async fn detach(&self) -> Result<action::device::Device<'_, C, action::Detached>, Error> {
-        match self.device_action().await {
-            action::device::AnyState::Detached(state) => Ok(state),
-            action::device::AnyState::Idle(state) => state.detach().await,
-            action::device::AnyState::ConnectedProvider(state) => state.detach().await,
-            action::device::AnyState::ConnectedConsumer(state) => state.detach().await,
         }
     }
 }

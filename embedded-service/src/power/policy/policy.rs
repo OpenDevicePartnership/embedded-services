@@ -1,11 +1,10 @@
 //! Context for any power policy implementations
 
-use crate::GlobalRawMutex;
 use crate::broadcaster::immediate as broadcaster;
 use crate::power::policy::device::DeviceTrait;
 use crate::power::policy::{CommsMessage, ConsumerPowerCapability, ProviderPowerCapability};
 use crate::sync::Lockable;
-use embassy_sync::channel::Channel;
+use embassy_sync::once_lock::OnceLock;
 
 use super::charger::ChargerResponse;
 use super::device::{self};
@@ -18,15 +17,15 @@ use crate::{error, intrusive_list};
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum RequestData {
     /// Notify that a device has attached
-    NotifyAttached,
+    Attached,
     /// Notify that available power for consumption has changed
-    NotifyConsumerCapability(Option<ConsumerPowerCapability>),
+    UpdatedConsumerCapability(Option<ConsumerPowerCapability>),
     /// Request the given amount of power to provider
-    RequestProviderCapability(ProviderPowerCapability),
+    RequestedProviderCapability(ProviderPowerCapability),
     /// Notify that a device cannot consume or provide power anymore
-    NotifyDisconnect,
+    Disconnected,
     /// Notify that a device has detached
-    NotifyDetached,
+    Detached,
 }
 
 /// Request to the power policy service
@@ -66,17 +65,71 @@ pub struct Response {
     pub data: ResponseData,
 }
 
-/// Wrapper type to make code cleaner
-type InternalResponseData = Result<ResponseData, Error>;
+/// Trait used by devices to send events to a power policy implementation
+pub trait EventSender {
+    /// Try to send an event
+    fn try_send(&mut self, event: RequestData) -> Option<()>;
+    /// Send an event
+    fn send(&mut self, event: RequestData) -> impl Future<Output = ()>;
+
+    /// Wrapper to simplify sending this event
+    fn on_attach(&mut self) -> impl Future<Output = ()> {
+        self.send(RequestData::Attached)
+    }
+
+    /// Wrapper to simplify attempting to send this event
+    fn try_on_update_consumer_capability(&mut self, cap: Option<ConsumerPowerCapability>) -> Option<()> {
+        self.try_send(RequestData::UpdatedConsumerCapability(cap))
+    }
+
+    /// Wrapper to simplify sending this event
+    fn on_update_consumer_capability(&mut self, cap: Option<ConsumerPowerCapability>) -> impl Future<Output = ()> {
+        self.send(RequestData::UpdatedConsumerCapability(cap))
+    }
+
+    /// Wrapper to simplify attempting to send this event
+    fn try_on_request_provider_capability(&mut self, cap: ProviderPowerCapability) -> Option<()> {
+        self.try_send(RequestData::RequestedProviderCapability(cap))
+    }
+
+    /// Wrapper to simplify sending this event
+    fn on_request_provider_capability(&mut self, cap: ProviderPowerCapability) -> impl Future<Output = ()> {
+        self.send(RequestData::RequestedProviderCapability(cap))
+    }
+
+    /// Wrapper to simplify attempting to send this event
+    fn try_on_disconnect(&mut self) -> Option<()> {
+        self.try_send(RequestData::Disconnected)
+    }
+
+    /// Wrapper to simplify sending this event
+    fn on_disconnect(&mut self) -> impl Future<Output = ()> {
+        self.send(RequestData::Disconnected)
+    }
+
+    /// Wrapper to simplify attempting to send this event
+    fn try_on_detach(&mut self) -> Option<()> {
+        self.try_send(RequestData::Detached)
+    }
+
+    /// Wrapper to simplify sending this event
+    fn on_detach(&mut self) -> impl Future<Output = ()> {
+        self.send(RequestData::Detached)
+    }
+}
+
+/// Receiver trait used by a policy implementation
+pub trait EventReceiver {
+    /// Attempt to get a pending event
+    fn try_next(&mut self) -> Option<RequestData>;
+    /// Wait for the next event
+    fn wait_next(&mut self) -> impl Future<Output = RequestData>;
+}
 
 /// Power policy context
-pub struct Context<const POLICY_CHANNEL_SIZE: usize> {
+pub struct Context {
     /// Registered devices
     power_devices: intrusive_list::IntrusiveList,
-    /// Policy request
-    policy_request: Channel<GlobalRawMutex, Request, POLICY_CHANNEL_SIZE>,
-    /// Policy response
-    policy_response: Channel<GlobalRawMutex, InternalResponseData, POLICY_CHANNEL_SIZE>,
     /// Registered chargers
     charger_devices: intrusive_list::IntrusiveList,
     /// Message broadcaster
@@ -93,11 +146,9 @@ impl<const POLICY_CHANNEL_SIZE: usize> Context<POLICY_CHANNEL_SIZE> {
     /// Construct a new power policy Context
     pub const fn new() -> Self {
         Self {
-            power_devices: intrusive_list::IntrusiveList::new(),
-            charger_devices: intrusive_list::IntrusiveList::new(),
-            policy_request: Channel::new(),
-            policy_response: Channel::new(),
-            broadcaster: broadcaster::Immediate::new(),
+            devices: intrusive_list::IntrusiveList::new(),
+            chargers: intrusive_list::IntrusiveList::new(),
+            broadcaster: broadcaster::Immediate::default(),
         }
     }
 
@@ -146,6 +197,7 @@ where
 
         self.power_devices.push(device)
     }
+}
 
     /// Register a charger with the power policy service
     pub fn register_charger(
@@ -198,10 +250,21 @@ where
             } else {
                 error!("Non-device located in charger list");
             }
+    None
+}
+
+/// Initialize chargers in hardware
+pub async fn init_chargers() -> ChargerResponse {
+    for charger in &CONTEXT.chargers {
+        if let Some(data) = charger.data::<charger::Device>() {
+            data.execute_command(charger::PolicyEvent::InitRequest)
+                .await
+                .inspect_err(|e| error!("Charger {:?} failed InitRequest: {:?}", data.id(), e))?;
         }
 
         Err(Error::InvalidDevice)
     }
+}
 
     /// Convenience function to send a request to the power policy service
     pub(super) async fn send_request(&self, from: DeviceId, request: RequestData) -> Result<ResponseData, Error> {
