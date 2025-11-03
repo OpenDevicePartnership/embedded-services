@@ -2,6 +2,7 @@ use embassy_futures::yield_now;
 use embassy_sync::pubsub::WaitResult;
 use embassy_time::{Duration, Timer};
 use embedded_services::debug;
+use embedded_services::power::policy::device::State;
 use embedded_services::type_c::Cached;
 use embedded_services::type_c::controller::{InternalResponseData, Response};
 use embedded_usb_pd::constants::{T_PS_TRANSITION_EPR_MS, T_PS_TRANSITION_SPR_MS};
@@ -9,14 +10,20 @@ use embedded_usb_pd::ucsi::{self, lpm};
 
 use super::*;
 
-impl<'device, M: RawMutex, C: Lockable, V: FwOfferValidator, const POLICY_CHANNEL_SIZE: usize>
-    ControllerWrapper<'device, M, C, V, POLICY_CHANNEL_SIZE>
+impl<
+    'device,
+    M: RawMutex,
+    D: Lockable,
+    S: event::Sender<policy::RequestData>,
+    R: event::Receiver<policy::RequestData>,
+    V: FwOfferValidator,
+> ControllerWrapper<'device, M, D, S, R, V>
 where
-    <C as Lockable>::Inner: Controller,
+    D::Inner: Controller,
 {
     async fn process_get_pd_alert(
         &self,
-        state: &mut dyn DynPortState<'_>,
+        state: &mut dyn DynPortState<'_, S>,
         local_port: LocalPortId,
     ) -> Result<Option<Ado>, PdError> {
         loop {
@@ -46,7 +53,7 @@ where
     /// even for controllers that might not always broadcast sink ready events.
     pub(super) fn check_sink_ready_timeout(
         &self,
-        state: &mut dyn DynPortState<'_>,
+        state: &mut dyn DynPortState<'_, S>,
         status: &PortStatus,
         port: LocalPortId,
         new_contract: bool,
@@ -116,34 +123,24 @@ where
         LocalPortId(port_index as u8)
     }
 
-    /// Set the maximum sink voltage for a port
-    pub async fn set_max_sink_voltage(&self, local_port: LocalPortId, voltage_mv: Option<u16>) -> Result<(), PdError> {
-        let mut controller = self.controller.lock().await;
-        let _ = self
-            .process_set_max_sink_voltage(&mut controller, local_port, voltage_mv)
-            .await?;
-        Ok(())
-    }
-
     /// Process a request to set the maximum sink voltage for a port
     async fn process_set_max_sink_voltage(
         &self,
-        controller: &mut C::Inner,
+        controller: &mut D::Inner,
+        state: &mut dyn DynPortState<'_, S>,
         local_port: LocalPortId,
         voltage_mv: Option<u16>,
     ) -> Result<controller::PortResponseData, PdError> {
-        let power_device = self.get_power_device(local_port).ok_or(PdError::InvalidPort)?;
-
-        let state = power_device.state().await;
+        let port_power = state
+            .port_power_mut()
+            .get_mut(local_port.0 as usize)
+            .ok_or(PdError::InvalidPort)?;
+        let state = port_power.state.state();
         debug!("Port{}: Current state: {:#?}", local_port.0, state);
-        if let Ok(connected_consumer) = power_device.try_device_action::<action::ConnectedConsumer>().await {
+        if matches!(state, State::ConnectedConsumer(_)) {
             debug!("Port{}: Set max sink voltage, connected consumer found", local_port.0);
             if voltage_mv.is_some()
-                && voltage_mv
-                    < power_device
-                        .consumer_capability()
-                        .await
-                        .map(|c| c.capability.voltage_mv)
+                && voltage_mv < port_power.state.consumer_capability().map(|c| c.capability.voltage_mv)
             {
                 // New max voltage is lower than current consumer capability which will trigger a renegociation
                 // So disconnect first
@@ -151,7 +148,7 @@ where
                     "Port{}: Disconnecting consumer before setting max sink voltage",
                     local_port.0
                 );
-                let _ = connected_consumer.disconnect().await;
+                port_power.sender.send(policy::RequestData::Disconnected).await;
             }
         }
 
@@ -166,8 +163,8 @@ where
 
     async fn process_get_port_status(
         &self,
-        controller: &mut C::Inner,
-        state: &mut dyn DynPortState<'_>,
+        controller: &mut D::Inner,
+        state: &mut dyn DynPortState<'_, S>,
         local_port: LocalPortId,
         cached: Cached,
     ) -> Result<controller::PortResponseData, PdError> {
@@ -193,8 +190,8 @@ where
     /// Handle a port command
     async fn process_port_command(
         &self,
-        controller: &mut C::Inner,
-        state: &mut dyn DynPortState<'_>,
+        controller: &mut D::Inner,
+        state: &mut dyn DynPortState<'_, S>,
         command: &controller::PortCommand,
     ) -> Response<'static> {
         if state.controller_state().fw_update_state.in_progress() {
@@ -273,7 +270,7 @@ where
             controller::PortCommandData::SetMaxSinkVoltage(voltage_mv) => {
                 match self.registration.pd_controller.lookup_local_port(command.port) {
                     Ok(local_port) => {
-                        self.process_set_max_sink_voltage(controller, local_port, voltage_mv)
+                        self.process_set_max_sink_voltage(controller, state, local_port, voltage_mv)
                             .await
                     }
                     Err(e) => Err(e),
@@ -402,8 +399,8 @@ where
 
     async fn process_controller_command(
         &self,
-        controller: &mut C::Inner,
-        state: &mut dyn DynPortState<'_>,
+        controller: &mut D::Inner,
+        state: &mut dyn DynPortState<'_, S>,
         command: &controller::InternalCommandData,
     ) -> Response<'static> {
         if state.controller_state().fw_update_state.in_progress() {
@@ -438,8 +435,8 @@ where
     /// Handle a PD controller command
     pub(super) async fn process_pd_command(
         &self,
-        controller: &mut C::Inner,
-        state: &mut dyn DynPortState<'_>,
+        controller: &mut D::Inner,
+        state: &mut dyn DynPortState<'_, S>,
         command: &controller::Command,
     ) -> Response<'static> {
         match command {
