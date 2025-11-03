@@ -1,4 +1,9 @@
 //! Context for any power policy implementations
+<<<<<<< HEAD
+=======
+use core::marker::PhantomData;
+use core::sync::atomic::{AtomicBool, Ordering};
+>>>>>>> 34701dd (Add device and receiver arguments to context token)
 
 use crate::broadcaster::immediate as broadcaster;
 use crate::power::policy::device::DeviceTrait;
@@ -288,6 +293,36 @@ pub async fn init_chargers() -> ChargerResponse {
                     .inspect_err(|e| error!("Charger {:?} failed InitRequest: {:?}", data.id(), e))?;
             }
         }
+
+        Ok(Ack)
+    }
+}
+
+/// Register a message receiver for power policy messages
+pub fn register_message_receiver(
+    receiver: &'static broadcaster::Receiver<'_, CommsMessage>,
+) -> intrusive_list::Result<()> {
+    CONTEXT.broadcaster.register_receiver(receiver)
+}
+
+/// Singleton struct to give access to the power policy context
+pub struct ContextToken<D: Lockable, R: EventReceiver>
+where
+    D::Inner: DeviceTrait,
+{
+    _phantom: PhantomData<(D, R)>,
+}
+
+impl<D: Lockable + 'static, R: EventReceiver + 'static> ContextToken<D, R>
+where
+    D::Inner: DeviceTrait,
+{
+    /// Create a new context token, returning None if this function has been called before
+    pub fn create() -> Option<Self> {
+        static INIT: AtomicBool = AtomicBool::new(false);
+        if INIT.load(Ordering::SeqCst) {
+            return None;
+        }
         Ok(Ack)
     }
 
@@ -309,6 +344,7 @@ pub async fn init_chargers() -> ChargerResponse {
         receiver: &'static broadcaster::Receiver<'_, CommsMessage>,
     ) -> intrusive_list::Result<()> {
         self.broadcaster.register_receiver(receiver)
+        Some(ContextToken { _phantom: PhantomData })
     }
 
     /// Initialize Policy charger devices
@@ -332,13 +368,7 @@ pub async fn init_chargers() -> ChargerResponse {
     }
 
     /// Get a device by its ID
-    pub async fn get_device<C: Lockable + 'static, R: EventReceiver + 'static>(
-        &self,
-        id: DeviceId,
-    ) -> Result<&'static device::Device<'static, C, R>, Error>
-    where
-        C::Inner: DeviceTrait,
-    {
+    pub async fn get_device(&self, id: DeviceId) -> Result<&'static device::Device<'static, D, R>, Error> {
         get_device(id).await.ok_or(Error::InvalidDevice)
     }
 
@@ -353,24 +383,15 @@ pub async fn init_chargers() -> ChargerResponse {
     }
 
     /// Try to provide access to the actions available to the policy for the given state and device
-    pub async fn try_policy_action<C: Lockable + 'static, R: EventReceiver + 'static, S: action::Kind>(
+    pub async fn try_policy_action<S: action::Kind>(
         &self,
         id: DeviceId,
-    ) -> Result<action::policy::Policy<'static, C, R, S>, Error>
-    where
-        C::Inner: DeviceTrait,
-    {
+    ) -> Result<action::policy::Policy<'static, D, R, S>, Error> {
         self.get_device(id).await?.try_policy_action().await
     }
 
     /// Provide access to current policy actions
-    pub async fn policy_action<C: Lockable + 'static, R: EventReceiver + 'static>(
-        &self,
-        id: DeviceId,
-    ) -> Result<action::policy::AnyState<'static, C, R>, Error>
-    where
-        C::Inner: DeviceTrait,
-    {
+    pub async fn policy_action(&self, id: DeviceId) -> Result<action::policy::AnyState<'static, D, R>, Error> {
         Ok(self.get_device(id).await?.policy_action().await)
     }
 
