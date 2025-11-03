@@ -4,6 +4,7 @@ use core::ops::DerefMut;
 use embassy_sync::mutex::Mutex;
 
 use super::{DeviceId, Error, action};
+use crate::power::policy::policy::EventReceiver;
 use crate::power::policy::{ConsumerPowerCapability, ProviderPowerCapability};
 use crate::sync::Lockable;
 use crate::{GlobalRawMutex, intrusive_list};
@@ -121,7 +122,7 @@ pub trait DeviceTrait {
 }
 
 /// Device struct
-pub struct Device<'a, C: Lockable>
+pub struct Device<'a, C: Lockable, R: EventReceiver>
 where
     C::Inner: DeviceTrait,
 {
@@ -132,15 +133,17 @@ where
     /// Current state of the device
     state: Mutex<GlobalRawMutex, InternalState>,
     /// Reference to hardware
-    pub(crate) device: &'a C,
+    pub device: &'a C,
+    /// Event receiver
+    pub receiver: &'a R,
 }
 
-impl<'a, C: Lockable> Device<'a, C>
+impl<'a, C: Lockable, R: EventReceiver> Device<'a, C, R>
 where
     C::Inner: DeviceTrait,
 {
     /// Create a new device
-    pub fn new(id: DeviceId, device: &'a C) -> Self {
+    pub fn new(id: DeviceId, device: &'a C, receiver: &'a R) -> Self {
         Self {
             node: intrusive_list::Node::uninit(),
             id,
@@ -151,6 +154,7 @@ where
             }),
             context_ref,
             device,
+            receiver,
         }
     }
 
@@ -201,7 +205,9 @@ where
 
     /// Try to provide access to the policy actions for the given state
     /// Implemented here for lifetime reasons
-    pub(super) async fn try_policy_action<S: action::Kind>(&self) -> Result<action::policy::Policy<'_, C, S>, Error> {
+    pub(super) async fn try_policy_action<S: action::Kind>(
+        &self,
+    ) -> Result<action::policy::Policy<'_, C, R, S>, Error> {
         let state = self.state().await.kind();
         if S::kind() != state {
             return Err(Error::InvalidState(S::kind(), state));
@@ -211,7 +217,7 @@ where
 
     /// Provide access to the current policy actions
     /// Implemented here for lifetime reasons
-    pub(super) async fn policy_action(&self) -> action::policy::AnyState<'_, C> {
+    pub(super) async fn policy_action(&self) -> action::policy::AnyState<'_, C, R> {
         match self.state().await.kind() {
                 action::policy::AnyState::ConnectedProvider(action::policy::Policy::new(self))
             StateKind::ConnectedConsumer => {
@@ -221,7 +227,7 @@ where
     }
 }
 
-impl<C: Lockable> intrusive_list::NodeContainer for Device<'static, C>
+impl<C: Lockable, R: EventReceiver> intrusive_list::NodeContainer for Device<'static, C, R>
 where
     C::Inner: DeviceTrait,
 {
@@ -231,19 +237,19 @@ where
 }
 
 /// Trait for any container that holds a device
-pub trait DeviceContainer<C: Lockable>
+pub trait DeviceContainer<C: Lockable, R: EventReceiver>
 where
     C::Inner: DeviceTrait,
 {
     /// Get the underlying device struct
-    fn get_power_policy_device(&self) -> &Device<'_, C>;
+    fn get_power_policy_device(&self) -> &Device<'_, C, R>;
 }
 
-impl<C: Lockable> DeviceContainer<C> for Device<'_, C>
+impl<C: Lockable, R: EventReceiver> DeviceContainer<C, R> for Device<'_, C, R>
 where
     C::Inner: DeviceTrait,
 {
-    fn get_power_policy_device(&self) -> &Device<'_, C> {
+    fn get_power_policy_device(&self) -> &Device<'_, C, R> {
         self
     }
 }

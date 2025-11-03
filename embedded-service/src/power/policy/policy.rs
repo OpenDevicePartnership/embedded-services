@@ -157,14 +157,14 @@ impl<const POLICY_CHANNEL_SIZE: usize> Context<POLICY_CHANNEL_SIZE> {
 pub fn init() {}
 
 /// Register a device with the power policy service
-pub async fn register_device<C: Lockable + 'static>(
-    device: &'static impl device::DeviceContainer<C>,
+pub async fn register_device<C: Lockable + 'static, R: EventReceiver + 'static>(
+    device: &'static impl device::DeviceContainer<C, R>,
 ) -> Result<(), intrusive_list::Error>
 where
     C::Inner: DeviceTrait,
 {
     let device = device.get_power_policy_device();
-    if get_device::<C>(device.id()).await.is_some() {
+    if get_device::<C, R>(device.id()).await.is_some() {
         return Err(intrusive_list::Error::NodeAlreadyInList);
     }
 
@@ -182,12 +182,14 @@ pub fn register_charger(device: &'static impl charger::ChargerContainer) -> Resu
 }
 
 /// Find a device by its ID
-async fn get_device<C: Lockable + 'static>(id: DeviceId) -> Option<&'static device::Device<'static, C>>
+async fn get_device<C: Lockable + 'static, R: EventReceiver + 'static>(
+    id: DeviceId,
+) -> Option<&'static device::Device<'static, C, R>>
 where
     C::Inner: DeviceTrait,
 {
     for device in &CONTEXT.get().await.devices {
-        if let Some(data) = device.data::<device::Device<'static, C>>() {
+        if let Some(data) = device.data::<device::Device<'static, C, R>>() {
             if data.id() == id {
                 return Some(data);
             }
@@ -330,10 +332,10 @@ pub async fn init_chargers() -> ChargerResponse {
     }
 
     /// Get a device by its ID
-    pub async fn get_device<C: Lockable + 'static>(
+    pub async fn get_device<C: Lockable + 'static, R: EventReceiver + 'static>(
         &self,
         id: DeviceId,
-    ) -> Result<&'static device::Device<'static, C>, Error>
+    ) -> Result<&'static device::Device<'static, C, R>, Error>
     where
         C::Inner: DeviceTrait,
     {
@@ -351,10 +353,10 @@ pub async fn init_chargers() -> ChargerResponse {
     }
 
     /// Try to provide access to the actions available to the policy for the given state and device
-    pub async fn try_policy_action<C: Lockable + 'static, S: action::Kind>(
+    pub async fn try_policy_action<C: Lockable + 'static, R: EventReceiver + 'static, S: action::Kind>(
         &self,
         id: DeviceId,
-    ) -> Result<action::policy::Policy<'static, C, S>, Error>
+    ) -> Result<action::policy::Policy<'static, C, R, S>, Error>
     where
         C::Inner: DeviceTrait,
     {
@@ -362,10 +364,10 @@ pub async fn init_chargers() -> ChargerResponse {
     }
 
     /// Provide access to current policy actions
-    pub async fn policy_action<C: Lockable + 'static>(
+    pub async fn policy_action<C: Lockable + 'static, R: EventReceiver + 'static>(
         &self,
         id: DeviceId,
-    ) -> Result<action::policy::AnyState<'static, C>, Error>
+    ) -> Result<action::policy::AnyState<'static, C, R>, Error>
     where
         C::Inner: DeviceTrait,
     {
