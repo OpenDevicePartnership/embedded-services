@@ -2,7 +2,8 @@
 use embassy_sync::mutex::Mutex;
 
 use super::{DeviceId, Error};
-use crate::power::policy::policy::EventReceiver;
+use crate::event::Receiver;
+use crate::power::policy::policy::RequestData;
 use crate::power::policy::{ConsumerPowerCapability, ProviderPowerCapability};
 use crate::sync::Lockable;
 use crate::{GlobalRawMutex, intrusive_list};
@@ -117,10 +118,12 @@ pub trait DeviceTrait {
     fn connect_provider(&mut self, capability: ProviderPowerCapability) -> impl Future<Output = Result<(), Error>>;
     /// Connect this device to consume power from an external connection
     fn connect_consumer(&mut self, capability: ConsumerPowerCapability) -> impl Future<Output = Result<(), Error>>;
+    /// Device is out of sync with the policy, reset and renotify power policy
+    fn reset(&mut self) -> impl Future<Output = Result<(), Error>>;
 }
 
 /// Device struct
-pub struct Device<'a, C: Lockable, R: EventReceiver>
+pub struct Device<'a, C: Lockable, R: Receiver<RequestData>>
 where
     C::Inner: DeviceTrait,
 {
@@ -133,15 +136,15 @@ where
     /// Reference to hardware
     pub device: &'a C,
     /// Event receiver
-    pub receiver: &'a R,
+    pub receiver: Mutex<GlobalRawMutex, R>,
 }
 
-impl<'a, C: Lockable, R: EventReceiver> Device<'a, C, R>
+impl<'a, C: Lockable, R: Receiver<RequestData>> Device<'a, C, R>
 where
     C::Inner: DeviceTrait,
 {
     /// Create a new device
-    pub fn new(id: DeviceId, device: &'a C, receiver: &'a R) -> Self {
+    pub fn new(id: DeviceId, device: &'a C, receiver: R) -> Self {
         Self {
             node: intrusive_list::Node::uninit(),
             id,
@@ -152,7 +155,7 @@ where
             }),
             context_ref,
             device,
-            receiver,
+            receiver: Mutex::new(receiver),
         }
     }
 
@@ -195,7 +198,7 @@ where
     }
 }
 
-impl<C: Lockable, R: EventReceiver> intrusive_list::NodeContainer for Device<'static, C, R>
+impl<C: Lockable, R: Receiver<RequestData> + 'static> intrusive_list::NodeContainer for Device<'static, C, R>
 where
     C::Inner: DeviceTrait,
 {
@@ -205,7 +208,7 @@ where
 }
 
 /// Trait for any container that holds a device
-pub trait DeviceContainer<C: Lockable, R: EventReceiver>
+pub trait DeviceContainer<C: Lockable, R: Receiver<RequestData>>
 where
     C::Inner: DeviceTrait,
 {
@@ -213,7 +216,7 @@ where
     fn get_power_policy_device(&self) -> &Device<'_, C, R>;
 }
 
-impl<C: Lockable, R: EventReceiver> DeviceContainer<C, R> for Device<'_, C, R>
+impl<C: Lockable, R: Receiver<RequestData>> DeviceContainer<C, R> for Device<'_, C, R>
 where
     C::Inner: DeviceTrait,
 {

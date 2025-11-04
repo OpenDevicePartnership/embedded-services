@@ -2,8 +2,9 @@
 use core::ops::DerefMut;
 use embassy_sync::mutex::Mutex;
 use embedded_services::GlobalRawMutex;
+use embedded_services::event::Receiver;
 use embedded_services::power::policy::device::{Device, DeviceTrait, State};
-use embedded_services::power::policy::policy::EventReceiver;
+use embedded_services::power::policy::policy::RequestData;
 use embedded_services::power::policy::{policy, *};
 use embedded_services::sync::Lockable;
 use embedded_services::{comms, error, info};
@@ -31,7 +32,7 @@ struct InternalState {
 }
 
 /// Power policy state
-pub struct PowerPolicy<D: Lockable, R: EventReceiver>
+pub struct PowerPolicy<D: Lockable, R: Receiver<RequestData>>
 where
     D::Inner: DeviceTrait,
 {
@@ -45,7 +46,7 @@ where
     config: config::Config,
 }
 
-impl<D: Lockable + 'static, R: EventReceiver + 'static> PowerPolicy<D, R>
+impl<D: Lockable + 'static, R: Receiver<RequestData> + 'static> PowerPolicy<D, R>
 where
     D::Inner: DeviceTrait,
 {
@@ -59,55 +60,97 @@ where
         }
     }
 
-    async fn process_notify_attach(&self) -> Result<(), Error> {
-        Ok(())
+    async fn process_notify_attach(&self, device: &Device<'_, D, R>) -> Result<(), Error> {
+        let state = device.state.lock().await.state;
+        if state != State::Detached {
+            error!("Device{}: Invalid state for attach: {:#?}", device.id().0, state);
+            device.state.lock().await.state = State::Detached;
+            device.device.lock().await.reset().await
+        } else {
+            device.state.lock().await.state = State::Idle;
+            Ok(())
+        }
     }
 
-    async fn process_notify_detach(&self, device: &device::Device<POLICY_CHANNEL_SIZE>) -> Result<(), Error> {
-        self.context.send_response(Ok(policy::ResponseData::Complete)).await;
-        self.remove_connected_provider(device.id()).await;
+    async fn process_notify_detach(&self, device: &Device<'_, D, R>) -> Result<(), Error> {
+        // Detach is valid in any state
+        {
+            let state = &mut device.state.lock().await;
+            state.state = State::Detached;
+            state.consumer_capability = None;
+            state.requested_provider_capability = None;
+        }
         self.update_current_consumer().await?;
         Ok(())
     }
 
     async fn process_notify_consumer_power_capability(
         &self,
-        device: DeviceId,
+        device: &Device<'_, D, R>,
         capability: Option<ConsumerPowerCapability>,
     ) -> Result<(), Error> {
-        let device = self.context.get_device(device).await?;
-        match device.state().await {
-            State::Idle | State::ConnectedConsumer(_) | State::ConnectedProvider(_) => {
-                device.state.lock().await.consumer_capability = capability;
-                self.update_current_consumer().await
-            }
-            State::Detached => device.device.lock().await.disconnect().await,
+        let state = device.state.lock().await.state;
+        if matches!(
+            device.state.lock().await.state,
+            State::Idle | State::ConnectedConsumer(_)
+        ) {
+            device.state.lock().await.consumer_capability = capability;
+            self.update_current_consumer().await
+        } else {
+            error!(
+                "Device{}: Invalid state for notify consumer capability: {:#?}",
+                device.id().0,
+                state,
+            );
+            device.state.lock().await.state = State::Detached;
+            device.device.lock().await.reset().await
         }
     }
 
     async fn process_request_provider_power_capabilities(
         &self,
-        device: DeviceId,
+        device: &Device<'_, D, R>,
         capability: Option<ProviderPowerCapability>,
     ) -> Result<(), Error> {
-        let device = self.context.get_device(device).await?;
-        match device.state().await {
-            State::Idle | State::ConnectedConsumer(_) | State::ConnectedProvider(_) => {
-                device.state.lock().await.requested_provider_capability = capability;
-                self.connect_provider(device.id()).await
-            }
-            State::Detached => device.device.lock().await.disconnect().await,
+        let state = device.state.lock().await.state;
+        if matches!(state, State::Idle | State::ConnectedProvider(_)) {
+            device.state.lock().await.requested_provider_capability = capability;
+            self.connect_provider(device.id()).await
+        } else {
+            error!(
+                "Device{}: Invalid state for request provider capability: {:#?}",
+                device.id().0,
+                state,
+            );
+            device.state.lock().await.state = State::Detached;
+            device.device.lock().await.reset().await
         }
     }
 
-    async fn process_notify_disconnect(&self, device: &device::Device<POLICY_CHANNEL_SIZE>) -> Result<(), Error> {
-        self.context.send_response(Ok(policy::ResponseData::Complete)).await;
-        if let Some(consumer) = self.state.lock().await.current_consumer_state.take() {
-            info!("Device{}: Connected consumer disconnected", consumer.device_id.0);
+    async fn process_notify_disconnect(&self, device: &Device<'_, D, R>) -> Result<(), Error> {
+        let state = device.state.lock().await.state;
+        if matches!(state, State::ConnectedConsumer(_) | State::ConnectedProvider(_)) {
+            device.state.lock().await.state = State::Idle;
+        } else {
+            error!("Device{}: Invalid state for disconnect: {:#?}", device.id().0, state);
+            device.state.lock().await.state = State::Detached;
+            if let Err(e) = device.device.lock().await.reset().await {
+                error!("Device{}: Failed to reset device: {:#?}", device.id().0, e);
+            }
+        }
+
+        if self
+            .state
+            .lock()
+            .await
+            .current_consumer_state
+            .is_some_and(|current| current.device_id == device.id())
+        {
+            info!("Device{}: Connected consumer disconnected", device.id().0);
             self.disconnect_chargers().await?;
 
             self.comms_notify(CommsMessage {
-                data: CommsData::ConsumerDisconnected(consumer.device_id),
+                data: CommsData::ConsumerDisconnected(device.id()),
             })
             .await;
         }
@@ -151,7 +194,7 @@ where
         match request.data {
             policy::RequestData::Attached => {
                 info!("Received notify attached from device {}", device.id().0);
-                self.process_notify_attach().await
+                self.process_notify_attach(device).await
             }
             policy::RequestData::Detached => {
                 info!("Received notify detached from device {}", device.id().0);
@@ -163,8 +206,7 @@ where
                     device.id().0,
                     capability,
                 );
-                self.process_notify_consumer_power_capability(device.id(), capability)
-                    .await
+                self.process_notify_consumer_power_capability(device, capability).await
             }
             policy::RequestData::RequestedProviderCapability(capability) => {
                 info!(
@@ -172,7 +214,7 @@ where
                     device.id().0,
                     capability,
                 );
-                self.process_request_provider_power_capabilities(device.id(), capability)
+                self.process_request_provider_power_capabilities(device, capability)
                     .await
             }
             policy::RequestData::Disconnected => {
@@ -189,7 +231,7 @@ where
     }
 }
 
-impl<D: Lockable + 'static, R: EventReceiver + 'static> comms::MailboxDelegate for PowerPolicy<D, R> where
+impl<D: Lockable + 'static, R: Receiver<RequestData> + 'static> comms::MailboxDelegate for PowerPolicy<D, R> where
     D::Inner: DeviceTrait
 {
 }

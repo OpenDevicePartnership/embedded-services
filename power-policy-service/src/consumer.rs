@@ -29,7 +29,7 @@ fn cmp_consumer_capability(
     (a.capability, a_is_current).cmp(&(b.capability, b_is_current))
 }
 
-impl<D: Lockable + 'static, R: EventReceiver + 'static> PowerPolicy<D, R>
+impl<D: Lockable + 'static, R: Receiver<RequestData> + 'static> PowerPolicy<D, R>
 where
     D::Inner: DeviceTrait,
 {
@@ -199,10 +199,13 @@ where
 
             state.current_consumer_state = None;
             let consumer_device = self.context.get_device(current_consumer.device_id).await?;
-            // Disconnect the current consumer if needed
-            info!("Device{}: Disconnecting current consumer", current_consumer.device_id.0);
-            // disconnect current consumer and set idle
-            consumer_device.device.lock().await.disconnect().await?;
+            if matches!(consumer_device.state().await, State::ConnectedConsumer(_)) {
+                // Disconnect the current consumer if needed
+                info!("Device{}: Disconnecting current consumer", current_consumer.device_id.0);
+                // disconnect current consumer and set idle
+                consumer_device.device.lock().await.disconnect().await?;
+                consumer_device.state.lock().await.state = State::Idle;
+            }
 
             // If no chargers are registered, they won't receive the new power capability.
             // Also, if chargers return UnpoweredAck, that means the charger isn't powered.
@@ -229,6 +232,7 @@ where
                 .await
                 .connect_consumer(new_consumer.consumer_power_capability)
                 .await?;
+            device.state.lock().await.state = State::ConnectedConsumer(new_consumer.consumer_power_capability);
             self.post_consumer_connected(state, new_consumer).await?;
             Ok(())
         } else {

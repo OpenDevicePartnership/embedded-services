@@ -3,7 +3,7 @@
 //! the system is in unlimited power state. In this mode up to [provider_unlimited](super::Config::provider_unlimited)
 //! is provided to each device. Above this threshold, the system is in limited power state.
 //! In this mode [provider_limited](super::Config::provider_limited) is provided to each device
-use embedded_services::{debug, trace};
+use embedded_services::{debug, event::Receiver, power::policy::policy::RequestData, trace};
 
 use super::*;
 
@@ -25,7 +25,7 @@ pub(super) struct State {
     state: PowerState,
 }
 
-impl<D: Lockable + 'static, R: EventReceiver + 'static> PowerPolicy<D, R>
+impl<D: Lockable + 'static, R: Receiver<RequestData> + 'static> PowerPolicy<D, R>
 where
     D::Inner: DeviceTrait,
 {
