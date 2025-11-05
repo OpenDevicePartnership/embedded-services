@@ -806,6 +806,7 @@ pub fn tps66994<'a, M: RawMutex, BUS: I2c, V: FwOfferValidator>(
     storage: &'a ReferencedStorage<'a, TPS66994_NUM_PORTS, M>,
     fw_update_config: FwUpdateConfig,
     fw_version_validator: V,
+    svid: Option<Svid>,
 ) -> Option<Tps6699xWrapper<'a, M, BUS, V>> {
     const _: () = assert!(
         TPS66994_NUM_PORTS > 0 && TPS66994_NUM_PORTS <= MAX_SUPPORTED_PORTS,
@@ -817,6 +818,7 @@ pub fn tps66994<'a, M: RawMutex, BUS: I2c, V: FwOfferValidator>(
         Tps6699x::try_new(controller, TPS66994_NUM_PORTS, fw_update_config).unwrap(),
         storage,
         fw_version_validator,
+        svid,
     )
 }
 
@@ -826,6 +828,7 @@ pub fn tps66993<'a, M: RawMutex, BUS: I2c, V: FwOfferValidator>(
     backing: &'a ReferencedStorage<'a, TPS66993_NUM_PORTS, M>,
     fw_update_config: FwUpdateConfig,
     fw_version_validator: V,
+    svid: Option<Svid>,
 ) -> Option<Tps6699xWrapper<'a, M, BUS, V>> {
     const _: () = assert!(
         TPS66993_NUM_PORTS > 0 && TPS66993_NUM_PORTS <= MAX_SUPPORTED_PORTS,
@@ -836,6 +839,7 @@ pub fn tps66993<'a, M: RawMutex, BUS: I2c, V: FwOfferValidator>(
         Tps6699x::try_new(controller, TPS66993_NUM_PORTS, fw_update_config).unwrap(),
         backing,
         fw_version_validator,
+        svid,
     )
 }
 

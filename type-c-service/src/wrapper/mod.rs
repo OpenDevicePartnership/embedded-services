@@ -54,9 +54,6 @@ pub const DEFAULT_FW_UPDATE_TICK_INTERVAL_MS: u64 = 5000;
 /// 300 seconds at 5 seconds per tick
 pub const DEFAULT_FW_UPDATE_TIMEOUT_TICKS: u8 = 60;
 
-/// Microsoft SVID
-pub const EX_MDM_SVID: Svid = Svid(0x045Eu16);
-
 /// Trait for validating firmware versions before applying an update
 // TODO: remove this once we have a better framework for OEM customization
 // See https://github.com/OpenDevicePartnership/embedded-services/issues/326
@@ -81,6 +78,8 @@ pub struct ControllerWrapper<'a, M: RawMutex, C: Controller, V: FwOfferValidator
     state: Mutex<M, RefMut<'a, dyn DynPortState<'a>>>,
     /// SW port status event signal
     sw_status_event: Signal<M, ()>,
+    /// SVID used for VDM operations
+    svid: Option<Svid>,
 }
 
 impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, M, C, V> {
@@ -89,6 +88,7 @@ impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, 
         controller: C,
         storage: &'a backing::ReferencedStorage<'a, N, M>,
         fw_version_validator: V,
+        svid: Option<Svid>,
     ) -> Option<Self> {
         const {
             assert!(N > 0 && N <= MAX_SUPPORTED_PORTS, "Invalid number of ports");
@@ -104,6 +104,7 @@ impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, 
             registration: backing.registration,
             state: Mutex::new(backing.state),
             sw_status_event: Signal::new(),
+            svid,
         })
     }
 
@@ -473,10 +474,19 @@ impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, 
                 .process_dp_status_update(controller, port)
                 .await
                 .map(Output::DpStatusUpdate),
-            PortNotificationSingle::DiscoverModeCompleted => self
-                .process_disc_mode_completed_event(controller, port, EX_MDM_SVID)
-                .await
-                .map(|vdos| Ok(Output::DiscModeCompleted(vdos)))?,
+            PortNotificationSingle::DiscoverModeCompleted => match self.svid {
+                None => {
+                    trace!(
+                        "SVID not set; cannot process Discover Mode Completed event on port {}",
+                        port.0
+                    );
+                    Ok(Output::Nop)
+                }
+                Some(svid) => self
+                    .process_disc_mode_completed_event(controller, port, svid)
+                    .await
+                    .map(|vdos| Ok(Output::DiscModeCompleted(vdos)))?,
+            },
             rest => {
                 // Nothing currently implemented for these
                 trace!("Port{}: Notification: {:#?}", port.0, rest);
@@ -573,10 +583,10 @@ impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, 
                 // Nothing to do here
                 Ok(())
             }
-            Output::DiscModeCompleted(vdos) => self
-                .finalize_disc_mode_completed(state.deref_mut().deref_mut(), vdos)
-                .await
-                .map_err(Error::Pd),
+            Output::DiscModeCompleted(_) => {
+                // Nothing to do here
+                Ok(())
+            }
         }
     }
 

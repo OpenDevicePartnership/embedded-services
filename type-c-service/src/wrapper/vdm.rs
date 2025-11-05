@@ -73,29 +73,4 @@ impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, 
             }
         }
     }
-
-    /// Finalize a Discover Mode output by notifying the service.
-    pub(super) async fn finalize_disc_mode_completed(
-        &self,
-        state: &mut dyn DynPortState<'_>,
-        output: OutputDiscModeVdos,
-    ) -> Result<(), PdError> {
-        trace!("Finalizing Discover Mode output");
-        let port_index = output.port.0 as usize;
-        if port_index >= state.num_ports() {
-            return Err(PdError::InvalidPort.into());
-        }
-        let global_port_id = self.registration.pd_controller.lookup_global_port(output.port)?;
-        let port_index = output.port.0 as usize;
-
-        // Pend the notification
-        let port_state = &mut state.port_states_mut()[port_index];
-        port_state.pending_events.notification.set_discover_mode_completed(true);
-
-        // Pend this port
-        let mut pending = PortPending::none();
-        pending.pend_port(global_port_id.0 as usize);
-        self.registration.pd_controller.notify_ports(pending).await;
-        Ok(())
-    }
 }

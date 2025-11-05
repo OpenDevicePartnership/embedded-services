@@ -147,13 +147,13 @@ pub struct OutputDpStatusChanged {
     pub status: DpStatus,
 }
 
-/// discover mode completed output data
+/// Discover mode completed output data
 #[derive(Copy, Clone, Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct OutputDiscModeVdos {
     /// Port ID
     pub port: LocalPortId,
-    /// discover mode vdos
+    /// Discover mode VDOs
     pub vdos: RxModeVdos,
 }
 
