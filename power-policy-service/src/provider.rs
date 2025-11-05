@@ -3,7 +3,12 @@
 //! the system is in unlimited power state. In this mode up to [provider_unlimited](super::Config::provider_unlimited)
 //! is provided to each device. Above this threshold, the system is in limited power state.
 //! In this mode [provider_limited](super::Config::provider_limited) is provided to each device
-use embedded_services::{debug, event::Receiver, power::policy::policy::RequestData, trace};
+use embedded_services::{
+    debug,
+    event::Receiver,
+    power::policy::{device::StateKind, policy::RequestData},
+    trace,
+};
 
 use super::*;
 
@@ -85,7 +90,7 @@ where
         };
 
         let device = self.context.get_device(requester_id).await?;
-        let state = device.state().await;
+        let state = device.state.lock().await.state();
         if matches!(state, device::State::Idle | device::State::ConnectedProvider(_)) {
             device.device.lock().await.connect_provider(target_power).await
         } else {
@@ -94,10 +99,7 @@ where
                 device.id().0,
                 state
             );
-            Err(Error::InvalidState(
-                device::StateKind::Idle,
-                requester.state().await.kind(),
-            ))
+            Err(Error::InvalidState(&[StateKind::Idle], state.kind()))
         }
     }
 

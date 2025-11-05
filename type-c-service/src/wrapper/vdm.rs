@@ -1,5 +1,7 @@
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use embedded_services::{
+    event,
+    power::policy::policy,
     sync::Lockable,
     trace,
     type_c::{
@@ -13,8 +15,8 @@ use crate::wrapper::{DynPortState, message::vdm::OutputKind};
 
 use super::{ControllerWrapper, FwOfferValidator, message::vdm::Output};
 
-impl<'device, M: RawMutex, C: Lockable, V: FwOfferValidator, const POLICY_CHANNEL_SIZE: usize>
-    ControllerWrapper<'device, M, C, V, POLICY_CHANNEL_SIZE>
+impl<'device, M: RawMutex, C: Lockable, S: event::Sender<policy::RequestData>, V: FwOfferValidator>
+    ControllerWrapper<'device, M, C, S, V>
 where
     <C as Lockable>::Inner: Controller,
 {

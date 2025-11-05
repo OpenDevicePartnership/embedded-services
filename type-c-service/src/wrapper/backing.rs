@@ -48,12 +48,14 @@ use core::cell::{RefCell, RefMut};
 
 use embassy_sync::{
     blocking_mutex::raw::RawMutex,
+    mutex::Mutex,
     pubsub::{DynImmediatePublisher, DynSubscriber, PubSubChannel},
 };
 use embassy_time::Instant;
 use embedded_cfu_protocol::protocol_definitions::ComponentId;
 use embedded_services::{
-    power,
+    event,
+    power::{self, policy::policy},
     type_c::{
         ControllerId,
         controller::PortStatus,
@@ -95,6 +97,28 @@ impl Default for ControllerState {
             fw_update_state: cfu::FwUpdateState::Idle,
             port_event_streaming_state: None,
         }
+    }
+}
+
+pub struct PortProxy;
+
+impl power::policy::device::DeviceTrait for PortProxy {
+    async fn disconnect(&mut self) -> Result<(), power::policy::Error> {
+        Ok(())
+    }
+
+    async fn connect_provider(
+        &mut self,
+        _capability: power::policy::ProviderPowerCapability,
+    ) -> Result<(), power::policy::Error> {
+        Ok(())
+    }
+
+    async fn connect_consumer(
+        &mut self,
+        _capability: power::policy::ConsumerPowerCapability,
+    ) -> Result<(), power::policy::Error> {
+        Ok(())
     }
 }
 
@@ -165,14 +189,14 @@ pub trait DynPortState<'a> {
 }
 
 /// Service registration objects
-pub struct Registration<'a, const POLICY_CHANNEL_SIZE: usize> {
+pub struct Registration<'a, M: RawMutex, R: event::Receiver<policy::RequestData>> {
     pub context: &'a embedded_services::type_c::controller::Context,
     pub pd_controller: &'a embedded_services::type_c::controller::Device<'a>,
     pub cfu_device: &'a embedded_services::cfu::component::CfuDevice,
-    pub power_devices: &'a [embedded_services::power::policy::device::Device<POLICY_CHANNEL_SIZE>],
+    pub power_devices: &'a [embedded_services::power::policy::device::Device<'a, Mutex<M, PortProxy>, R>],
 }
 
-impl<'a, const POLICY_CHANNEL_SIZE: usize> Registration<'a, POLICY_CHANNEL_SIZE> {
+impl<'a, M: RawMutex, R: event::Receiver<policy::RequestData>> Registration<'a, M, R> {
     pub fn num_ports(&self) -> usize {
         self.power_devices.len()
     }
@@ -181,40 +205,52 @@ impl<'a, const POLICY_CHANNEL_SIZE: usize> Registration<'a, POLICY_CHANNEL_SIZE>
 /// PD alerts should be fairly uncommon, four seems like a reasonable number to start with.
 const MAX_BUFFERED_PD_ALERTS: usize = 4;
 
+struct PortPower<S: event::Sender<policy::RequestData>> {
+    pub sender: S,
+    pub state: power::policy::device::InternalState,
+}
+
 /// Base storage
-pub struct Storage<'a, const N: usize, M: RawMutex, const POLICY_CHANNEL_SIZE: usize> {
+pub struct Storage<'a, const N: usize, M: RawMutex, S: event::Sender<policy::RequestData>> {
     // Registration-related
     context: &'a embedded_services::type_c::controller::Context,
     controller_id: ControllerId,
     pd_ports: [GlobalPortId; N],
     cfu_device: embedded_services::cfu::component::CfuDevice,
-    power_devices: [embedded_services::power::policy::device::Device<POLICY_CHANNEL_SIZE>; N],
+    power_state: Mutex<M, [PortPower<S>; N]>,
+    port_proxies: [Mutex<M, PortProxy>; N],
 
     // State-related
     pd_alerts: [PubSubChannel<M, Ado, MAX_BUFFERED_PD_ALERTS, 1, 0>; N],
 }
 
-impl<'a, const N: usize, M: RawMutex, const POLICY_CHANNEL_SIZE: usize> Storage<'a, N, M, POLICY_CHANNEL_SIZE> {
+impl<'a, const N: usize, M: RawMutex, S: event::Sender<policy::RequestData>> Storage<N, M, S> {
     pub fn new(
         context: &'a embedded_services::type_c::controller::Context,
         controller_id: ControllerId,
         cfu_id: ComponentId,
-        ports: [(GlobalPortId, power::policy::DeviceId); N],
         power_policy_context: &'static embedded_services::power::policy::policy::Context<POLICY_CHANNEL_SIZE>,
+        pd_ports: [GlobalPortId; N],
+        power_policy_senders: [S; N],
     ) -> Self {
         Self {
             context,
             controller_id,
-            pd_ports: ports.map(|(port, _)| port),
+            pd_ports,
             cfu_device: embedded_services::cfu::component::CfuDevice::new(cfu_id),
-            power_devices: ports
-                .map(|(_, device)| embedded_services::power::policy::device::Device::new(device, power_policy_context)),
+            power_state: Mutex::new(power_policy_senders.map(|sender| PortPower {
+                sender,
+                state: Default::default(),
+            })),
+            port_proxies: from_fn(|_| Mutex::new(PortProxy)),
             pd_alerts: [const { PubSubChannel::new() }; N],
         }
     }
 
-    /// Create referenced storage from this storage
-    pub fn create_referenced(&self) -> Option<ReferencedStorage<'_, N, M, POLICY_CHANNEL_SIZE>> {
+    pub fn create_referenced<R: event::Receiver<policy::RequestData>>(
+        &self,
+        policy_receivers: [(power::policy::DeviceId, R); N],
+    ) -> Option<ReferencedStorage<'_, N, M, S, R>> {
         ReferencedStorage::try_from_storage(self)
     }
 }
@@ -223,17 +259,28 @@ impl<'a, const N: usize, M: RawMutex, const POLICY_CHANNEL_SIZE: usize> Storage<
 ///
 /// To simplify usage, we use interior mutability through a ref cell to avoid having to declare the state
 /// completely separately.
-pub struct ReferencedStorage<'a, const N: usize, M: RawMutex, const POLICY_CHANNEL_SIZE: usize> {
-    storage: &'a Storage<'a, N, M, POLICY_CHANNEL_SIZE>,
+pub struct ReferencedStorage<
+    'a,
+    const N: usize,
+    M: RawMutex,
+    S: event::Sender<policy::RequestData>,
+    R: event::Receiver<policy::RequestData>,
+> {
+    storage: &'a Storage<N, M, S>,
     state: RefCell<InternalState<'a, N>>,
     pd_controller: embedded_services::type_c::controller::Device<'a>,
+    power_devices: [power::policy::device::Device<'a, Mutex<M, PortProxy>, R>; N],
 }
 
-impl<'a, const N: usize, M: RawMutex, const POLICY_CHANNEL_SIZE: usize>
-    ReferencedStorage<'a, N, M, POLICY_CHANNEL_SIZE>
+impl<'a, const N: usize, M: RawMutex, S: event::Sender<policy::RequestData>, R: event::Receiver<policy::RequestData>>
+    ReferencedStorage<'a, N, M, S, R>
 {
     /// Create a new referenced storage from the given storage and controller ID
-    fn try_from_storage(storage: &'a Storage<N, M, POLICY_CHANNEL_SIZE>) -> Option<Self> {
+    fn try_from_storage(
+        storage: &'a Storage<N, M, S>,
+        policy_receivers: [(power::policy::DeviceId, R); N],
+    ) -> Option<Self> {
+        let mut policy_iter = policy_receivers.into_iter();
         Some(Self {
             storage,
             state: RefCell::new(InternalState::try_new(storage)?),
@@ -241,20 +288,25 @@ impl<'a, const N: usize, M: RawMutex, const POLICY_CHANNEL_SIZE: usize>
                 storage.controller_id,
                 storage.pd_ports.as_slice(),
             ),
+            power_devices: from_fn(|i| {
+                // Always safe because both arrays have length N
+                let (id, receiver) = policy_iter.next().unwrap();
+                power::policy::device::Device::new(id, &storage.port_proxies[i], receiver)
+            }),
         })
     }
 
     /// Creates the backing, returns `None` if a backing has already been created
-    pub fn create_backing<'b>(&'b self) -> Option<Backing<'b, POLICY_CHANNEL_SIZE>>
+    pub fn create_backing<'b>(&'b self) -> Option<Backing<'b, M, R>>
     where
         'b: 'a,
     {
-        self.state.try_borrow_mut().ok().map(|state| Backing {
+        self.state.try_borrow_mut().ok().map(|state| Backing::<M, R> {
             registration: Registration {
                 context: self.storage.context,
                 pd_controller: &self.pd_controller,
                 cfu_device: &self.storage.cfu_device,
-                power_devices: &self.storage.power_devices,
+                power_devices: &self.power_devices,
             },
             state,
         })
@@ -262,7 +314,7 @@ impl<'a, const N: usize, M: RawMutex, const POLICY_CHANNEL_SIZE: usize>
 }
 
 /// Wrapper around registration and type-erased state
-pub struct Backing<'a, const POLICY_CHANNEL_SIZE: usize> {
-    pub(crate) registration: Registration<'a, POLICY_CHANNEL_SIZE>,
+pub struct Backing<'a, M: RawMutex, R: event::Receiver<policy::RequestData>> {
+    pub(crate) registration: Registration<'a, M, R>,
     pub(crate) state: RefMut<'a, dyn DynPortState<'a>>,
 }

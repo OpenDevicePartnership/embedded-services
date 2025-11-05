@@ -2,6 +2,7 @@ use embassy_futures::yield_now;
 use embassy_sync::pubsub::WaitResult;
 use embassy_time::{Duration, Timer};
 use embedded_services::debug;
+use embedded_services::power::policy::device::State;
 use embedded_services::type_c::Cached;
 use embedded_services::type_c::controller::{InternalResponseData, Response};
 use embedded_usb_pd::constants::{T_PS_TRANSITION_EPR_MS, T_PS_TRANSITION_SPR_MS};
@@ -9,8 +10,8 @@ use embedded_usb_pd::ucsi::{self, lpm};
 
 use super::*;
 
-impl<'device, M: RawMutex, C: Lockable, V: FwOfferValidator, const POLICY_CHANNEL_SIZE: usize>
-    ControllerWrapper<'device, M, C, V, POLICY_CHANNEL_SIZE>
+impl<'device, M: RawMutex, C: Lockable, S: event::Sender<policy::RequestData>, V: FwOfferValidator>
+    ControllerWrapper<'device, M, C, S, V>
 where
     <C as Lockable>::Inner: Controller,
 {
@@ -116,42 +117,27 @@ where
         LocalPortId(port_index as u8)
     }
 
-    /// Set the maximum sink voltage for a port
-    pub async fn set_max_sink_voltage(&self, local_port: LocalPortId, voltage_mv: Option<u16>) -> Result<(), PdError> {
-        let mut controller = self.controller.lock().await;
-        let _ = self
-            .process_set_max_sink_voltage(&mut controller, local_port, voltage_mv)
-            .await?;
-        Ok(())
-    }
-
     /// Process a request to set the maximum sink voltage for a port
     async fn process_set_max_sink_voltage(
         &self,
         controller: &mut C::Inner,
+        power_state: &mut embedded_services::power::policy::device::InternalState,
+        power_sender: &mut S,
         local_port: LocalPortId,
         voltage_mv: Option<u16>,
     ) -> Result<controller::PortResponseData, PdError> {
-        let power_device = self.get_power_device(local_port).ok_or(PdError::InvalidPort)?;
-
-        let state = power_device.state().await;
+        let state = power_state.state();
         debug!("Port{}: Current state: {:#?}", local_port.0, state);
-        if let Ok(connected_consumer) = power_device.try_device_action::<action::ConnectedConsumer>().await {
+        if matches!(state, State::ConnectedConsumer(_)) {
             debug!("Port{}: Set max sink voltage, connected consumer found", local_port.0);
-            if voltage_mv.is_some()
-                && voltage_mv
-                    < power_device
-                        .consumer_capability()
-                        .await
-                        .map(|c| c.capability.voltage_mv)
-            {
+            if voltage_mv.is_some() && voltage_mv < power_state.consumer_capability().map(|c| c.capability.voltage_mv) {
                 // New max voltage is lower than current consumer capability which will trigger a renegociation
                 // So disconnect first
                 debug!(
                     "Port{}: Disconnecting consumer before setting max sink voltage",
                     local_port.0
                 );
-                let _ = connected_consumer.disconnect().await;
+                power_sender.send(policy::RequestData::Disconnected).await;
             }
         }
 

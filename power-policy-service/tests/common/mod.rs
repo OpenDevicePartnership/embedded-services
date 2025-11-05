@@ -19,6 +19,8 @@ pub mod mock;
 use mock::Mock;
 use static_cell::StaticCell;
 
+use crate::common::mock::FnCall;
+
 pub const LOW_POWER: PowerCapability = PowerCapability {
     voltage_mv: 5000,
     current_ma: 1500,
@@ -37,7 +39,7 @@ const EVENT_CHANNEL_SIZE: usize = 4;
 async fn power_policy_task(
     completion_signal: &'static Signal<GlobalRawMutex, ()>,
     power_policy: &'static PowerPolicy<
-        Mutex<GlobalRawMutex, Mock<DynamicSender<'static, RequestData>>>,
+        Mutex<GlobalRawMutex, Mock<'static, DynamicSender<'static, RequestData>>>,
         DynamicReceiver<'static, RequestData>,
     >,
 ) {
@@ -55,7 +57,9 @@ pub async fn run_test<F: Future<Output = ()>>(
     timeout: Duration,
     test: impl FnOnce(
         &'static Mutex<GlobalRawMutex, Mock<DynamicSender<'static, RequestData>>>,
+        &'static Signal<GlobalRawMutex, (usize, FnCall)>,
         &'static Mutex<GlobalRawMutex, Mock<DynamicSender<'static, RequestData>>>,
+        &'static Signal<GlobalRawMutex, (usize, FnCall)>,
     ) -> F,
 ) {
     env_logger::builder().filter_level(log::LevelFilter::Trace).init();
@@ -67,8 +71,10 @@ pub async fn run_test<F: Future<Output = ()>>(
     let device0_sender = device0_event_channel.dyn_sender();
     let device0_receiver = device0_event_channel.dyn_receiver();
 
+    static DEVICE0_SIGNAL: StaticCell<Signal<GlobalRawMutex, (usize, FnCall)>> = StaticCell::new();
+    let device0_signal = DEVICE0_SIGNAL.init(Signal::new());
     static DEVICE0: StaticCell<Mutex<GlobalRawMutex, Mock<DynamicSender<'static, RequestData>>>> = StaticCell::new();
-    let device0 = DEVICE0.init(Mutex::new(Mock::new(device0_sender)));
+    let device0 = DEVICE0.init(Mutex::new(Mock::new(device0_sender, device0_signal)));
 
     static DEVICE0_REGISTRATION: StaticCell<
         device::Device<
@@ -87,8 +93,10 @@ pub async fn run_test<F: Future<Output = ()>>(
     let device1_sender = device1_event_channel.dyn_sender();
     let device1_receiver = device1_event_channel.dyn_receiver();
 
+    static DEVICE1_SIGNAL: StaticCell<Signal<GlobalRawMutex, (usize, FnCall)>> = StaticCell::new();
+    let device1_signal = DEVICE1_SIGNAL.init(Signal::new());
     static DEVICE1: StaticCell<Mutex<GlobalRawMutex, Mock<DynamicSender<'static, RequestData>>>> = StaticCell::new();
-    let device1 = DEVICE1.init(Mutex::new(Mock::new(device1_sender)));
+    let device1 = DEVICE1.init(Mutex::new(Mock::new(device1_sender, device1_signal)));
 
     static DEVICE1_REGISTRATION: StaticCell<
         device::Device<
@@ -115,7 +123,7 @@ pub async fn run_test<F: Future<Output = ()>>(
     with_timeout(
         timeout,
         join(power_policy_task(completion_signal, power_policy), async {
-            test(device0, device1).await;
+            test(device0, device0_signal, device1, device1_signal).await;
             completion_signal.signal(());
         }),
     )

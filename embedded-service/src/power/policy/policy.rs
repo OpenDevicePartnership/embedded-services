@@ -7,7 +7,7 @@ use core::sync::atomic::{AtomicBool, Ordering};
 >>>>>>> 34701dd (Add device and receiver arguments to context token)
 
 use crate::broadcaster::immediate as broadcaster;
-use crate::event::{self, Receiver};
+use crate::event::Receiver;
 use crate::power::policy::device::DeviceTrait;
 use crate::power::policy::{CommsMessage, ConsumerPowerCapability, ProviderPowerCapability};
 use crate::sync::Lockable;
@@ -72,56 +72,6 @@ pub struct Response {
     /// Response data
     pub data: ResponseData,
 }
-
-/// Trait used by devices to send events to a power policy implementation
-pub trait Sender: event::Sender<RequestData> {
-    /// Wrapper to simplify sending this event
-    fn on_attach(&mut self) -> impl Future<Output = ()> {
-        self.send(RequestData::Attached)
-    }
-
-    /// Wrapper to simplify attempting to send this event
-    fn try_on_update_consumer_capability(&mut self, cap: Option<ConsumerPowerCapability>) -> Option<()> {
-        self.try_send(RequestData::UpdatedConsumerCapability(cap))
-    }
-
-    /// Wrapper to simplify sending this event
-    fn on_update_consumer_capability(&mut self, cap: Option<ConsumerPowerCapability>) -> impl Future<Output = ()> {
-        self.send(RequestData::UpdatedConsumerCapability(cap))
-    }
-
-    /// Wrapper to simplify attempting to send this event
-    fn try_on_request_provider_capability(&mut self, cap: Option<ProviderPowerCapability>) -> Option<()> {
-        self.try_send(RequestData::RequestedProviderCapability(cap))
-    }
-
-    /// Wrapper to simplify sending this event
-    fn on_request_provider_capability(&mut self, cap: Option<ProviderPowerCapability>) -> impl Future<Output = ()> {
-        self.send(RequestData::RequestedProviderCapability(cap))
-    }
-
-    /// Wrapper to simplify attempting to send this event
-    fn try_on_disconnect(&mut self) -> Option<()> {
-        self.try_send(RequestData::Disconnected)
-    }
-
-    /// Wrapper to simplify sending this event
-    fn on_disconnect(&mut self) -> impl Future<Output = ()> {
-        self.send(RequestData::Disconnected)
-    }
-
-    /// Wrapper to simplify attempting to send this event
-    fn try_on_detach(&mut self) -> Option<()> {
-        self.try_send(RequestData::Detached)
-    }
-
-    /// Wrapper to simplify sending this event
-    fn on_detach(&mut self) -> impl Future<Output = ()> {
-        self.send(RequestData::Detached)
-    }
-}
-
-impl<T> Sender for T where T: event::Sender<RequestData> {}
 
 /// Power policy context
 pub struct Context {

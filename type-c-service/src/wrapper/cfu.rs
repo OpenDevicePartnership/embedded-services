@@ -4,6 +4,7 @@ use embassy_futures::select::{Either, select};
 use embedded_cfu_protocol::protocol_definitions::*;
 use embedded_services::cfu::component::{InternalResponseData, RequestData};
 use embedded_services::power;
+use embedded_services::power::policy::policy;
 use embedded_services::type_c::controller::Controller;
 use embedded_services::{debug, error};
 
@@ -29,8 +30,8 @@ impl FwUpdateState {
     }
 }
 
-impl<'device, M: RawMutex, C: Lockable, V: FwOfferValidator, const POLICY_CHANNEL_SIZE: usize>
-    ControllerWrapper<'device, M, C, V, POLICY_CHANNEL_SIZE>
+impl<'device, M: RawMutex, C: Lockable, S: event::Sender<policy::RequestData>, V: FwOfferValidator>
+    ControllerWrapper<'device, M, C, S, V>
 where
     <C as Lockable>::Inner: Controller,
 {
@@ -143,7 +144,7 @@ where
             // Detach from the power policy so it doesn't attempt to do anything while we are updating
             let controller_id = self.registration.pd_controller.id();
             let mut detached_all = true;
-            for power in self.registration.power_devices {
+            for power in self.registration.power_event_senders {
                 info!("Controller{}: checking power device", controller_id.0);
                 if power.state().await != power::policy::device::State::Detached {
                     info!("Controller{}: Detaching power device", controller_id.0);

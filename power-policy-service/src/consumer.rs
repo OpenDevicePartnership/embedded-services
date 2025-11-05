@@ -2,6 +2,9 @@ use core::cmp::Ordering;
 use embedded_services::debug;
 use embedded_services::power::policy::charger::Device as ChargerDevice;
 use embedded_services::power::policy::charger::PolicyEvent;
+use embedded_services::power::policy::device::StateKind;
+use embedded_services::power::policy::policy::check_chargers_ready;
+use embedded_services::power::policy::policy::init_chargers;
 
 use super::*;
 
@@ -199,12 +202,18 @@ where
 
             state.current_consumer_state = None;
             let consumer_device = self.context.get_device(current_consumer.device_id).await?;
-            if matches!(consumer_device.state().await, State::ConnectedConsumer(_)) {
+            if matches!(consumer_device.state.lock().await.state(), State::ConnectedConsumer(_)) {
                 // Disconnect the current consumer if needed
                 info!("Device{}: Disconnecting current consumer", current_consumer.device_id.0);
                 // disconnect current consumer and set idle
                 consumer_device.device.lock().await.disconnect().await?;
-                consumer_device.state.lock().await.state = State::Idle;
+                if let Err(e) = consumer_device.state.lock().await.disconnect(false) {
+                    // This should never happen because we check the state above, log an error instead of a panic
+                    error!(
+                        "Device{}: Disconnect transition failed: {:#?}",
+                        current_consumer.device_id.0, e
+                    );
+                }
             }
 
             // If no chargers are registered, they won't receive the new power capability.
@@ -223,7 +232,7 @@ where
 
         info!("Device {}, connecting new consumer", new_consumer.device_id.0);
         let device = self.context.get_device(new_consumer.device_id).await?;
-        let device_state = device.state().await;
+        let device_state = device.state.lock().await.state();
 
         if matches!(device_state, device::State::Idle | device::State::ConnectedConsumer(_)) {
             device
@@ -232,7 +241,18 @@ where
                 .await
                 .connect_consumer(new_consumer.consumer_power_capability)
                 .await?;
-            device.state.lock().await.state = State::ConnectedConsumer(new_consumer.consumer_power_capability);
+            if let Err(e) = device
+                .state
+                .lock()
+                .await
+                .connect_consumer(new_consumer.consumer_power_capability)
+            {
+                // Should never happen because we checked the state above, log an error instead of a panic
+                error!(
+                    "Device{}: Connect state transition failed: {:#?}",
+                    new_consumer.device_id.0, e
+                );
+            }
             self.post_consumer_connected(state, new_consumer).await?;
             Ok(())
         } else {
@@ -241,7 +261,7 @@ where
                 device.id().0,
                 device_state
             );
-            Err(Error::InvalidState(device::StateKind::Idle, device_state.kind()))
+            Err(Error::InvalidState(&[StateKind::Idle], device_state.kind()))
         }
     }
 

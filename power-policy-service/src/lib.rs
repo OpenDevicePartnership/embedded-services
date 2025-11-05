@@ -60,28 +60,15 @@ where
         }
     }
 
-    async fn process_notify_attach(&self, device: &Device<'_, D, R>) -> Result<(), Error> {
-        let state = device.state.lock().await.state;
-        if state != State::Detached {
-            error!("Device{}: Invalid state for attach: {:#?}", device.id().0, state);
-            device.state.lock().await.state = State::Detached;
-            device.device.lock().await.reset().await
-        } else {
-            device.state.lock().await.state = State::Idle;
-            Ok(())
+    async fn process_notify_attach(&self, device: &Device<'_, D, R>) {
+        if let Err(e) = device.state.lock().await.attach() {
+            error!("Device{}: Invalid state for attach: {:#?}", device.id().0, e);
         }
     }
 
     async fn process_notify_detach(&self, device: &Device<'_, D, R>) -> Result<(), Error> {
-        // Detach is valid in any state
-        {
-            let state = &mut device.state.lock().await;
-            state.state = State::Detached;
-            state.consumer_capability = None;
-            state.requested_provider_capability = None;
-        }
-        self.update_current_consumer().await?;
-        Ok(())
+        device.state.lock().await.detach();
+        self.update_current_consumer().await
     }
 
     async fn process_notify_consumer_power_capability(
@@ -89,22 +76,15 @@ where
         device: &Device<'_, D, R>,
         capability: Option<ConsumerPowerCapability>,
     ) -> Result<(), Error> {
-        let state = device.state.lock().await.state;
-        if matches!(
-            device.state.lock().await.state,
-            State::Idle | State::ConnectedConsumer(_)
-        ) {
-            device.state.lock().await.consumer_capability = capability;
-            self.update_current_consumer().await
-        } else {
+        if let Err(e) = device.state.lock().await.update_consumer_power_capability(capability) {
             error!(
-                "Device{}: Invalid state for notify consumer capability: {:#?}",
+                "Device{}: Invalid state for notify consumer capability, catching up: {:#?}",
                 device.id().0,
-                state,
+                e,
             );
-            device.state.lock().await.state = State::Detached;
-            device.device.lock().await.reset().await
         }
+
+        self.update_current_consumer().await
     }
 
     async fn process_request_provider_power_capabilities(
@@ -112,31 +92,29 @@ where
         device: &Device<'_, D, R>,
         capability: Option<ProviderPowerCapability>,
     ) -> Result<(), Error> {
-        let state = device.state.lock().await.state;
-        if matches!(state, State::Idle | State::ConnectedProvider(_)) {
-            device.state.lock().await.requested_provider_capability = capability;
-            self.connect_provider(device.id()).await
-        } else {
+        if let Err(e) = device
+            .state
+            .lock()
+            .await
+            .update_requested_provider_power_capability(capability)
+        {
             error!(
-                "Device{}: Invalid state for request provider capability: {:#?}",
+                "Device{}: Invalid state for notify consumer capability, catching up: {:#?}",
                 device.id().0,
-                state,
+                e,
             );
-            device.state.lock().await.state = State::Detached;
-            device.device.lock().await.reset().await
         }
+
+        self.connect_provider(device.id()).await
     }
 
     async fn process_notify_disconnect(&self, device: &Device<'_, D, R>) -> Result<(), Error> {
-        let state = device.state.lock().await.state;
-        if matches!(state, State::ConnectedConsumer(_) | State::ConnectedProvider(_)) {
-            device.state.lock().await.state = State::Idle;
-        } else {
-            error!("Device{}: Invalid state for disconnect: {:#?}", device.id().0, state);
-            device.state.lock().await.state = State::Detached;
-            if let Err(e) = device.device.lock().await.reset().await {
-                error!("Device{}: Failed to reset device: {:#?}", device.id().0, e);
-            }
+        if let Err(e) = device.state.lock().await.disconnect(true) {
+            error!(
+                "Device{}: Invalid state for notify disconnect, catching up: {:#?}",
+                device.id().0,
+                e,
+            );
         }
 
         if self
@@ -194,7 +172,8 @@ where
         match request.data {
             policy::RequestData::Attached => {
                 info!("Received notify attached from device {}", device.id().0);
-                self.process_notify_attach(device).await
+                self.process_notify_attach(device).await;
+                Ok(())
             }
             policy::RequestData::Detached => {
                 info!("Received notify detached from device {}", device.id().0);

@@ -1,8 +1,9 @@
-use embedded_services::info;
-use embedded_services::power::policy::device::DeviceTrait;
+use embassy_sync::signal::Signal;
+use embedded_services::power::policy::device::{DeviceTrait, InternalState};
 use embedded_services::power::policy::flags::Consumer;
-use embedded_services::power::policy::policy::Sender;
+use embedded_services::power::policy::policy::RequestData;
 use embedded_services::power::policy::{ConsumerPowerCapability, Error, PowerCapability, ProviderPowerCapability};
+use embedded_services::{GlobalRawMutex, event, info};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[allow(dead_code)]
@@ -13,70 +14,68 @@ pub enum FnCall {
     Reset,
 }
 
-pub struct Mock<S: Sender> {
+pub struct Mock<'a, S: event::Sender<RequestData>> {
     sender: S,
-    // Number of function calls made to the mock.
-    pub num_fn_calls: usize,
-    // Last function call made.
-    pub last_fn_call: Option<FnCall>,
+    fn_call: &'a Signal<GlobalRawMutex, (usize, FnCall)>,
+    // Internal state
+    pub state: InternalState,
 }
 
-impl<S: Sender> Mock<S> {
-    pub fn new(sender: S) -> Self {
+impl<'a, S: event::Sender<RequestData>> Mock<'a, S> {
+    pub fn new(sender: S, fn_call: &'a Signal<GlobalRawMutex, (usize, FnCall)>) -> Self {
         Self {
             sender,
-            num_fn_calls: 0,
-            last_fn_call: None,
+            fn_call,
+            state: Default::default(),
         }
     }
 
+    fn record_fn_call(&mut self, fn_call: FnCall) {
+        let num_fn_calls = self
+            .fn_call
+            .try_take()
+            .map(|(num_fn_calls, _)| num_fn_calls)
+            .unwrap_or(1);
+        self.fn_call.signal((num_fn_calls, fn_call));
+    }
+
     pub async fn simulate_consumer_connection(&mut self, capability: PowerCapability) {
-        self.sender.on_attach().await;
+        self.state.attach().unwrap();
+
+        self.sender.send(RequestData::Attached).await;
+
+        let capability = Some(ConsumerPowerCapability {
+            capability,
+            flags: Consumer::none(),
+        });
+        self.state.update_consumer_power_capability(capability).unwrap();
         self.sender
-            .on_update_consumer_capability(Some(ConsumerPowerCapability {
-                capability,
-                flags: Consumer::none(),
-            }))
+            .send(RequestData::UpdatedConsumerCapability(capability))
             .await;
     }
 
-    #[allow(dead_code)]
     pub async fn simulate_detach(&mut self) {
-        self.sender.on_detach().await;
-    }
-
-    pub fn reset_mock(&mut self) {
-        self.num_fn_calls = 0;
-        self.last_fn_call = None;
+        self.state.detach();
+        self.sender.send(RequestData::Detached).await;
     }
 }
 
-impl<S: Sender> DeviceTrait for Mock<S> {
+impl<'a, S: event::Sender<RequestData>> DeviceTrait for Mock<'a, S> {
     async fn connect_consumer(&mut self, capability: ConsumerPowerCapability) -> Result<(), Error> {
         info!("Connect consumer {:#?}", capability);
-        self.num_fn_calls += 1;
-        self.last_fn_call = Some(FnCall::ConnectConsumer(capability));
+        self.record_fn_call(FnCall::ConnectConsumer(capability));
         Ok(())
     }
 
     async fn connect_provider(&mut self, capability: ProviderPowerCapability) -> Result<(), Error> {
         info!("Connect provider: {:#?}", capability);
-        self.num_fn_calls += 1;
-        self.last_fn_call = Some(FnCall::ConnectProvider(capability));
+        self.record_fn_call(FnCall::ConnectProvider(capability));
         Ok(())
     }
 
     async fn disconnect(&mut self) -> Result<(), Error> {
         info!("Disconnect");
-        self.num_fn_calls += 1;
-        self.last_fn_call = Some(FnCall::Disconnect);
-        Ok(())
-    }
-
-    async fn reset(&mut self) -> Result<(), Error> {
-        info!("Reset");
-        self.num_fn_calls += 1;
-        self.last_fn_call = Some(FnCall::Reset);
+        self.record_fn_call(FnCall::Disconnect);
         Ok(())
     }
 }

@@ -1,5 +1,5 @@
-use embassy_sync::{channel::DynamicSender, mutex::Mutex};
-use embassy_time::Timer;
+use embassy_sync::{channel::DynamicSender, mutex::Mutex, signal::Signal};
+use embassy_time::{Duration, TimeoutError, with_timeout};
 use embedded_services::{
     GlobalRawMutex,
     power::policy::{ConsumerPowerCapability, flags::Consumer, policy::RequestData},
@@ -9,117 +9,126 @@ mod common;
 
 use common::LOW_POWER;
 
-use crate::common::{DEFAULT_TIMEOUT, HIGH_POWER, mock::Mock, run_test};
+use crate::common::{
+    DEFAULT_TIMEOUT, HIGH_POWER,
+    mock::{FnCall, Mock},
+    run_test,
+};
+
+const PER_CALL_TIMEOUT: Duration = Duration::from_millis(1000);
 
 /// Test the basic consumer flow with a single device.
-async fn test_single(device0: &'static Mutex<GlobalRawMutex, Mock<DynamicSender<'static, RequestData>>>) {
+async fn test_single(
+    device0: &'static Mutex<GlobalRawMutex, Mock<'static, DynamicSender<'static, RequestData>>>,
+    device0_signal: &'static Signal<GlobalRawMutex, (usize, FnCall)>,
+) {
     // Test initial connection
     {
         device0.lock().await.simulate_consumer_connection(LOW_POWER).await;
-        Timer::after_millis(1000).await;
 
-        let mut dev0 = device0.lock().await;
-        assert_eq!(dev0.num_fn_calls, 1);
         assert_eq!(
-            dev0.last_fn_call,
-            Some(common::mock::FnCall::ConnectConsumer(ConsumerPowerCapability {
-                capability: LOW_POWER,
-                flags: Consumer::none(),
-            }))
+            with_timeout(PER_CALL_TIMEOUT, device0_signal.wait()).await.unwrap(),
+            (
+                1,
+                FnCall::ConnectConsumer(ConsumerPowerCapability {
+                    capability: LOW_POWER,
+                    flags: Consumer::none(),
+                })
+            )
         );
-        dev0.reset_mock();
+        device0_signal.reset();
     }
     // Test detach
     {
         device0.lock().await.simulate_detach().await;
-        Timer::after_millis(1000).await;
 
-        let mut dev0 = device0.lock().await;
-        // Power policy shouldn't do any function calls
-        assert_eq!(dev0.num_fn_calls, 0);
-        assert_eq!(dev0.last_fn_call, None);
-        dev0.reset_mock();
+        // Power policy shouldn't call any functions on detach so we'll timeout
+        assert_eq!(
+            with_timeout(PER_CALL_TIMEOUT, device0_signal.wait()).await,
+            Err(TimeoutError)
+        );
+        device0_signal.reset();
     }
 }
 
 /// Test swapping to a higher powered device.
 async fn test_swap_higher(
-    device0: &'static Mutex<GlobalRawMutex, Mock<DynamicSender<'static, RequestData>>>,
-    device1: &'static Mutex<GlobalRawMutex, Mock<DynamicSender<'static, RequestData>>>,
+    device0: &'static Mutex<GlobalRawMutex, Mock<'static, DynamicSender<'static, RequestData>>>,
+    device0_signal: &'static Signal<GlobalRawMutex, (usize, FnCall)>,
+    device1: &'static Mutex<GlobalRawMutex, Mock<'static, DynamicSender<'static, RequestData>>>,
+    device1_signal: &'static Signal<GlobalRawMutex, (usize, FnCall)>,
 ) {
     // Device0 connection at low power
     {
         device0.lock().await.simulate_consumer_connection(LOW_POWER).await;
-        Timer::after_millis(1000).await;
 
-        let mut dev0 = device0.lock().await;
-        assert_eq!(dev0.num_fn_calls, 1);
         assert_eq!(
-            dev0.last_fn_call,
-            Some(common::mock::FnCall::ConnectConsumer(ConsumerPowerCapability {
-                capability: LOW_POWER,
-                flags: Consumer::none(),
-            }))
+            with_timeout(PER_CALL_TIMEOUT, device0_signal.wait()).await.unwrap(),
+            (
+                1,
+                FnCall::ConnectConsumer(ConsumerPowerCapability {
+                    capability: LOW_POWER,
+                    flags: Consumer::none(),
+                })
+            )
         );
-        dev0.reset_mock();
+        device0_signal.reset();
     }
     // Device1 connection at high power
     {
         device1.lock().await.simulate_consumer_connection(HIGH_POWER).await;
-        Timer::after_millis(1000).await;
 
-        // Check that device0 was disconnected
-        let mut dev0 = device0.lock().await;
-        assert_eq!(dev0.num_fn_calls, 1);
-        assert_eq!(dev0.last_fn_call, Some(common::mock::FnCall::Disconnect));
-        dev0.reset_mock();
-
-        // Check that device1 was connected
-        let mut dev1 = device1.lock().await;
-        assert_eq!(dev1.num_fn_calls, 1);
         assert_eq!(
-            dev1.last_fn_call,
-            Some(common::mock::FnCall::ConnectConsumer(ConsumerPowerCapability {
-                capability: HIGH_POWER,
-                flags: Consumer::none(),
-            }))
+            with_timeout(PER_CALL_TIMEOUT, device0_signal.wait()).await.unwrap(),
+            (1, FnCall::Disconnect)
         );
-        dev1.reset_mock();
+        device0_signal.reset();
+
+        assert_eq!(
+            with_timeout(PER_CALL_TIMEOUT, device1_signal.wait()).await.unwrap(),
+            (
+                1,
+                FnCall::ConnectConsumer(ConsumerPowerCapability {
+                    capability: HIGH_POWER,
+                    flags: Consumer::none(),
+                })
+            )
+        );
+        device1_signal.reset();
     }
     // Test detach device1, should reconnect device0
     {
         device1.lock().await.simulate_detach().await;
-        Timer::after_millis(1000).await;
 
-        let mut dev1 = device1.lock().await;
-        // Power policy shouldn't do any function calls
-        assert_eq!(dev1.num_fn_calls, 0);
-        assert_eq!(dev1.last_fn_call, None);
-        dev1.reset_mock();
-
-        // Check that device0 was reconnected
-        let mut dev0 = device0.lock().await;
-        assert_eq!(dev0.num_fn_calls, 1);
+        // Power policy shouldn't call any functions on detach so we'll timeout
         assert_eq!(
-            dev0.last_fn_call,
-            Some(common::mock::FnCall::ConnectConsumer(ConsumerPowerCapability {
-                capability: LOW_POWER,
-                flags: Consumer::none(),
-            }))
+            with_timeout(PER_CALL_TIMEOUT, device1_signal.wait()).await,
+            Err(TimeoutError)
         );
-        dev0.reset_mock();
+
+        assert_eq!(
+            with_timeout(PER_CALL_TIMEOUT, device0_signal.wait()).await.unwrap(),
+            (
+                1,
+                FnCall::ConnectConsumer(ConsumerPowerCapability {
+                    capability: LOW_POWER,
+                    flags: Consumer::none(),
+                })
+            )
+        );
+        device0_signal.reset();
     }
 }
 
 /// Run all tests, this is temporary to deal with 'static lifetimes until the intrusive list refactor is done.
 #[tokio::test]
 async fn run_all_tests() {
-    run_test(DEFAULT_TIMEOUT, |device0, device1| async move {
-        test_single(device0).await;
-
-        device0.lock().await.reset_mock();
-        device1.lock().await.reset_mock();
-        test_swap_higher(device0, device1).await;
-    })
+    run_test(
+        DEFAULT_TIMEOUT,
+        |device0, device0_signal, device1, device1_signal| async move {
+            test_single(device0, device0_signal).await;
+            test_swap_higher(device0, device0_signal, device1, device1_signal).await;
+        },
+    )
     .await;
 }
