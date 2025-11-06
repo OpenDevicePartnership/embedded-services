@@ -15,8 +15,14 @@ use crate::wrapper::{DynPortState, message::vdm::OutputKind};
 
 use super::{ControllerWrapper, FwOfferValidator, message::vdm::Output};
 
-impl<'device, M: RawMutex, C: Lockable, S: event::Sender<policy::RequestData>, V: FwOfferValidator>
-    ControllerWrapper<'device, M, C, S, V>
+impl<
+    'device,
+    M: RawMutex,
+    C: Lockable,
+    S: event::Sender<policy::RequestData>,
+    R: event::Receiver<policy::RequestData>,
+    V: FwOfferValidator,
+> ControllerWrapper<'device, M, C, S, R, V>
 where
     <C as Lockable>::Inner: Controller,
 {
@@ -39,7 +45,11 @@ where
     }
 
     /// Finalize a VDM output by notifying the service.
-    pub(super) fn finalize_vdm(&self, state: &mut dyn DynPortState<'_>, output: Output) -> Result<(), PdError> {
+    pub(super) async fn finalize_vdm(
+        &self,
+        state: &mut dyn DynPortState<'_, S>,
+        output: Output,
+    ) -> Result<(), PdError> {
         trace!("Finalizing VDM output: {:?}", output);
         let Output { port, kind } = output;
         let global_port_id = self.registration.pd_controller.lookup_global_port(port)?;

@@ -4,8 +4,14 @@ use embassy_sync::blocking_mutex::raw::RawMutex;
 use embedded_services::{event, power::policy::policy, sync::Lockable, trace, type_c::controller::Controller};
 use embedded_usb_pd::{Error, LocalPortId};
 
-impl<'device, M: RawMutex, C: Lockable, S: event::Sender<policy::RequestData>, V: FwOfferValidator>
-    ControllerWrapper<'device, M, C, S, V>
+impl<
+    'device,
+    M: RawMutex,
+    C: Lockable,
+    S: event::Sender<policy::RequestData>,
+    R: event::Receiver<policy::RequestData>,
+    V: FwOfferValidator,
+> ControllerWrapper<'device, M, C, S, R, V>
 where
     <C as Lockable>::Inner: Controller,
 {
