@@ -34,8 +34,7 @@ use embedded_services::sync::Lockable;
 use embedded_services::type_c::controller::{self, Controller, PortStatus};
 use embedded_services::type_c::event::{PortEvent, PortNotificationSingle, PortPending, PortStatusChanged};
 use embedded_services::{debug, error, info, trace, warn};
-use embedded_usb_pd::ado::Ado;
-use embedded_usb_pd::{Error, LocalPortId, PdError};
+use embedded_usb_pd::{Error, LocalPortId, PdError, ado::Ado, vdm::Svid};
 
 use crate::wrapper::backing::DynPortState;
 use crate::wrapper::message::*;
@@ -82,6 +81,8 @@ where
     state: Mutex<M, RefMut<'device, dyn DynPortState<'device>>>,
     /// SW port status event signal
     sw_status_event: Signal<M, ()>,
+    /// SVID used for VDM operations
+    svid: Option<Svid>,
 }
 
 impl<'device, M: RawMutex, C: Lockable, V: FwOfferValidator> ControllerWrapper<'device, M, C, V>
@@ -93,6 +94,7 @@ where
         controller: &'device C,
         storage: &'device backing::ReferencedStorage<'device, N, M>,
         fw_version_validator: V,
+        svid: Option<Svid>,
     ) -> Option<Self> {
         const {
             assert!(N > 0 && N <= MAX_SUPPORTED_PORTS, "Invalid number of ports");
@@ -108,6 +110,7 @@ where
             registration: backing.registration,
             state: Mutex::new(backing.state),
             sw_status_event: Signal::new(),
+            svid,
         })
     }
 
@@ -477,6 +480,19 @@ where
                 .process_dp_status_update(controller, port)
                 .await
                 .map(Output::DpStatusUpdate),
+            PortNotificationSingle::DiscoverModeCompleted => match self.svid {
+                None => {
+                    trace!(
+                        "SVID not set; cannot process Discover Mode Completed event on port {}",
+                        port.0
+                    );
+                    Ok(Output::Nop)
+                }
+                Some(svid) => self
+                    .process_disc_mode_completed_event(controller, port, svid)
+                    .await
+                    .map(|vdos| Ok(Output::DiscModeCompleted(vdos)))?,
+            },
             rest => {
                 // Nothing currently implemented for these
                 trace!("Port{}: Notification: {:#?}", port.0, rest);
@@ -573,6 +589,10 @@ where
                 Ok(())
             }
             Output::DpStatusUpdate(_) => {
+                // Nothing to do here
+                Ok(())
+            }
+            Output::DiscModeCompleted(_) => {
                 // Nothing to do here
                 Ok(())
             }

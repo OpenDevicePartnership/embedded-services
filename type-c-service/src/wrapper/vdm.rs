@@ -1,5 +1,6 @@
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use embedded_services::{
+    error,
     sync::Lockable,
     trace,
     type_c::{
@@ -7,11 +8,14 @@ use embedded_services::{
         event::{PortPending, VdmNotification},
     },
 };
-use embedded_usb_pd::{Error, LocalPortId, PdError};
+use embedded_usb_pd::{Error, LocalPortId, PdError, vdm::Svid};
 
 use crate::wrapper::{DynPortState, message::vdm::OutputKind};
 
-use super::{ControllerWrapper, FwOfferValidator, message::vdm::Output};
+use super::{
+    ControllerWrapper, FwOfferValidator,
+    message::{OutputDiscModeVdos, vdm::Output},
+};
 
 impl<'device, M: RawMutex, C: Lockable, V: FwOfferValidator> ControllerWrapper<'device, M, C, V>
 where
@@ -53,5 +57,25 @@ where
         pending.pend_port(global_port_id.0 as usize);
         self.registration.pd_controller.notify_ports(pending).await;
         Ok(())
+    }
+
+    /// Process a notification event by retrieving the relevant VDO data from the `controller` for the appropriate `port`.
+    pub(super) async fn process_disc_mode_completed_event(
+        &self,
+        controller: &mut C::Inner,
+        port: LocalPortId,
+        svid: Svid,
+    ) -> Result<OutputDiscModeVdos, Error<<C::Inner as Controller>::BusError>> {
+        trace!("Processing Discover Mode Completed event on port {}", port.0);
+        match controller.get_rx_disc_mode_vdos(port, svid).await {
+            Ok(disc_mode_vdos) => Ok(OutputDiscModeVdos {
+                port,
+                vdos: disc_mode_vdos,
+            }),
+            Err(err) => {
+                error!("Failed to get discover mode VDOs on port {}", port.0);
+                Err(err)
+            }
+        }
     }
 }

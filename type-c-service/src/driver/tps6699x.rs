@@ -12,16 +12,17 @@ use embedded_hal_async::i2c::I2c;
 use embedded_services::power::policy::PowerCapability;
 use embedded_services::type_c::ATTN_VDM_LEN;
 use embedded_services::type_c::controller::{
-    self, AttnVdm, Controller, ControllerStatus, DpPinConfig, OtherVdm, PortStatus, SendVdm, TbtConfig,
-    TypeCStateMachineState, UsbControlConfig,
+    AttnVdm, Controller, ControllerStatus, DpConfig, DpPinConfig, DpStatus, OtherVdm, PdStateMachineConfig, PortStatus,
+    RetimerFwUpdateState, RxModeVdos, SendVdm, TbtConfig, TypeCStateMachineState, UsbControlConfig,
 };
 use embedded_services::type_c::event::PortEvent;
-use embedded_services::{debug, error, trace, type_c, warn};
+use embedded_services::{debug, error, trace, warn};
 use embedded_usb_pd::ado::Ado;
 use embedded_usb_pd::pdinfo::PowerPathStatus;
 use embedded_usb_pd::pdo::{Common, Contract, Rdo, sink, source};
 use embedded_usb_pd::type_c::Current as TypecCurrent;
 use embedded_usb_pd::ucsi::lpm;
+use embedded_usb_pd::vdm::Svid;
 use embedded_usb_pd::{DataRole, Error, LocalPortId, PdError, PlugOrientation, PowerRole};
 use tps6699x::MAX_SUPPORTED_PORTS;
 use tps6699x::asynchronous::embassy as tps6699x_drv;
@@ -414,10 +415,10 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
     async fn get_rt_fw_update_status(
         &mut self,
         port: LocalPortId,
-    ) -> Result<type_c::controller::RetimerFwUpdateState, Error<Self::BusError>> {
+    ) -> Result<RetimerFwUpdateState, Error<Self::BusError>> {
         match self.tps6699x.get_rt_fw_update_status(port).await {
-            Ok(true) => Ok(type_c::controller::RetimerFwUpdateState::Active),
-            Ok(false) => Ok(type_c::controller::RetimerFwUpdateState::Inactive),
+            Ok(true) => Ok(RetimerFwUpdateState::Active),
+            Ok(false) => Ok(RetimerFwUpdateState::Inactive),
             Err(e) => Err(e),
         }
     }
@@ -663,7 +664,7 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
         Ok(())
     }
 
-    async fn get_dp_status(&mut self, port: LocalPortId) -> Result<controller::DpStatus, Error<Self::BusError>> {
+    async fn get_dp_status(&mut self, port: LocalPortId) -> Result<DpStatus, Error<Self::BusError>> {
         let dp_status = self.tps6699x.get_dp_status(port).await?;
         debug!("Port{} DP status: {:#?}", port.0, dp_status);
 
@@ -673,17 +674,13 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
         let cfg_raw: PdDpPinConfig = dp_config.config_pin().into();
         let pin_config: DpPinConfig = cfg_raw.into();
 
-        Ok(controller::DpStatus {
+        Ok(DpStatus {
             alt_mode_entered,
             dfp_d_pin_cfg: pin_config,
         })
     }
 
-    async fn set_dp_config(
-        &mut self,
-        port: LocalPortId,
-        config: controller::DpConfig,
-    ) -> Result<(), Error<Self::BusError>> {
+    async fn set_dp_config(&mut self, port: LocalPortId, config: DpConfig) -> Result<(), Error<Self::BusError>> {
         debug!("Port{} setting DP config: {:#?}", port.0, config);
 
         let mut dp_config_reg = self.tps6699x.get_dp_config(port).await?;
@@ -698,11 +695,28 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
         Ok(())
     }
 
+    async fn get_rx_disc_mode_vdos(
+        &mut self,
+        port: LocalPortId,
+        input: Svid,
+    ) -> Result<RxModeVdos, Error<Self::BusError>> {
+        let result = self.tps6699x.execute_gcdm(port, input.into()).await;
+        match result {
+            Ok(modes) => {
+                let rx = RxModeVdos {
+                    vdo: modes.alt_modes.map(|am| am.vdo),
+                };
+                Ok(rx)
+            }
+            Err(_e) => Err(Error::Pd(PdError::InvalidResponse)),
+        }
+    }
+
     async fn execute_drst(&mut self, port: LocalPortId) -> Result<(), Error<Self::BusError>> {
         match self.tps6699x.execute_drst(port).await? {
             ReturnValue::Success => Ok(()),
             r => {
-                debug!("Error executing DRST on port {}: {:#?}", port.0, r);
+                error!("Error executing DRST on port {}: {:#?}", port.0, r);
                 Err(Error::Pd(PdError::InvalidResponse))
             }
         }
@@ -722,7 +736,7 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
     async fn set_pd_state_machine_config(
         &mut self,
         port: LocalPortId,
-        config: controller::PdStateMachineConfig,
+        config: PdStateMachineConfig,
     ) -> Result<(), Error<Self::BusError>> {
         debug!("Port{} setting PD state machine config: {:#?}", port.0, config);
 
@@ -736,7 +750,7 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
     async fn set_type_c_state_machine_config(
         &mut self,
         port: LocalPortId,
-        state: controller::TypeCStateMachineState,
+        state: TypeCStateMachineState,
     ) -> Result<(), Error<Self::BusError>> {
         debug!("Port{} setting Type-C state machine state: {:#?}", port.0, state);
 

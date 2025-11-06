@@ -11,9 +11,10 @@ use embedded_usb_pd::{
     ado::Ado,
     pdinfo::{AltMode, PowerPathStatus},
     type_c::ConnectionState,
+    vdm::Svid,
 };
 
-use super::{ATTN_VDM_LEN, ControllerId, OTHER_VDM_LEN, external};
+use super::{ATTN_VDM_LEN, ControllerId, DISCOVERED_MODES_LEN, OTHER_VDM_LEN, external};
 use crate::ipc::deferred;
 use crate::power::policy;
 use crate::type_c::Cached;
@@ -118,6 +119,22 @@ impl From<OtherVdm> for [u8; OTHER_VDM_LEN] {
 impl From<[u8; OTHER_VDM_LEN]> for OtherVdm {
     fn from(data: [u8; OTHER_VDM_LEN]) -> Self {
         Self { data }
+    }
+}
+
+/// Rx discover mode Vdos
+#[derive(Copy, Clone, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct RxModeVdos {
+    /// Rx discover mode VDOs
+    pub vdo: [u32; DISCOVERED_MODES_LEN],
+}
+
+impl Default for RxModeVdos {
+    fn default() -> Self {
+        Self {
+            vdo: [0; DISCOVERED_MODES_LEN],
+        }
     }
 }
 
@@ -667,6 +684,12 @@ pub trait Controller {
         &mut self,
         command: lpm::LocalCommand,
     ) -> impl Future<Output = Result<Option<lpm::ResponseData>, Error<Self::BusError>>>;
+    /// Get the Rx discover mode VDOs for the given port
+    fn get_rx_disc_mode_vdos(
+        &mut self,
+        port: LocalPortId,
+        svid: Svid,
+    ) -> impl Future<Output = Result<RxModeVdos, Error<Self::BusError>>>;
 }
 
 /// Internal context for managing PD controllers

@@ -321,6 +321,15 @@ impl embedded_services::type_c::controller::Controller for Controller<'_> {
             _ => Err(PdError::UnrecognizedCommand.into()),
         }
     }
+
+    async fn get_rx_disc_mode_vdos(
+        &mut self,
+        port: LocalPortId,
+        input: Svid,
+    ) -> Result<RxModeVdos, Error<Self::BusError>> {
+        debug!("Get Rx Discover Mode VDOs for port {port:?}: {input:?}");
+        Ok(RxModeVdos::default())
+    }
 }
 
 pub struct Validator;
