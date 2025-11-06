@@ -29,7 +29,10 @@ impl FwUpdateState {
     }
 }
 
-impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, M, C, V> {
+impl<'device, M: RawMutex, C: Lockable, V: FwOfferValidator> ControllerWrapper<'device, M, C, V>
+where
+    <C as Lockable>::Inner: Controller,
+{
     /// Create a new invalid FW version response
     fn create_invalid_fw_version_response(&self) -> InternalResponseData {
         let dev_inf = FwVerComponentInfo::new(FwVersion::new(0xffffffff), self.registration.cfu_device.component_id());
@@ -41,7 +44,7 @@ impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, 
     }
 
     /// Process a GetFwVersion command
-    async fn process_get_fw_version(&self, target: &mut C) -> InternalResponseData {
+    async fn process_get_fw_version(&self, target: &mut C::Inner) -> InternalResponseData {
         let version = match target.get_active_fw_version().await {
             Ok(v) => v,
             Err(Error::Pd(e)) => {
@@ -72,7 +75,7 @@ impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, 
     }
 
     /// Process a GiveOffer command
-    async fn process_give_offer(&self, target: &mut C, offer: &FwUpdateOffer) -> InternalResponseData {
+    async fn process_give_offer(&self, target: &mut C::Inner, offer: &FwUpdateOffer) -> InternalResponseData {
         if offer.component_info.component_id != self.registration.cfu_device.component_id() {
             return Self::create_offer_rejection();
         }
@@ -92,7 +95,11 @@ impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, 
         InternalResponseData::OfferResponse(self.fw_version_validator.validate(FwVersion::new(version), offer))
     }
 
-    async fn process_abort_update(&self, controller: &mut C, state: &mut dyn DynPortState<'_>) -> InternalResponseData {
+    async fn process_abort_update(
+        &self,
+        controller: &mut C::Inner,
+        state: &mut dyn DynPortState<'_>,
+    ) -> InternalResponseData {
         // abort the update process
         match controller.abort_fw_update().await {
             Ok(_) => {
@@ -115,7 +122,7 @@ impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, 
     /// Process a GiveContent command
     async fn process_give_content(
         &self,
-        controller: &mut C,
+        controller: &mut C::Inner,
         state: &mut dyn DynPortState<'_>,
         content: &FwUpdateContentCommand,
     ) -> InternalResponseData {
@@ -243,7 +250,7 @@ impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, 
     }
 
     /// Process a CFU tick
-    pub async fn process_cfu_tick(&self, controller: &mut C, state: &mut dyn DynPortState<'_>) {
+    pub async fn process_cfu_tick(&self, controller: &mut C::Inner, state: &mut dyn DynPortState<'_>) {
         match state.controller_state_mut().fw_update_state {
             FwUpdateState::Idle => {
                 // No FW update in progress, nothing to do
@@ -285,7 +292,7 @@ impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, 
     /// Process a CFU command
     pub async fn process_cfu_command(
         &self,
-        controller: &mut C,
+        controller: &mut C::Inner,
         state: &mut dyn DynPortState<'_>,
         command: &RequestData,
     ) -> InternalResponseData {

@@ -18,7 +18,7 @@
 //! any caching/buffering of data, and notifies the type-C service implementation of the event if needed.
 use core::array::from_fn;
 use core::cell::RefMut;
-use core::future::{Future, pending};
+use core::future::pending;
 use core::ops::DerefMut;
 
 use embassy_futures::select::{Either, Either5, select, select_array, select5};
@@ -30,7 +30,7 @@ use embedded_cfu_protocol::protocol_definitions::{FwUpdateOffer, FwUpdateOfferRe
 use embedded_services::GlobalRawMutex;
 use embedded_services::power::policy::device::StateKind;
 use embedded_services::power::policy::{self, action};
-use embedded_services::transformers::object::{Object, RefGuard, RefMutGuard};
+use embedded_services::sync::Lockable;
 use embedded_services::type_c::controller::{self, Controller, PortStatus};
 use embedded_services::type_c::event::{PortEvent, PortNotificationSingle, PortPending, PortStatusChanged};
 use embedded_services::{debug, error, info, trace, warn};
@@ -66,27 +66,33 @@ pub trait FwOfferValidator {
 pub const MAX_SUPPORTED_PORTS: usize = 2;
 
 /// Common functionality implemented on top of [`embedded_services::type_c::controller::Controller`]
-pub struct ControllerWrapper<'a, M: RawMutex, C: Controller, V: FwOfferValidator> {
-    controller: Mutex<M, C>,
+pub struct ControllerWrapper<'device, M: RawMutex, C: Lockable, V: FwOfferValidator>
+where
+    <C as Lockable>::Inner: Controller,
+{
+    controller: &'device C,
     /// Trait object for validating firmware versions
     fw_version_validator: V,
     /// FW update ticker used to check for timeouts and recovery attempts
     fw_update_ticker: Mutex<M, embassy_time::Ticker>,
     /// Registration information for services
-    registration: backing::Registration<'a>,
+    registration: backing::Registration<'device>,
     /// State
-    state: Mutex<M, RefMut<'a, dyn DynPortState<'a>>>,
+    state: Mutex<M, RefMut<'device, dyn DynPortState<'device>>>,
     /// SW port status event signal
     sw_status_event: Signal<M, ()>,
     /// SVID used for VDM operations
     svid: Option<Svid>,
 }
 
-impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, M, C, V> {
+impl<'device, M: RawMutex, C: Lockable, V: FwOfferValidator> ControllerWrapper<'device, M, C, V>
+where
+    <C as Lockable>::Inner: Controller,
+{
     /// Create a new controller wrapper, returns `None` if the backing storage is already in use
     pub fn try_new<const N: usize>(
-        controller: C,
-        storage: &'a backing::ReferencedStorage<'a, N, M>,
+        controller: &'device C,
+        storage: &'device backing::ReferencedStorage<'device, N, M>,
         fw_version_validator: V,
         svid: Option<Svid>,
     ) -> Option<Self> {
@@ -96,7 +102,7 @@ impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, 
 
         let backing = storage.create_backing()?;
         Some(Self {
-            controller: Mutex::new(controller),
+            controller,
             fw_version_validator,
             fw_update_ticker: Mutex::new(embassy_time::Ticker::every(embassy_time::Duration::from_millis(
                 DEFAULT_FW_UPDATE_TICK_INTERVAL_MS,
@@ -124,7 +130,7 @@ impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, 
     }
 
     /// Synchronize the state between the controller and the internal state
-    pub async fn sync_state(&self) -> Result<(), Error<<C as Controller>::BusError>> {
+    pub async fn sync_state(&self) -> Result<(), Error<<C::Inner as Controller>::BusError>> {
         let mut controller = self.controller.lock().await;
         let mut state = self.state.lock().await;
         self.sync_state_internal(&mut controller, state.deref_mut().deref_mut())
@@ -134,9 +140,9 @@ impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, 
     /// Synchronize the state between the controller and the internal state
     async fn sync_state_internal(
         &self,
-        controller: &mut C,
+        controller: &mut C::Inner,
         state: &mut dyn DynPortState<'_>,
-    ) -> Result<(), Error<<C as Controller>::BusError>> {
+    ) -> Result<(), Error<<C::Inner as Controller>::BusError>> {
         // Sync the controller state with the PD controller
         for (i, port_state) in state.port_states_mut().iter_mut().enumerate() {
             let mut status_changed = port_state.sw_status_event;
@@ -171,11 +177,11 @@ impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, 
     /// Handle a plug event
     async fn process_plug_event(
         &self,
-        _controller: &mut C,
+        _controller: &mut C::Inner,
         power: &policy::device::Device,
         port: LocalPortId,
         status: &PortStatus,
-    ) -> Result<(), Error<<C as Controller>::BusError>> {
+    ) -> Result<(), Error<<C::Inner as Controller>::BusError>> {
         if port.0 as usize >= self.registration.num_ports() {
             error!("Invalid port {}", port.0);
             return PdError::InvalidPort.into();
@@ -218,11 +224,11 @@ impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, 
     /// Process port status changed events
     async fn process_port_status_changed<'b>(
         &self,
-        controller: &mut C,
+        controller: &mut C::Inner,
         state: &mut dyn DynPortState<'_>,
         local_port_id: LocalPortId,
         status_event: PortStatusChanged,
-    ) -> Result<Output<'b>, Error<<C as Controller>::BusError>> {
+    ) -> Result<Output<'b>, Error<<C::Inner as Controller>::BusError>> {
         let global_port_id = self
             .registration
             .pd_controller
@@ -273,7 +279,7 @@ impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, 
         local_port: LocalPortId,
         status_event: PortStatusChanged,
         status: PortStatus,
-    ) -> Result<(), Error<<C as Controller>::BusError>> {
+    ) -> Result<(), Error<<C::Inner as Controller>::BusError>> {
         let port_index = local_port.0 as usize;
         if port_index >= state.num_ports() {
             return Err(PdError::InvalidPort.into());
@@ -307,7 +313,7 @@ impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, 
         state: &mut dyn DynPortState<'_>,
         local_port: LocalPortId,
         alert: Ado,
-    ) -> Result<(), Error<<C as Controller>::BusError>> {
+    ) -> Result<(), Error<<C::Inner as Controller>::BusError>> {
         let port_index = local_port.0 as usize;
         if port_index >= state.num_ports() {
             return Err(PdError::InvalidPort.into());
@@ -338,8 +344,8 @@ impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, 
     /// DROP SAFETY: No state that needs to be restored
     async fn wait_port_pending(
         &self,
-        controller: &mut C,
-    ) -> Result<PortEventStreamer, Error<<C as Controller>::BusError>> {
+        controller: &mut C::Inner,
+    ) -> Result<PortEventStreamer, Error<<C::Inner as Controller>::BusError>> {
         if self.state.lock().await.controller_state().fw_update_state.in_progress() {
             // Don't process events while firmware update is in progress
             debug!("Firmware update in progress, ignoring port events");
@@ -356,7 +362,7 @@ impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, 
             // DROP SAFETY: Safe as long as `wait_port_event` is drop safe
             match select(controller.wait_port_event(), async {
                 self.sw_status_event.wait().await;
-                Ok::<_, Error<<C as Controller>::BusError>>(())
+                Ok::<_, Error<<C::Inner as Controller>::BusError>>(())
             })
             .await
             {
@@ -369,7 +375,7 @@ impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, 
     }
 
     /// Wait for the next event
-    pub async fn wait_next(&self) -> Result<Event<'_>, Error<<C as Controller>::BusError>> {
+    pub async fn wait_next(&self) -> Result<Event<'_>, Error<<C::Inner as Controller>::BusError>> {
         // This loop is to ensure that if we finish streaming events we go back to waiting for the next port event
         loop {
             let event = {
@@ -388,7 +394,7 @@ impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, 
                 Either5::First(stream) => {
                     let mut stream = stream?;
                     if let Some((port_index, event)) = stream
-                        .next::<Error<<C as Controller>::BusError>, _, _>(async |port_index| {
+                        .next::<Error<<C::Inner as Controller>::BusError>, _, _>(async |port_index| {
                             // Combine the event read from the controller with any software generated events
                             // Acquire the locks first to centralize the awaits here
                             let mut controller = self.controller.lock().await;
@@ -452,10 +458,10 @@ impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, 
     /// Process a port notification
     async fn process_port_notification<'b>(
         &self,
-        controller: &mut C,
+        controller: &mut C::Inner,
         port: LocalPortId,
         notification: PortNotificationSingle,
-    ) -> Result<Output<'b>, Error<<C as Controller>::BusError>> {
+    ) -> Result<Output<'b>, Error<<C::Inner as Controller>::BusError>> {
         match notification {
             PortNotificationSingle::Alert => {
                 let ado = controller.get_pd_alert(port).await?;
@@ -497,7 +503,10 @@ impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, 
 
     /// Top-level processing function
     /// Only call this fn from one place in a loop. Otherwise a deadlock could occur.
-    pub async fn process_event<'b>(&self, event: Event<'b>) -> Result<Output<'b>, Error<<C as Controller>::BusError>> {
+    pub async fn process_event<'b>(
+        &self,
+        event: Event<'b>,
+    ) -> Result<Output<'b>, Error<<C::Inner as Controller>::BusError>> {
         let mut controller = self.controller.lock().await;
         let mut state = self.state.lock().await;
         match event {
@@ -543,7 +552,7 @@ impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, 
     }
 
     /// Event loop finalize
-    pub async fn finalize<'b>(&self, output: Output<'b>) -> Result<(), Error<<C as Controller>::BusError>> {
+    pub async fn finalize<'b>(&self, output: Output<'b>) -> Result<(), Error<<C::Inner as Controller>::BusError>> {
         let mut state = self.state.lock().await;
 
         match output {
@@ -594,19 +603,19 @@ impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, 
     pub async fn process_and_finalize_event<'b>(
         &self,
         event: Event<'b>,
-    ) -> Result<(), Error<<C as Controller>::BusError>> {
+    ) -> Result<(), Error<<C::Inner as Controller>::BusError>> {
         let output = self.process_event(event).await?;
         self.finalize(output).await
     }
 
     /// Combined processing function
-    pub async fn process_next_event(&self) -> Result<(), Error<<C as Controller>::BusError>> {
+    pub async fn process_next_event(&self) -> Result<(), Error<<C::Inner as Controller>::BusError>> {
         let event = self.wait_next().await?;
         self.process_and_finalize_event(event).await
     }
 
     /// Register all devices with their respective services
-    pub async fn register(&'static self) -> Result<(), Error<<C as Controller>::BusError>> {
+    pub async fn register(&'static self) -> Result<(), Error<<C::Inner as Controller>::BusError>> {
         for device in self.registration.power_devices {
             policy::register_device(device).await.map_err(|_| {
                 error!(
@@ -642,12 +651,17 @@ impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, 
     }
 }
 
-impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> Object<C> for ControllerWrapper<'a, M, C, V> {
-    fn get_inner(&self) -> impl Future<Output = impl RefGuard<C>> {
-        self.controller.lock()
+impl<'device, M: RawMutex, C: Lockable, V: FwOfferValidator> Lockable for ControllerWrapper<'device, M, C, V>
+where
+    <C as Lockable>::Inner: Controller,
+{
+    type Inner = C::Inner;
+
+    fn try_lock(&self) -> Option<impl DerefMut<Target = Self::Inner>> {
+        self.controller.try_lock()
     }
 
-    fn get_inner_mut(&self) -> impl Future<Output = impl RefMutGuard<C>> {
+    fn lock(&self) -> impl Future<Output = impl DerefMut<Target = Self::Inner>> {
         self.controller.lock()
     }
 }

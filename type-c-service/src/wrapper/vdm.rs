@@ -1,5 +1,6 @@
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use embedded_services::{
+    sync::Lockable,
     error, trace,
     type_c::{
         controller::Controller,
@@ -15,14 +16,17 @@ use super::{
     message::{OutputDiscModeVdos, vdm::Output},
 };
 
-impl<'a, M: RawMutex, C: Controller, V: FwOfferValidator> ControllerWrapper<'a, M, C, V> {
+impl<'device, M: RawMutex, C: Lockable, V: FwOfferValidator> ControllerWrapper<'device, M, C, V>
+where
+    <C as Lockable>::Inner: Controller,
+{
     /// Process a VDM event by retrieving the relevant VDM data from the `controller` for the appropriate `port`.
     pub(super) async fn process_vdm_event(
         &self,
-        controller: &mut C,
+        controller: &mut C::Inner,
         port: LocalPortId,
         event: VdmNotification,
-    ) -> Result<Output, Error<<C as Controller>::BusError>> {
+    ) -> Result<Output, Error<<C::Inner as Controller>::BusError>> {
         trace!("Processing VDM event: {:?} on port {}", event, port.0);
         let kind = match event {
             VdmNotification::Entered => OutputKind::Entered(controller.get_other_vdm(port).await?),
