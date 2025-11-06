@@ -1,10 +1,12 @@
 #![no_std]
 use core::ops::DerefMut;
 use embassy_sync::mutex::Mutex;
-use embassy_sync::once_lock::OnceLock;
 use embedded_services::GlobalRawMutex;
-use embedded_services::power::policy::device::Device;
-use embedded_services::power::policy::{action, policy, *};
+use embedded_services::event::Receiver;
+use embedded_services::power::policy::device::{Device, DeviceTrait, State};
+use embedded_services::power::policy::policy::RequestData;
+use embedded_services::power::policy::{policy, *};
+use embedded_services::sync::Lockable;
 use embedded_services::{comms, error, info};
 
 pub mod config;
@@ -25,9 +27,12 @@ struct InternalState {
 }
 
 /// Power policy state
-pub struct PowerPolicy {
+pub struct PowerPolicy<D: Lockable, R: Receiver<RequestData>>
+where
+    D::Inner: DeviceTrait,
+{
     /// Power policy context
-    context: policy::ContextToken,
+    context: policy::ContextToken<D, R>,
     /// State
     state: Mutex<GlobalRawMutex, InternalState>,
     /// Comms endpoint
@@ -36,7 +41,10 @@ pub struct PowerPolicy {
     config: config::Config,
 }
 
-impl PowerPolicy {
+impl<D: Lockable + 'static, R: Receiver<RequestData> + 'static> PowerPolicy<D, R>
+where
+    D::Inner: DeviceTrait,
+{
     /// Create a new power policy
     pub fn create(config: config::Config) -> Option<Self> {
         Some(Self {
@@ -47,37 +55,75 @@ impl PowerPolicy {
         })
     }
 
-    async fn process_notify_attach(&self) -> Result<(), Error> {
-        self.context.send_response(Ok(policy::ResponseData::Complete)).await;
-        Ok(())
+    async fn process_notify_attach(&self, device: &Device<'_, D, R>) {
+        if let Err(e) = device.state.lock().await.attach() {
+            error!("Device{}: Invalid state for attach: {:#?}", device.id().0, e);
+        }
     }
 
-    async fn process_notify_detach(&self) -> Result<(), Error> {
-        self.context.send_response(Ok(policy::ResponseData::Complete)).await;
-        self.update_current_consumer().await?;
-        Ok(())
+    async fn process_notify_detach(&self, device: &Device<'_, D, R>) -> Result<(), Error> {
+        device.state.lock().await.detach();
+        self.update_current_consumer().await
     }
 
-    async fn process_notify_consumer_power_capability(&self) -> Result<(), Error> {
-        self.context.send_response(Ok(policy::ResponseData::Complete)).await;
-        self.update_current_consumer().await?;
-        Ok(())
+    async fn process_notify_consumer_power_capability(
+        &self,
+        device: &Device<'_, D, R>,
+        capability: Option<ConsumerPowerCapability>,
+    ) -> Result<(), Error> {
+        if let Err(e) = device.state.lock().await.update_consumer_power_capability(capability) {
+            error!(
+                "Device{}: Invalid state for notify consumer capability, catching up: {:#?}",
+                device.id().0,
+                e,
+            );
+        }
+
+        self.update_current_consumer().await
     }
 
-    async fn process_request_provider_power_capabilities(&self, device: DeviceId) -> Result<(), Error> {
-        self.context.send_response(Ok(policy::ResponseData::Complete)).await;
-        self.connect_provider(device).await;
-        Ok(())
+    async fn process_request_provider_power_capabilities(
+        &self,
+        device: &Device<'_, D, R>,
+        capability: Option<ProviderPowerCapability>,
+    ) -> Result<(), Error> {
+        if let Err(e) = device
+            .state
+            .lock()
+            .await
+            .update_requested_provider_power_capability(capability)
+        {
+            error!(
+                "Device{}: Invalid state for notify consumer capability, catching up: {:#?}",
+                device.id().0,
+                e,
+            );
+        }
+
+        self.connect_provider(device.id()).await
     }
 
-    async fn process_notify_disconnect(&self) -> Result<(), Error> {
-        self.context.send_response(Ok(policy::ResponseData::Complete)).await;
-        if let Some(consumer) = self.state.lock().await.current_consumer_state.take() {
-            info!("Device{}: Connected consumer disconnected", consumer.device_id.0);
+    async fn process_notify_disconnect(&self, device: &Device<'_, D, R>) -> Result<(), Error> {
+        if let Err(e) = device.state.lock().await.disconnect(true) {
+            error!(
+                "Device{}: Invalid state for notify disconnect, catching up: {:#?}",
+                device.id().0,
+                e,
+            );
+        }
+
+        if self
+            .state
+            .lock()
+            .await
+            .current_consumer_state
+            .is_some_and(|current| current.device_id == device.id())
+        {
+            info!("Device{}: Connected consumer disconnected", device.id().0);
             self.disconnect_chargers().await?;
 
             self.comms_notify(CommsMessage {
-                data: CommsData::ConsumerDisconnected(consumer.device_id),
+                data: CommsData::ConsumerDisconnected(device.id()),
             })
             .await;
         }
@@ -103,33 +149,35 @@ impl PowerPolicy {
         let device = self.context.get_device(request.id).await?;
 
         match request.data {
-            policy::RequestData::NotifyAttached => {
+            policy::RequestData::Attached => {
                 info!("Received notify attached from device {}", device.id().0);
-                self.process_notify_attach().await
+                self.process_notify_attach(device).await;
+                Ok(())
             }
-            policy::RequestData::NotifyDetached => {
+            policy::RequestData::Detached => {
                 info!("Received notify detached from device {}", device.id().0);
-                self.process_notify_detach().await
+                self.process_notify_detach(device).await
             }
-            policy::RequestData::NotifyConsumerCapability(capability) => {
+            policy::RequestData::UpdatedConsumerCapability(capability) => {
                 info!(
                     "Device{}: Received notify consumer capability: {:#?}",
                     device.id().0,
                     capability,
                 );
-                self.process_notify_consumer_power_capability().await
+                self.process_notify_consumer_power_capability(device, capability).await
             }
-            policy::RequestData::RequestProviderCapability(capability) => {
+            policy::RequestData::RequestedProviderCapability(capability) => {
                 info!(
                     "Device{}: Received request provider capability: {:#?}",
                     device.id().0,
                     capability,
                 );
-                self.process_request_provider_power_capabilities(device.id()).await
+                self.process_request_provider_power_capabilities(device, capability)
+                    .await
             }
-            policy::RequestData::NotifyDisconnect => {
+            policy::RequestData::Disconnected => {
                 info!("Received notify disconnect from device {}", device.id().0);
-                self.process_notify_disconnect().await
+                self.process_notify_disconnect(device).await
             }
         }
     }
@@ -141,23 +189,7 @@ impl PowerPolicy {
     }
 }
 
-impl comms::MailboxDelegate for PowerPolicy {}
-
-#[embassy_executor::task]
-pub async fn task(config: config::Config) {
-    info!("Starting power policy task");
-    static POLICY: OnceLock<PowerPolicy> = OnceLock::new();
-    let policy =
-        POLICY.get_or_init(|| PowerPolicy::create(config).expect("Power policy singleton already initialized"));
-
-    if comms::register_endpoint(policy, &policy.tp).await.is_err() {
-        error!("Failed to register power policy endpoint");
-        return;
-    }
-
-    loop {
-        if let Err(e) = policy.process().await {
-            error!("Error processing request: {:?}", e);
-        }
-    }
+impl<D: Lockable + 'static, R: Receiver<RequestData> + 'static> comms::MailboxDelegate for PowerPolicy<D, R> where
+    D::Inner: DeviceTrait
+{
 }

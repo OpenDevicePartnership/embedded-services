@@ -4,6 +4,7 @@ use embassy_futures::select::{Either, select};
 use embedded_cfu_protocol::protocol_definitions::*;
 use embedded_services::cfu::component::{InternalResponseData, RequestData};
 use embedded_services::power;
+use embedded_services::power::policy::policy;
 use embedded_services::type_c::controller::Controller;
 use embedded_services::{debug, error};
 
@@ -29,7 +30,14 @@ impl FwUpdateState {
     }
 }
 
-impl<'device, M: RawMutex, C: Lockable, V: FwOfferValidator> ControllerWrapper<'device, M, C, V>
+impl<
+    'device,
+    M: RawMutex,
+    C: Lockable,
+    S: event::Sender<policy::RequestData>,
+    R: event::Receiver<policy::RequestData>,
+    V: FwOfferValidator,
+> ControllerWrapper<'device, M, C, S, R, V>
 where
     <C as Lockable>::Inner: Controller,
 {
@@ -98,7 +106,7 @@ where
     async fn process_abort_update(
         &self,
         controller: &mut C::Inner,
-        state: &mut dyn DynPortState<'_>,
+        state: &mut dyn DynPortState<'_, S>,
     ) -> InternalResponseData {
         // abort the update process
         match controller.abort_fw_update().await {
@@ -123,7 +131,7 @@ where
     async fn process_give_content(
         &self,
         controller: &mut C::Inner,
-        state: &mut dyn DynPortState<'_>,
+        state: &mut dyn DynPortState<'_, S>,
         content: &FwUpdateContentCommand,
     ) -> InternalResponseData {
         let data = &content.data[0..content.header.data_length as usize];
@@ -133,45 +141,12 @@ where
 
             // Detach from the power policy so it doesn't attempt to do anything while we are updating
             let controller_id = self.registration.pd_controller.id();
-            let mut detached_all = true;
-            for power in self.registration.power_devices {
+            for power in state.port_power_mut() {
                 info!("Controller{}: checking power device", controller_id.0);
-                if power.state().await != power::policy::device::State::Detached {
+                if power.state.state() != power::policy::device::State::Detached {
                     info!("Controller{}: Detaching power device", controller_id.0);
-                    if let Err(e) = power.detach().await {
-                        error!("Controller{}: Failed to detach power device: {:?}", controller_id.0, e);
-
-                        // Sync to bring the controller to a known state with all services
-                        match self.sync_state_internal(controller, state).await {
-                            Ok(_) => debug!(
-                                "Controller{}: Synced state after detaching power device",
-                                controller_id.0
-                            ),
-                            Err(Error::Pd(e)) => error!(
-                                "Controller{}: Failed to sync state after detaching power device: {:?}",
-                                controller_id.0, e
-                            ),
-                            Err(Error::Bus(_)) => error!(
-                                "Controller{}: Failed to sync state after detaching power device, bus error",
-                                controller_id.0
-                            ),
-                        }
-
-                        detached_all = false;
-                        break;
-                    }
+                    power.sender.send(policy::RequestData::Detached).await;
                 }
-            }
-
-            if !detached_all {
-                error!(
-                    "Controller{}: Failed to detach all power devices, rejecting offer",
-                    controller_id.0
-                );
-                return InternalResponseData::ContentResponse(FwUpdateContentResponse::new(
-                    content.header.sequence_num,
-                    CfuUpdateContentResponseStatus::ErrorPrepare,
-                ));
             }
 
             // Need to start the update
@@ -250,7 +225,7 @@ where
     }
 
     /// Process a CFU tick
-    pub async fn process_cfu_tick(&self, controller: &mut C::Inner, state: &mut dyn DynPortState<'_>) {
+    pub async fn process_cfu_tick(&self, controller: &mut C::Inner, state: &mut dyn DynPortState<'_, S>) {
         match state.controller_state_mut().fw_update_state {
             FwUpdateState::Idle => {
                 // No FW update in progress, nothing to do
@@ -293,7 +268,7 @@ where
     pub async fn process_cfu_command(
         &self,
         controller: &mut C::Inner,
-        state: &mut dyn DynPortState<'_>,
+        state: &mut dyn DynPortState<'_, S>,
         command: &RequestData,
     ) -> InternalResponseData {
         if state.controller_state().fw_update_state == FwUpdateState::Recovery {

@@ -714,6 +714,7 @@ dependencies = [
  "critical-section",
  "defmt 0.3.100",
  "document-features",
+ "embassy-futures",
  "embassy-sync",
  "embassy-time",
  "embedded-batteries-async",

@@ -2,6 +2,7 @@ use core::cmp::Ordering;
 use embedded_services::debug;
 use embedded_services::power::policy::charger::Device as ChargerDevice;
 use embedded_services::power::policy::charger::PolicyEvent;
+use embedded_services::power::policy::device::StateKind;
 use embedded_services::power::policy::policy::check_chargers_ready;
 use embedded_services::power::policy::policy::init_chargers;
 
@@ -35,14 +36,17 @@ fn cmp_consumer_capability(
     ))
 }
 
-impl PowerPolicy {
+impl<D: Lockable + 'static, R: Receiver<RequestData> + 'static> PowerPolicy<D, R>
+where
+    D::Inner: DeviceTrait,
+{
     /// Iterate over all devices to determine what is best power port provides the highest power
     async fn find_best_consumer(&self, state: &InternalState) -> Result<Option<AvailableConsumer>, Error> {
         let mut best_consumer = None;
         let current_consumer_id = state.current_consumer_state.map(|f| f.device_id);
 
         for node in self.context.devices().await {
-            let device = node.data::<Device>().ok_or(Error::InvalidDevice)?;
+            let device = node.data::<Device<D, R>>().ok_or(Error::InvalidDevice)?;
 
             // Update the best available consumer
             best_consumer = match (best_consumer, device.consumer_capability().await) {
@@ -83,7 +87,7 @@ impl PowerPolicy {
         // Count how many available unconstrained devices we have
         let mut unconstrained_new = UnconstrainedState::default();
         for node in self.context.devices().await {
-            let device = node.data::<Device>().ok_or(Error::InvalidDevice)?;
+            let device = node.data::<Device<D, R>>().ok_or(Error::InvalidDevice)?;
             if let Some(capability) = device.consumer_capability().await {
                 // The device is considered unconstrained if it meets the auto unconstrained power threshold
                 let auto_unconstrained = self
@@ -190,18 +194,19 @@ impl PowerPolicy {
             }
 
             state.current_consumer_state = None;
-            // Disconnect the current consumer if needed
-            if let Ok(consumer) = self
-                .context
-                .try_policy_action::<action::ConnectedConsumer>(current_consumer.device_id)
-                .await
-            {
-                info!(
-                    "Device {}, disconnecting current consumer",
-                    current_consumer.device_id.0
-                );
+            let consumer_device = self.context.get_device(current_consumer.device_id).await?;
+            if matches!(consumer_device.state.lock().await.state(), State::ConnectedConsumer(_)) {
+                // Disconnect the current consumer if needed
+                info!("Device{}: Disconnecting current consumer", current_consumer.device_id.0);
                 // disconnect current consumer and set idle
-                consumer.disconnect().await?;
+                consumer_device.device.lock().await.disconnect().await?;
+                if let Err(e) = consumer_device.state.lock().await.disconnect(false) {
+                    // This should never happen because we check the state above, log an error instead of a panic
+                    error!(
+                        "Device{}: Disconnect transition failed: {:#?}",
+                        current_consumer.device_id.0, e
+                    );
+                }
             }
 
             // If no chargers are registered, they won't receive the new power capability.
@@ -219,28 +224,38 @@ impl PowerPolicy {
         }
 
         info!("Device {}, connecting new consumer", new_consumer.device_id.0);
-        if let Ok(idle) = self
-            .context
-            .try_policy_action::<action::Idle>(new_consumer.device_id)
-            .await
-        {
-            idle.connect_consumer(new_consumer.consumer_power_capability).await?;
-            self.post_consumer_connected(state, new_consumer).await?;
-        } else if let Ok(provider) = self
-            .context
-            .try_policy_action::<action::ConnectedProvider>(new_consumer.device_id)
-            .await
-        {
-            provider
+        let device = self.context.get_device(new_consumer.device_id).await?;
+        let device_state = device.state.lock().await.state();
+
+        if matches!(device_state, device::State::Idle | device::State::ConnectedConsumer(_)) {
+            device
+                .device
+                .lock()
+                .await
                 .connect_consumer(new_consumer.consumer_power_capability)
                 .await?;
-            state.current_consumer_state = Some(new_consumer);
+            if let Err(e) = device
+                .state
+                .lock()
+                .await
+                .connect_consumer(new_consumer.consumer_power_capability)
+            {
+                // Should never happen because we checked the state above, log an error instead of a panic
+                error!(
+                    "Device{}: Connect state transition failed: {:#?}",
+                    new_consumer.device_id.0, e
+                );
+            }
             self.post_consumer_connected(state, new_consumer).await?;
+            Ok(())
         } else {
-            error!("Error obtaining device in idle state");
+            error!(
+                "Device{}: Not ready to connect consumer, state: {:#?}",
+                device.id().0,
+                device_state
+            );
+            Err(Error::InvalidState(&[StateKind::Idle], device_state.kind()))
         }
-
-        Ok(())
     }
 
     /// Determines and connects the best external power

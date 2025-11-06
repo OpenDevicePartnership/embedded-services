@@ -3,7 +3,12 @@
 //! the system is in unlimited power state. In this mode up to [provider_unlimited](super::Config::provider_unlimited)
 //! is provided to each device. Above this threshold, the system is in limited power state.
 //! In this mode [provider_limited](super::Config::provider_limited) is provided to each device
-use embedded_services::{debug, trace};
+use embedded_services::{
+    debug,
+    event::Receiver,
+    power::policy::{device::StateKind, policy::RequestData},
+    trace,
+};
 
 use super::*;
 
@@ -25,30 +30,27 @@ pub(super) struct State {
     state: PowerState,
 }
 
-impl PowerPolicy {
+impl<D: Lockable + 'static, R: Receiver<RequestData> + 'static> PowerPolicy<D, R>
+where
+    D::Inner: DeviceTrait,
+{
     /// Attempt to connect the requester as a provider
-    pub(super) async fn connect_provider(&self, requester_id: DeviceId) {
+    pub(super) async fn connect_provider(&self, requester_id: DeviceId) -> Result<(), Error> {
         trace!("Device{}: Attempting to connect as provider", requester_id.0);
-        let requester = match self.context.get_device(requester_id).await {
-            Ok(device) => device,
-            Err(_) => {
-                error!("Device{}: Invalid device", requester_id.0);
-                return;
-            }
-        };
+        let requester = self.context.get_device(requester_id).await?;
         let requested_power_capability = match requester.requested_provider_capability().await {
             Some(cap) => cap,
             // Requester is no longer requesting power
             _ => {
-                info!("Device{}: No-longer requesting power", requester.id().0);
-                return;
+                error!("Device{}: No-longer requesting power", requester.id().0);
+                return Err(Error::CannotProvide(None));
             }
         };
         let mut state = self.state.lock().await;
         let mut total_power_mw = 0;
 
         // Determine total requested power draw
-        for device in self.context.devices().await.iter_only::<device::Device>() {
+        for device in self.context.devices().await.iter_only::<device::Device<D, R>>() {
             let target_provider_cap = if device.id() == requester_id {
                 // Use the requester's requested power capability
                 // this handles both new connections and upgrade requests
@@ -87,26 +89,17 @@ impl PowerPolicy {
             }
         };
 
-        let connected = if let Ok(action) = self.context.try_policy_action::<action::Idle>(requester.id()).await {
-            let _ = action.connect_provider(target_power).await;
-            Ok(())
-        } else if let Ok(action) = self
-            .context
-            .try_policy_action::<action::ConnectedProvider>(requester.id())
-            .await
-        {
-            let _ = action.connect_provider(target_power).await;
-            Ok(())
+        let device = self.context.get_device(requester_id).await?;
+        let state = device.state.lock().await.state();
+        if matches!(state, device::State::Idle | device::State::ConnectedProvider(_)) {
+            device.device.lock().await.connect_provider(target_power).await
         } else {
-            Err(Error::InvalidState(
-                device::StateKind::Idle,
-                requester.state().await.kind(),
-            ))
-        };
-
-        // Don't need to do anything special, the device is responsible for attempting to reconnect
-        if let Err(e) = connected {
-            error!("Device{}: Failed to connect as provider, {:#?}", requester.id().0, e);
+            error!(
+                "Device{}: Cannot provide, device is in state {:#?}",
+                device.id().0,
+                state
+            );
+            Err(Error::InvalidState(&[StateKind::Idle], state.kind()))
         }
     }
 }
