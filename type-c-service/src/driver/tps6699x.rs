@@ -1,6 +1,3 @@
-use ::tps6699x::registers::field_sets::IntEventBus1;
-use ::tps6699x::registers::{PdCcPullUp, PpExtVbusSw, PpIntVbusSw};
-use ::tps6699x::{PORT0, PORT1, TPS66993_NUM_PORTS, TPS66994_NUM_PORTS};
 use bitfield::bitfield;
 use bitflags::bitflags;
 use core::{array::from_fn, future::Future, iter::zip};
@@ -12,7 +9,7 @@ use embedded_services::{
     power::policy::PowerCapability,
     trace,
     type_c::{
-        ATTN_VDM_LEN, DISCOVERED_MODES_LEN,
+        ATTN_VDM_LEN,
         controller::{
             AttnVdm, Controller, ControllerStatus, DpConfig, DpPinConfig, DpStatus, OtherVdm, PdStateMachineConfig,
             PortStatus, RetimerFwUpdateState, RxModeVdos, SendVdm, TbtConfig, TypeCStateMachineState, UsbControlConfig,
@@ -40,7 +37,6 @@ use tps6699x::{
     },
     command::{
         ReturnValue,
-        // gcdm::Input,
         vdms::{INITIATOR_WAIT_TIME_MS, MAX_NUM_DATA_OBJECTS, Version},
     },
     fw_update::UpdateConfig as FwUpdateConfig,

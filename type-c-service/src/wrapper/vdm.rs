@@ -1,7 +1,8 @@
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use embedded_services::{
+    error,
     sync::Lockable,
-    error, trace,
+    trace,
     type_c::{
         controller::Controller,
         event::{PortPending, VdmNotification},
@@ -61,10 +62,10 @@ where
     /// Process a notification event by retrieving the relevant VDO data from the `controller` for the appropriate `port`.
     pub(super) async fn process_disc_mode_completed_event(
         &self,
-        controller: &mut C,
+        controller: &mut C::Inner,
         port: LocalPortId,
         svid: Svid,
-    ) -> Result<OutputDiscModeVdos, Error<<C as Controller>::BusError>> {
+    ) -> Result<OutputDiscModeVdos, Error<<C::Inner as Controller>::BusError>> {
         trace!("Processing Discover Mode Completed event on port {}", port.0);
         match controller.get_rx_disc_mode_vdos(port, svid).await {
             Ok(disc_mode_vdos) => Ok(OutputDiscModeVdos {
