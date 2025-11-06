@@ -711,12 +711,9 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
         let result = self.tps6699x.execute_gcdm(port, input.into()).await;
         match result {
             Ok(modes) => {
-                let mut rx = RxModeVdos {
-                    vdo: [0; DISCOVERED_MODES_LEN],
+                let rx = RxModeVdos {
+                    vdo: modes.alt_modes.map(|am| am.vdo),
                 };
-                for (i, m) in modes.alt_modes.iter().enumerate() {
-                    rx.vdo[i] = m.vdo;
-                }
                 Ok(rx)
             }
             Err(_e) => Err(Error::Pd(PdError::InvalidResponse)),
