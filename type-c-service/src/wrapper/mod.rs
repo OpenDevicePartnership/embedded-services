@@ -48,6 +48,7 @@ mod dp;
 pub mod message;
 mod pd;
 mod power;
+pub mod proxy;
 mod vdm;
 
 /// Base interval for checking for FW update timeouts and recovery attempts

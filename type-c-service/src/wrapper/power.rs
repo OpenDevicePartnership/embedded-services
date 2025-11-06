@@ -10,8 +10,8 @@ use embedded_services::{
     },
 };
 
-use embedded_services::power::PowerCommand;
 use embedded_services::power::policy::Error as PowerError;
+use embedded_services::power::policy::device::CommandData as PowerCommand;
 
 use super::*;
 
@@ -26,11 +26,6 @@ impl<
 where
     <C as Lockable>::Inner: Controller,
 {
-    /// Return the power device for the given port
-    pub fn get_power_device(&self, port: LocalPortId) -> Option<&S> {
-        self.registration.power_event_senders.get(port.0 as usize)
-    }
-
     /// Handle a new contract as consumer
     pub(super) async fn process_new_consumer_contract(
         &self,
@@ -160,7 +155,12 @@ where
             return Err(PowerError::Busy);
         }
 
-        let power = state.port_states_mut().get_mut(port.0).ok_or(PdError::InvalidPort)?;
+        let power = state.port_power_mut().get_mut(port.0 as usize);
+        if power.is_none() {
+            return Err(PowerError::InvalidDevice);
+        }
+
+        let power = power.unwrap();
         match command {
             PowerCommand::ConnectAsConsumer(capability) => {
                 info!(

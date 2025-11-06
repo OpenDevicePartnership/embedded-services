@@ -64,7 +64,13 @@ use embedded_services::{
 };
 use embedded_usb_pd::{GlobalPortId, ado::Ado};
 
-use crate::{PortEventStreamer, wrapper::cfu};
+use crate::{
+    PortEventStreamer,
+    wrapper::{
+        cfu,
+        proxy::{PowerProxyChannel, PowerProxyDevice, PowerProxyReceiver},
+    },
+};
 
 /// Per-port state
 pub struct PortState<'a> {
@@ -100,37 +106,18 @@ impl Default for ControllerState {
     }
 }
 
-pub struct PortProxy;
-
-impl power::policy::device::DeviceTrait for PortProxy {
-    async fn disconnect(&mut self) -> Result<(), power::policy::Error> {
-        Ok(())
-    }
-
-    async fn connect_provider(
-        &mut self,
-        _capability: power::policy::ProviderPowerCapability,
-    ) -> Result<(), power::policy::Error> {
-        Ok(())
-    }
-
-    async fn connect_consumer(
-        &mut self,
-        _capability: power::policy::ConsumerPowerCapability,
-    ) -> Result<(), power::policy::Error> {
-        Ok(())
-    }
-}
-
 /// Internal state containing all per-port and per-controller state
 struct InternalState<'a, const N: usize, S: event::Sender<policy::RequestData>> {
     controller_state: ControllerState,
     port_states: [PortState<'a>; N],
-    port_power: [PortPower<S>; N],
+    port_power: [PortPower<'a, S>; N],
 }
 
 impl<'a, const N: usize, S: event::Sender<policy::RequestData>> InternalState<'a, N, S> {
-    fn try_new<M: RawMutex>(storage: &'a Storage<N, M>, power_policy_senders: [S; N]) -> Option<Self> {
+    fn try_new<M: RawMutex>(
+        storage: &'a Storage<N, M>,
+        power_events: [(S, PowerProxyReceiver<'a>); N],
+    ) -> Option<Self> {
         Some(Self {
             controller_state: ControllerState::default(),
             port_states: from_fn(|i| PortState {
@@ -143,8 +130,9 @@ impl<'a, const N: usize, S: event::Sender<policy::RequestData>> InternalState<'a
                     storage.pd_alerts[i].dyn_subscriber()?,
                 ),
             }),
-            port_power: power_policy_senders.map(|sender| PortPower {
+            port_power: power_events.map(|(sender, receiver)| PortPower {
                 sender,
+                receiver,
                 state: Default::default(),
             }),
         })
@@ -172,11 +160,11 @@ impl<'a, const N: usize, S: event::Sender<policy::RequestData>> DynPortState<'a,
         &mut self.controller_state
     }
 
-    fn port_power(&self) -> &[PortPower<S>] {
+    fn port_power(&self) -> &[PortPower<'a, S>] {
         &self.port_power
     }
 
-    fn port_power_mut(&mut self) -> &mut [PortPower<S>] {
+    fn port_power_mut(&mut self) -> &mut [PortPower<'a, S>] {
         &mut self.port_power
     }
 }
@@ -191,8 +179,8 @@ pub trait DynPortState<'a, S: event::Sender<policy::RequestData>> {
     fn controller_state(&self) -> &ControllerState;
     fn controller_state_mut(&mut self) -> &mut ControllerState;
 
-    fn port_power(&self) -> &[PortPower<S>];
-    fn port_power_mut(&mut self) -> &mut [PortPower<S>];
+    fn port_power(&self) -> &[PortPower<'a, S>];
+    fn port_power_mut(&mut self) -> &mut [PortPower<'a, S>];
 }
 
 /// Service registration objects
@@ -200,7 +188,7 @@ pub struct Registration<'a, M: RawMutex, R: event::Receiver<policy::RequestData>
     pub context: &'a embedded_services::type_c::controller::Context,
     pub pd_controller: &'a embedded_services::type_c::controller::Device<'a>,
     pub cfu_device: &'a embedded_services::cfu::component::CfuDevice,
-    pub power_devices: &'a [embedded_services::power::policy::device::Device<'a, Mutex<M, PortProxy>, R>],
+    pub power_devices: &'a [embedded_services::power::policy::device::Device<'a, Mutex<M, PowerProxyDevice<'a>>, R>],
 }
 
 impl<'a, M: RawMutex, R: event::Receiver<policy::RequestData>> Registration<'a, M, R> {
@@ -212,8 +200,9 @@ impl<'a, M: RawMutex, R: event::Receiver<policy::RequestData>> Registration<'a, 
 /// PD alerts should be fairly uncommon, four seems like a reasonable number to start with.
 const MAX_BUFFERED_PD_ALERTS: usize = 4;
 
-pub struct PortPower<S: event::Sender<policy::RequestData>> {
+pub struct PortPower<'a, S: event::Sender<policy::RequestData>> {
     pub sender: S,
+    pub receiver: PowerProxyReceiver<'a>,
     pub state: power::policy::device::InternalState,
 }
 
@@ -224,7 +213,7 @@ pub struct Storage<'a, const N: usize, M: RawMutex, S: event::Sender<policy::Req
     controller_id: ControllerId,
     pd_ports: [GlobalPortId; N],
     cfu_device: embedded_services::cfu::component::CfuDevice,
-    port_proxies: [Mutex<M, PortProxy>; N],
+    power_proxy_channels: [PowerProxyChannel<M>; N],
 
     // State-related
     pd_alerts: [PubSubChannel<M, Ado, MAX_BUFFERED_PD_ALERTS, 1, 0>; N],
@@ -244,18 +233,17 @@ impl<'a, const N: usize, M: RawMutex, S: event::Sender<policy::RequestData>> Sto
             controller_id,
             pd_ports,
             cfu_device: embedded_services::cfu::component::CfuDevice::new(cfu_id),
-            port_proxies: from_fn(|_| Mutex::new(PortProxy)),
+            power_proxy_channels: from_fn(|_| PowerProxyChannel::new()),
             pd_alerts: [const { PubSubChannel::new() }; N],
         }
     }
 
     /// Create referenced storage from this storage
-    pub fn create_referenced<R: event::Receiver<policy::RequestData>>(
+    pub fn create_referenced<S: event::Sender<policy::RequestData>>(
         &self,
-        policy_receivers: [(power::policy::DeviceId, R); N],
-        power_policy_senders: [S; N],
-    ) -> Option<ReferencedStorage<'_, N, M, S, R>> {
-        ReferencedStorage::try_from_storage(self, policy_receivers, power_policy_senders)
+        policy_senders: [S; N],
+    ) -> Option<ReferencedStorage<'_, N, M, S>> {
+        ReferencedStorage::try_from_storage(self, policy_senders)
     }
 }
 
@@ -263,41 +251,42 @@ impl<'a, const N: usize, M: RawMutex, S: event::Sender<policy::RequestData>> Sto
 ///
 /// To simplify usage, we use interior mutability through a ref cell to avoid having to declare the state
 /// completely separately.
-pub struct ReferencedStorage<
-    'a,
-    const N: usize,
-    M: RawMutex,
-    S: event::Sender<policy::RequestData>,
-    R: event::Receiver<policy::RequestData>,
-> {
+pub struct ReferencedStorage<'a, const N: usize, M: RawMutex, S: event::Sender<policy::RequestData>> {
     storage: &'a Storage<N, M>,
     state: RefCell<InternalState<'a, N, S>>,
     pd_controller: embedded_services::type_c::controller::Device<'a>,
-    power_devices: [power::policy::device::Device<'a, Mutex<M, PortProxy>, R>; N],
+    power_proxy_devices: [Mutex<M, PowerProxyDevice<'a>>; N],
 }
 
-impl<'a, const N: usize, M: RawMutex, S: event::Sender<policy::RequestData>, R: event::Receiver<policy::RequestData>>
-    ReferencedStorage<'a, N, M, S, R>
-{
+impl<'a, const N: usize, M: RawMutex, S: event::Sender<policy::RequestData>> ReferencedStorage<'a, N, M, S> {
     /// Create a new referenced storage from the given storage and controller ID
-    fn try_from_storage(
-        storage: &'a Storage<N, M, S>,
-        policy_receivers: [(power::policy::DeviceId, R); N],
-        power_policy_senders: [S; N],
-    ) -> Option<Self> { {
-        let mut policy_iter = policy_receivers.into_iter();
+    fn try_from_storage(storage: &'a Storage<N, M>, policy_senders: [S; N]) -> Option<Self> {
+        let mut power_proxy_devices = heapless::Vec::<_, N>::new();
+        let mut power_events = heapless::Vec::<_, N>::new();
+
+        for (power_proxy_channel, policy_sender) in storage.power_proxy_channels.iter().zip(policy_senders.into_iter())
+        {
+            power_proxy_devices.push(Mutex::new(power_proxy_channel.get_device()));
+            power_events.push((policy_sender, power_proxy_channel.get_receiver()));
+        }
+
         Some(Self {
             storage,
-            state: RefCell::new(InternalState::try_new(storage, power_policy_senders)?),
+            state: RefCell::new(InternalState::new(
+                storage,
+                // Safe because both have N elements
+                power_events
+                    .into_array()
+                    .unwrap_or_else(|_| panic!("Failed to create power events")),
+            )),
             pd_controller: embedded_services::type_c::controller::Device::new(
                 storage.controller_id,
                 storage.pd_ports.as_slice(),
             ),
-            power_devices: from_fn(|i| {
-                // Always safe because both arrays have length N
-                let (id, receiver) = policy_iter.next().unwrap();
-                power::policy::device::Device::new(id, &storage.port_proxies[i], receiver)
-            }),
+            // Safe because both have N elements
+            power_proxy_devices: power_proxy_devices
+                .into_array()
+                .unwrap_or_else(|_| panic!("Failed to create power devices")),
         })
     }
 
