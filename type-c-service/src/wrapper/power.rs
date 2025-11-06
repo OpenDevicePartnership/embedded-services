@@ -1,9 +1,9 @@
 //! Module contain power-policy related message handling
-use core::future;
+use core::pin::pin;
 
+use embassy_futures::select::select_slice;
 use embedded_services::{
     debug,
-    ipc::deferred,
     power::policy::{
         ConsumerPowerCapability, ProviderPowerCapability,
         device::{CommandData, InternalResponseData, ResponseData},
@@ -121,22 +121,23 @@ where
     ///
     /// Returns (local port ID, deferred request)
     /// DROP SAFETY: Call to a select over drop safe futures
-    pub(super) async fn wait_power_command(
-        &self,
-    ) -> (
-        LocalPortId,
-        deferred::Request<'_, GlobalRawMutex, CommandData, InternalResponseData>,
-    ) {
-        let futures: [_; MAX_SUPPORTED_PORTS] = from_fn(|i| async move {
-            if let Some(device) = self.registration.power_event_senders.get(i) {
-                device.receive().await
-            } else {
-                future::pending().await
+    pub(super) async fn wait_power_command(&self) -> (LocalPortId, CommandData) {
+        let mut futures = heapless::Vec::<_, MAX_SUPPORTED_PORTS>::new();
+        for receiver in self.power_proxy_receivers {
+            if futures
+                .push(async {
+                    let mut lock = receiver.lock().await;
+                    lock.receive().await
+                })
+                .is_err()
+            {
+                error!("Futures vec overflow");
             }
-        });
+        }
+
         // DROP SAFETY: Select over drop safe futures
-        let (request, local_id) = select_array(futures).await;
-        trace!("Power command: device{} {:#?}", local_id, request.command);
+        let (request, local_id) = select_slice(pin!(futures.as_mut_slice())).await;
+        trace!("Power command: device{} {:#?}", local_id, request);
         (LocalPortId(local_id as u8), request)
     }
 

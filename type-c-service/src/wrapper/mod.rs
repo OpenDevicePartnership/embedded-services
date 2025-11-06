@@ -27,6 +27,7 @@ use embassy_sync::mutex::Mutex;
 use embassy_sync::signal::Signal;
 use embassy_time::Instant;
 use embedded_cfu_protocol::protocol_definitions::{FwUpdateOffer, FwUpdateOfferResponse, FwVersion};
+use embedded_services::event;
 use embedded_services::power::policy::device::StateKind;
 use embedded_services::power::policy::policy;
 use embedded_services::sync::Lockable;
@@ -39,6 +40,7 @@ use embedded_usb_pd::{Error, LocalPortId, PdError};
 
 use crate::wrapper::backing::{DynPortState, PortPower};
 use crate::wrapper::message::*;
+use crate::wrapper::proxy::PowerProxyReceiver;
 use crate::{PortEventStreamer, PortEventVariant};
 
 pub mod backing;
@@ -92,6 +94,8 @@ pub struct ControllerWrapper<
     sw_status_event: Signal<M, ()>,
     /// General config
     config: config::Config,
+    /// Power proxy receivers
+    power_proxy_receivers: &'device [Mutex<M, PowerProxyReceiver<'device>>],
 }
 
 impl<
@@ -127,6 +131,7 @@ where
             registration: backing.registration,
             state: Mutex::new(backing.state),
             sw_status_event: Signal::new(),
+            power_proxy_receivers: backing.power_receivers,
         })
     }
 
@@ -517,13 +522,9 @@ where
             }
             Event::PowerPolicyCommand(EventPowerPolicyCommand { port, request }) => {
                 let response = self
-                    .process_power_command(&mut controller, state.deref_mut().deref_mut(), port, &request.command)
+                    .process_power_command(&mut controller, state.deref_mut().deref_mut(), port, &request)
                     .await;
-                Ok(Output::PowerPolicyCommand(OutputPowerPolicyCommand {
-                    port,
-                    request,
-                    response,
-                }))
+                Ok(Output::PowerPolicyCommand(OutputPowerPolicyCommand { port, response }))
             }
             Event::ControllerCommand(request) => {
                 let response = self
@@ -566,9 +567,18 @@ where
             Output::PdAlert(OutputPdAlert { port, ado }) => {
                 self.finalize_pd_alert(state.deref_mut().deref_mut(), port, ado)
             }
-            Output::Vdm(vdm) => self.finalize_vdm(state.deref_mut().deref_mut(), vdm).map_err(Error::Pd),
-            Output::PowerPolicyCommand(OutputPowerPolicyCommand { request, response, .. }) => {
-                request.respond(response);
+            Output::Vdm(vdm) => self
+                .finalize_vdm(state.deref_mut().deref_mut(), vdm)
+                .await
+                .map_err(Error::Pd),
+            Output::PowerPolicyCommand(OutputPowerPolicyCommand { port, response }) => {
+                self.power_proxy_receivers
+                    .get(port.0 as usize)
+                    .ok_or(Error::Pd(PdError::InvalidPort))?
+                    .lock()
+                    .await
+                    .send(response)
+                    .await;
                 Ok(())
             }
             Output::ControllerCommand(OutputControllerCommand { request, response }) => {
