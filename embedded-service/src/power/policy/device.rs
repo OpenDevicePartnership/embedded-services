@@ -128,11 +128,7 @@ impl InternalState {
             Ok(())
         } else {
             Err(Error::InvalidState(
-                &[
-                    StateKind::Idle,
-                    StateKind::ConnectedConsumer,
-                    StateKind::ConnectedProvider,
-                ],
+                &[StateKind::Idle, StateKind::ConnectedConsumer],
                 self.state.kind(),
             ))
         };
@@ -157,11 +153,7 @@ impl InternalState {
             Ok(())
         } else {
             Err(Error::InvalidState(
-                &[
-                    StateKind::Idle,
-                    StateKind::ConnectedConsumer,
-                    StateKind::ConnectedProvider,
-                ],
+                &[StateKind::Idle, StateKind::ConnectedProvider],
                 self.state.kind(),
             ))
         };

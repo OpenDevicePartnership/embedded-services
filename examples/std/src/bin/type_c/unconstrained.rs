@@ -1,9 +1,13 @@
 use crate::mock_controller::Wrapper;
 use embassy_executor::Executor;
+use embassy_executor::{Executor, Spawner};
+use embassy_sync::channel;
 use embassy_sync::mutex::Mutex;
 use embassy_sync::pubsub::PubSubChannel;
 use embassy_time::Timer;
+use embedded_services::GlobalRawMutex;
 use embedded_services::power::policy::PowerCapability;
+use embedded_services::power::policy::{self, PowerCapability};
 use embedded_services::power::{self};
 use embedded_services::type_c::ControllerId;
 use embedded_services::type_c::controller::Context;
@@ -14,6 +18,7 @@ use static_cell::StaticCell;
 use std_examples::type_c::mock_controller;
 use type_c_service::service::Service;
 use type_c_service::service::config::Config;
+use type_c_service::wrapper::backing::{IntermediateStorage, ReferencedStorage, Storage};
 use type_c_service::wrapper::backing::{ReferencedStorage, Storage};
 
 const NUM_PD_CONTROLLERS: usize = 3;
@@ -154,25 +159,25 @@ fn main() {
     static CONTROLLER_LIST: StaticCell<IntrusiveList> = StaticCell::new();
     let controller_list = CONTROLLER_LIST.init(IntrusiveList::new());
 
-    static POWER_POLICY_SERVICE: StaticCell<power_policy_service::PowerPolicy<POLICY_CHANNEL_SIZE>> = StaticCell::new();
-    let power_service = POWER_POLICY_SERVICE.init(power_policy_service::PowerPolicy::new(
-        power_policy_service::Config::default(),
-    ));
-
-    static STORAGE: StaticCell<Storage<1, GlobalRawMutex, POLICY_CHANNEL_SIZE>> = StaticCell::new();
-    let storage = STORAGE.init(Storage::new(
-        context,
-        CONTROLLER0_ID,
-        CFU0_ID,
-        [(PORT0_ID, POWER0_ID)],
-        &power_service.context,
-    ));
-    static REFERENCED: StaticCell<ReferencedStorage<1, GlobalRawMutex, POLICY_CHANNEL_SIZE>> = StaticCell::new();
-    let referenced = REFERENCED.init(
-        storage
-            .create_referenced()
-            .expect("Failed to create referenced storage"),
-    );
+    static STORAGE0: StaticCell<Storage<1, GlobalRawMutex>> = StaticCell::new();
+    let storage0 = STORAGE0.init(Storage::new(CONTROLLER0_ID, CFU0_ID, [PORT0_ID]));
+    static INTERMEDIATE0: StaticCell<IntermediateStorage<'static, 1, GlobalRawMutex>> = StaticCell::new();
+    let intermediate0 = INTERMEDIATE0.init(storage0.create_intermediate());
+    static CHANNEL0: StaticCell<channel::Channel<GlobalRawMutex, policy::policy::RequestData, 4>> = StaticCell::new();
+    let channel0 = CHANNEL0.init(channel::Channel::new());
+    static REFERENCED0: StaticCell<
+        ReferencedStorage<
+            1,
+            GlobalRawMutex,
+            channel::DynamicSender<policy::policy::RequestData>,
+            channel::DynamicReceiver<policy::policy::RequestData>,
+        >,
+    > = StaticCell::new();
+    let referenced0 = REFERENCED0.init(intermediate0.create_referenced([(
+        POWER0_ID,
+        channel0.dyn_sender(),
+        channel0.dyn_receiver(),
+    )]));
 
     static STATE0: StaticCell<mock_controller::ControllerState> = StaticCell::new();
     let state0 = STATE0.init(mock_controller::ControllerState::new());
@@ -180,29 +185,29 @@ fn main() {
     let controller0 = CONTROLLER0.init(Mutex::new(mock_controller::Controller::new(state0)));
     static WRAPPER0: StaticCell<mock_controller::Wrapper> = StaticCell::new();
     let wrapper0 = WRAPPER0.init(
-        mock_controller::Wrapper::try_new(
-            controller0,
-            Default::default(),
-            referenced,
-            crate::mock_controller::Validator,
-        )
-        .expect("Failed to create wrapper"),
+        mock_controller::Wrapper::try_new(controller0, referenced0, crate::mock_controller::Validator)
+            .expect("Failed to create wrapper"),
     );
 
-    static STORAGE1: StaticCell<Storage<1, GlobalRawMutex, POLICY_CHANNEL_SIZE>> = StaticCell::new();
-    let storage1 = STORAGE1.init(Storage::new(
-        context,
-        CONTROLLER1_ID,
-        CFU1_ID,
-        [(PORT1_ID, POWER1_ID)],
-        &power_service.context,
-    ));
-    static REFERENCED1: StaticCell<ReferencedStorage<1, GlobalRawMutex, POLICY_CHANNEL_SIZE>> = StaticCell::new();
-    let referenced1 = REFERENCED1.init(
-        storage1
-            .create_referenced()
-            .expect("Failed to create referenced storage"),
-    );
+    static STORAGE1: StaticCell<Storage<1, GlobalRawMutex>> = StaticCell::new();
+    let storage1 = STORAGE1.init(Storage::new(CONTROLLER1_ID, CFU1_ID, [PORT1_ID]));
+    static INTERMEDIATE1: StaticCell<IntermediateStorage<'static, 1, GlobalRawMutex>> = StaticCell::new();
+    let intermediate1 = INTERMEDIATE1.init(storage1.create_intermediate());
+    static CHANNEL1: StaticCell<channel::Channel<GlobalRawMutex, policy::policy::RequestData, 4>> = StaticCell::new();
+    let channel1 = CHANNEL1.init(channel::Channel::new());
+    static REFERENCED1: StaticCell<
+        ReferencedStorage<
+            1,
+            GlobalRawMutex,
+            channel::DynamicSender<policy::policy::RequestData>,
+            channel::DynamicReceiver<policy::policy::RequestData>,
+        >,
+    > = StaticCell::new();
+    let referenced1 = REFERENCED1.init(intermediate1.create_referenced([(
+        POWER0_ID,
+        channel1.dyn_sender(),
+        channel1.dyn_receiver(),
+    )]));
 
     static STATE1: StaticCell<mock_controller::ControllerState> = StaticCell::new();
     let state1 = STATE1.init(mock_controller::ControllerState::new());
@@ -219,20 +224,25 @@ fn main() {
         .expect("Failed to create wrapper"),
     );
 
-    static STORAGE2: StaticCell<Storage<1, GlobalRawMutex, POLICY_CHANNEL_SIZE>> = StaticCell::new();
-    let storage2 = STORAGE2.init(Storage::new(
-        context,
-        CONTROLLER2_ID,
-        CFU2_ID,
-        [(PORT2_ID, POWER2_ID)],
-        &power_service.context,
-    ));
-    static REFERENCED2: StaticCell<ReferencedStorage<1, GlobalRawMutex, POLICY_CHANNEL_SIZE>> = StaticCell::new();
-    let referenced2 = REFERENCED2.init(
-        storage2
-            .create_referenced()
-            .expect("Failed to create referenced storage"),
-    );
+    static STORAGE2: StaticCell<Storage<1, GlobalRawMutex>> = StaticCell::new();
+    let storage2 = STORAGE2.init(Storage::new(CONTROLLER2_ID, CFU2_ID, [PORT2_ID]));
+    static INTERMEDIATE2: StaticCell<IntermediateStorage<'static, 1, GlobalRawMutex>> = StaticCell::new();
+    let intermediate2 = INTERMEDIATE2.init(storage2.create_intermediate());
+    static CHANNEL2: StaticCell<channel::Channel<GlobalRawMutex, policy::policy::RequestData, 4>> = StaticCell::new();
+    let channel2 = CHANNEL2.init(channel::Channel::new());
+    static REFERENCED2: StaticCell<
+        ReferencedStorage<
+            1,
+            GlobalRawMutex,
+            channel::DynamicSender<policy::policy::RequestData>,
+            channel::DynamicReceiver<policy::policy::RequestData>,
+        >,
+    > = StaticCell::new();
+    let referenced2 = REFERENCED2.init(intermediate2.create_referenced([(
+        POWER0_ID,
+        channel2.dyn_sender(),
+        channel2.dyn_receiver(),
+    )]));
 
     static STATE2: StaticCell<mock_controller::ControllerState> = StaticCell::new();
     let state2 = STATE2.init(mock_controller::ControllerState::new());
@@ -249,6 +259,8 @@ fn main() {
         .expect("Failed to create wrapper"),
     );
 
+    static EXECUTOR: StaticCell<Executor> = StaticCell::new();
+    let executor = EXECUTOR.init(Executor::new());
     executor.run(|spawner| {
         spawner.must_spawn(power_policy_service_task(power_service));
         spawner.must_spawn(service_task(

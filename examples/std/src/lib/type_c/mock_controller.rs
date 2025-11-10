@@ -1,8 +1,8 @@
-use embassy_sync::{mutex::Mutex, signal::Signal};
+use embassy_sync::{channel, mutex::Mutex, signal::Signal};
 use embedded_cfu_protocol::protocol_definitions::{FwUpdateOfferResponse, HostToken};
 use embedded_services::{
     GlobalRawMutex,
-    power::policy::PowerCapability,
+    power::policy::{PowerCapability, policy},
     type_c::{
         controller::{
             AttnVdm, ControllerStatus, DpConfig, DpPinConfig, DpStatus, OtherVdm, PdStateMachineConfig, PortStatus,
@@ -16,7 +16,6 @@ use embedded_usb_pd::{LocalPortId, PdError};
 use embedded_usb_pd::{PowerRole, type_c::Current};
 use embedded_usb_pd::{type_c::ConnectionState, ucsi::lpm};
 use log::{debug, info, trace};
-use std::cell::Cell;
 
 const POWER_POLICY_CHANNEL_SIZE: usize = 1;
 
@@ -97,26 +96,26 @@ impl Default for ControllerState {
     }
 }
 
-pub struct Controller<'a> {
-    state: &'a ControllerState,
-    events: Cell<PortEvent>,
+pub struct Controller {
+    state: ControllerState,
+    events: PortEvent,
 }
 
-impl<'a> Controller<'a> {
-    pub fn new(state: &'a ControllerState) -> Self {
+impl Controller {
+    pub fn new(state: ControllerState) -> Self {
         Self {
             state,
-            events: Cell::new(PortEvent::none()),
+            events: PortEvent::none(),
         }
     }
 
     /// Function to demonstrate calling functions directly on the controller
-    pub fn custom_function(&self) {
+    pub fn custom_function(&mut self) {
         info!("Custom function called on controller");
     }
 }
 
-impl embedded_services::type_c::controller::Controller for Controller<'_> {
+impl embedded_services::type_c::controller::Controller for Controller {
     type BusError = ();
 
     async fn wait_port_event(&mut self) -> Result<(), Error<Self::BusError>> {
@@ -127,9 +126,9 @@ impl embedded_services::type_c::controller::Controller for Controller<'_> {
     }
 
     async fn clear_port_events(&mut self, _port: LocalPortId) -> Result<PortEvent, Error<Self::BusError>> {
-        let events = self.events.get();
+        let events = self.events;
         debug!("Clear port events: {events:#?}");
-        self.events.set(PortEvent::none());
+        self.events = PortEvent::none();
         Ok(events)
     }
 
@@ -342,6 +341,7 @@ pub type Wrapper<'a> = type_c_service::wrapper::ControllerWrapper<
     'a,
     GlobalRawMutex,
     Mutex<GlobalRawMutex, Controller<'a>>,
+    channel::DynamicSender<'a, policy::RequestData>,
+    channel::DynamicReceiver<'a, policy::RequestData>,
     Validator,
-    POWER_POLICY_CHANNEL_SIZE,
 >;
