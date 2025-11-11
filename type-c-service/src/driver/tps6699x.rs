@@ -1,5 +1,3 @@
-use crate::wrapper::backing::ReferencedStorage;
-use crate::wrapper::{ControllerWrapper, FwOfferValidator};
 use ::tps6699x::registers::field_sets::IntEventBus1;
 use ::tps6699x::registers::{PdCcPullUp, PpExtVbusSw, PpIntVbusSw};
 use ::tps6699x::{PORT0, PORT1, TPS66993_NUM_PORTS, TPS66994_NUM_PORTS};
@@ -774,46 +772,31 @@ impl<'a, M: RawMutex, BUS: I2c> AsMut<tps6699x_drv::Tps6699x<'a, M, BUS>> for Tp
     }
 }
 
-/// TPS6699x controller wrapper
-pub type Tps6699xWrapper<'a, M, BUS, V> = ControllerWrapper<'a, M, Tps6699x<'a, M, BUS>, V>;
-
-/// Create a TPS66994 controller wrapper, returns `None` if the number of ports is invalid
-pub fn tps66994<'a, M: RawMutex, BUS: I2c, V: FwOfferValidator>(
+/// Create a TPS66994 object mutex
+pub fn tps66994<'a, M: RawMutex, BUS: I2c>(
     controller: tps6699x_drv::Tps6699x<'a, M, BUS>,
-    storage: &'a ReferencedStorage<'a, TPS66994_NUM_PORTS, M>,
     fw_update_config: FwUpdateConfig,
-    fw_version_validator: V,
-) -> Option<Tps6699xWrapper<'a, M, BUS, V>> {
+) -> Tps6699x<'a, M, BUS> {
     const _: () = assert!(
         TPS66994_NUM_PORTS > 0 && TPS66994_NUM_PORTS <= MAX_SUPPORTED_PORTS,
         "Number of ports exceeds maximum supported"
     );
 
-    ControllerWrapper::try_new(
-        // Statically checked above
-        Tps6699x::try_new(controller, TPS66994_NUM_PORTS, fw_update_config).unwrap(),
-        storage,
-        fw_version_validator,
-    )
+    // Statically checked above
+    Tps6699x::try_new(controller, TPS66994_NUM_PORTS, fw_update_config).unwrap()
 }
 
-/// Create a new TPS66993 controller wrapper, returns `None` if the number of ports is invalid
-pub fn tps66993<'a, M: RawMutex, BUS: I2c, V: FwOfferValidator>(
+/// Create a TPS66993 object mutex
+pub fn tps66993<'a, M: RawMutex, BUS: I2c>(
     controller: tps6699x_drv::Tps6699x<'a, M, BUS>,
-    backing: &'a ReferencedStorage<'a, TPS66993_NUM_PORTS, M>,
     fw_update_config: FwUpdateConfig,
-    fw_version_validator: V,
-) -> Option<Tps6699xWrapper<'a, M, BUS, V>> {
+) -> Tps6699x<'a, M, BUS> {
     const _: () = assert!(
         TPS66993_NUM_PORTS > 0 && TPS66993_NUM_PORTS <= MAX_SUPPORTED_PORTS,
         "Number of ports exceeds maximum supported"
     );
-    ControllerWrapper::try_new(
-        // Statically checked above
-        Tps6699x::try_new(controller, TPS66993_NUM_PORTS, fw_update_config).unwrap(),
-        backing,
-        fw_version_validator,
-    )
+    // Statically checked above
+    Tps6699x::try_new(controller, TPS66993_NUM_PORTS, fw_update_config).unwrap()
 }
 
 bitfield! {

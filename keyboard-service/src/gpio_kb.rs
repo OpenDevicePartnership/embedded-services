@@ -1,11 +1,8 @@
 //! A configurable GPIO keyboard which can be used for the keyboard service.
 //! If this does not meets the user's needs, the user can implement the `HidKeyboard` trait
 //! for their own specific use case.
-//!
-//! Currently there is no software-implemented deghosting, relying on that to be done
-//! in hardware (e.g. diode per switch). Will need to investigate more if there are ways to create
-//! a configurable software-implemented deghosting strategy.
 use super::HidKeyboard;
+use core::borrow::Borrow;
 use embassy_sync::signal::Signal;
 use embassy_time::Timer;
 use embedded_hal::digital::{InputPin, OutputPin};
@@ -29,12 +26,14 @@ const KEYMOD_SZ: usize = 1;
 // May need to consider letting hid back end create the hid descriptor
 const INPUT_MAX_LEN: usize = super::hid_kb::I2C_REPORT_HEADER_SZ + KEYMOD_SZ + KRO;
 
-// An input report
+// Output reports are the I2C header plus a single byte for LED on/off status
+const OUTPUT_MAX_LEN: usize = super::hid_kb::I2C_REPORT_HEADER_SZ + 1;
+
+// An input/output report
 const REPORT_ID: u8 = 1;
 
 // This is a basic report descriptor that defines a single keyboard report with 6 keys
 // Revisit: Could also allow user to pass in a custom report descriptor
-// Will also need to be expanded to support output reports like LEDs
 // Revisit: Investigate a struct representation of report descriptors,
 // but may prove challenging due to the fact that a strict ordering and length is not defined.
 #[rustfmt::skip]
@@ -75,10 +74,54 @@ const REPORT_DESCRIPTOR: &[u8] = &[
     0x95, 0x06,
     // Input (Data,Array,Abs,No Wrap,Linear,Preferred State,No Null Position)
     0x81, 0x00,
+    // LED report
+    // Usage Page (LEDs)
+    0x05, 0x08,
+    // Usage Minimum (Num Lock)
+    0x19, 0x01,
+    // Usage Maximum (Scroll Lock)
+    0x29, 0x03,
+    // Report Size (1)
+    0x75, 0x01,
+    // Report Count (3)
+    0x95, 0x03,
+    // Logical Maximum (1)
+    0x25, 0x01,
+    // Output (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
+    0x91, 0x02,
+    // Report Count (5)
+    0x95, 0x05,
+    // Output (Const,Array,Abs,No Wrap,Linear,Preferred State,No Null Position)
+    0x91, 0x01,
+    // End LED report
+    // Revisit: Consumer reports... but can we make that generic?
     // End Collection
-    // Revisit: LED output reports and consumer reports... but can we make that generic?
     0xC0,
 ];
+
+// Matches the format described by report descriptor
+// As in, each LED on/off status represented by single-bit
+bitflags::bitflags! {
+    pub struct LedFlags: u8 {
+        const NumLock = 1 << 0;
+        const CapsLock = 1 << 1;
+        const ScrollLock = 1 << 2;
+        // The host may set any bits
+        const _ = !0;
+    }
+}
+
+fn set_led(led: &mut Option<impl OutputPin>, cond: bool) -> Result<(), super::KeyboardError> {
+    if let Some(led) = led {
+        if cond {
+            led.set_high().map_err(|_| super::KeyboardError::Scan)?;
+        } else {
+            led.set_low().map_err(|_| super::KeyboardError::Scan)?;
+        }
+    }
+
+    Ok(())
+}
 
 // Note: This is not defined at top-level because operations on const generics is not yet stable
 // E.g. `struct HidReport<const KRO: usize>([u8; KRO + 1])` is not currently possible
@@ -194,6 +237,19 @@ pub struct HidConfig {
     pub pid: u16,
 }
 
+/// Keyboard LED configuration.
+///
+/// HID spec defines many usage IDs for LED page, so trying to support them here is difficult.
+/// So it has been narrowed down to just 3 that may actually be common on modern laptop keyboards.
+pub struct LedConfig<LED: OutputPin> {
+    /// Num lock key LED if available.
+    pub num_lock: Option<LED>,
+    /// Caps lock key LED if available.
+    pub caps_lock: Option<LED>,
+    /// Scroll lock key LED if available.
+    pub scroll_lock: Option<LED>,
+}
+
 fn has_ghost<const NROWS: usize, const NCOLS: usize>(pressed: &[[bool; NROWS]; NCOLS]) -> bool {
     // First convert rows represented as an array of bools into packed bits
     // This is likely more efficient than doing a triple nested loop below,
@@ -250,10 +306,12 @@ pub struct GpioKeyboard<
     E,
     INPUT: InputPin<Error = E>,
     OUTPUT: OutputPin<Error = E>,
+    LED: OutputPin,
     DELAY: FnMut(),
 > {
     kb_cfg: KeyberonConfig<NCOLS, NROWS, NLAYERS, E, INPUT, OUTPUT, DELAY>,
     hid_cfg: HidConfig,
+    led_cfg: LedConfig<LED>,
     report: HidReport,
     power_state: hid::PowerState,
     scan_signal: Signal<GlobalRawMutex, ()>,
@@ -267,8 +325,9 @@ impl<
     E,
     INPUT: InputPin<Error = E>,
     OUTPUT: OutputPin<Error = E>,
+    LED: OutputPin,
     DELAY: FnMut(),
-> GpioKeyboard<NCOLS, NROWS, NLAYERS, E, INPUT, OUTPUT, DELAY>
+> GpioKeyboard<NCOLS, NROWS, NLAYERS, E, INPUT, OUTPUT, LED, DELAY>
 {
     /// Create a new instance of a GPIO Keyboard with given configuration.
     ///
@@ -278,6 +337,7 @@ impl<
     pub fn new(
         kb_cfg: KeyboardConfig<NCOLS, NROWS, NLAYERS, E, INPUT, OUTPUT, DELAY>,
         hid_cfg: HidConfig,
+        led_cfg: LedConfig<LED>,
     ) -> Result<Self, E> {
         // We can only support upto 128 rows for deghosting
         if kb_cfg.deghost {
@@ -287,6 +347,7 @@ impl<
         Ok(Self {
             kb_cfg: KeyberonConfig::try_from(kb_cfg)?,
             hid_cfg,
+            led_cfg,
             report: HidReport::default(),
             power_state: hid::PowerState::Sleep,
             scan_signal: Signal::new(),
@@ -302,8 +363,9 @@ impl<
     E,
     INPUT: InputPin<Error = E>,
     OUTPUT: OutputPin<Error = E>,
+    LED: OutputPin,
     DELAY: FnMut(),
-> HidKeyboard for GpioKeyboard<NCOLS, NROWS, NLAYERS, E, INPUT, OUTPUT, DELAY>
+> HidKeyboard for GpioKeyboard<NCOLS, NROWS, NLAYERS, E, INPUT, OUTPUT, LED, DELAY>
 {
     fn register_file(&self) -> hid::RegisterFile {
         // Don't need anything special so use the default
@@ -321,8 +383,7 @@ impl<
             w_input_register: self.register_file().input_reg,
             w_max_input_length: INPUT_MAX_LEN as u16,
             w_output_register: self.register_file().output_reg,
-            // We don't currently support output reports with this keyboard
-            w_max_output_length: 0,
+            w_max_output_length: OUTPUT_MAX_LEN as u16,
             w_command_register: self.register_file().command_reg,
             w_data_register: self.register_file().data_reg,
             w_vendor_id: self.hid_cfg.vid,
@@ -458,12 +519,29 @@ impl<
 
     async fn set_report(
         &mut self,
-        _report_type: hid::ReportType,
-        _report_id: hid::ReportId,
-        _buf: &embedded_services::buffer::SharedRef<'static, u8>,
+        report_type: hid::ReportType,
+        report_id: hid::ReportId,
+        buf: &embedded_services::buffer::SharedRef<'static, u8>,
     ) -> Result<(), super::KeyboardError> {
-        // NOP
-        // Do not currently support Output/Feature reports
+        match report_type {
+            // Received a set output report for LEDs
+            hid::ReportType::Output if report_id.0 == REPORT_ID => {
+                let buf = buf.borrow();
+                let leds: &[u8] = buf.borrow();
+                let flags = LedFlags::from_bits_retain(leds[0]);
+
+                set_led(&mut self.led_cfg.num_lock, flags.contains(LedFlags::NumLock))?;
+                set_led(&mut self.led_cfg.caps_lock, flags.contains(LedFlags::CapsLock))?;
+                set_led(&mut self.led_cfg.scroll_lock, flags.contains(LedFlags::ScrollLock))?;
+            }
+            // Not currently supported so treat as NOP
+            hid::ReportType::Feature => (),
+            // Should never receive a set input report command
+            hid::ReportType::Input => Err(super::KeyboardError::Command)?,
+            // Received set output for unknown report ID, also treat as NOP
+            _ => (),
+        }
+
         Ok(())
     }
 

@@ -110,6 +110,12 @@ pub struct DynamicBatteryMsgs {
     /// Battery Sustained Power in mW.
     pub sus_power_mw: u32,
 
+    /// Turbo Load Voltage in mV.
+    pub turbo_vload_mv: u32,
+
+    /// Turbo RHF Effective in mOhm.
+    pub turbo_rhf_effective_mohm: u32,
+
     /// Full Charge Capacity in mWh.
     pub full_charge_capacity_mwh: u32,
 

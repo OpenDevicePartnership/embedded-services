@@ -17,6 +17,7 @@ embassy-time.workspace = true
 embedded-services.workspace = true
 embedded-hal.workspace = true
 static_cell.workspace = true
+bitflags.workspace = true
 hid-service = { path = "../hid-service" }
 keyberon = { git = "https://github.com/TeXitoi/keyberon" }
 

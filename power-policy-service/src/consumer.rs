@@ -19,15 +19,27 @@ pub struct AvailableConsumer {
 
 /// Compare two consumer capabilities to determine which one is better
 ///
-/// This is not part of the `Ord` implementation for `ConsumerPowerCapability`, because it's specific to this implementation
-fn cmp_consumer_capability(a: &ConsumerPowerCapability, b: &ConsumerPowerCapability) -> Ordering {
-    (a.capability, a.flags.unconstrained_power()).cmp(&(b.capability, b.flags.unconstrained_power()))
+/// This is not part of the `Ord` implementation for `ConsumerPowerCapability`, because it's specific to this implementation.
+/// *_is_current indicate if the device with that capability is the currently connected consumer. This is used to make the
+/// implementation stick so as to avoid switching between otherwise equivalent consumers.
+fn cmp_consumer_capability(
+    a: &ConsumerPowerCapability,
+    a_is_current: bool,
+    b: &ConsumerPowerCapability,
+    b_is_current: bool,
+) -> Ordering {
+    (a.capability, a.flags.unconstrained_power(), a_is_current).cmp(&(
+        b.capability,
+        b.flags.unconstrained_power(),
+        b_is_current,
+    ))
 }
 
 impl PowerPolicy {
     /// Iterate over all devices to determine what is best power port provides the highest power
-    async fn find_best_consumer(&self) -> Result<Option<AvailableConsumer>, Error> {
+    async fn find_best_consumer(&self, state: &InternalState) -> Result<Option<AvailableConsumer>, Error> {
         let mut best_consumer = None;
+        let current_consumer_id = state.current_consumer_state.map(|f| f.device_id);
 
         for node in self.context.devices().await {
             let device = node.data::<Device>().ok_or(Error::InvalidDevice)?;
@@ -45,8 +57,12 @@ impl PowerPolicy {
                 (Some(_), None) => best_consumer,
                 // Existing consumer, new available consumer
                 (Some(best), Some(available)) => {
-                    if cmp_consumer_capability(&available, &best.consumer_power_capability)
-                        == core::cmp::Ordering::Greater
+                    if cmp_consumer_capability(
+                        &available,
+                        Some(device.id()) == current_consumer_id,
+                        &best.consumer_power_capability,
+                        Some(best.device_id) == current_consumer_id,
+                    ) == core::cmp::Ordering::Greater
                     {
                         Some(AvailableConsumer {
                             device_id: device.id(),
@@ -236,7 +252,7 @@ impl PowerPolicy {
             state.current_consumer_state
         );
 
-        let best_consumer = self.find_best_consumer().await?;
+        let best_consumer = self.find_best_consumer(state).await?;
         info!("Best consumer: {:#?}", best_consumer);
         if best_consumer.is_none() {
             // Notify disconnect if recently detached consumer was previously attached.
@@ -277,9 +293,9 @@ mod tests {
         let p0 = P0.into();
         let p1 = P1.into();
 
-        assert_eq!(cmp_consumer_capability(&p0, &p1), Ordering::Less);
-        assert_eq!(cmp_consumer_capability(&p1, &p1), Ordering::Equal);
-        assert_eq!(cmp_consumer_capability(&p1, &p0), Ordering::Greater);
+        assert_eq!(cmp_consumer_capability(&p0, false, &p1, false), Ordering::Less);
+        assert_eq!(cmp_consumer_capability(&p1, false, &p1, false), Ordering::Equal);
+        assert_eq!(cmp_consumer_capability(&p1, false, &p0, false), Ordering::Greater);
     }
 
     /// Tests the [`cmp_consumer_capability`] with unconstrained power flag set.
@@ -297,14 +313,20 @@ mod tests {
         };
 
         // At the same power, the unconstrained capability should take precedence
-        assert_eq!(cmp_consumer_capability(&p0_unconstrained, &p0), Ordering::Greater);
+        assert_eq!(
+            cmp_consumer_capability(&p0_unconstrained, false, &p0, false),
+            Ordering::Greater
+        );
 
         // Unconstrained should not take precedence over higher power
-        assert_eq!(cmp_consumer_capability(&p1, &p0_unconstrained), Ordering::Greater);
+        assert_eq!(
+            cmp_consumer_capability(&p1, false, &p0_unconstrained, false),
+            Ordering::Greater
+        );
 
         // Both unconstrained, should rely on power
         assert_eq!(
-            cmp_consumer_capability(&p0_unconstrained, &p1_unconstrained),
+            cmp_consumer_capability(&p0_unconstrained, false, &p1_unconstrained, false),
             Ordering::Less
         );
     }

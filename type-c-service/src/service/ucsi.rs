@@ -235,7 +235,7 @@ impl<'a> Service<'a> {
             ucsi_event.set_battery_charging_status_change(true);
         }
 
-        if ucsi_event.filter_enabled(state.notifications_enabled).is_none() {
+        if ucsi_event.filter_enabled(state.notifications_enabled).is_empty() {
             trace!("{:?}: event received, but no UCSI notifications enabled", port_id);
             return;
         }
