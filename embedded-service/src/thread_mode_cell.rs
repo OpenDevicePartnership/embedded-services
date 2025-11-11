@@ -60,6 +60,15 @@ impl<T> ThreadModeCell<T> {
     pub fn into_inner(self) -> T {
         self.inner.into_inner()
     }
+
+    /// Replaces the contained value with `val`, and returns the old contained value
+    /// # Panics
+    ///
+    /// This function will panic if called from within an interrupt context.
+    pub fn replace(&self, val: T) -> T {
+        assert!(in_thread_mode(), "ThreadModeCell can only be accessed in thread mode.");
+        self.inner.replace(val)
+    }
 }
 
 impl<T: Copy> ThreadModeCell<T> {
@@ -70,6 +79,15 @@ impl<T: Copy> ThreadModeCell<T> {
     pub fn get(&self) -> T {
         assert!(in_thread_mode(), "ThreadModeCell can only be accessed in thread mode.");
         self.inner.get()
+    }
+
+    /// Updates the contained value using a function.
+    /// # Panics
+    ///
+    /// This function will panic if called from within an interrupt context.
+    pub fn update(&self, f: impl FnOnce(T) -> T) {
+        assert!(in_thread_mode(), "ThreadModeCell can only be accessed in thread mode.");
+        self.inner.update(f)
     }
 }
 
