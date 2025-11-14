@@ -5,7 +5,7 @@ edition = "2024"
 license = "MIT"
 description = "Embedded Service Layer for IPC, Feature Customization and Extension in Embedded Devices."
 repository = "https://github.com/OpenDevicePartnership/embedded-services"
-rust-version = "1.85"
+rust-version = "1.88"
 
 [lints]
 workspace = true

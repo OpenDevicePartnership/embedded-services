@@ -167,7 +167,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        msrv: ["1.85"]
+        msrv: ["1.88"]
         target: [x86_64-unknown-linux-gnu, thumbv8m.main-none-eabihf]
     name: ubuntu / ${{ matrix.msrv }} / ${{ matrix.target }}
     steps:
