@@ -511,8 +511,7 @@ impl Context {
                     power_capability: Some(*power_capability),
                 }
             }
-            embedded_services::power::policy::CommsData::Unconstrained(_) => { /* Don't care about Unconstrained state */
-            }
+            _rest => { /* Don't care about anything else */ }
         }
 
         trace!("Battery: PSU state: {:?}", psu_state);

@@ -154,6 +154,10 @@ async fn run(spawner: Spawner) {
         .await
         .unwrap();
     Timer::after_millis(250).await;
+    info!(
+        "Total provider power: {} mW",
+        policy::policy::compute_total_provider_power_mw().await
+    );
 
     info!("Device 1 attach and requesting provider");
     let device1 = device1.attach().await.unwrap();
@@ -163,6 +167,10 @@ async fn run(spawner: Spawner) {
         .unwrap();
     // Wait for the provider to be connected
     Timer::after_millis(250).await;
+    info!(
+        "Total provider power: {} mW",
+        policy::policy::compute_total_provider_power_mw().await
+    );
 
     // Provider upgrade should fail because device 0 is already connected
     info!("Device 1 attempting provider upgrade");
@@ -172,12 +180,20 @@ async fn run(spawner: Spawner) {
         .unwrap();
     // Wait for the upgrade flow to complete
     Timer::after_millis(250).await;
+    info!(
+        "Total provider power: {} mW",
+        policy::policy::compute_total_provider_power_mw().await
+    );
 
     // Disconnect device 0
     info!("Device 0 disconnecting");
     device0.detach().await.unwrap();
     // Wait for the detach flow to complete
     Timer::after_millis(250).await;
+    info!(
+        "Total provider power: {} mW",
+        policy::policy::compute_total_provider_power_mw().await
+    );
 
     // Provider upgrade should succeed now
     info!("Device 1 attempting provider upgrade");
@@ -187,6 +203,10 @@ async fn run(spawner: Spawner) {
         .unwrap();
     // Wait for the upgrade flow to complete
     Timer::after_millis(250).await;
+    info!(
+        "Total provider power: {} mW",
+        policy::policy::compute_total_provider_power_mw().await
+    );
 }
 
 #[embassy_executor::task]

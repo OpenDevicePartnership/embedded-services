@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 description = "HID embedded service implementation"
 repository = "https://github.com/OpenDevicePartnership/embedded-services"
-rust-version = "1.85"
+rust-version = "1.88"
 license = "MIT"
 
 [lints]

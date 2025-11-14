@@ -36,7 +36,7 @@ pub enum Error {
 }
 
 /// Device ID new type
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct DeviceId(pub u8);
 
@@ -145,6 +145,10 @@ pub enum CommsData {
     ConsumerDisconnected(DeviceId),
     /// Consumer connected
     ConsumerConnected(DeviceId, PowerCapability),
+    /// Provider disconnected
+    ProviderDisconnected(DeviceId),
+    /// Provider connected
+    ProviderConnected(DeviceId, PowerCapability),
     /// Unconstrained state changed
     Unconstrained(UnconstrainedState),
 }
