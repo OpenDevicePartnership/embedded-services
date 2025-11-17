@@ -10,6 +10,8 @@ use embedded_services::{
     },
 };
 
+use crate::wrapper::config::UnconstrainedSink;
+
 use super::*;
 
 impl<'device, M: RawMutex, C: Lockable, V: FwOfferValidator> ControllerWrapper<'device, M, C, V>
@@ -45,7 +47,12 @@ where
 
         let available_sink_contract = status.available_sink_contract.map(|c| {
             let mut c: ConsumerPowerCapability = c.into();
-            c.flags.set_unconstrained_power(status.unconstrained_power);
+            let unconstrained = match self.config.unconstrained_sink {
+                UnconstrainedSink::Auto => status.unconstrained_power,
+                UnconstrainedSink::PowerThresholdmW(threshold) => c.capability.max_power_mw() >= threshold,
+                UnconstrainedSink::Never => false,
+            };
+            c.flags.set_unconstrained_power(unconstrained);
             c
         });
 

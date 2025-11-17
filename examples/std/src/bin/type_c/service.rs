@@ -69,8 +69,13 @@ async fn controller_task(state: &'static mock_controller::ControllerState) {
 
     static WRAPPER: StaticCell<mock_controller::Wrapper> = StaticCell::new();
     let wrapper = WRAPPER.init(
-        mock_controller::Wrapper::try_new(controller, referenced, crate::mock_controller::Validator)
-            .expect("Failed to create wrapper"),
+        mock_controller::Wrapper::try_new(
+            controller,
+            Default::default(),
+            referenced,
+            crate::mock_controller::Validator,
+        )
+        .expect("Failed to create wrapper"),
     );
 
     wrapper.register().await.unwrap();
