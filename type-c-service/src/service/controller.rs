@@ -14,7 +14,7 @@ impl<'a> Service<'a> {
         &self,
         controller: ControllerId,
     ) -> external::Response<'static> {
-        let status = self.context.get_controller_status(controller).await;
+        let status = self.context.get_controller_status(self.controllers, controller).await;
         if let Err(e) = status {
             error!("Error getting controller status: {:#?}", e);
         }
@@ -26,7 +26,7 @@ impl<'a> Service<'a> {
         &self,
         controller: ControllerId,
     ) -> external::Response<'static> {
-        let status = self.context.sync_controller_state(controller).await;
+        let status = self.context.sync_controller_state(self.controllers, controller).await;
         if let Err(e) = status {
             error!("Error getting controller sync state: {:#?}", e);
         }
@@ -38,7 +38,7 @@ impl<'a> Service<'a> {
         &self,
         controller: ControllerId,
     ) -> external::Response<'static> {
-        let status = self.context.reset_controller(controller).await;
+        let status = self.context.reset_controller(self.controllers, controller).await;
         if let Err(e) = status {
             error!("Error resetting controller: {:#?}", e);
         }
