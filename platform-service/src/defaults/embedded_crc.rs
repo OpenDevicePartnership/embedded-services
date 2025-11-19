@@ -1,7 +1,7 @@
 use crate::embedded_crc::EmbeddedCrcError;
 use crc::Algorithm;
 
-pub(crate) async fn crc_calculate_u32(
+pub(crate) fn crc_calculate_u32(
     init: u32,
     algorithm: &'static Algorithm<u32>,
     bytes: &[u8],
@@ -12,7 +12,7 @@ pub(crate) async fn crc_calculate_u32(
     Ok(digest.finalize())
 }
 
-pub(crate) async fn crc_calculate_u16(
+pub(crate) fn crc_calculate_u16(
     init: u16,
     algorithm: &'static Algorithm<u16>,
     bytes: &[u8],

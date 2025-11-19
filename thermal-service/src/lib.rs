@@ -120,17 +120,17 @@ pub async fn wait_event() -> Event {
 
 /// Register a sensor with the thermal service
 pub async fn register_sensor(sensor: &'static sensor::Device) -> Result<(), intrusive_list::Error> {
-    SERVICE.get().await.context.register_sensor(sensor).await
+    SERVICE.get().await.context.register_sensor(sensor)
 }
 
 /// Provides access to the sensors list
 pub async fn sensors() -> &'static intrusive_list::IntrusiveList {
-    SERVICE.get().await.context.sensors().await
+    SERVICE.get().await.context.sensors()
 }
 
 /// Find a sensor by its ID
 pub async fn get_sensor(id: sensor::DeviceId) -> Option<&'static sensor::Device> {
-    SERVICE.get().await.context.get_sensor(id).await
+    SERVICE.get().await.context.get_sensor(id)
 }
 
 /// Send a request to a sensor through the thermal service instead of directly.
@@ -140,17 +140,17 @@ pub async fn execute_sensor_request(id: sensor::DeviceId, request: sensor::Reque
 
 /// Register a fan with the thermal service
 pub async fn register_fan(fan: &'static fan::Device) -> Result<(), intrusive_list::Error> {
-    SERVICE.get().await.context.register_fan(fan).await
+    SERVICE.get().await.context.register_fan(fan)
 }
 
 /// Provides access to the fans list
 pub async fn fans() -> &'static intrusive_list::IntrusiveList {
-    SERVICE.get().await.context.fans().await
+    SERVICE.get().await.context.fans()
 }
 
 /// Find a fan by its ID
 pub async fn get_fan(id: fan::DeviceId) -> Option<&'static fan::Device> {
-    SERVICE.get().await.context.get_fan(id).await
+    SERVICE.get().await.context.get_fan(id)
 }
 
 /// Send a request to a fan through the thermal service instead of directly.

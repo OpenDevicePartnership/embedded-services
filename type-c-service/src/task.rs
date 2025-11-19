@@ -32,7 +32,7 @@ pub async fn task_closure<'a, Fut: Future<Output = ()>, F: Fn(&'a Service) -> Fu
     static SERVICE: StaticCell<Service> = StaticCell::new();
     let service = SERVICE.init(service);
 
-    if service.register_comms().await.is_err() {
+    if service.register_comms().is_err() {
         error!("Failed to register type-c service endpoint");
         return;
     }

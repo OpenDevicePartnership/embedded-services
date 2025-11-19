@@ -241,7 +241,7 @@ impl<'a> Service<'a> {
     }
 
     /// Register the Type-C service with the power policy service
-    pub async fn register_comms(&'static self) -> Result<(), intrusive_list::Error> {
-        power_policy::policy::register_message_receiver(&self.power_policy_event_publisher).await
+    pub fn register_comms(&'static self) -> Result<(), intrusive_list::Error> {
+        power_policy::policy::register_message_receiver(&self.power_policy_event_publisher)
     }
 }

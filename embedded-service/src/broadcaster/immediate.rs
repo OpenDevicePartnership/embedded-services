@@ -41,12 +41,19 @@ pub struct Immediate<T: Clone + 'static> {
     _phantom: PhantomData<T>,
 }
 
-impl<T: Clone + 'static> Default for Immediate<T> {
-    fn default() -> Self {
+impl<T: Clone + 'static> Immediate<T> {
+    /// Create a new Immediate<T>
+    pub const fn new() -> Self {
         Self {
             receivers: intrusive_list::IntrusiveList::new(),
             _phantom: PhantomData,
         }
+    }
+}
+
+impl<T: Clone + 'static> Default for Immediate<T> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

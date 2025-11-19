@@ -259,8 +259,7 @@ where
             local_port_id,
             status_event.new_power_contract_as_consumer(),
             status_event.sink_ready(),
-        )
-        .await?;
+        )?;
 
         Ok(Output::PortStatusChanged(OutputPortStatusChanged {
             port: local_port_id,
@@ -270,7 +269,7 @@ where
     }
 
     /// Finalize a port status change output
-    async fn finalize_port_status_change(
+    fn finalize_port_status_change(
         &self,
         state: &mut dyn DynPortState<'_>,
         local_port: LocalPortId,
@@ -297,7 +296,7 @@ where
         if events != PortEvent::none() {
             let mut pending = PortPending::none();
             pending.pend_port(global_port_id.0 as usize);
-            self.registration.pd_controller.notify_ports(pending).await;
+            self.registration.pd_controller.notify_ports(pending);
             trace!("P{}: Notified service for events: {:#?}", global_port_id.0, events);
         }
 
@@ -305,7 +304,7 @@ where
     }
 
     /// Finalize a PD alert output
-    async fn finalize_pd_alert(
+    fn finalize_pd_alert(
         &self,
         state: &mut dyn DynPortState<'_>,
         local_port: LocalPortId,
@@ -332,7 +331,7 @@ where
         // Pend this port
         let mut pending = PortPending::none();
         pending.pend_port(global_port_id.0 as usize);
-        self.registration.pd_controller.notify_ports(pending).await;
+        self.registration.pd_controller.notify_ports(pending);
         Ok(())
     }
 
@@ -547,14 +546,12 @@ where
                 status,
             }) => {
                 self.finalize_port_status_change(state.deref_mut().deref_mut(), port, status_event, status)
-                    .await
             }
             Output::PdAlert(OutputPdAlert { port, ado }) => {
-                self.finalize_pd_alert(state.deref_mut().deref_mut(), port, ado).await
+                self.finalize_pd_alert(state.deref_mut().deref_mut(), port, ado)
             }
             Output::Vdm(vdm) => self
                 .finalize_vdm(state.deref_mut().deref_mut(), vdm)
-                .await
                 .map_err(Error::Pd),
             Output::PowerPolicyCommand(OutputPowerPolicyCommand { request, response, .. }) => {
                 request.respond(response);
@@ -597,7 +594,7 @@ where
     /// Register all devices with their respective services
     pub async fn register(&'static self) -> Result<(), Error<<C::Inner as Controller>::BusError>> {
         for device in self.registration.power_devices {
-            policy::register_device(device).await.map_err(|_| {
+            policy::register_device(device).map_err(|_| {
                 error!(
                     "Controller{}: Failed to register power device {}",
                     self.registration.pd_controller.id().0,
@@ -608,7 +605,6 @@ where
         }
 
         controller::register_controller(self.registration.pd_controller)
-            .await
             .map_err(|_| {
                 error!(
                     "Controller{}: Failed to register PD controller",

@@ -123,7 +123,7 @@ impl PowerPolicy {
     }
 
     async fn process_request(&self, request: policy::Request) -> Result<(), Error> {
-        let device = self.context.get_device(request.id).await?;
+        let device = self.context.get_device(request.id)?;
 
         match request.data {
             policy::RequestData::NotifyAttached => {

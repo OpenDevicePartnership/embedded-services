@@ -26,7 +26,7 @@ impl<'a> Service<'a> {
 
     /// Set the unconstrained state for all ports
     pub(super) async fn set_unconstrained_all(&self, unconstrained: bool) -> Result<(), Error> {
-        for port_index in 0..self.context.get_num_ports().await {
+        for port_index in 0..self.context.get_num_ports() {
             self.context
                 .set_unconstrained_power(GlobalPortId(port_index as u8), unconstrained)
                 .await?;
@@ -51,7 +51,7 @@ impl<'a> Service<'a> {
                 self.set_unconstrained_all(true).await?;
             } else {
                 // Only one unconstrained device is present, see if that's one of our ports
-                let num_ports = self.context.get_num_ports().await;
+                let num_ports = self.context.get_num_ports();
                 let unconstrained_port = state
                     .port_status
                     .iter()

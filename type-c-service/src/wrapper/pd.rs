@@ -44,7 +44,7 @@ where
     /// After accepting a sink contract (new contract as consumer), the PD spec guarantees that the
     /// source will be available to provide power after `tPSTransition`. This allows us to handle transitions
     /// even for controllers that might not always broadcast sink ready events.
-    pub(super) async fn check_sink_ready_timeout(
+    pub(super) fn check_sink_ready_timeout(
         &self,
         state: &mut dyn DynPortState<'_>,
         status: &PortStatus,

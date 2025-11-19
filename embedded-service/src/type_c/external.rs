@@ -301,8 +301,8 @@ pub async fn sync_controller_state(id: ControllerId) -> Result<(), PdError> {
 }
 
 /// Get number of ports on the system
-pub async fn get_num_ports() -> usize {
-    super::controller::get_num_ports().await
+pub fn get_num_ports() -> usize {
+    super::controller::get_num_ports()
 }
 
 /// Set the maximum voltage for the given port to a specific value.

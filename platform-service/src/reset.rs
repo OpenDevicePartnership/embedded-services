@@ -31,7 +31,7 @@ impl Blocker {
     }
 
     /// call once on startup to be registered as a Reset handling blocker, forwards any error states (such as double registration) from intrusive_list
-    pub async fn register(&'static self) -> intrusive_list::Result<()> {
+    pub fn register(&'static self) -> intrusive_list::Result<()> {
         BLOCKERS.get().push(self)
     }
 

@@ -63,6 +63,7 @@ pub type SyncCell<T> = critical_section_cell::CriticalSectionCell<T>;
 pub type SyncCell<T> = thread_mode_cell::ThreadModeCell<T>;
 
 /// initialize all service static interfaces as required. Ideally, this is done before subsystem initialization
+#[allow(clippy::unused_async)]
 pub async fn init() {
     comms::init();
     activity::init();

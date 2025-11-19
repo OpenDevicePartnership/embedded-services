@@ -36,7 +36,7 @@ where
     }
 
     /// Finalize a VDM output by notifying the service.
-    pub(super) async fn finalize_vdm(&self, state: &mut dyn DynPortState<'_>, output: Output) -> Result<(), PdError> {
+    pub(super) fn finalize_vdm(&self, state: &mut dyn DynPortState<'_>, output: Output) -> Result<(), PdError> {
         trace!("Finalizing VDM output: {:?}", output);
         let Output { port, kind } = output;
         let global_port_id = self.registration.pd_controller.lookup_global_port(port)?;
@@ -51,7 +51,7 @@ where
 
         let mut pending = PortPending::none();
         pending.pend_port(global_port_id.0 as usize);
-        self.registration.pd_controller.notify_ports(pending).await;
+        self.registration.pd_controller.notify_ports(pending);
         Ok(())
     }
 }
