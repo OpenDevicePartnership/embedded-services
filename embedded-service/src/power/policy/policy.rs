@@ -140,7 +140,7 @@ fn get_device(id: DeviceId) -> Option<&'static device::Device> {
 /// Returns the total amount of power that is being supplied to external devices
 pub async fn compute_total_provider_power_mw() -> u32 {
     let mut total = 0;
-    for device in CONTEXT.get().await.devices.iter_only::<device::Device>() {
+    for device in CONTEXT.devices.iter_only::<device::Device>() {
         if let Some(capability) = device.provider_capability().await {
             if device.is_provider().await {
                 total += capability.capability.max_power_mw();
