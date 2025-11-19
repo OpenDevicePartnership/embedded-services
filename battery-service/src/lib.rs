@@ -104,9 +104,7 @@ static SERVICE: Service = Service::new();
 ///
 /// Must be done before sending the battery service commands so that hardware device is visible
 /// to the battery service.
-pub fn register_fuel_gauge(
-    device: &'static device::Device,
-) -> Result<(), embedded_services::intrusive_list::Error> {
+pub fn register_fuel_gauge(device: &'static device::Device) -> Result<(), embedded_services::intrusive_list::Error> {
     SERVICE.context.register_fuel_gauge(device)?;
 
     Ok(())

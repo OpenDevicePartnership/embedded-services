@@ -87,14 +87,14 @@ async fn run(spawner: Spawner) {
     info!("Creating device 0");
     static DEVICE0: OnceLock<ExampleDevice> = OnceLock::new();
     let device0_mock = DEVICE0.get_or_init(|| ExampleDevice::new(policy::DeviceId(0)));
-    policy::register_device(device0_mock).await.unwrap();
+    policy::register_device(device0_mock).unwrap();
     spawner.must_spawn(device_task0(device0_mock));
     let device0 = device0_mock.device.try_device_action().await.unwrap();
 
     info!("Creating device 1");
     static DEVICE1: OnceLock<ExampleDevice> = OnceLock::new();
     let device1_mock = DEVICE1.get_or_init(|| ExampleDevice::new(policy::DeviceId(1)));
-    policy::register_device(device1_mock).await.unwrap();
+    policy::register_device(device1_mock).unwrap();
     spawner.must_spawn(device_task1(device1_mock));
     let device1 = device1_mock.device.try_device_action().await.unwrap();
 
@@ -220,7 +220,7 @@ async fn receiver_task() {
     static RECEIVER: StaticCell<broadcaster::Receiver<'static, policy::CommsMessage>> = StaticCell::new();
     let receiver = RECEIVER.init(broadcaster::Receiver::new(publisher));
 
-    policy::policy::register_message_receiver(receiver).await.unwrap();
+    policy::policy::register_message_receiver(receiver).unwrap();
 
     loop {
         match subscriber.next_message().await {

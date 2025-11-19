@@ -544,15 +544,11 @@ where
                 port,
                 status_event,
                 status,
-            }) => {
-                self.finalize_port_status_change(state.deref_mut().deref_mut(), port, status_event, status)
-            }
+            }) => self.finalize_port_status_change(state.deref_mut().deref_mut(), port, status_event, status),
             Output::PdAlert(OutputPdAlert { port, ado }) => {
                 self.finalize_pd_alert(state.deref_mut().deref_mut(), port, ado)
             }
-            Output::Vdm(vdm) => self
-                .finalize_vdm(state.deref_mut().deref_mut(), vdm)
-                .map_err(Error::Pd),
+            Output::Vdm(vdm) => self.finalize_vdm(state.deref_mut().deref_mut(), vdm).map_err(Error::Pd),
             Output::PowerPolicyCommand(OutputPowerPolicyCommand { request, response, .. }) => {
                 request.respond(response);
                 Ok(())
@@ -604,14 +600,13 @@ where
             })?;
         }
 
-        controller::register_controller(self.registration.pd_controller)
-            .map_err(|_| {
-                error!(
-                    "Controller{}: Failed to register PD controller",
-                    self.registration.pd_controller.id().0
-                );
-                Error::Pd(PdError::Failed)
-            })?;
+        controller::register_controller(self.registration.pd_controller).map_err(|_| {
+            error!(
+                "Controller{}: Failed to register PD controller",
+                self.registration.pd_controller.id().0
+            );
+            Error::Pd(PdError::Failed)
+        })?;
 
         //TODO: Remove when we have a more general framework in place
         embedded_services::cfu::register_device(self.registration.cfu_device)

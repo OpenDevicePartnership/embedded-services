@@ -710,13 +710,11 @@ impl Context {
 static CONTEXT: Context = Context::new();
 
 /// Initialize the PD controller context
-pub fn init() { }
+pub fn init() {}
 
 /// Register a PD controller
 pub fn register_controller(controller: &'static impl DeviceContainer) -> Result<(), intrusive_list::Error> {
-    CONTEXT
-        .controllers
-        .push(controller.get_pd_controller_device())
+    CONTEXT.controllers.push(controller.get_pd_controller_device())
 }
 
 pub(super) async fn lookup_controller(controller_id: ControllerId) -> Result<&'static Device<'static>, PdError> {

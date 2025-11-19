@@ -100,7 +100,7 @@ impl Context {
 static CONTEXT: Context = Context::new();
 
 /// Init power policy service
-pub fn init() { }
+pub fn init() {}
 
 /// Register a device with the power policy service
 pub fn register_device(device: &'static impl device::DeviceContainer) -> Result<(), intrusive_list::Error> {

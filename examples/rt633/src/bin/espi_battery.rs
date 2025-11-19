@@ -322,7 +322,7 @@ async fn main(spawner: Spawner) {
     spawner.must_spawn(wrapper_task(wrap));
     spawner.must_spawn(battery_service::task());
 
-    battery_service::register_fuel_gauge(fg).await.unwrap();
+    battery_service::register_fuel_gauge(fg).unwrap();
 
     spawner.must_spawn(battery_publish_task(fg));
 

@@ -42,7 +42,7 @@ pub struct Immediate<T: Clone + 'static> {
 }
 
 impl<T: Clone + 'static> Immediate<T> {
-    /// Create a new Immediate<T>
+    /// Create a new `Immediate<T>`
     pub const fn new() -> Self {
         Self {
             receivers: intrusive_list::IntrusiveList::new(),

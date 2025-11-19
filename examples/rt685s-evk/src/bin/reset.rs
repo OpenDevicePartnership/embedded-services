@@ -48,7 +48,7 @@ async fn main(spawner: embassy_executor::Spawner) {
     for blocker in blockers {
         // register before spawning blocker threads to avoid potential scheduling issues
         // when immediately calling reset below
-        blocker.register().await.expect("Infallible");
+        blocker.register().expect("Infallible");
 
         spawner.must_spawn(reset_watcher(blocker));
     }
