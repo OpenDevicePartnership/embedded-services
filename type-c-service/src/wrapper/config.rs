@@ -14,7 +14,7 @@ pub enum UnconstrainedSink {
     #[default]
     Auto,
     /// Automatically signal unconstrained power for any sink that meets a power threshold in mW
-    PowerThresholdmW(u32),
+    PowerThresholdMw(u32),
     /// Never signal unconstrained power
     Never,
 }

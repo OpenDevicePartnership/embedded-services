@@ -49,7 +49,7 @@ where
             let mut c: ConsumerPowerCapability = c.into();
             let unconstrained = match self.config.unconstrained_sink {
                 UnconstrainedSink::Auto => status.unconstrained_power,
-                UnconstrainedSink::PowerThresholdmW(threshold) => c.capability.max_power_mw() >= threshold,
+                UnconstrainedSink::PowerThresholdMw(threshold) => c.capability.max_power_mw() >= threshold,
                 UnconstrainedSink::Never => false,
             };
             c.flags.set_unconstrained_power(unconstrained);
