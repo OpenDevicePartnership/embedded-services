@@ -9,7 +9,6 @@ repository.workspace = true
 bbq2 = "0.4.2"
 critical-section.workspace = true
 defmt.workspace = true
-embassy-executor.workspace = true
 embassy-sync.workspace = true
 embassy-time.workspace = true
 embedded-services.workspace = true

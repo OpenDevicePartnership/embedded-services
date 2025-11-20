@@ -153,8 +153,3 @@ pub async fn debug_service_entry(endpoint: comms::Endpoint) {
     // Emit an initial defmt frame so the defmt_to_host_task can drain and verify the path.
     debug!("debug service initialized and endpoint registered");
 }
-
-#[embassy_executor::task]
-pub async fn debug_service(endpoint: comms::Endpoint) {
-    debug_service_entry(endpoint).await;
-}
