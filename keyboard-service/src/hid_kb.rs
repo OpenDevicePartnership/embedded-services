@@ -19,7 +19,7 @@ use static_cell::StaticCell;
 // with 65k bytes * queue size, so need to investigate smarter way of supporting theoretical max
 // efficiently.
 const INPUT_MAX: usize = 16;
-const REPORT_DESC_MAX: usize = 256;
+pub(crate) const REPORT_DESC_MAX: usize = 256;
 const REPORT_QUEUE_MAX: usize = 10;
 
 // The size of a HID i2c report header
@@ -39,8 +39,8 @@ const REPORT_ID: u8 = 1;
 const REPORT_ID_SZ: usize = 1;
 
 type Report = [u8; INPUT_MAX];
-type ReportQueue = Channel<GlobalRawMutex, Report, REPORT_QUEUE_MAX>;
 type CmdIpc = ipc::Channel<GlobalRawMutex, hid::Command<'static>, Option<hid::Response<'static>>>;
+type ReportQueue = Channel<GlobalRawMutex, Report, REPORT_QUEUE_MAX>;
 type ReportIpc = ipc::Channel<GlobalRawMutex, SharedRef<'static, u8>, ()>;
 
 // A HID input report in the format HID over i2c expects
@@ -90,21 +90,16 @@ impl HidI2cReport {
 }
 
 // Shared between tasks for communication and synchronization
-struct Context {
+pub(crate) struct Context {
     report_queue: ReportQueue,
-    report_ipc: ReportIpc,
-    cmd_ipc: CmdIpc,
+    pub(crate) report_ipc: ReportIpc,
+    pub(crate) cmd_ipc: CmdIpc,
     send_complete: Signal<GlobalRawMutex, ()>,
 }
-static CONTEXT: OnceLock<Context> = OnceLock::new();
+pub(crate) static CONTEXT: OnceLock<Context> = OnceLock::new();
 
 // Sets up the context, report descriptor buffer, and HID device
-pub(crate) async fn init(
-    spawner: embassy_executor::Spawner,
-    hid_descriptor: hid::Descriptor,
-    report_descriptor: &'static [u8],
-    reg_file: hid::RegisterFile,
-) {
+pub(crate) fn init(reg_file: hid::RegisterFile) -> &'static hid::Device {
     // Initialize interprocess comms/synchronization context
     let context = Context {
         report_queue: ReportQueue::new(),
@@ -120,102 +115,7 @@ pub(crate) async fn init(
     // Initialize the HID device
     static DEVICE: StaticCell<hid::Device> = StaticCell::new();
     let device = hid::Device::new(super::HID_KB_ID, reg_file);
-    let device = DEVICE.init(device);
-    hid::register_device(device)
-        .await
-        .expect("Device must not already be registered");
-
-    // Spawn device request handling task
-    // Other tasks are spawned by user due to need for macro to implement them because of generics
-    spawner.must_spawn(device_requests_task(device, hid_descriptor, report_descriptor));
-}
-
-// This task handles receiving HID requests from the host,
-// forwarding them to the keyboard task to process, then sending a response back to host
-#[embassy_executor::task]
-async fn device_requests_task(
-    device: &'static hid::Device,
-    hid_descriptor: hid::Descriptor,
-    report_descriptor: &'static [u8],
-) {
-    let context = CONTEXT.get().await;
-
-    // Buffer holding hid descriptor
-    embedded_services::define_static_buffer!(hid_desc_buf, u8, [0u8; hid::DESCRIPTOR_LEN]);
-    {
-        let mut buf = hid_desc_buf::get_mut()
-            .expect("Must not already be borrowed mutably")
-            .borrow_mut();
-        let buf: &mut [u8] = buf.borrow_mut();
-        hid_descriptor
-            .encode_into_slice(buf)
-            .expect("Src and dst buffers must be same length");
-    }
-
-    // Buffer holding report descriptor
-    embedded_services::define_static_buffer!(report_desc_buf, u8, [0u8; REPORT_DESC_MAX]);
-    {
-        let mut buf = report_desc_buf::get_mut()
-            .expect("Must not already be borrowed mutably")
-            .borrow_mut();
-        let buf: &mut [u8] = buf.borrow_mut();
-        buf[..report_descriptor.len()].copy_from_slice(report_descriptor);
-    }
-
-    loop {
-        let request = device.wait_request().await;
-        match request {
-            // For descriptors, we simply pass references to respective buffers
-            // These are static and never change, so don't need to do much else
-            hid::Request::Descriptor => {
-                let response = hid_desc_buf::get();
-                let response = Some(hid::Response::Descriptor(response));
-                device.send_response(response).await.expect("Infallible");
-            }
-            hid::Request::ReportDescriptor => {
-                let response = report_desc_buf::get().slice(0..report_descriptor.len());
-                let response = Some(hid::Response::ReportDescriptor(response));
-                device.send_response(response).await.expect("Infallible");
-            }
-
-            // We won't receive this request unless keyboard told host we have reports available (via interrupt assert)
-            hid::Request::InputReport => {
-                // Wait for the keyboard to give us the report
-                let ipc = context.report_ipc.receive().await;
-                let report = ipc.command.clone();
-                let response = Some(hid::Response::InputReport(
-                    report.slice(0..hid_descriptor.w_max_input_length as usize),
-                ));
-
-                // Then send it to the host
-                device.send_response(response).await.expect("Infallible");
-
-                // Finally tell keyboard we've sent the report so it can deassert interrupt
-                ipc.respond(());
-            }
-
-            // Treat this as a SET_REPORT(Output) command
-            // It is unclear if the behavior is meant to be different, or just different ways
-            // of transporting the same request.
-            hid::Request::OutputReport(id, buf) => {
-                let response = context
-                    .cmd_ipc
-                    .execute(hid::Command::SetReport(
-                        hid::ReportType::Output,
-                        id.unwrap_or(hid::ReportId(1)),
-                        buf,
-                    ))
-                    .await;
-                device.send_response(response).await.expect("Infallible");
-            }
-
-            // Tell the keyboard to execute the requested command, waiting for it to give us a response to send to host
-            hid::Request::Command(cmd) => {
-                let response = context.cmd_ipc.execute(cmd).await;
-                device.send_response(response).await.expect("Infallible");
-            }
-        }
-    }
+    DEVICE.init(device)
 }
 
 /// This task handles calling the keyboard `scan` in a loop, while also listening for commands
