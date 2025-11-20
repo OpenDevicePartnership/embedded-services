@@ -1,7 +1,6 @@
 #![no_std]
 use core::ops::DerefMut;
 use embassy_sync::mutex::Mutex;
-use embassy_sync::once_lock::OnceLock;
 use embedded_services::GlobalRawMutex;
 use embedded_services::power::policy::device::Device;
 use embedded_services::power::policy::{action, policy, *};
@@ -10,6 +9,7 @@ use embedded_services::{comms, error, info};
 pub mod config;
 pub mod consumer;
 pub mod provider;
+pub mod task;
 
 pub use config::Config;
 pub mod charger;
@@ -165,22 +165,3 @@ impl PowerPolicy {
 }
 
 impl comms::MailboxDelegate for PowerPolicy {}
-
-#[embassy_executor::task]
-pub async fn task(config: config::Config) {
-    info!("Starting power policy task");
-    static POLICY: OnceLock<PowerPolicy> = OnceLock::new();
-    let policy =
-        POLICY.get_or_init(|| PowerPolicy::create(config).expect("Power policy singleton already initialized"));
-
-    if comms::register_endpoint(policy, &policy.tp).await.is_err() {
-        error!("Failed to register power policy endpoint");
-        return;
-    }
-
-    loop {
-        if let Err(e) = policy.process().await {
-            error!("Error processing request: {:?}", e);
-        }
-    }
-}
