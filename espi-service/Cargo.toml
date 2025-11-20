@@ -17,16 +17,10 @@ log = { workspace = true, optional = true }
 embassy-time.workspace = true
 embassy-sync.workspace = true
 embassy-imxrt = { workspace = true, features = ["mimxrt633s"] }
-embassy-executor.workspace = true
 embassy-futures.workspace = true
 mctp-rs = { workspace = true, features = ["espi"] }
 
 [target.'cfg(target_os = "none")'.dependencies]
-embassy-executor = { workspace = true, features = [
-    "executor-thread",
-    "executor-interrupt",
-    "arch-cortex-m",
-] }
 cortex-m-rt.workspace = true
 cortex-m = { workspace = true, features = [
     "inline-asm",
@@ -47,7 +41,6 @@ defmt = [
     "embassy-time/defmt-timestamp-uptime",
     "embassy-sync/defmt",
     "embassy-imxrt/defmt",
-    "embassy-executor/defmt",
     "mctp-rs/defmt",
 ]
 
