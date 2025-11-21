@@ -7,14 +7,14 @@ pub struct Config {
 }
 
 /// Unconstrained behavior for sink role
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum UnconstrainedSink {
     /// Automatically signal unconstrained power based on unconstrained bit in PDO
     #[default]
     Auto,
     /// Automatically signal unconstrained power for any sink that meets a power threshold in mW
-    PowerThresholdMw(u32),
+    PowerThresholdMilliwatts(u32),
     /// Never signal unconstrained power
     Never,
 }
