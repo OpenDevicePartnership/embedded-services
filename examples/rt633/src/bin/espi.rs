@@ -96,6 +96,12 @@ unsafe extern "C" {
     static __end_espi_data: u8;
 }
 
+#[embassy_executor::task]
+async fn espi_service_task(espi: embassy_imxrt::espi::Espi<'static>, memory_map_buffer: &'static mut [u8]) -> ! {
+    espi_service::task::espi_service(espi, memory_map_buffer).await;
+    unreachable!()
+}
+
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
     let p = embassy_imxrt::init(Default::default());
@@ -148,7 +154,7 @@ async fn main(spawner: Spawner) {
         slice::from_raw_parts_mut(start_espi_data, espi_data_len)
     };
 
-    spawner.must_spawn(espi_service::espi_service(espi, memory_map_buffer));
+    spawner.must_spawn(espi_service_task(espi, memory_map_buffer));
 
     battery_service::init().await;
 
