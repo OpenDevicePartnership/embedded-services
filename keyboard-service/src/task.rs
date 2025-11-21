@@ -4,18 +4,19 @@ use embedded_services::hid;
 
 use crate::hid_kb::{self, CONTEXT};
 
-// Since tasks cannot be generic, rely on this user called macro to supply the explicit type information needed
+pub async fn keyboard_task<T: crate::HidKeyboard>(keyboard: T) {
+    crate::hid_kb::handle_keyboard(keyboard).await
+}
+
+pub async fn reports_task<T: embedded_hal::digital::OutputPin>(keyboard_interrupt: T) {
+    crate::hid_kb::handle_reports(keyboard_interrupt).await
+}
+
+// Since Rust doesn't allow defining an inner item that captures generics from an outer item,
+// this must be a macro until statics are removed.
 #[macro_export]
-macro_rules! impl_hid_kb_tasks {
-    ($hid_kb_ty:ty, $i2c_slave_ty:ty, $kb_int_ty:ty) => {
-        pub async fn keyboard_task(hid_kb: $hid_kb_ty) {
-            keyboard_service::hid_kb::handle_keyboard(hid_kb).await
-        }
-
-        pub async fn reports_task(kb_int: $kb_int_ty) {
-            keyboard_service::hid_kb::handle_reports(kb_int).await
-        }
-
+macro_rules! impl_host_request_task {
+    ($kb_int_ty:ty) => {
         async fn host_requests_task(kb_i2c: $i2c_slave_ty) {
             // Revisit: Make this buffer size configurable?
             embedded_services::define_static_buffer!(hid_buf, u8, [0u8; 256]);
@@ -34,13 +35,11 @@ macro_rules! impl_hid_kb_tasks {
 
 /// Initialize the keyboard service given keyboard's HID configuration.
 ///
-/// The user must also ensure the `impl_hid_kb_tasks!` macro is called to implement additional generic
-/// tasks and then manually spawn them. E.g.:
+/// The user must also ensure the `impl_host_request_task!` macro is called to implement an additional
+/// task and then manually spawn it. E.g.:
 ///
 /// ```rust,ignore
-/// impl_hid_kb_tasks!(MyKeyboardType, MyI2cSlaveType, MyInterruptPinType);
-/// spawner.must_spawn(keyboard_task(my_keyboard));
-/// spawner.must_spawn(reports_task(my_interrupt_pin));
+/// impl_host_request_task!(MyI2cSlaveType);
 /// spawner.must_spawn(host_requests_task(my_i2c_slave));
 /// ```
 // This task handles receiving HID requests from the host,

@@ -526,15 +526,3 @@ impl<T: Controller, const SAMPLE_BUF_LEN: usize> Fan<T, SAMPLE_BUF_LEN> {
         }
     }
 }
-
-/// This is a public helper macro for wrapping and spawning the various tasks since currently tasks cannot be generic
-#[macro_export]
-macro_rules! impl_fan_task {
-    ($fan_task_name:ident, $fan_type:ty, $sample_buf_len:expr) => {
-        #[embassy_executor::task]
-        pub async fn $fan_task_name(fan: &'static $crate::fan::Fan<$fan_type, $sample_buf_len>) {
-            let _ =
-                embassy_futures::join::join3(fan.handle_rx(), fan.handle_sampling(), fan.handle_auto_control()).await;
-        }
-    };
-}

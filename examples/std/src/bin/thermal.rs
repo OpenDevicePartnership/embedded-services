@@ -368,5 +368,14 @@ fn main() {
     });
 }
 
-ts::impl_sensor_task!(mock_sensor_task, MockSensor, 16);
-ts::impl_fan_task!(mock_fan_task, MockFan, 16);
+#[embassy_executor::task]
+async fn mock_sensor_task(sensor: &'static ts::sensor::Sensor<MockSensor, 16>) -> ! {
+    ts::task::sensor_task(sensor).await;
+    unreachable!()
+}
+
+#[embassy_executor::task]
+async fn mock_fan_task(fan: &'static ts::fan::Fan<MockFan, 16>) -> ! {
+    ts::task::fan_task(fan).await;
+    unreachable!()
+}
