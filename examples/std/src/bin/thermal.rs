@@ -344,12 +344,18 @@ async fn handle_alerts() {
 }
 
 #[embassy_executor::task]
+async fn handle_requests() -> ! {
+    ts::task::handle_requests().await;
+    unreachable!()
+}
+
+#[embassy_executor::task]
 async fn run(spawner: Spawner) {
     embedded_services::init().await;
     init_thermal(spawner).await;
     spawner.must_spawn(host());
     spawner.must_spawn(handle_alerts());
-    spawner.must_spawn(ts::mptf::handle_requests());
+    spawner.must_spawn(handle_requests());
 }
 
 fn main() {
