@@ -38,7 +38,7 @@ async fn opm_task(spawner: Spawner) {
     let controller0 = CONTROLLER0.init(Mutex::new(mock_controller::Controller::new(state0)));
     static WRAPPER0: StaticCell<mock_controller::Wrapper> = StaticCell::new();
     let wrapper0 = WRAPPER0.init(
-        mock_controller::Wrapper::try_new(controller0, referenced0, mock_controller::Validator)
+        mock_controller::Wrapper::try_new(controller0, Default::default(), referenced0, mock_controller::Validator)
             .expect("Failed to create wrapper"),
     );
     spawner.must_spawn(wrapper_task(wrapper0));
@@ -54,7 +54,7 @@ async fn opm_task(spawner: Spawner) {
     let controller1 = CONTROLLER1.init(Mutex::new(mock_controller::Controller::new(state1)));
     static WRAPPER1: StaticCell<mock_controller::Wrapper> = StaticCell::new();
     let wrapper1 = WRAPPER1.init(
-        mock_controller::Wrapper::try_new(controller1, referenced1, mock_controller::Validator)
+        mock_controller::Wrapper::try_new(controller1, Default::default(), referenced1, mock_controller::Validator)
             .expect("Failed to create wrapper"),
     );
     spawner.must_spawn(wrapper_task(wrapper1));

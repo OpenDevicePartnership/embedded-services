@@ -127,7 +127,8 @@ async fn main(spawner: Spawner) {
     let controller_mutex = CONTROLLER_MUTEX.init(Mutex::new(tps6699x_drv::tps66994(tps6699x, Default::default())));
 
     static WRAPPER: StaticCell<Wrapper> = StaticCell::new();
-    let wrapper = WRAPPER.init(ControllerWrapper::try_new(controller_mutex, referenced, Validator).unwrap());
+    let wrapper =
+        WRAPPER.init(ControllerWrapper::try_new(controller_mutex, Default::default(), referenced, Validator).unwrap());
 
     wrapper.register().await.unwrap();
     spawner.must_spawn(pd_controller_task(wrapper));

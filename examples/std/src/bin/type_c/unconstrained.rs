@@ -56,8 +56,13 @@ async fn task(spawner: Spawner) {
     let controller0 = CONTROLLER0.init(Mutex::new(mock_controller::Controller::new(state0)));
     static WRAPPER0: StaticCell<mock_controller::Wrapper> = StaticCell::new();
     let wrapper0 = WRAPPER0.init(
-        mock_controller::Wrapper::try_new(controller0, referenced, crate::mock_controller::Validator)
-            .expect("Failed to create wrapper"),
+        mock_controller::Wrapper::try_new(
+            controller0,
+            Default::default(),
+            referenced,
+            crate::mock_controller::Validator,
+        )
+        .expect("Failed to create wrapper"),
     );
 
     static STORAGE1: StaticCell<Storage<1, GlobalRawMutex>> = StaticCell::new();
@@ -71,8 +76,13 @@ async fn task(spawner: Spawner) {
     let controller1 = CONTROLLER1.init(Mutex::new(mock_controller::Controller::new(state1)));
     static WRAPPER1: StaticCell<mock_controller::Wrapper> = StaticCell::new();
     let wrapper1 = WRAPPER1.init(
-        mock_controller::Wrapper::try_new(controller1, referenced1, crate::mock_controller::Validator)
-            .expect("Failed to create wrapper"),
+        mock_controller::Wrapper::try_new(
+            controller1,
+            Default::default(),
+            referenced1,
+            crate::mock_controller::Validator,
+        )
+        .expect("Failed to create wrapper"),
     );
 
     static STORAGE2: StaticCell<Storage<1, GlobalRawMutex>> = StaticCell::new();
@@ -86,8 +96,13 @@ async fn task(spawner: Spawner) {
     let controller2 = CONTROLLER2.init(Mutex::new(mock_controller::Controller::new(state2)));
     static WRAPPER2: StaticCell<mock_controller::Wrapper> = StaticCell::new();
     let wrapper2 = WRAPPER2.init(
-        mock_controller::Wrapper::try_new(controller2, referenced2, crate::mock_controller::Validator)
-            .expect("Failed to create wrapper"),
+        mock_controller::Wrapper::try_new(
+            controller2,
+            Default::default(),
+            referenced2,
+            crate::mock_controller::Validator,
+        )
+        .expect("Failed to create wrapper"),
     );
 
     info!("Starting controller tasks");

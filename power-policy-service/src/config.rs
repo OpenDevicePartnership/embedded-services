@@ -10,8 +10,6 @@ pub struct Config {
     pub provider_unlimited: PowerCapability,
     /// Power capability of every provider in limited power mode
     pub provider_limited: PowerCapability,
-    /// A consumer capability is automatically unconstrained at or above this threshold
-    pub auto_unconstrained_threshold_mw: Option<u32>,
 }
 
 impl Default for Config {
@@ -29,15 +27,6 @@ impl Default for Config {
                 voltage_mv: 5000,
                 current_ma: 1500,
             },
-            auto_unconstrained_threshold_mw: None,
         }
-    }
-}
-
-impl Config {
-    /// Set the auto unconstrained threshold in milliwatts
-    pub fn with_auto_unconstrained_threshold_mw(mut self, threshold_mw: Option<u32>) -> Self {
-        self.auto_unconstrained_threshold_mw = threshold_mw;
-        self
     }
 }

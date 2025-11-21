@@ -85,12 +85,7 @@ impl PowerPolicy {
         for node in self.context.devices() {
             let device = node.data::<Device>().ok_or(Error::InvalidDevice)?;
             if let Some(capability) = device.consumer_capability().await {
-                // The device is considered unconstrained if it meets the auto unconstrained power threshold
-                let auto_unconstrained = self
-                    .config
-                    .auto_unconstrained_threshold_mw
-                    .is_some_and(|threshold| capability.capability.max_power_mw() >= threshold);
-                if capability.flags.unconstrained_power() || auto_unconstrained {
+                if capability.flags.unconstrained_power() {
                     unconstrained_new.available += 1;
                 }
             }

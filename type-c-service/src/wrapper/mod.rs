@@ -43,6 +43,7 @@ use crate::{PortEventStreamer, PortEventVariant};
 
 pub mod backing;
 mod cfu;
+pub mod config;
 mod dp;
 pub mod message;
 mod pd;
@@ -82,6 +83,8 @@ where
     state: Mutex<M, RefMut<'device, dyn DynPortState<'device>>>,
     /// SW port status event signal
     sw_status_event: Signal<M, ()>,
+    /// General config
+    config: config::Config,
 }
 
 impl<'device, M: RawMutex, C: Lockable, V: FwOfferValidator> ControllerWrapper<'device, M, C, V>
@@ -91,6 +94,7 @@ where
     /// Create a new controller wrapper, returns `None` if the backing storage is already in use
     pub fn try_new<const N: usize>(
         controller: &'device C,
+        config: config::Config,
         storage: &'device backing::ReferencedStorage<'device, N, M>,
         fw_version_validator: V,
     ) -> Option<Self> {
@@ -101,6 +105,7 @@ where
         let backing = storage.create_backing()?;
         Some(Self {
             controller,
+            config,
             fw_version_validator,
             fw_update_ticker: Mutex::new(embassy_time::Ticker::every(embassy_time::Duration::from_millis(
                 DEFAULT_FW_UPDATE_TICK_INTERVAL_MS,
