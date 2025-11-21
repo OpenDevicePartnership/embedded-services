@@ -234,15 +234,19 @@ async fn receiver_task() {
     }
 }
 
+#[embassy_executor::task]
+async fn power_policy_task(config: power_policy_service::config::Config) -> ! {
+    power_policy_service::task::task(config).await;
+    unreachable!()
+}
+
 fn main() {
     env_logger::builder().filter_level(log::LevelFilter::Trace).init();
 
     static EXECUTOR: StaticCell<Executor> = StaticCell::new();
     let executor = EXECUTOR.init(Executor::new());
     executor.run(|spawner| {
-        spawner.must_spawn(power_policy_service::task(
-            power_policy_service::config::Config::default(),
-        ));
+        spawner.must_spawn(power_policy_task(power_policy_service::config::Config::default()));
         spawner.must_spawn(run(spawner));
         spawner.must_spawn(receiver_task());
     });

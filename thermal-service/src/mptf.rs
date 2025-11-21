@@ -5,7 +5,7 @@
 //! This interface is subject to change as the eSPI OOB service is developed
 use crate::{self as ts, fan, sensor, utils};
 use embedded_services::ec_type::message::{StdHostPayload, StdHostRequest};
-use embedded_services::{comms, ec_type::protocols::mctp, error};
+use embedded_services::{ec_type::protocols::mctp, error};
 
 /// MPTF Standard UUIDs which the thermal service understands
 pub mod uuid_standard {
@@ -550,7 +550,7 @@ async fn fan_set_var(instance: u8, fan_request: fan::Request) -> Response {
     }
 }
 
-async fn process_request(request: &mut StdHostRequest) {
+pub(crate) async fn process_request(request: &mut StdHostRequest) {
     match request.command {
         embedded_services::ec_type::message::OdpCommand::Thermal(thermal_msg) => match thermal_msg {
             embedded_services::ec_type::protocols::mptf::ThermalCmd::GetTmp => sensor_get_tmp(request).await,
@@ -562,22 +562,5 @@ async fn process_request(request: &mut StdHostRequest) {
             embedded_services::ec_type::protocols::mptf::ThermalCmd::SetVar => set_var_handler(request).await,
         },
         _ => error!("Thermal Service: Recvd other subsystem host message"),
-    }
-}
-
-#[embassy_executor::task]
-pub async fn handle_requests() {
-    loop {
-        let mut request = ts::wait_mctp_payload().await;
-        process_request(&mut request).await;
-        let send_result = ts::send_service_msg(
-            comms::EndpointID::External(comms::External::Host),
-            &embedded_services::ec_type::message::HostMsg::Response(request),
-        )
-        .await;
-
-        if send_result.is_err() {
-            error!("Failed to send response to MPTF request!");
-        }
     }
 }

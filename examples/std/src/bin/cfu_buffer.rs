@@ -245,12 +245,18 @@ async fn run(spawner: Spawner) {
     info!("data: {}", size_of::<RequestData>());
 }
 
+#[embassy_executor::task]
+async fn cfu_service_task() -> ! {
+    cfu_service::task::task().await;
+    unreachable!()
+}
+
 fn main() {
     env_logger::builder().filter_level(log::LevelFilter::Trace).init();
     static EXECUTOR: StaticCell<Executor> = StaticCell::new();
     let executor = EXECUTOR.init(Executor::new());
     executor.run(|spawner| {
-        spawner.must_spawn(cfu_service::task());
+        spawner.must_spawn(cfu_service_task());
         spawner.must_spawn(run(spawner));
     });
 }

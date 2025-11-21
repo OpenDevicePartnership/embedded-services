@@ -2,7 +2,6 @@
 //! See spec at <http://msdn.microsoft.com/en-us/library/windows/hardware/hh852380.aspx>
 use core::convert::Infallible;
 
-use embassy_sync::once_lock::OnceLock;
 use embassy_sync::signal::Signal;
 
 use crate::buffer::SharedRef;
@@ -290,30 +289,25 @@ struct Context {
 }
 
 impl Context {
-    fn new() -> Self {
+    const fn new() -> Self {
         Context {
             devices: IntrusiveList::new(),
         }
     }
 }
 
-static CONTEXT: OnceLock<Context> = OnceLock::new();
-
-/// Init HID service
-pub fn init() {
-    CONTEXT.get_or_init(Context::new);
-}
+static CONTEXT: Context = Context::new();
 
 /// Register a device with the HID service
 pub async fn register_device(device: &'static impl DeviceContainer) -> Result<(), intrusive_list::Error> {
     let device = device.get_hid_device();
-    CONTEXT.get().await.devices.push(device)?;
+    CONTEXT.devices.push(device)?;
     comms::register_endpoint(device, &device.tp).await
 }
 
 /// Find a device by its ID
-pub async fn get_device(id: DeviceId) -> Option<&'static Device> {
-    for device in &CONTEXT.get().await.devices {
+pub fn get_device(id: DeviceId) -> Option<&'static Device> {
+    for device in &CONTEXT.devices {
         if let Some(data) = device.data::<Device>() {
             if data.id == id {
                 return Some(data);

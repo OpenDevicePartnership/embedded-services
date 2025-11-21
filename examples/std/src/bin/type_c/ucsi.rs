@@ -195,13 +195,8 @@ async fn wrapper_task(wrapper: &'static mock_controller::Wrapper<'static>) {
 }
 
 #[embassy_executor::task]
-async fn task(spawner: Spawner) {
-    info!("Starting main task");
-
-    embedded_services::init().await;
-
-    spawner.must_spawn(power_policy_service::task(Default::default()));
-    spawner.must_spawn(type_c_service::task(Config {
+async fn type_c_service_task() -> ! {
+    type_c_service::task(Config {
         ucsi_capabilities: UcsiCapabilities {
             num_connectors: 2,
             bcd_usb_pd_spec: 0x0300,
@@ -223,7 +218,25 @@ async fn task(spawner: Spawner) {
                 .set_swap_to_snk(true)
                 .set_swap_to_src(true),
         ),
-    }));
+    })
+    .await;
+    unreachable!()
+}
+
+#[embassy_executor::task]
+async fn power_policy_service_task() -> ! {
+    power_policy_service::task::task(Default::default()).await;
+    unreachable!()
+}
+
+#[embassy_executor::task]
+async fn task(spawner: Spawner) {
+    info!("Starting main task");
+
+    embedded_services::init().await;
+
+    spawner.must_spawn(power_policy_service_task());
+    spawner.must_spawn(type_c_service_task());
     spawner.must_spawn(opm_task(spawner));
 }
 

@@ -67,7 +67,6 @@ pub type SyncCell<T> = thread_mode_cell::ThreadModeCell<T>;
 pub async fn init() {
     comms::init();
     activity::init();
-    hid::init();
     cfu::init();
     keyboard::init();
     power::policy::init();

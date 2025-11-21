@@ -3,7 +3,7 @@ use std::convert::Infallible;
 use battery_service::controller::{Controller, ControllerEvent};
 use battery_service::device::{Device, DeviceId, DynamicBatteryMsgs, StaticBatteryMsgs};
 use battery_service::wrapper::Wrapper;
-use embassy_executor::{Executor, Spawner};
+use embassy_executor::Spawner;
 use embassy_sync::once_lock::OnceLock;
 use embassy_time::{Duration, Timer};
 use embedded_batteries_async::charger::{MilliAmps, MilliVolts};
@@ -13,7 +13,6 @@ use embedded_batteries_async::smart_battery::{
 };
 use embedded_hal_mock::eh1::i2c::Mock;
 use embedded_services::info;
-use static_cell::StaticCell;
 
 mod espi_service {
     use battery_service::context::{BatteryEvent, BatteryEventInner};
@@ -92,6 +91,18 @@ mod espi_service {
             }
         }
         Timer::after_secs(5).await;
+
+        espi_service
+            .endpoint
+            .send(
+                EndpointID::Internal(comms::Internal::Battery),
+                &BatteryEvent {
+                    device_id: DeviceId(0),
+                    event: BatteryEventInner::PollStaticData,
+                },
+            )
+            .await
+            .unwrap();
 
         loop {
             espi_service
@@ -266,7 +277,7 @@ impl Controller for FuelGaugeController {
     }
 
     fn get_timeout(&self) -> Duration {
-        unimplemented!()
+        Duration::from_secs(5)
     }
 
     fn set_timeout(&mut self, _duration: Duration) {
@@ -451,19 +462,6 @@ impl<I2c: embedded_hal_async::i2c::I2c> embedded_batteries_async::smart_battery:
 }
 
 #[embassy_executor::task]
-async fn init_task(spawner: Spawner, dev: &'static Device) {
-    embedded_services::init().await;
-    info!("services init'd");
-
-    espi_service::init().await;
-    info!("espi service init'd");
-
-    battery_service::register_fuel_gauge(dev).unwrap();
-
-    spawner.must_spawn(espi_service::task());
-}
-
-#[embassy_executor::task]
 async fn wrapper_task(wrapper: Wrapper<'static, FuelGaugeController>) {
     loop {
         wrapper.process().await;
@@ -471,11 +469,15 @@ async fn wrapper_task(wrapper: Wrapper<'static, FuelGaugeController>) {
     }
 }
 
-fn main() {
-    env_logger::builder().filter_level(log::LevelFilter::Trace).init();
+#[embassy_executor::task]
+async fn battery_service_task() -> ! {
+    battery_service::task::task().await;
+    unreachable!()
+}
 
-    static EXECUTOR: StaticCell<Executor> = StaticCell::new();
-    let executor = EXECUTOR.init(Executor::new());
+#[embassy_executor::main]
+async fn main(spawner: Spawner) {
+    env_logger::builder().filter_level(log::LevelFilter::Trace).init();
 
     let expectations = vec![];
 
@@ -489,9 +491,16 @@ fn main() {
             driver: MockFuelGaugeDriver::new(Mock::new(&expectations)),
         },
     );
-    executor.run(|spawner| {
-        spawner.must_spawn(wrapper_task(wrap));
-        spawner.must_spawn(battery_service::task());
-        spawner.must_spawn(init_task(spawner, dev));
-    });
+
+    embedded_services::init().await;
+    info!("services init'd");
+
+    espi_service::init().await;
+    info!("espi service init'd");
+
+    battery_service::register_fuel_gauge(dev).unwrap();
+
+    spawner.must_spawn(espi_service::task());
+    spawner.must_spawn(wrapper_task(wrap));
+    spawner.must_spawn(battery_service_task());
 }

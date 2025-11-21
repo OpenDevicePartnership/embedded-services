@@ -103,7 +103,6 @@ name = "battery-service"
 version = "0.1.0"
 dependencies = [
  "defmt 0.3.100",
- "embassy-executor",
  "embassy-futures",
  "embassy-sync",
  "embassy-time",
@@ -797,7 +796,6 @@ dependencies = [
  "cortex-m",
  "cortex-m-rt",
  "defmt 0.3.100",
- "embassy-executor",
  "embassy-futures",
  "embassy-imxrt",
  "embassy-sync",

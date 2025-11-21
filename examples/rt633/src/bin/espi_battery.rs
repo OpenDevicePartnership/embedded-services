@@ -237,6 +237,18 @@ async fn wrapper_task(wrapper: Wrapper<'static, Bq40z50Controller>) {
     }
 }
 
+#[embassy_executor::task]
+async fn espi_service_task(espi: embassy_imxrt::espi::Espi<'static>, memory_map_buffer: &'static mut [u8]) -> ! {
+    espi_service::task::espi_service(espi, memory_map_buffer).await;
+    unreachable!()
+}
+
+#[embassy_executor::task]
+async fn battery_service_task() -> ! {
+    battery_service::task::task().await;
+    unreachable!()
+}
+
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
     let p = embassy_imxrt::init(Default::default());
@@ -289,7 +301,7 @@ async fn main(spawner: Spawner) {
         slice::from_raw_parts_mut(start_espi_data, espi_data_len)
     };
 
-    spawner.must_spawn(espi_service::espi_service(espi, memory_map_buffer));
+    spawner.must_spawn(espi_service_task(espi, memory_map_buffer));
 
     let config = embassy_imxrt::i2c::master::Config {
         speed: embassy_imxrt::i2c::master::Speed::Standard,
@@ -320,7 +332,7 @@ async fn main(spawner: Spawner) {
     );
 
     spawner.must_spawn(wrapper_task(wrap));
-    spawner.must_spawn(battery_service::task());
+    spawner.must_spawn(battery_service_task());
 
     battery_service::register_fuel_gauge(fg).unwrap();
 
