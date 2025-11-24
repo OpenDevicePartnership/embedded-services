@@ -64,6 +64,18 @@ async fn interrupt_task(mut int_in: Input<'static>, mut interrupt: Interrupt<'st
     tps6699x::task::interrupt_task(&mut int_in, &mut [&mut interrupt]).await;
 }
 
+#[embassy_executor::task]
+async fn type_c_service_task() -> ! {
+    type_c_service::task(Default::default()).await;
+    unreachable!()
+}
+
+#[embassy_executor::task]
+async fn power_policy_service_task() -> ! {
+    power_policy_service::task::task(Default::default()).await;
+    unreachable!()
+}
+
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
     let p = embassy_imxrt::init(Default::default());
@@ -74,10 +86,10 @@ async fn main(spawner: Spawner) {
     type_c::controller::init();
 
     info!("Spawining power policy task");
-    spawner.must_spawn(power_policy_service::task(Default::default()));
+    spawner.must_spawn(power_policy_service_task());
 
     info!("Spawining type-c service task");
-    spawner.must_spawn(type_c_service::task(Default::default()));
+    spawner.must_spawn(type_c_service_task());
 
     let int_in = Input::new(p.PIO1_7, Pull::Up, Inverter::Disabled);
     static BUS: StaticCell<Mutex<GlobalRawMutex, BusMaster<'static>>> = StaticCell::new();

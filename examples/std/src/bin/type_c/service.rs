@@ -144,14 +144,26 @@ async fn task(spawner: Spawner) {
     Timer::after_millis(DELAY_MS).await;
 }
 
+#[embassy_executor::task]
+async fn type_c_service_task() -> ! {
+    type_c_service::task(Default::default()).await;
+    unreachable!()
+}
+
+#[embassy_executor::task]
+async fn power_policy_service_task() -> ! {
+    power_policy_service::task::task(Default::default()).await;
+    unreachable!()
+}
+
 fn main() {
     env_logger::builder().filter_level(log::LevelFilter::Trace).init();
 
     static EXECUTOR: StaticCell<Executor> = StaticCell::new();
     let executor = EXECUTOR.init(Executor::new());
     executor.run(|spawner| {
-        spawner.must_spawn(power_policy_service::task(Default::default()));
-        spawner.must_spawn(type_c_service::task(Default::default()));
+        spawner.must_spawn(power_policy_service_task());
+        spawner.must_spawn(type_c_service_task());
         spawner.must_spawn(task(spawner));
     });
 }

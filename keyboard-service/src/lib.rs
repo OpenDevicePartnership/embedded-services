@@ -8,6 +8,7 @@
 
 pub mod gpio_kb;
 pub mod hid_kb;
+pub mod task;
 
 use embedded_services::buffer::SharedRef;
 use embedded_services::hid;
@@ -115,56 +116,4 @@ pub trait HidKeyboard {
 
     /// Gets input or feature report for the keyboard with the given report ID.
     fn get_report(&self, report_type: hid::ReportType, report_id: hid::ReportId) -> HidReportSlice<'_>;
-}
-
-/// Initialize the keyboard service given keyboard's HID configuration.
-///
-/// The user must also ensure the `impl_hid_kb_tasks!` macro is called to implement additional generic
-/// tasks and then manually spawn them. E.g.:
-///
-/// ```rust,ignore
-/// impl_hid_kb_tasks!(MyKeyboardType, MyI2cSlaveType, MyInterruptPinType);
-/// spawner.must_spawn(keyboard_task(my_keyboard));
-/// spawner.must_spawn(reports_task(my_interrupt_pin));
-/// spawner.must_spawn(host_requests_task(my_i2c_slave));
-/// ```
-pub async fn init(
-    spawner: embassy_executor::Spawner,
-    hid_descriptor: hid::Descriptor,
-    report_descriptor: &'static [u8],
-    reg_file: hid::RegisterFile,
-) {
-    embedded_services::hid::init();
-    hid_kb::init(spawner, hid_descriptor, report_descriptor, reg_file).await
-}
-
-// Since tasks cannot be generic, rely on this user called macro to supply the explicit type information needed
-#[macro_export]
-macro_rules! impl_hid_kb_tasks {
-    ($hid_kb_ty:ty, $i2c_slave_ty:ty, $kb_int_ty:ty) => {
-        #[embassy_executor::task]
-        pub async fn keyboard_task(hid_kb: $hid_kb_ty) {
-            keyboard_service::hid_kb::handle_keyboard(hid_kb).await
-        }
-
-        #[embassy_executor::task]
-        pub async fn reports_task(kb_int: $kb_int_ty) {
-            keyboard_service::hid_kb::handle_reports(kb_int).await
-        }
-
-        #[embassy_executor::task]
-        async fn host_requests_task(kb_i2c: $i2c_slave_ty) {
-            // Revisit: Make this buffer size configurable?
-            embedded_services::define_static_buffer!(hid_buf, u8, [0u8; 256]);
-            let buf = hid_buf::get_mut().expect("Must not already be borrowed mutably");
-
-            // In this macro since static items cannot be generic either
-            static HOST: ::static_cell::StaticCell<hid_service::i2c::Host<$i2c_slave_ty>> =
-                ::static_cell::StaticCell::new();
-            let host = hid_service::i2c::Host::new(keyboard_service::HID_KB_ID, kb_i2c, buf);
-            let host = HOST.init(host);
-
-            keyboard_service::hid_kb::handle_host_requests(host).await;
-        }
-    };
 }

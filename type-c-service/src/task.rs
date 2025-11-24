@@ -42,7 +42,6 @@ pub async fn task_closure<'a, Fut: Future<Output = ()>, F: Fn(&'a Service) -> Fu
     }
 }
 
-#[embassy_executor::task]
 pub async fn task(config: Config) {
     task_closure(config, |service: &Service| async {
         if let Err(e) = service.process_next_event().await {

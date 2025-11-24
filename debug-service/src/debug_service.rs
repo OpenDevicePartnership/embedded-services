@@ -134,7 +134,7 @@ pub async fn host_endpoint_id() -> EndpointID {
 /// - Idempotent: repeated or concurrent calls return the same global instance.
 /// - Panics if endpoint registration fails (e.g. duplicate registration).
 ///
-/// The typical caller is the Embassy task [`debug_service`].
+/// The typical caller is the task [`crate::task::debug_service`].
 ///
 /// # Example
 /// ```no_run
@@ -152,9 +152,4 @@ pub async fn debug_service_entry(endpoint: comms::Endpoint) {
         .unwrap();
     // Emit an initial defmt frame so the defmt_to_host_task can drain and verify the path.
     debug!("debug service initialized and endpoint registered");
-}
-
-#[embassy_executor::task]
-pub async fn debug_service(endpoint: comms::Endpoint) {
-    debug_service_entry(endpoint).await;
 }

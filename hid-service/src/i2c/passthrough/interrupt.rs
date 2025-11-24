@@ -23,7 +23,7 @@ enum InterruptState {
 }
 
 impl<IN: Wait, OUT: OutputPin> InterruptSignal<IN, OUT> {
-    pub fn new(int_in: IN, int_out: OUT) -> Self {
+    pub const fn new(int_in: IN, int_out: OUT) -> Self {
         Self {
             state: Mutex::new(InterruptState::Idle),
             int_in: Mutex::new(int_in),

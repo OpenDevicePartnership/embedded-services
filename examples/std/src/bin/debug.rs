@@ -1,5 +1,4 @@
 /// This example is supposed to init a debug service and a mock eSPI service to demonstrate sending defmt messages from the debug service to the eSPI service
-use debug_service::debug_service;
 use embassy_executor::{Executor, Spawner};
 use embedded_services::comms::{Endpoint, EndpointID, External};
 use embedded_services::info;
@@ -179,12 +178,24 @@ async fn init_task(spawner: Spawner) {
     spawner.must_spawn(espi_service::request_task());
 
     info!("spawn debug service");
-    spawner.must_spawn(debug_service(Endpoint::uninit(EndpointID::External(External::Host))));
+    spawner.must_spawn(debug_service());
 
     info!("spawn defmt_to_host_task");
-    spawner.must_spawn(debug_service::defmt_to_host_task());
+    spawner.must_spawn(defmt_to_host_task());
 
     spawner.must_spawn(defmt_frames_task());
+}
+
+#[embassy_executor::task]
+async fn debug_service() -> ! {
+    debug_service::task::debug_service(Endpoint::uninit(EndpointID::External(External::Host))).await;
+    unreachable!()
+}
+
+#[embassy_executor::task]
+async fn defmt_to_host_task() -> ! {
+    debug_service::task::defmt_to_host_task().await;
+    unreachable!()
 }
 
 fn main() {

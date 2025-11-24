@@ -476,14 +476,3 @@ impl<T: Controller, const SAMPLE_BUF_LEN: usize> Sensor<T, SAMPLE_BUF_LEN> {
         }
     }
 }
-
-/// This is a public helper macro for implementing the sensor task since tasks cannot be generic
-#[macro_export]
-macro_rules! impl_sensor_task {
-    ($sensor_task_name:ident, $sensor_type:ty, $sample_buf_len:expr) => {
-        #[embassy_executor::task]
-        pub async fn $sensor_task_name(sensor: &'static $crate::sensor::Sensor<$sensor_type, $sample_buf_len>) {
-            let _ = embassy_futures::join::join(sensor.handle_rx(), sensor.handle_sampling()).await;
-        }
-    };
-}

@@ -93,13 +93,19 @@ async fn task(_spawner: Spawner) {
     external::reconfigure_retimer(GlobalPortId(0)).await.unwrap();
 }
 
+#[embassy_executor::task]
+async fn type_c_service_task() -> ! {
+    type_c_service::task(Default::default()).await;
+    unreachable!()
+}
+
 fn main() {
     env_logger::builder().filter_level(log::LevelFilter::Trace).init();
 
     static EXECUTOR: StaticCell<Executor> = StaticCell::new();
     let executor = EXECUTOR.init(Executor::new());
     executor.run(|spawner| {
-        spawner.must_spawn(type_c_service::task(Default::default()));
+        spawner.must_spawn(type_c_service_task());
         spawner.must_spawn(task(spawner));
         spawner.must_spawn(controller_task());
     });

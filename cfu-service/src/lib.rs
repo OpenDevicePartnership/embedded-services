@@ -1,6 +1,5 @@
 #![no_std]
 
-use embassy_sync::once_lock::OnceLock;
 use embedded_cfu_protocol::client::CfuReceiveContent;
 use embedded_cfu_protocol::components::CfuComponentTraits;
 use embedded_cfu_protocol::protocol_definitions::*;
@@ -11,6 +10,7 @@ use embedded_services::{comms, error, info, trace};
 pub mod buffer;
 pub mod host;
 pub mod splitter;
+pub mod task;
 
 pub struct CfuClient {
     /// Cfu Client context
@@ -110,21 +110,3 @@ impl CfuClient {
 }
 
 impl comms::MailboxDelegate for CfuClient {}
-
-#[embassy_executor::task]
-pub async fn task() {
-    info!("Starting cfu client task");
-    static CLIENT: OnceLock<CfuClient> = OnceLock::new();
-    let cfuclient = CLIENT.get_or_init(|| CfuClient::create().expect("cfu client singleton already initialized"));
-
-    if comms::register_endpoint(cfuclient, &cfuclient.tp).await.is_err() {
-        error!("Failed to register cfu endpoint");
-        return;
-    }
-
-    loop {
-        if let Err(e) = cfuclient.process_request().await {
-            error!("Error processing request: {:?}", e);
-        }
-    }
-}

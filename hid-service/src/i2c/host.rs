@@ -184,7 +184,7 @@ impl<B: I2cSlaveAsync> Host<B> {
 
         let reg = u16::from_le_bytes(reg);
         trace!("Register address {:#x}", reg);
-        if let Some(device) = hid::get_device(self.id).await {
+        if let Some(device) = hid::get_device(self.id) {
             let request = if reg == device.regs.hid_desc_reg {
                 hid::Request::Descriptor
             } else if reg == device.regs.report_desc_reg {

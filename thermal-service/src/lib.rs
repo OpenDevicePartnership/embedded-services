@@ -11,6 +11,7 @@ mod context;
 pub mod fan;
 pub mod mptf;
 pub mod sensor;
+pub mod task;
 pub mod utils;
 
 /// Thermal error

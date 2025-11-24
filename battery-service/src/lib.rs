@@ -7,13 +7,14 @@ use embassy_futures::select::select;
 use embedded_services::{
     comms::{self, EndpointID},
     ec_type::message::StdHostRequest,
-    error, info, trace,
+    trace,
 };
 
 mod acpi;
 pub mod context;
 pub mod controller;
 pub mod device;
+pub mod task;
 pub mod wrapper;
 
 /// Standard Battery Service.
@@ -133,19 +134,4 @@ pub async fn wait_for_battery_response() -> context::BatteryResponse {
 /// Asynchronously query the state from the state machine.
 pub async fn get_state() -> context::State {
     SERVICE.context.get_state().await
-}
-
-/// Battery service task.
-#[embassy_executor::task]
-pub async fn task() {
-    info!("Starting battery-service task");
-
-    if comms::register_endpoint(&SERVICE, &SERVICE.endpoint).await.is_err() {
-        error!("Failed to register battery service endpoint");
-        return;
-    }
-
-    loop {
-        SERVICE.process_next().await;
-    }
 }

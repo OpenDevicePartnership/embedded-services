@@ -15,7 +15,6 @@ bitfield.workspace = true
 bitflags = { workspace = true }
 defmt = { workspace = true, optional = true }
 embedded-cfu-protocol.workspace = true
-embassy-executor.workspace = true
 embassy-futures.workspace = true
 embassy-sync.workspace = true
 embassy-time.workspace = true
@@ -34,10 +33,6 @@ embassy-sync = { workspace = true, features = ["std"] }
 critical-section = { workspace = true, features = ["std"] }
 embassy-time = { workspace = true, features = ["std"] }
 embassy-time-driver = { workspace = true }
-embassy-executor = { workspace = true, features = [
-    "arch-std",
-    "executor-thread",
-] }
 embassy-futures.workspace = true
 tokio = { workspace = true, features = ["rt", "macros", "time"] }
 
@@ -48,7 +43,6 @@ defmt = [
     "embedded-services/defmt",
     "embassy-time/defmt",
     "embassy-sync/defmt",
-    "embassy-executor/defmt",
     "tps6699x/defmt",
     "embedded-usb-pd/defmt",
 ]
@@ -57,6 +51,5 @@ log = [
     "embedded-services/log",
     "embassy-time/log",
     "embassy-sync/log",
-    "embassy-executor/log",
     "tps6699x/log",
 ]

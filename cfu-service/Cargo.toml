@@ -9,7 +9,6 @@ workspace = true
 
 [dependencies]
 defmt = { workspace = true, optional = true }
-embassy-executor.workspace = true
 embassy-futures.workspace = true
 embassy-sync.workspace = true
 embassy-time.workspace = true
@@ -25,7 +24,6 @@ defmt = [
     "embedded-services/defmt",
     "embassy-time/defmt",
     "embassy-sync/defmt",
-    "embassy-executor/defmt",
     "embedded-cfu-protocol/defmt",
 ]
 log = [
@@ -33,6 +31,5 @@ log = [
     "embedded-services/log",
     "embassy-time/log",
     "embassy-sync/log",
-    "embassy-executor/log",
     "embedded-cfu-protocol/log",
 ]

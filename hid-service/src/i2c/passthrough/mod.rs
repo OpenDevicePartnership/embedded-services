@@ -5,8 +5,7 @@ pub use interrupt::*;
 #[macro_export]
 macro_rules! define_i2c_passthrough_device_task {
     ($bus:ty) => {
-        #[::embassy_executor::task]
-        async fn device_task(bus: $bus, id: ::embedded_services::hid::DeviceId, addr: u8) {
+        pub async fn device_task(bus: $bus, id: ::embedded_services::hid::DeviceId, addr: u8) {
             use ::embassy_sync::once_lock::OnceLock;
             use ::embedded_services::{define_static_buffer, error, hid, info};
             use $crate::i2c::Device;
@@ -32,8 +31,7 @@ macro_rules! define_i2c_passthrough_device_task {
 #[macro_export]
 macro_rules! define_i2c_passthrough_host_task {
     ($bus:ty, $int_in:ty, $int_out:ty) => {
-        #[::embassy_executor::task]
-        async fn host_task(
+        pub async fn host_task(
             bus: $bus,
             int_signal: &'static $crate::i2c::passthrough::InterruptSignal<$int_in, $int_out>,
         ) {
@@ -84,8 +82,7 @@ macro_rules! define_i2c_passthrough_host_task {
 #[macro_export]
 macro_rules! define_i2c_passthrough_interrupt_task {
     ($int_in:ty, $int_out:ty) => {
-        #[::embassy_executor::task]
-        async fn interrupt_task(int_signal: &'static $crate::i2c::passthrough::InterruptSignal<$int_in, $int_out>) {
+        pub async fn interrupt_task(int_signal: &'static $crate::i2c::passthrough::InterruptSignal<$int_in, $int_out>) {
             ::embedded_services::info!("Starting interrupt task");
             loop {
                 int_signal.process().await;
@@ -96,38 +93,18 @@ macro_rules! define_i2c_passthrough_interrupt_task {
 
 #[macro_export]
 macro_rules! define_i2c_passthrough_task {
-    ($name:ident, $host_bus:ty, $device_bus:ty, $int_in:ty, $int_out:ty) => {
-        mod $name {
+    ($host_bus:ty, $device_bus:ty, $int_in:ty, $int_out:ty) => {
+        mod task {
             use $crate::{
                 define_i2c_passthrough_device_task, define_i2c_passthrough_host_task,
                 define_i2c_passthrough_interrupt_task,
             };
 
             use super::*;
-
+            // Spawn these 3 tasks using the executor of your choice
             define_i2c_passthrough_device_task!($device_bus);
             define_i2c_passthrough_host_task!($host_bus, $int_in, $int_out);
             define_i2c_passthrough_interrupt_task!($int_in, $int_out);
-
-            pub fn spawn(
-                spawner: ::embassy_executor::Spawner,
-                host_bus: $host_bus,
-                device_bus: $device_bus,
-                device_id: ::embedded_services::hid::DeviceId,
-                device_addr: u8,
-                int_in: $int_in,
-                int_out: $int_out,
-            ) {
-                use ::embassy_sync::once_lock::OnceLock;
-                use $crate::i2c::passthrough::InterruptSignal;
-
-                static INT_SIGNAL: OnceLock<InterruptSignal<$int_in, $int_out>> = OnceLock::new();
-                let int_signal = INT_SIGNAL.get_or_init(|| InterruptSignal::new(int_in, int_out));
-
-                spawner.must_spawn(device_task(device_bus, device_id, device_addr));
-                spawner.must_spawn(host_task(host_bus, int_signal));
-                spawner.must_spawn(interrupt_task(int_signal));
-            }
         }
     };
 }
