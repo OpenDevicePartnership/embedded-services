@@ -41,7 +41,7 @@ impl PowerPolicy {
         let mut best_consumer = None;
         let current_consumer_id = state.current_consumer_state.map(|f| f.device_id);
 
-        for node in self.context.devices().await {
+        for node in self.context.devices() {
             let device = node.data::<Device>().ok_or(Error::InvalidDevice)?;
 
             // Update the best available consumer
@@ -82,7 +82,7 @@ impl PowerPolicy {
     async fn update_unconstrained_state(&self, state: &mut InternalState) -> Result<(), Error> {
         // Count how many available unconstrained devices we have
         let mut unconstrained_new = UnconstrainedState::default();
-        for node in self.context.devices().await {
+        for node in self.context.devices() {
             let device = node.data::<Device>().ok_or(Error::InvalidDevice)?;
             if let Some(capability) = device.consumer_capability().await {
                 // The device is considered unconstrained if it meets the auto unconstrained power threshold
@@ -123,7 +123,7 @@ impl PowerPolicy {
         embassy_time::Timer::after_millis(800).await;
 
         // If no chargers are registered, they won't receive the new power capability.
-        for node in self.context.chargers().await {
+        for node in self.context.chargers() {
             let device = node.data::<ChargerDevice>().ok_or(Error::InvalidDevice)?;
             // Chargers should be powered at this point, but in case they are not...
             if let embedded_services::power::policy::charger::ChargerResponseData::UnpoweredAck = device
@@ -157,7 +157,7 @@ impl PowerPolicy {
 
     /// Disconnect all chargers
     pub(super) async fn disconnect_chargers(&self) -> Result<(), Error> {
-        for node in self.context.chargers().await {
+        for node in self.context.chargers() {
             let device = node.data::<ChargerDevice>().ok_or(Error::InvalidDevice)?;
             if let embedded_services::power::policy::charger::ChargerResponseData::UnpoweredAck = device
                 .execute_command(PolicyEvent::PolicyConfiguration(PowerCapability {

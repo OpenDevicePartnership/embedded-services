@@ -35,7 +35,7 @@ impl<'a, C: Controller> Wrapper<'a, C> {
             match res {
                 embassy_futures::select::Either::First(event) => {
                     trace!("New fuel gauge hardware device event.");
-                    self.process_device_event(&mut controller, self.device, event).await;
+                    self.process_device_event(&mut controller, self.device, event);
                 }
                 embassy_futures::select::Either::Second(cmd) => {
                     trace!("New fuel gauge state machine command.");
@@ -45,7 +45,7 @@ impl<'a, C: Controller> Wrapper<'a, C> {
         }
     }
 
-    async fn process_device_event(&self, _controller: &mut C, _device: &Device, event: ControllerEvent) {
+    fn process_device_event(&self, _controller: &mut C, _device: &Device, event: ControllerEvent) {
         // TODO: add events
         match event {}
     }

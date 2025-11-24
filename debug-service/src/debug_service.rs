@@ -50,7 +50,7 @@ pub struct Service {
 }
 
 impl Service {
-    pub fn new(endpoint: comms::Endpoint) -> Self {
+    pub const fn new(endpoint: comms::Endpoint) -> Self {
         Service {
             endpoint: comms::Endpoint::uninit(EndpointID::Internal(Internal::Debug)),
             transport: endpoint,

@@ -23,38 +23,37 @@ pub(super) struct State {
 
 impl<'a> Service<'a> {
     /// PPM reset implementation
-    async fn process_ppm_reset(&self, state: &mut State) {
+    fn process_ppm_reset(&self, state: &mut State) {
         debug!("Resetting PPM");
         state.notifications_enabled = NotificationEnable::default();
         state.pending_ports.clear();
     }
 
     /// Set notification enable implementation
-    async fn process_set_notification_enable(&self, state: &mut State, enable: NotificationEnable) {
+    fn process_set_notification_enable(&self, state: &mut State, enable: NotificationEnable) {
         debug!("Set Notification Enable: {:?}", enable);
         state.notifications_enabled = enable;
     }
 
     /// PPM get capabilities implementation
-    async fn process_get_capabilities(&self) -> ppm::ResponseData {
+    fn process_get_capabilities(&self) -> ppm::ResponseData {
         debug!("Get PPM capabilities: {:?}", self.config.ucsi_capabilities);
         let mut capabilities = self.config.ucsi_capabilities;
-        capabilities.num_connectors = external::get_num_ports().await as u8;
+        capabilities.num_connectors = external::get_num_ports() as u8;
         ppm::ResponseData::GetCapability(capabilities)
     }
 
-    async fn process_ppm_command(
+    fn process_ppm_command(
         &self,
         state: &mut State,
         command: &ucsi::ppm::Command,
     ) -> Result<Option<ppm::ResponseData>, PdError> {
         match command {
             ppm::Command::SetNotificationEnable(enable) => {
-                self.process_set_notification_enable(state, enable.notification_enable)
-                    .await;
+                self.process_set_notification_enable(state, enable.notification_enable);
                 Ok(None)
             }
-            ppm::Command::GetCapability => Ok(Some(self.process_get_capabilities().await)),
+            ppm::Command::GetCapability => Ok(Some(self.process_get_capabilities())),
             _ => Ok(None), // Other commands are currently no-ops
         }
     }
@@ -152,7 +151,6 @@ impl<'a> Service<'a> {
                             ucsi::GlobalCommand::PpmCommand(ppm_command) => {
                                 response.data = self
                                     .process_ppm_command(state, ppm_command)
-                                    .await
                                     .map(|inner| inner.map(ResponseData::Ppm));
                             }
                             ucsi::GlobalCommand::LpmCommand(lpm_command) => {
@@ -187,7 +185,7 @@ impl<'a> Service<'a> {
                     PpmOutput::ResetComplete => {
                         // Resets don't follow the normal command execution flow
                         // So do any reset processing here
-                        self.process_ppm_reset(state).await;
+                        self.process_ppm_reset(state);
                         // Don't notify OPM because it'll poll
                         response.notify_opm = false;
                         response.cci = Cci::new_reset_complete();

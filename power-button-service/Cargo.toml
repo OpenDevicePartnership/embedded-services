@@ -5,7 +5,7 @@ edition = "2024"
 license = "MIT"
 description = "Power button service built upon embedded service"
 repository = "https://github.com/OpenDevicePartnership/embedded-services"
-rust-version = "1.85"
+rust-version = "1.88"
 
 [lints]
 workspace = true

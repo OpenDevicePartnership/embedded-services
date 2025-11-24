@@ -1,7 +1,6 @@
 //! Keyboard service data types and common functionality
 
 use embassy_sync::mutex::Mutex;
-use embassy_sync::once_lock::OnceLock;
 
 use crate::GlobalRawMutex;
 use crate::buffer::SharedRef;
@@ -51,7 +50,7 @@ pub struct Message<'a> {
 }
 
 /// Broadcast target configuration
-#[derive(Copy, Clone, Default)]
+#[derive(Copy, Clone)]
 pub struct BroadcastConfig {
     /// Enable broadcasting to the HID endpoint
     broadcast_hid: bool,
@@ -59,33 +58,43 @@ pub struct BroadcastConfig {
     broadcast_host: bool,
 }
 
+impl BroadcastConfig {
+    /// New default
+    pub const fn new() -> Self {
+        Self {
+            broadcast_hid: false,
+            broadcast_host: false,
+        }
+    }
+}
+
+impl Default for BroadcastConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Keyboard service context
 struct Context {
     broadcast_config: Mutex<GlobalRawMutex, BroadcastConfig>,
 }
 
-static CONTEXT: OnceLock<Context> = OnceLock::new();
+static CONTEXT: Context = Context {
+    broadcast_config: Mutex::new(BroadcastConfig::new()),
+};
 
 /// Initialize common keyboard service functionality
-pub fn init() {
-    CONTEXT.get_or_init(|| Context {
-        broadcast_config: Mutex::new(BroadcastConfig::default()),
-    });
-}
+pub fn init() {}
 
 /// Enable broadcasting messages to the host endpoint
 pub async fn enable_broadcast_host() {
-    let context = CONTEXT.get().await;
-
-    let mut config = context.broadcast_config.lock().await;
+    let mut config = CONTEXT.broadcast_config.lock().await;
     config.broadcast_host = true;
 }
 
 /// Enable broadcasting messages to the HID endpoint
 pub async fn enable_broadcast_hid() {
-    let context = CONTEXT.get().await;
-
-    let mut config = context.broadcast_config.lock().await;
+    let mut config = CONTEXT.broadcast_config.lock().await;
     config.broadcast_hid = true;
 }
 
@@ -114,6 +123,6 @@ pub async fn broadcast_message_with_config(from: DeviceId, config: BroadcastConf
 
 /// Broadcast a keyboard message using the global broadcast config
 pub async fn broadcast_message(from: DeviceId, data: MessageData<'static>) {
-    let config = *CONTEXT.get().await.broadcast_config.lock().await;
+    let config = *CONTEXT.broadcast_config.lock().await;
     broadcast_message_with_config(from, config, data).await;
 }

@@ -150,7 +150,7 @@ where
     }
 
     /// Handle a connect as provider command
-    async fn process_connect_as_provider(
+    fn process_connect_as_provider(
         &self,
         port: LocalPortId,
         capability: ProviderPowerCapability,
@@ -219,11 +219,7 @@ where
                 }
             }
             policy::device::CommandData::ConnectAsProvider(capability) => {
-                if self
-                    .process_connect_as_provider(port, *capability, controller)
-                    .await
-                    .is_err()
-                {
+                if self.process_connect_as_provider(port, *capability, controller).is_err() {
                     error!("Error processing connect provider");
                     return Err(policy::Error::Failed);
                 }

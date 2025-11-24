@@ -1281,6 +1281,7 @@ dependencies = [
  "embassy-sync",
  "embassy-time",
  "embedded-services",
+ "heapless",
 ]
 
 [[package]]

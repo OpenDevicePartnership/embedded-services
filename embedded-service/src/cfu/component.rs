@@ -376,9 +376,12 @@ impl<W: CfuWriterAsync> CfuComponentStorage for CfuComponentDefault<W> {
     }
 }
 
+#[allow(clippy::unused_async)]
 async fn default_is_offer_valid() -> Result<OfferStatus, (OfferStatus, OfferRejectReason)> {
     Err((OfferStatus::Reject, OfferRejectReason::OldFw))
 }
+
+#[allow(clippy::unused_async)]
 async fn default_get_fw_version() -> Result<FwVersion, CfuProtocolError> {
     Ok(FwVersion::default())
 }

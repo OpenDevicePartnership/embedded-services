@@ -1,6 +1,8 @@
 use crate::embedded_crc::EmbeddedCrcError;
 use crc::Algorithm;
 
+// NOTE: imxrt uses hardware with shared crc, which requires a mutex
+#[allow(clippy::unused_async)]
 pub(crate) async fn crc_calculate_u32(
     init: u32,
     algorithm: &'static Algorithm<u32>,
@@ -12,6 +14,8 @@ pub(crate) async fn crc_calculate_u32(
     Ok(digest.finalize())
 }
 
+// NOTE: imxrt uses hardware with shared crc, which requires a mutex
+#[allow(clippy::unused_async)]
 pub(crate) async fn crc_calculate_u16(
     init: u16,
     algorithm: &'static Algorithm<u16>,

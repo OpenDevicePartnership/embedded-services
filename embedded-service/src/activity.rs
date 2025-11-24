@@ -100,7 +100,7 @@ pub async fn register_subscriber<T: ActivitySubscriber>(
 }
 
 /// register publisher class for future usage. None returned if class slot is already occupied
-pub async fn register_publisher(class: Class) -> core::result::Result<Publisher, core::convert::Infallible> {
+pub fn register_publisher(class: Class) -> core::result::Result<Publisher, core::convert::Infallible> {
     // allow multiple publishers for any class (todo - determine if limitation is necessary)
     Ok(Publisher { class })
 }

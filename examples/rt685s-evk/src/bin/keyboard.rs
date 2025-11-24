@@ -114,11 +114,9 @@ mod activity_example {
         pub async fn keyboard_task() {
             static KEYBOARD: StaticCell<Keyboard> = StaticCell::new();
 
-            let k = embassy_futures::block_on(async {
-                Keyboard {
-                    activity_publisher: activity::register_publisher(activity::Class::Keyboard).await.unwrap(),
-                }
-            });
+            let k = Keyboard {
+                activity_publisher: activity::register_publisher(activity::Class::Keyboard).unwrap(),
+            };
             let keyboard = KEYBOARD.init(k);
 
             let mut count = 0;

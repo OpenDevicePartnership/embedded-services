@@ -458,7 +458,7 @@ async fn init_task(spawner: Spawner, dev: &'static Device) {
     espi_service::init().await;
     info!("espi service init'd");
 
-    battery_service::register_fuel_gauge(dev).await.unwrap();
+    battery_service::register_fuel_gauge(dev).unwrap();
 
     spawner.must_spawn(espi_service::task());
 }

@@ -29,7 +29,7 @@ impl PowerPolicy {
     /// Attempt to connect the requester as a provider
     pub(super) async fn connect_provider(&self, requester_id: DeviceId) {
         trace!("Device{}: Attempting to connect as provider", requester_id.0);
-        let requester = match self.context.get_device(requester_id).await {
+        let requester = match self.context.get_device(requester_id) {
             Ok(device) => device,
             Err(_) => {
                 error!("Device{}: Invalid device", requester_id.0);
@@ -48,7 +48,7 @@ impl PowerPolicy {
         let mut total_power_mw = 0;
 
         // Determine total requested power draw
-        for device in self.context.devices().await.iter_only::<device::Device>() {
+        for device in self.context.devices().iter_only::<device::Device>() {
             let target_provider_cap = if device.id() == requester_id {
                 // Use the requester's requested power capability
                 // this handles both new connections and upgrade requests
@@ -88,14 +88,24 @@ impl PowerPolicy {
         };
 
         let connected = if let Ok(action) = self.context.try_policy_action::<action::Idle>(requester.id()).await {
-            let _ = action.connect_provider(target_power).await;
+            if let Err(e) = action.connect_provider(target_power).await {
+                error!("Device{}: Failed to connect as provider, {:#?}", requester.id().0, e);
+            } else {
+                self.post_provider_connected(&mut state, requester.id(), target_power.capability)
+                    .await;
+            }
             Ok(())
         } else if let Ok(action) = self
             .context
             .try_policy_action::<action::ConnectedProvider>(requester.id())
             .await
         {
-            let _ = action.connect_provider(target_power).await;
+            if let Err(e) = action.connect_provider(target_power).await {
+                error!("Device{}: Failed to connect as provider, {:#?}", requester.id().0, e);
+            } else {
+                self.post_provider_connected(&mut state, requester.id(), target_power.capability)
+                    .await;
+            }
             Ok(())
         } else {
             Err(Error::InvalidState(
@@ -108,5 +118,19 @@ impl PowerPolicy {
         if let Err(e) = connected {
             error!("Device{}: Failed to connect as provider, {:#?}", requester.id().0, e);
         }
+    }
+
+    /// Common logic for after a provider has successfully connected
+    async fn post_provider_connected(
+        &self,
+        state: &mut InternalState,
+        provider_id: DeviceId,
+        target_power: PowerCapability,
+    ) {
+        let _ = state.connected_providers.insert(provider_id);
+        self.comms_notify(CommsMessage {
+            data: CommsData::ProviderConnected(provider_id, target_power),
+        })
+        .await;
     }
 }

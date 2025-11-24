@@ -130,7 +130,7 @@ async fn controller_task() {
     static PORTS: [GlobalPortId; 2] = [PORT0_ID, PORT1_ID];
 
     let controller = CONTROLLER.get_or_init(|| test_controller::Controller::new(CONTROLLER0_ID, POWER0_ID, &PORTS));
-    controller::register_controller(controller).await.unwrap();
+    controller::register_controller(controller).unwrap();
 
     loop {
         controller.process().await;
