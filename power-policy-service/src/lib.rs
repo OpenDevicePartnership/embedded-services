@@ -58,10 +58,8 @@ impl PowerPolicy {
 
     async fn process_notify_detach(&self, device: &device::Device) -> Result<(), Error> {
         self.context.send_response(Ok(policy::ResponseData::Complete)).await;
-        if !self.remove_connected_provider(device.id()).await {
-            // Only update consumers if a consumer was detached
-            self.update_current_consumer().await?;
-        }
+        self.remove_connected_provider(device.id()).await;
+        self.update_current_consumer().await?;
         Ok(())
     }
 
