@@ -7,6 +7,7 @@ use embedded_services::{
     power::policy::{
         ConsumerPowerCapability, ProviderPowerCapability,
         device::{CommandData, InternalResponseData},
+        flags::PsuType,
     },
 };
 
@@ -53,6 +54,7 @@ where
                 UnconstrainedSink::Never => false,
             };
             c.flags.set_unconstrained_power(unconstrained);
+            c.flags.set_psu_type(PsuType::TypeC);
             c
         });
 
@@ -109,16 +111,21 @@ where
             }
         }
 
+        let contract = status.available_source_contract.map(|c| {
+            let mut c: ProviderPowerCapability = c.into();
+            c.flags.set_psu_type(PsuType::TypeC);
+            c
+        });
         if let Ok(state) = power.try_device_action::<action::Idle>().await {
-            if let Some(contract) = status.available_source_contract {
-                if let Err(e) = state.request_provider_power_capability(contract.into()).await {
+            if let Some(contract) = contract {
+                if let Err(e) = state.request_provider_power_capability(contract).await {
                     error!("Error setting power contract: {:?}", e);
                     return PdError::Failed.into();
                 }
             }
         } else if let Ok(state) = power.try_device_action::<action::ConnectedProvider>().await {
-            if let Some(contract) = status.available_source_contract {
-                if let Err(e) = state.request_provider_power_capability(contract.into()).await {
+            if let Some(contract) = contract {
+                if let Err(e) = state.request_provider_power_capability(contract).await {
                     error!("Error setting power contract: {:?}", e);
                     return PdError::Failed.into();
                 }

@@ -141,7 +141,7 @@ where
                         )))
                     }
                     PoweredSubstate::PsuAttached | PoweredSubstate::PsuDetached => {
-                        if power_capability.current_ma == 0 {
+                        if power_capability.capability.current_ma == 0 {
                             // Policy detected a detach
                             debug!("Charger detected new power policy configuration. Executing detach sequence");
                             if let Err(err) = controller
@@ -178,7 +178,7 @@ where
                                 // hardware charger device lags on changing its PSU state.
                                 self.set_state(InternalState {
                                     state: state.state,
-                                    capability: Some(power_capability),
+                                    capability: Some(power_capability.capability),
                                 })
                                 .await;
                                 Ok(charger::ChargerResponseData::Ack)

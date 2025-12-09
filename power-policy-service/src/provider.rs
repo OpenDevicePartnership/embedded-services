@@ -91,7 +91,7 @@ impl PowerPolicy {
             if let Err(e) = action.connect_provider(target_power).await {
                 error!("Device{}: Failed to connect as provider, {:#?}", requester.id().0, e);
             } else {
-                self.post_provider_connected(&mut state, requester.id(), target_power.capability)
+                self.post_provider_connected(&mut state, requester.id(), target_power)
                     .await;
             }
             Ok(())
@@ -103,7 +103,7 @@ impl PowerPolicy {
             if let Err(e) = action.connect_provider(target_power).await {
                 error!("Device{}: Failed to connect as provider, {:#?}", requester.id().0, e);
             } else {
-                self.post_provider_connected(&mut state, requester.id(), target_power.capability)
+                self.post_provider_connected(&mut state, requester.id(), target_power)
                     .await;
             }
             Ok(())
@@ -125,7 +125,7 @@ impl PowerPolicy {
         &self,
         state: &mut InternalState,
         provider_id: DeviceId,
-        target_power: PowerCapability,
+        target_power: ProviderPowerCapability,
     ) {
         let _ = state.connected_providers.insert(provider_id);
         self.comms_notify(CommsMessage {

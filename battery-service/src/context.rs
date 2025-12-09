@@ -529,7 +529,7 @@ impl Context {
             embedded_services::power::policy::CommsData::ConsumerConnected(_device_id, power_capability) => {
                 *psu_state = PsuState {
                     psu_connected: true,
-                    power_capability: Some(*power_capability),
+                    power_capability: Some(power_capability.capability),
                 }
             }
             _rest => { /* Don't care about anything else */ }

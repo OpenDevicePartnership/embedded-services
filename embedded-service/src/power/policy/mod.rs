@@ -144,11 +144,11 @@ pub enum CommsData {
     /// Consumer disconnected
     ConsumerDisconnected(DeviceId),
     /// Consumer connected
-    ConsumerConnected(DeviceId, PowerCapability),
+    ConsumerConnected(DeviceId, ConsumerPowerCapability),
     /// Provider disconnected
     ProviderDisconnected(DeviceId),
     /// Provider connected
-    ProviderConnected(DeviceId, PowerCapability),
+    ProviderConnected(DeviceId, ProviderPowerCapability),
     /// Unconstrained state changed
     Unconstrained(UnconstrainedState),
 }

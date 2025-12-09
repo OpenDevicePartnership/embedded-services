@@ -3,7 +3,10 @@ use core::{future::Future, ops::DerefMut};
 
 use embassy_sync::{channel::Channel, mutex::Mutex};
 
-use crate::{GlobalRawMutex, intrusive_list, power};
+use crate::{
+    GlobalRawMutex, intrusive_list,
+    power::{self, policy::ConsumerPowerCapability},
+};
 
 use super::PowerCapability;
 
@@ -21,7 +24,7 @@ pub trait ChargeController: embedded_batteries_async::charger::Charger {
     /// Called after power policy attaches to a power port.
     fn attach_handler(
         &mut self,
-        capability: PowerCapability,
+        capability: ConsumerPowerCapability,
     ) -> impl Future<Output = Result<(), Self::ChargeControllerError>>;
     /// Called after power policy detaches from a power port, either to switch consumers,
     /// or because PSU was disconnected.
@@ -102,7 +105,7 @@ pub enum PolicyEvent {
     /// Request to initialize charger hardware
     InitRequest,
     /// New power policy detected
-    PolicyConfiguration(PowerCapability),
+    PolicyConfiguration(ConsumerPowerCapability),
     /// Request to check if the charger hardware is ready to receive communications.
     /// For example, if the charger is powered.
     CheckReady,
