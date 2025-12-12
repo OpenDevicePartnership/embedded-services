@@ -2,7 +2,6 @@
 use core::mem::offset_of;
 
 pub mod message;
-pub mod protocols;
 pub mod structure;
 
 /// Error type

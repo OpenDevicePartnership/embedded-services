@@ -5,8 +5,6 @@
 
 use embassy_sync::once_lock::OnceLock;
 use embedded_sensors_hal_async::temperature::DegreesCelsius;
-use embedded_services::buffer::OwnedRef;
-use embedded_services::ec_type::message::StdHostRequest;
 use embedded_services::{comms, error, info, intrusive_list};
 
 mod context;
@@ -35,12 +33,12 @@ pub enum Event {
     FanFailure(fan::DeviceId, fan::Error),
 }
 
-struct Service<'a> {
-    context: context::Context<'a>,
+struct Service {
+    context: context::Context,
     endpoint: comms::Endpoint,
 }
 
-impl<'a> Service<'a> {
+impl Service {
     fn new() -> Self {
         Self {
             context: context::Context::new(),
@@ -49,16 +47,12 @@ impl<'a> Service<'a> {
     }
 }
 
-impl<'a> comms::MailboxDelegate for Service<'a> {
+impl comms::MailboxDelegate for Service {
     fn receive(&self, message: &comms::Message) -> Result<(), comms::MailboxDelegateError> {
         // Queue for later processing
-        if let Some(msg) = message.data.get::<StdHostRequest>() {
+        if let Some(msg) = message.data.get::<thermal_service_messages::ThermalRequest>() {
             self.context
-                .send_mctp_payload(*msg)
-                .map_err(|_| comms::MailboxDelegateError::BufferFull)
-        } else if let Some(&msg) = message.data.get::<mptf::Request>() {
-            self.context
-                .send_mptf_request(msg)
+                .queue_mptf_request(*msg)
                 .map_err(|_| comms::MailboxDelegateError::BufferFull)
         } else {
             Err(comms::MailboxDelegateError::InvalidData)
@@ -93,22 +87,13 @@ pub async fn send_service_msg(to: comms::EndpointID, data: &impl embedded_servic
 }
 
 /// Send a MPTF request
-pub async fn queue_mptf_request(msg: mptf::Request) -> Result<(), Error> {
-    SERVICE.get().await.context.send_mptf_request(msg)
+pub async fn queue_mptf_request(msg: thermal_service_messages::ThermalRequest) -> Result<(), Error> {
+    SERVICE.get().await.context.queue_mptf_request(msg)
 }
 
 /// Wait for a MPTF request
-pub async fn wait_mptf_request() -> mptf::Request {
+pub(crate) async fn wait_mptf_request() -> thermal_service_messages::ThermalRequest {
     SERVICE.get().await.context.wait_mptf_request().await
-}
-
-/// Wait for a MCTP payload
-pub async fn wait_mctp_payload() -> StdHostRequest {
-    SERVICE.get().await.context.wait_mctp_payload().await
-}
-
-pub fn get_mctp_buf<'a>() -> &'a OwnedRef<'a, u8> {
-    SERVICE.try_get().unwrap().context.get_mctp_buf()
 }
 
 /// Send a thermal event

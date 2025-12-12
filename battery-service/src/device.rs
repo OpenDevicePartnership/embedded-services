@@ -9,6 +9,8 @@ use embedded_batteries_async::{
 };
 use embedded_services::{GlobalRawMutex, Node, NodeContainer, SyncCell};
 
+pub use battery_service_messages::DeviceId;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 /// Device errors.
@@ -154,11 +156,6 @@ pub struct DynamicBatteryMsgs {
 
     pub bmd_status: BmdStatusFlags,
 }
-
-/// Fuel gauge ID
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct DeviceId(pub u8);
 
 /// Hardware agnostic device object to be registered with context.
 pub struct Device {

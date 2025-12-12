@@ -1353,6 +1353,7 @@ dependencies = [
  "embedded-cfu-protocol",
  "embedded-hal 1.0.0",
  "embedded-hal-async",
+ "embedded-mcu-hal",
  "embedded-services",
  "embedded-usb-pd",
  "futures",

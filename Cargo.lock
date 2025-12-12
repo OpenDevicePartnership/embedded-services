@@ -159,6 +159,7 @@ dependencies = [
 name = "battery-service"
 version = "0.1.0"
 dependencies = [
+ "battery-service-messages",
  "defmt 0.3.100",
  "embassy-futures",
  "embassy-sync",
@@ -170,6 +171,16 @@ dependencies = [
  "log",
  "mctp-rs",
  "zerocopy",
+]
+
+[[package]]
+name = "battery-service-messages"
+version = "0.1.0"
+dependencies = [
+ "defmt 0.3.100",
+ "embedded-batteries-async",
+ "embedded-services",
+ "num_enum",
 ]
 
 [[package]]
@@ -450,12 +461,22 @@ version = "0.1.0"
 dependencies = [
  "bbq2",
  "critical-section",
+ "debug-service-messages",
  "defmt 0.3.100",
  "embassy-sync",
  "embassy-time",
  "embedded-services",
  "log",
  "rtt-target",
+]
+
+[[package]]
+name = "debug-service-messages"
+version = "0.1.0"
+dependencies = [
+ "defmt 0.3.100",
+ "embedded-services",
+ "num_enum",
 ]
 
 [[package]]
@@ -924,8 +945,11 @@ dependencies = [
 name = "espi-service"
 version = "0.1.0"
 dependencies = [
+ "battery-service-messages",
+ "bitfield 0.17.0",
  "cortex-m",
  "cortex-m-rt",
+ "debug-service-messages",
  "defmt 0.3.100",
  "embassy-futures",
  "embassy-imxrt",
@@ -934,6 +958,8 @@ dependencies = [
  "embedded-services",
  "log",
  "mctp-rs",
+ "num_enum",
+ "thermal-service-messages",
 ]
 
 [[package]]
@@ -1986,6 +2012,17 @@ dependencies = [
  "heapless",
  "log",
  "mctp-rs",
+ "thermal-service-messages",
+ "uuid",
+]
+
+[[package]]
+name = "thermal-service-messages"
+version = "0.1.0"
+dependencies = [
+ "defmt 0.3.100",
+ "embedded-services",
+ "num_enum",
  "uuid",
 ]
 

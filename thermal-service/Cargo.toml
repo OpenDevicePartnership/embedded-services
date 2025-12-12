@@ -17,6 +17,7 @@ embedded-hal-async.workspace = true
 embedded-hal.workspace = true
 embedded-services.workspace = true
 heapless.workspace = true
+thermal-service-messages.workspace = true
 uuid.workspace = true
 embedded-fans-async = "0.2.0"
 embedded-sensors-hal-async = "0.3.0"
@@ -32,6 +33,7 @@ defmt = [
     "embedded-fans-async/defmt",
     "embedded-sensors-hal-async/defmt",
     "mctp-rs/defmt",
+    "thermal-service-messages/defmt",
 ]
 log = [
     "dep:log",

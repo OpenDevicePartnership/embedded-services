@@ -12,6 +12,7 @@ workspace = true
 
 [dependencies]
 defmt = { workspace = true, optional = true }
+battery-service-messages.workspace = true
 embassy-futures.workspace = true
 embassy-sync.workspace = true
 embassy-time.workspace = true
@@ -27,6 +28,7 @@ mctp-rs = { workspace = true, features = ["espi"] }
 default = []
 defmt = [
     "dep:defmt",
+    "battery-service-messages/defmt",
     "embedded-services/defmt",
     "embassy-time/defmt",
     "embassy-sync/defmt",

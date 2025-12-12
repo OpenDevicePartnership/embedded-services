@@ -1,37 +1,26 @@
 //! Thermal service context
-use crate::mptf;
 use crate::{Error, Event, fan, sensor};
 use embassy_sync::channel::Channel;
 use embedded_services::GlobalRawMutex;
-use embedded_services::buffer::OwnedRef;
-use embedded_services::ec_type::message::StdHostRequest;
 use embedded_services::{error, intrusive_list};
 
-embedded_services::define_static_buffer!(mctp_buf, u8, [0u8; 69]);
-
-pub(crate) struct Context<'a> {
+pub(crate) struct Context {
     // Registered temperature sensors
     sensors: intrusive_list::IntrusiveList,
     // Registered fans
     fans: intrusive_list::IntrusiveList,
-    // MPTF Request Queue
-    mptf: Channel<GlobalRawMutex, mptf::Request, 10>,
-    // Raw MCTP Payload Queue
-    mctp: Channel<GlobalRawMutex, StdHostRequest, 10>,
-    // MCTP message buffer
-    mctp_buf: OwnedRef<'a, u8>,
+    // Pending MPTF request queue
+    mptf: Channel<GlobalRawMutex, thermal_service_messages::ThermalRequest, 10>,
     // Event queue
     events: Channel<GlobalRawMutex, Event, 10>,
 }
 
-impl<'a> Context<'a> {
+impl Context {
     pub(crate) fn new() -> Self {
         Self {
             sensors: intrusive_list::IntrusiveList::new(),
             fans: intrusive_list::IntrusiveList::new(),
             mptf: Channel::new(),
-            mctp: Channel::new(),
-            mctp_buf: mctp_buf::get_mut().unwrap(),
             events: Channel::new(),
         }
     }
@@ -102,26 +91,12 @@ impl<'a> Context<'a> {
         fan.execute_request(request).await
     }
 
-    pub(crate) fn send_mptf_request(&self, msg: mptf::Request) -> Result<(), Error> {
-        self.mptf.try_send(msg).map_err(|_| Error)?;
-        Ok(())
+    pub(crate) fn queue_mptf_request(&self, msg: thermal_service_messages::ThermalRequest) -> Result<(), Error> {
+        self.mptf.try_send(msg).map_err(|_| Error)
     }
 
-    pub(crate) async fn wait_mptf_request(&self) -> mptf::Request {
+    pub(crate) async fn wait_mptf_request(&self) -> thermal_service_messages::ThermalRequest {
         self.mptf.receive().await
-    }
-
-    pub(crate) fn send_mctp_payload(&self, msg: StdHostRequest) -> Result<(), Error> {
-        self.mctp.try_send(msg).map_err(|_| Error)?;
-        Ok(())
-    }
-
-    pub(crate) async fn wait_mctp_payload(&self) -> StdHostRequest {
-        self.mctp.receive().await
-    }
-
-    pub(crate) fn get_mctp_buf(&self) -> &OwnedRef<'a, u8> {
-        &self.mctp_buf
     }
 
     pub(crate) async fn send_event(&self, event: Event) {

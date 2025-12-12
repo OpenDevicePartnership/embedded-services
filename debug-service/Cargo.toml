@@ -9,11 +9,15 @@ repository.workspace = true
 bbq2 = "0.4.2"
 critical-section.workspace = true
 defmt.workspace = true
+debug-service-messages.workspace = true
 embassy-sync.workspace = true
 embassy-time.workspace = true
 embedded-services.workspace = true
 log.workspace = true
 rtt-target = "0.6.1"
+
+[features]
+defmt = ["debug-service-messages/defmt"]
 
 [lints]
 workspace = true

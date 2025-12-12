@@ -34,14 +34,14 @@ pub async fn espi_service(
         .unwrap();
 
     loop {
-        let event = select(espi.wait_for_event(), espi_service.wait_for_subsystem_msg()).await;
+        let event = select(espi.wait_for_event(), espi_service.wait_for_response()).await;
 
         match event {
             embassy_futures::select::Either::First(controller_event) => {
                 process_controller_event(&mut espi, espi_service, controller_event).await?
             }
             embassy_futures::select::Either::Second(host_msg) => {
-                espi_service.process_subsystem_msg(&mut espi, host_msg).await
+                espi_service.process_response_to_host(&mut espi, host_msg).await
             }
         }
     }

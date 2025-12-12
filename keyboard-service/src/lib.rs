@@ -20,6 +20,7 @@ use embedded_services::hid;
 pub const HID_KB_ID: hid::DeviceId = hid::DeviceId(0);
 
 /// HID keyboard error.
+#[derive(Debug)]
 pub enum KeyboardError {
     /// Rollover occurred
     Rollover,

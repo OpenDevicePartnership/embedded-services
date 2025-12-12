@@ -1,9 +1,7 @@
 use core::borrow::{Borrow, BorrowMut};
 
-use embedded_services::{
-    comms,
-    ec_type::message::{StdHostPayload, StdHostRequest},
-};
+use debug_service_messages::{DebugError, DebugResponse};
+use embedded_services::comms;
 
 use crate::{debug_service_entry, defmt_ring_logger::DEFMT_BUFFER, frame_available, shared_buffer};
 
@@ -20,7 +18,6 @@ pub async fn defmt_to_host_task() -> Result<embedded_services::Never, Error> {
     embedded_services::info!("defmt to host task start");
     use crate::debug_service::{host_endpoint_id, response_notify_signal};
     use embedded_services::comms::{self, EndpointID, Internal};
-    use embedded_services::ec_type::message::HostMsg;
 
     let framed_consumer = DEFMT_BUFFER.framed_consumer();
 
@@ -67,19 +64,13 @@ pub async fn defmt_to_host_task() -> Result<embedded_services::Never, Error> {
         // Send the staged defmt bytes frame as an ACPI-style message.
         // Scope the message so the shared borrow is dropped before we clear the buffer.
         {
-            let msg = HostMsg::Response(StdHostRequest {
-                command: embedded_services::ec_type::message::OdpCommand::Debug(
-                    embedded_services::ec_type::protocols::debug::DebugCmd::GetMsgs,
-                ),
-                status: 0,
-                payload: StdHostPayload::DebugGetMsgsResponse {
-                    debug_buf: {
-                        let access = shared_buffer().borrow().map_err(Error::Buffer)?;
-                        let slice: &[u8] = access.borrow();
-                        slice.try_into().unwrap()
-                    },
+            let msg = DebugResponse::DebugGetMsgsResponse {
+                debug_buf: {
+                    let access = shared_buffer().borrow().map_err(Error::Buffer)?;
+                    let slice: &[u8] = access.borrow();
+                    slice.try_into().unwrap()
                 },
-            });
+            };
             let _ = comms::send(EndpointID::Internal(Internal::Debug), host_ep, &msg).await;
             embedded_services::trace!("sent {} defmt bytes to host", copy_len);
         }
@@ -99,7 +90,6 @@ pub async fn no_avail_to_host_task() -> Result<embedded_services::Never, Error> 
     embedded_services::info!("no avail to host task start");
     use crate::debug_service::{host_endpoint_id, no_avail_notify_signal};
     use embedded_services::comms::{self, EndpointID, Internal};
-    use embedded_services::ec_type::message::HostMsg;
 
     let host_ep = host_endpoint_id().await;
 
@@ -111,13 +101,7 @@ pub async fn no_avail_to_host_task() -> Result<embedded_services::Never, Error> 
         buf[4..12].copy_from_slice(&0xDEADBEEFu64.to_be_bytes());
     }
 
-    let msg = HostMsg::Response(StdHostRequest {
-        command: embedded_services::ec_type::message::OdpCommand::Debug(
-            embedded_services::ec_type::protocols::debug::DebugCmd::GetMsgs,
-        ),
-        status: 1,
-        payload: StdHostPayload::ErrorResponse {},
-    });
+    let msg: Result<DebugResponse, DebugError> = Err(DebugError::UnspecifiedFailure);
 
     // Send DEADBEEF if host requests frame but non available
     loop {

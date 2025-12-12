@@ -4,11 +4,12 @@ use crate::{self as ts, mptf::process_request};
 
 pub async fn handle_requests() {
     loop {
-        let mut request = ts::wait_mctp_payload().await;
-        process_request(&mut request).await;
+        let request = ts::wait_mptf_request().await;
+        let result = process_request(&request).await;
         let send_result = ts::send_service_msg(
+            // TODO we should probably respond to the endpoint that requested us rather than hardcoding the return address like this
             comms::EndpointID::External(comms::External::Host),
-            &embedded_services::ec_type::message::HostMsg::Response(request),
+            &result,
         )
         .await;
 

@@ -5,6 +5,7 @@
 #![allow(clippy::unwrap_used)]
 
 mod espi_service;
+mod mctp;
 pub mod task;
 
 pub use espi_service::*;

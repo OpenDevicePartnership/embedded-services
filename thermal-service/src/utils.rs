@@ -1,5 +1,4 @@
 //! Helpful utilities for the thermal service
-use crate::mptf;
 use heapless::Deque;
 
 /// Buffer for storing samples
@@ -42,11 +41,11 @@ impl<const N: usize> SampleBuf<u16, N> {
 }
 
 /// Convert deciKelvin to degrees Celsius
-pub const fn dk_to_c(dk: mptf::DeciKelvin) -> f32 {
+pub const fn dk_to_c(dk: thermal_service_messages::DeciKelvin) -> f32 {
     (dk as f32 / 10.0) - 273.15
 }
 
 /// Convert degrees Celsius to deciKelvin
-pub const fn c_to_dk(c: f32) -> mptf::DeciKelvin {
-    ((c + 273.15) * 10.0) as mptf::DeciKelvin
+pub const fn c_to_dk(c: f32) -> thermal_service_messages::DeciKelvin {
+    ((c + 273.15) * 10.0) as thermal_service_messages::DeciKelvin
 }

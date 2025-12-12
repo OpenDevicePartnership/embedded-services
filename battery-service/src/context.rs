@@ -1,5 +1,7 @@
-use crate::device::{self, DeviceId};
+use crate::AcpiBatteryError;
+use crate::device::{self};
 use crate::device::{Device, FuelGaugeError};
+use battery_service_messages::{AcpiBatteryRequest, AcpiBatteryResponse, DeviceId};
 use embassy_sync::channel::Channel;
 use embassy_sync::channel::TrySendError;
 use embassy_sync::mutex::Mutex;
@@ -7,8 +9,6 @@ use embassy_sync::signal::Signal;
 use embassy_time::{Duration, with_timeout};
 use embedded_services::GlobalRawMutex;
 use embedded_services::comms::MailboxDelegateError;
-use embedded_services::ec_type::message::StdHostRequest;
-use embedded_services::ec_type::protocols::acpi::BatteryCmd;
 use embedded_services::power::policy::PowerCapability;
 use embedded_services::{IntrusiveList, debug, error, info, intrusive_list, trace, warn};
 
@@ -138,7 +138,7 @@ pub struct Context {
     battery_response: Channel<GlobalRawMutex, BatteryResponse, 1>,
     no_op_retry_count: AtomicUsize,
     config: Config,
-    acpi_request: Signal<GlobalRawMutex, StdHostRequest>,
+    acpi_request: Signal<GlobalRawMutex, AcpiBatteryRequest>,
     power_info: Mutex<GlobalRawMutex, PsuState>,
 }
 
@@ -161,8 +161,6 @@ impl Default for Config {
         Self::new()
     }
 }
-
-embedded_services::define_static_buffer!(acpi_buf, u8, [0u8; 133]);
 
 impl Context {
     /// Create a new context instance.
@@ -404,27 +402,51 @@ impl Context {
         }
     }
 
-    pub(super) async fn process_acpi_cmd(&self, acpi_msg: &mut StdHostRequest) {
-        match acpi_msg.command {
-            embedded_services::ec_type::message::OdpCommand::Battery(cmd) => match cmd {
-                BatteryCmd::GetBix => self.bix_handler(acpi_msg).await,
-                BatteryCmd::GetBst => self.bst_handler(acpi_msg).await,
-                BatteryCmd::GetPsr => self.psr_handler(acpi_msg).await,
-                BatteryCmd::GetPif => self.pif_handler(acpi_msg).await,
-                BatteryCmd::GetBps => self.bps_handler(acpi_msg).await,
-                BatteryCmd::SetBtp => self.btp_handler(acpi_msg).await,
-                BatteryCmd::SetBpt => self.bpt_handler(acpi_msg).await,
-                BatteryCmd::GetBpc => self.bpc_handler(acpi_msg).await,
-                BatteryCmd::SetBmc => self.bmc_handler(acpi_msg).await,
-                BatteryCmd::GetBmd => self.bmd_handler(acpi_msg).await,
-                BatteryCmd::GetBct => self.bct_handler(acpi_msg).await,
-                BatteryCmd::GetBtm => self.btm_handler(acpi_msg).await,
-                BatteryCmd::SetBms => self.bms_handler(acpi_msg).await,
-                BatteryCmd::SetBma => self.bma_handler(acpi_msg).await,
-                BatteryCmd::GetSta => self.sta_handler(acpi_msg).await,
-            },
-            _ => error!("Battery service: host command not found!"),
+    pub(super) async fn process_acpi_cmd(&self, acpi_msg: &AcpiBatteryRequest) {
+        let response: Result<AcpiBatteryResponse, AcpiBatteryError> = match *acpi_msg {
+            AcpiBatteryRequest::BatteryGetBixRequest { battery_id } => self.bix_handler(DeviceId(battery_id)).await,
+            AcpiBatteryRequest::BatteryGetBstRequest { battery_id } => self.bst_handler(DeviceId(battery_id)).await,
+            AcpiBatteryRequest::BatteryGetPsrRequest { battery_id } => self.psr_handler(DeviceId(battery_id)).await,
+            AcpiBatteryRequest::BatteryGetPifRequest { battery_id } => self.pif_handler(DeviceId(battery_id)).await,
+            AcpiBatteryRequest::BatteryGetBpsRequest { battery_id } => self.bps_handler(DeviceId(battery_id)).await,
+            AcpiBatteryRequest::BatterySetBtpRequest { battery_id, btp } => {
+                self.btp_handler(DeviceId(battery_id), btp).await
+            }
+            AcpiBatteryRequest::BatterySetBptRequest { battery_id, bpt } => {
+                self.bpt_handler(DeviceId(battery_id), bpt).await
+            }
+            AcpiBatteryRequest::BatteryGetBpcRequest { battery_id } => self.bpc_handler(DeviceId(battery_id)).await,
+            AcpiBatteryRequest::BatterySetBmcRequest { battery_id, bmc } => {
+                self.bmc_handler(DeviceId(battery_id), bmc).await
+            }
+            AcpiBatteryRequest::BatteryGetBmdRequest { battery_id } => self.bmd_handler(DeviceId(battery_id)).await,
+            AcpiBatteryRequest::BatteryGetBctRequest { battery_id, bct } => {
+                self.bct_handler(DeviceId(battery_id), bct).await
+            }
+            AcpiBatteryRequest::BatteryGetBtmRequest { battery_id, btm } => {
+                self.btm_handler(DeviceId(battery_id), btm).await
+            }
+
+            AcpiBatteryRequest::BatterySetBmsRequest { battery_id, bms } => {
+                self.bms_handler(DeviceId(battery_id), bms).await
+            }
+            AcpiBatteryRequest::BatterySetBmaRequest { battery_id, bma } => {
+                self.bma_handler(DeviceId(battery_id), bma).await
+            }
+            AcpiBatteryRequest::BatteryGetStaRequest { battery_id } => self.sta_handler(DeviceId(battery_id)).await,
+        };
+
+        if let Err(e) = response {
+            error!("Battery service command failed: {:?}", e);
         }
+
+        // TODO We should probably be responding to the requestor rather than just assuming the request came from the host
+        super::comms_send(
+            crate::EndpointID::External(embedded_services::comms::External::Host),
+            &response,
+        )
+        .await
+        .expect("comms_send is infallible");
     }
 
     pub(crate) fn get_fuel_gauge(&self, id: DeviceId) -> Option<&'static Device> {
@@ -472,11 +494,11 @@ impl Context {
         self.battery_event.receive().await
     }
 
-    pub(super) fn send_acpi_cmd(&self, raw: StdHostRequest) {
-        self.acpi_request.signal(raw);
+    pub(super) fn send_acpi_cmd(&self, request: AcpiBatteryRequest) {
+        self.acpi_request.signal(request);
     }
 
-    pub(super) async fn wait_acpi_cmd(&self) -> StdHostRequest {
+    pub(super) async fn wait_acpi_cmd(&self) -> AcpiBatteryRequest {
         self.acpi_request.wait().await
     }
 

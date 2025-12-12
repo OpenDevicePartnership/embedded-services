@@ -2,11 +2,11 @@
 
 use core::{any::Any, convert::Infallible};
 
+use battery_service_messages::{AcpiBatteryError, AcpiBatteryRequest};
 use context::BatteryEvent;
 use embassy_futures::select::select;
 use embedded_services::{
     comms::{self, EndpointID},
-    ec_type::message::StdHostRequest,
     trace,
 };
 
@@ -62,9 +62,9 @@ impl Service {
                 trace!("Battery service: state machine event recvd {:?}", event);
                 self.context.process(event).await
             }
-            Event::AcpiRequest(mut acpi_msg) => {
+            Event::AcpiRequest(acpi_msg) => {
                 trace!("Battery service: ACPI cmd recvd");
-                self.context.process_acpi_cmd(&mut acpi_msg).await
+                self.context.process_acpi_cmd(&acpi_msg).await
             }
         }
     }
@@ -74,7 +74,7 @@ impl Service {
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum Event {
     StateMachine(BatteryEvent),
-    AcpiRequest(StdHostRequest),
+    AcpiRequest(AcpiBatteryRequest),
 }
 
 impl Default for Service {
@@ -89,8 +89,8 @@ impl comms::MailboxDelegate for Service {
             self.context.send_event_no_wait(*event).map_err(|e| match e {
                 embassy_sync::channel::TrySendError::Full(_) => comms::MailboxDelegateError::BufferFull,
             })?
-        } else if let Some(acpi_cmd) = message.data.get::<StdHostRequest>() {
-            self.context.send_acpi_cmd(*acpi_cmd);
+        } else if let Some(battery_request) = message.data.get::<AcpiBatteryRequest>() {
+            self.context.send_acpi_cmd(*battery_request);
         } else if let Some(power_policy_msg) = message.data.get::<embedded_services::power::policy::CommsMessage>() {
             self.context.set_power_info(&power_policy_msg.data)?;
         }
@@ -111,6 +111,7 @@ pub fn register_fuel_gauge(device: &'static device::Device) -> Result<(), embedd
     Ok(())
 }
 
+// TODO @matteo why is this public? this lets anyone send arbitrary data from us, right?
 /// Use the battery service endpoint to send data to other subsystems and services.
 pub async fn comms_send(endpoint_id: EndpointID, data: &impl Any) -> Result<(), Infallible> {
     SERVICE.endpoint.send(endpoint_id, data).await

@@ -102,6 +102,7 @@ dependencies = [
 name = "battery-service"
 version = "0.1.0"
 dependencies = [
+ "battery-service-messages",
  "defmt 0.3.100",
  "embassy-futures",
  "embassy-sync",
@@ -112,6 +113,16 @@ dependencies = [
  "embedded-services",
  "mctp-rs",
  "zerocopy",
+]
+
+[[package]]
+name = "battery-service-messages"
+version = "0.1.0"
+dependencies = [
+ "defmt 0.3.100",
+ "embedded-batteries-async",
+ "embedded-services",
+ "num_enum",
 ]
 
 [[package]]
@@ -349,6 +360,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5793572036e0a6638977c7370c6afc423eac848ee8495f079b8fd3964de7b9f9"
 dependencies = [
  "yaml-rust2",
+]
+
+[[package]]
+name = "debug-service-messages"
+version = "0.1.0"
+dependencies = [
+ "defmt 0.3.100",
+ "embedded-services",
+ "num_enum",
 ]
 
 [[package]]
@@ -793,8 +813,11 @@ dependencies = [
 name = "espi-service"
 version = "0.1.0"
 dependencies = [
+ "battery-service-messages",
+ "bitfield 0.17.0",
  "cortex-m",
  "cortex-m-rt",
+ "debug-service-messages",
  "defmt 0.3.100",
  "embassy-futures",
  "embassy-imxrt",
@@ -802,6 +825,8 @@ dependencies = [
  "embassy-time",
  "embedded-services",
  "mctp-rs",
+ "num_enum",
+ "thermal-service-messages",
 ]
 
 [[package]]
@@ -1505,6 +1530,16 @@ name = "tap"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "55937e1799185b12863d447f42597ed69d9928686b8d88a1df17376a097d8369"
+
+[[package]]
+name = "thermal-service-messages"
+version = "0.1.0"
+dependencies = [
+ "defmt 0.3.100",
+ "embedded-services",
+ "num_enum",
+ "uuid",
+]
 
 [[package]]
 name = "thiserror"

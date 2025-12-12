@@ -1,7 +1,5 @@
 //! EC Internal Messages
 
-use crate::ec_type::protocols::{acpi, debug, mctp::OdpCommandCode, mptf};
-
 #[allow(missing_docs)]
 #[derive(Clone, Copy, Debug)]
 pub enum CapabilitiesMessage {
@@ -68,26 +66,6 @@ pub enum BatteryMessage {
     SampleTime(u32),
 }
 
-/// ACPI Message, compatible with comms system
-#[derive(Debug, Clone, Copy)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct HostRequest<Command: Copy, Payload: Copy> {
-    /// Command
-    pub command: Command,
-    /// Status code
-    pub status: u8,
-    /// Data payload
-    pub payload: Payload,
-}
-
-/// Notification type to be sent to Host
-#[derive(Clone, Copy, Debug, PartialEq)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct NotificationMsg {
-    /// Interrupt offset
-    pub offset: u8,
-}
-
 #[allow(missing_docs)]
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ThermalMessage {
@@ -109,162 +87,102 @@ pub enum ThermalMessage {
     Tmp1High(u32),
 }
 
-/// Message type that services can send to communicate with the Host.
-#[derive(Debug, Clone, Copy)]
+/////////////////////////////////////////////////////
+
+// TODO @PR is this really where this belongs or should it be a different module? why is this module called 'ec_type'?
+
+/// Error type for serializing/deserializing messages
+#[derive(Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub enum HostMsg<Command: Copy, Payload: Copy> {
-    /// Notification without data. After receivng a notification,
-    /// typically the host will request some data from the EC
-    Notification(NotificationMsg),
-    /// Response to Host request.
-    Response(HostRequest<Command, Payload>),
+pub enum MessageSerializationError {
+    /// The message payload does not represent a valid message
+    InvalidPayload(&'static str),
+
+    /// The message discriminant does not represent a known message type
+    UnknownMessageDiscriminant(u16),
+
+    /// The provided buffer is too small to serialize the message
+    BufferTooSmall,
+
+    /// Unspecified error
+    Other(&'static str),
 }
 
-/// ODP specific command code that can come in from the host.
-#[derive(Debug, Clone, Copy)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub enum OdpCommand {
-    /// Battery commands
-    Battery(acpi::BatteryCmd),
-    /// Thermal commands
-    Thermal(mptf::ThermalCmd),
-    /// Debug commands
-    Debug(debug::DebugCmd),
+/// Trait for serializing and deserializing messages
+pub trait SerializableMessage: Sized {
+    /// Serializes the message into the provided buffer.
+    /// On success, returns the number of bytes written
+    fn serialize(self, buffer: &mut [u8]) -> Result<usize, MessageSerializationError>;
+
+    ///  Returns the discriminant needed to deserialize this type of message.
+    fn discriminant(&self) -> u16;
+
+    /// Deserializes the message from the provided buffer.
+    fn deserialize(discriminant: u16, buffer: &[u8]) -> Result<Self, MessageSerializationError>;
 }
 
-/// Standard Battery Service Model Number String Size
-pub const STD_BIX_MODEL_SIZE: usize = 8;
-/// Standard Battery Service Serial Number String Size
-pub const STD_BIX_SERIAL_SIZE: usize = 8;
-/// Standard Battery Service Battery Type String Size
-pub const STD_BIX_BATTERY_SIZE: usize = 8;
-/// Standard Battery Service OEM Info String Size
-pub const STD_BIX_OEM_SIZE: usize = 8;
-/// Standard Power Policy Service Model Number String Size
-pub const STD_PIF_MODEL_SIZE: usize = 8;
-/// Standard Power Policy Serial Number String Size
-pub const STD_PIF_SERIAL_SIZE: usize = 8;
-/// Standard Power Policy Service OEM Info String Size
-pub const STD_PIF_OEM_SIZE: usize = 8;
-/// Standard Debug Service Log Buffer Size
-pub const STD_DEBUG_BUF_SIZE: usize = 128;
+// Prevent other types from implementing SerializableResponse - they should instead use SerializableMessage on a Response type and an Error type
+#[doc(hidden)]
+mod private {
+    pub trait Sealed {}
 
-/// Standard ODP Host Payload
-pub type StdHostPayload = crate::ec_type::protocols::mctp::Odp<
-    STD_BIX_MODEL_SIZE,
-    STD_BIX_SERIAL_SIZE,
-    STD_BIX_BATTERY_SIZE,
-    STD_BIX_OEM_SIZE,
-    STD_PIF_MODEL_SIZE,
-    STD_PIF_SERIAL_SIZE,
-    STD_PIF_OEM_SIZE,
-    STD_DEBUG_BUF_SIZE,
->;
+    impl<T, E> Sealed for Result<T, E> {}
+}
 
-/// Standard Host Request
-pub type StdHostRequest = HostRequest<OdpCommand, StdHostPayload>;
-/// Standard Host Message
-pub type StdHostMsg = HostMsg<OdpCommand, StdHostPayload>;
+/// Responses are of type Result<T, E> where T and E both implement SerializableMessage
+pub trait SerializableResponse: private::Sealed + Sized {
+    /// The type of the response when the operation being responsed to succeeded
+    type SuccessType: SerializableMessage;
 
-impl From<OdpCommandCode> for OdpCommand {
-    fn from(value: OdpCommandCode) -> Self {
-        match value {
-            OdpCommandCode::BatteryGetBixRequest | OdpCommandCode::BatteryGetBixResponse => {
-                OdpCommand::Battery(acpi::BatteryCmd::GetBix)
-            }
-            OdpCommandCode::BatteryGetBstRequest | OdpCommandCode::BatteryGetBstResponse => {
-                OdpCommand::Battery(acpi::BatteryCmd::GetBst)
-            }
-            OdpCommandCode::BatteryGetPsrRequest | OdpCommandCode::BatteryGetPsrResponse => {
-                OdpCommand::Battery(acpi::BatteryCmd::GetPsr)
-            }
-            OdpCommandCode::BatteryGetPifRequest | OdpCommandCode::BatteryGetPifResponse => {
-                OdpCommand::Battery(acpi::BatteryCmd::GetPif)
-            }
-            OdpCommandCode::BatteryGetBpsRequest | OdpCommandCode::BatteryGetBpsResponse => {
-                OdpCommand::Battery(acpi::BatteryCmd::GetBps)
-            }
-            OdpCommandCode::BatterySetBtpRequest | OdpCommandCode::BatterySetBtpResponse => {
-                OdpCommand::Battery(acpi::BatteryCmd::SetBtp)
-            }
-            OdpCommandCode::BatterySetBptRequest | OdpCommandCode::BatterySetBptResponse => {
-                OdpCommand::Battery(acpi::BatteryCmd::SetBpt)
-            }
-            OdpCommandCode::BatteryGetBpcRequest | OdpCommandCode::BatteryGetBpcResponse => {
-                OdpCommand::Battery(acpi::BatteryCmd::GetBpc)
-            }
-            OdpCommandCode::BatterySetBmcRequest | OdpCommandCode::BatterySetBmcResponse => {
-                OdpCommand::Battery(acpi::BatteryCmd::SetBmc)
-            }
-            OdpCommandCode::BatteryGetBmdRequest | OdpCommandCode::BatteryGetBmdResponse => {
-                OdpCommand::Battery(acpi::BatteryCmd::GetBmd)
-            }
-            OdpCommandCode::BatteryGetBctRequest | OdpCommandCode::BatteryGetBctResponse => {
-                OdpCommand::Battery(acpi::BatteryCmd::GetBct)
-            }
-            OdpCommandCode::BatteryGetBtmRequest | OdpCommandCode::BatteryGetBtmResponse => {
-                OdpCommand::Battery(acpi::BatteryCmd::GetBtm)
-            }
-            OdpCommandCode::BatterySetBmsRequest | OdpCommandCode::BatterySetBmsResponse => {
-                OdpCommand::Battery(acpi::BatteryCmd::SetBms)
-            }
-            OdpCommandCode::BatterySetBmaRequest | OdpCommandCode::BatterySetBmaResponse => {
-                OdpCommand::Battery(acpi::BatteryCmd::SetBma)
-            }
-            OdpCommandCode::BatteryGetStaRequest | OdpCommandCode::BatteryGetStaResponse => {
-                OdpCommand::Battery(acpi::BatteryCmd::GetSta)
-            }
-            OdpCommandCode::ThermalGetTmpRequest | OdpCommandCode::ThermalGetTmpResponse => {
-                OdpCommand::Thermal(mptf::ThermalCmd::GetTmp)
-            }
-            OdpCommandCode::ThermalSetThrsRequest | OdpCommandCode::ThermalSetThrsResponse => {
-                OdpCommand::Thermal(mptf::ThermalCmd::SetThrs)
-            }
-            OdpCommandCode::ThermalGetThrsRequest | OdpCommandCode::ThermalGetThrsResponse => {
-                OdpCommand::Thermal(mptf::ThermalCmd::GetThrs)
-            }
-            OdpCommandCode::ThermalSetScpRequest | OdpCommandCode::ThermalSetScpResponse => {
-                OdpCommand::Thermal(mptf::ThermalCmd::SetScp)
-            }
-            OdpCommandCode::ThermalGetVarRequest | OdpCommandCode::ThermalGetVarResponse => {
-                OdpCommand::Thermal(mptf::ThermalCmd::GetVar)
-            }
-            OdpCommandCode::ThermalSetVarRequest | OdpCommandCode::ThermalSetVarResponse => {
-                OdpCommand::Thermal(mptf::ThermalCmd::SetVar)
-            }
-            OdpCommandCode::DebugGetMsgsRequest | OdpCommandCode::DebugGetMsgsResponse => {
-                OdpCommand::Debug(debug::DebugCmd::GetMsgs)
-            }
+    /// The type of the response when the operation being responsed to failed
+    type ErrorType: SerializableMessage;
+
+    /// Returns true if the response represents a successful operation, false otherwise
+    fn is_ok(&self) -> bool;
+
+    /// Returns a unique discriminant that can be used to deserialize the specific type of response.
+    /// Discriminants can be reused for success and error messages.
+    fn discriminant(&self) -> u16;
+
+    /// Writes the response into the provided buffer.
+    /// On success, returns the number of bytes written
+    fn serialize(self, buffer: &mut [u8]) -> Result<usize, MessageSerializationError>;
+
+    /// Attempts to deserialize the response from the provided buffer.
+    fn deserialize(is_error: bool, discriminant: u16, buffer: &[u8]) -> Result<Self, MessageSerializationError>;
+}
+
+impl<T, E> SerializableResponse for Result<T, E>
+where
+    T: SerializableMessage,
+    E: SerializableMessage,
+{
+    type SuccessType = T;
+    type ErrorType = E;
+
+    fn is_ok(&self) -> bool {
+        Result::<T, E>::is_ok(self)
+    }
+
+    fn discriminant(&self) -> u16 {
+        match self {
+            Ok(success_value) => success_value.discriminant(),
+            Err(error_value) => error_value.discriminant(),
         }
     }
-}
 
-// TODO: Maybe map to Response instead?
-impl From<OdpCommand> for OdpCommandCode {
-    fn from(value: OdpCommand) -> Self {
-        match value {
-            OdpCommand::Battery(acpi::BatteryCmd::GetBix) => OdpCommandCode::BatteryGetBixRequest,
-            OdpCommand::Battery(acpi::BatteryCmd::GetBst) => OdpCommandCode::BatteryGetBstRequest,
-            OdpCommand::Battery(acpi::BatteryCmd::GetPsr) => OdpCommandCode::BatteryGetPsrRequest,
-            OdpCommand::Battery(acpi::BatteryCmd::GetPif) => OdpCommandCode::BatteryGetPifRequest,
-            OdpCommand::Battery(acpi::BatteryCmd::GetBps) => OdpCommandCode::BatteryGetBpsRequest,
-            OdpCommand::Battery(acpi::BatteryCmd::SetBtp) => OdpCommandCode::BatterySetBtpRequest,
-            OdpCommand::Battery(acpi::BatteryCmd::SetBpt) => OdpCommandCode::BatterySetBptRequest,
-            OdpCommand::Battery(acpi::BatteryCmd::GetBpc) => OdpCommandCode::BatteryGetBpcRequest,
-            OdpCommand::Battery(acpi::BatteryCmd::SetBmc) => OdpCommandCode::BatterySetBmcRequest,
-            OdpCommand::Battery(acpi::BatteryCmd::GetBmd) => OdpCommandCode::BatteryGetBmdRequest,
-            OdpCommand::Battery(acpi::BatteryCmd::GetBct) => OdpCommandCode::BatteryGetBctRequest,
-            OdpCommand::Battery(acpi::BatteryCmd::GetBtm) => OdpCommandCode::BatteryGetBtmRequest,
-            OdpCommand::Battery(acpi::BatteryCmd::SetBms) => OdpCommandCode::BatterySetBmsRequest,
-            OdpCommand::Battery(acpi::BatteryCmd::SetBma) => OdpCommandCode::BatterySetBmaRequest,
-            OdpCommand::Battery(acpi::BatteryCmd::GetSta) => OdpCommandCode::BatteryGetStaRequest,
-            OdpCommand::Thermal(mptf::ThermalCmd::GetTmp) => OdpCommandCode::ThermalGetTmpRequest,
-            OdpCommand::Thermal(mptf::ThermalCmd::SetThrs) => OdpCommandCode::ThermalSetThrsRequest,
-            OdpCommand::Thermal(mptf::ThermalCmd::GetThrs) => OdpCommandCode::ThermalGetThrsRequest,
-            OdpCommand::Thermal(mptf::ThermalCmd::SetScp) => OdpCommandCode::ThermalSetScpRequest,
-            OdpCommand::Thermal(mptf::ThermalCmd::GetVar) => OdpCommandCode::ThermalGetVarRequest,
-            OdpCommand::Thermal(mptf::ThermalCmd::SetVar) => OdpCommandCode::ThermalSetVarRequest,
-            OdpCommand::Debug(debug::DebugCmd::GetMsgs) => OdpCommandCode::DebugGetMsgsRequest,
+    fn serialize(self, buffer: &mut [u8]) -> Result<usize, MessageSerializationError> {
+        match self {
+            Ok(success_value) => success_value.serialize(buffer),
+            Err(error_value) => error_value.serialize(buffer),
+        }
+    }
+
+    fn deserialize(is_error: bool, discriminant: u16, buffer: &[u8]) -> Result<Self, MessageSerializationError> {
+        if is_error {
+            Ok(Err(E::deserialize(discriminant, buffer)?))
+        } else {
+            Ok(Ok(T::deserialize(discriminant, buffer)?))
         }
     }
 }

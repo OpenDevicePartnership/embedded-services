@@ -2,7 +2,6 @@ use embassy_sync::{once_lock::OnceLock, signal::Signal};
 use embedded_services::GlobalRawMutex;
 use embedded_services::buffer::{OwnedRef, SharedRef};
 use embedded_services::comms::{self, EndpointID, Internal};
-use embedded_services::ec_type::message::StdHostRequest;
 use embedded_services::{debug, error};
 
 // Maximum number of bytes to request per defmt frame write grant.
@@ -15,7 +14,7 @@ use embedded_services::{debug, error};
 // - No partial publication: a frame is either not yet committed or fully committed.
 // If a defmt log event were to exceed this size, it will be split across multiple
 // BBQueue frames (each ≤ 1024). The consumer always observes complete frames.
-pub(crate) const DEFMT_MAX_BYTES: u16 = embedded_services::ec_type::message::STD_DEBUG_BUF_SIZE as u16;
+pub(crate) const DEFMT_MAX_BYTES: u16 = debug_service_messages::STD_DEBUG_BUF_SIZE as u16;
 
 // Static buffer for ACPI-style messages carrying defmt frames
 embedded_services::define_static_buffer!(defmt_acpi_buf, u8, [0u8; DEFMT_MAX_BYTES as usize]);
@@ -69,7 +68,7 @@ impl Service {
 
 impl comms::MailboxDelegate for Service {
     fn receive(&self, message: &comms::Message) -> Result<(), comms::MailboxDelegateError> {
-        if let Some(_request) = message.data.get::<StdHostRequest>() {
+        if let Some(_request) = message.data.get::<debug_service_messages::DebugRequest>() {
             // Host sent an ACPI/MCTP request (e.g. GetDebugBuffer). Treat this as the
             // trigger to send the staged debug buffer back to the host.
             embedded_services::trace!("Received host ACPI request for debug buffer from {:?}", message.from);
