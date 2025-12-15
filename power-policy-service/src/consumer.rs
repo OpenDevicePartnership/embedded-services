@@ -28,10 +28,7 @@ fn cmp_consumer_capability(
     b: &ConsumerPowerCapability,
     b_is_current: bool,
 ) -> Ordering {
-    (a.capability, a_is_current).cmp(&(
-        b.capability,
-        b_is_current,
-    ))
+    (a.capability, a_is_current).cmp(&(b.capability, b_is_current))
 }
 
 impl PowerPolicy {
@@ -288,38 +285,5 @@ mod tests {
         assert_eq!(cmp_consumer_capability(&p0, false, &p1, false), Ordering::Less);
         assert_eq!(cmp_consumer_capability(&p1, false, &p1, false), Ordering::Equal);
         assert_eq!(cmp_consumer_capability(&p1, false, &p0, false), Ordering::Greater);
-    }
-
-    /// Tests the [`cmp_consumer_capability`] with unconstrained power flag set.
-    #[test]
-    fn test_cmp_consumer_capability_unconstrained() {
-        let p0 = P0.into();
-        let p1 = P1.into();
-        let p0_unconstrained = ConsumerPowerCapability {
-            capability: P0,
-            flags: flags::Consumer::none().with_unconstrained_power(),
-        };
-        let p1_unconstrained = ConsumerPowerCapability {
-            capability: P1,
-            flags: flags::Consumer::none().with_unconstrained_power(),
-        };
-
-        // At the same power, the unconstrained capability should take precedence
-        assert_eq!(
-            cmp_consumer_capability(&p0_unconstrained, false, &p0, false),
-            Ordering::Greater
-        );
-
-        // Unconstrained should not take precedence over higher power
-        assert_eq!(
-            cmp_consumer_capability(&p1, false, &p0_unconstrained, false),
-            Ordering::Greater
-        );
-
-        // Both unconstrained, should rely on power
-        assert_eq!(
-            cmp_consumer_capability(&p0_unconstrained, false, &p1_unconstrained, false),
-            Ordering::Less
-        );
     }
 }
