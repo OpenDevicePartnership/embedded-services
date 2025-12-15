@@ -28,9 +28,8 @@ fn cmp_consumer_capability(
     b: &ConsumerPowerCapability,
     b_is_current: bool,
 ) -> Ordering {
-    (a.capability, a.flags.unconstrained_power(), a_is_current).cmp(&(
+    (a.capability, a_is_current).cmp(&(
         b.capability,
-        b.flags.unconstrained_power(),
         b_is_current,
     ))
 }
