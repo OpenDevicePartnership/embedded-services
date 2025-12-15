@@ -134,27 +134,36 @@ pub(crate) fn compute_bix<'a>(
             oem_info: [0u8; STD_BIX_OEM_SIZE],
             battery_swapping_capability: embedded_batteries_async::acpi::BatterySwapCapability::NonSwappable,
         };
+
+    #[allow(clippy::indexing_slicing)] // Slicing is guarded by min functions
     bix_return.model_number[..core::cmp::min(STD_BIX_MODEL_SIZE - 1, static_cache.device_name.len() - 1)]
         .copy_from_slice(
+            #[allow(clippy::indexing_slicing)] // Slicing is guarded by min functions
             static_cache.device_name[..core::cmp::min(STD_BIX_MODEL_SIZE - 1, static_cache.device_name.len() - 1)]
                 .try_into()
                 .map_err(|_| ())?,
         );
+    #[allow(clippy::indexing_slicing)] // Slicing is guarded by min functions
     bix_return.serial_number[..core::cmp::min(STD_BIX_SERIAL_SIZE - 1, static_cache.serial_num.len() - 1)]
         .copy_from_slice(
+            #[allow(clippy::indexing_slicing)] // Slicing is guarded by min functions
             static_cache.serial_num[..core::cmp::min(STD_BIX_SERIAL_SIZE - 1, static_cache.serial_num.len() - 1)]
                 .try_into()
                 .map_err(|_| ())?,
         );
+    #[allow(clippy::indexing_slicing)] // Slicing is guarded by min functions
     bix_return.battery_type[..core::cmp::min(STD_BIX_BATTERY_SIZE - 1, static_cache.device_chemistry.len() - 1)]
         .copy_from_slice(
+            #[allow(clippy::indexing_slicing)] // Slicing is guarded by min functions
             static_cache.device_chemistry
                 [..core::cmp::min(STD_BIX_BATTERY_SIZE - 1, static_cache.device_chemistry.len() - 1)]
                 .try_into()
                 .map_err(|_| ())?,
         );
+    #[allow(clippy::indexing_slicing)] // Slicing is guarded by min functions
     bix_return.oem_info[..core::cmp::min(STD_BIX_OEM_SIZE - 1, static_cache.manufacturer_name.len() - 1)]
         .copy_from_slice(
+            #[allow(clippy::indexing_slicing)] // Slicing is guarded by min functions
             static_cache.manufacturer_name
                 [..core::cmp::min(STD_BIX_OEM_SIZE - 1, static_cache.manufacturer_name.len() - 1)]
                 .try_into()
