@@ -26,16 +26,24 @@ pub enum PsuType {
     // End to fit into 4 bits
 }
 
-impl From<u8> for PsuType {
-    fn from(value: u8) -> Self {
+/// Conversion error for [`PsuType`]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct InvalidPsuType(pub u8);
+
+impl TryFrom<u8> for PsuType {
+    type Error = InvalidPsuType;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
-            1 => Self::TypeC,
-            2 => Self::DcJack,
-            12 => Self::Custom0,
-            13 => Self::Custom1,
-            14 => Self::Custom2,
-            15 => Self::Custom3,
-            _ => Self::Unknown,
+            0 => Ok(Self::Unknown),
+            1 => Ok(Self::TypeC),
+            2 => Ok(Self::DcJack),
+            12 => Ok(Self::Custom0),
+            13 => Ok(Self::Custom1),
+            14 => Ok(Self::Custom2),
+            15 => Ok(Self::Custom3),
+            value => Err(InvalidPsuType(value)),
         }
     }
 }
@@ -93,7 +101,7 @@ impl Consumer {
 
     /// Return PSU type
     pub fn psu_type(&self) -> PsuType {
-        PsuType::from(self.0.psu_type())
+        PsuType::try_from(self.0.psu_type()).unwrap_or(PsuType::Unknown)
     }
 
     /// Set PSU type
@@ -131,7 +139,7 @@ impl Provider {
 
     /// Return PSU type
     pub fn psu_type(&self) -> PsuType {
-        PsuType::from(self.0.psu_type())
+        PsuType::try_from(self.0.psu_type()).unwrap_or(PsuType::Unknown)
     }
 
     /// Set PSU type
@@ -145,15 +153,29 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_from_psu_type() {
-        assert_eq!(PsuType::from(1), PsuType::TypeC);
-        assert_eq!(PsuType::from(2), PsuType::DcJack);
-        assert_eq!(PsuType::from(12), PsuType::Custom0);
-        assert_eq!(PsuType::from(13), PsuType::Custom1);
-        assert_eq!(PsuType::from(14), PsuType::Custom2);
-        assert_eq!(PsuType::from(15), PsuType::Custom3);
-        assert_eq!(PsuType::from(0), PsuType::Unknown);
-        assert_eq!(PsuType::from(3), PsuType::Unknown);
+    fn test_psu_type_conversion() {
+        // Test valid conversions
+        assert_eq!(PsuType::try_from(u8::from(PsuType::TypeC)), Ok(PsuType::TypeC));
+        assert_eq!(PsuType::try_from(u8::from(PsuType::DcJack)), Ok(PsuType::DcJack));
+        assert_eq!(PsuType::try_from(u8::from(PsuType::Custom0)), Ok(PsuType::Custom0));
+        assert_eq!(PsuType::try_from(u8::from(PsuType::Custom1)), Ok(PsuType::Custom1));
+        assert_eq!(PsuType::try_from(u8::from(PsuType::Custom2)), Ok(PsuType::Custom2));
+        assert_eq!(PsuType::try_from(u8::from(PsuType::Custom3)), Ok(PsuType::Custom3));
+        assert_eq!(PsuType::try_from(u8::from(PsuType::Unknown)), Ok(PsuType::Unknown));
+
+        assert_eq!(PsuType::try_from(3), Err(InvalidPsuType(3)));
+        assert_eq!(PsuType::try_from(4), Err(InvalidPsuType(4)));
+        assert_eq!(PsuType::try_from(5), Err(InvalidPsuType(5)));
+        assert_eq!(PsuType::try_from(6), Err(InvalidPsuType(6)));
+        assert_eq!(PsuType::try_from(7), Err(InvalidPsuType(7)));
+        assert_eq!(PsuType::try_from(8), Err(InvalidPsuType(8)));
+        assert_eq!(PsuType::try_from(9), Err(InvalidPsuType(9)));
+        assert_eq!(PsuType::try_from(10), Err(InvalidPsuType(10)));
+        assert_eq!(PsuType::try_from(11), Err(InvalidPsuType(11)));
+
+        for i in 16..=255 {
+            assert_eq!(PsuType::try_from(i), Err(InvalidPsuType(i)));
+        }
     }
 
     #[test]
