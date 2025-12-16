@@ -16,7 +16,7 @@ pub async fn reports_task<T: embedded_hal::digital::OutputPin>(keyboard_interrup
 // this must be a macro until statics are removed.
 #[macro_export]
 macro_rules! impl_host_request_task {
-    ($kb_int_ty:ty) => {
+    ($i2c_slave_ty:ty) => {
         async fn host_requests_task(kb_i2c: $i2c_slave_ty) {
             // Revisit: Make this buffer size configurable?
             embedded_services::define_static_buffer!(hid_buf, u8, [0u8; 256]);
