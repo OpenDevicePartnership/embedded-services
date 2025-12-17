@@ -1,9 +1,11 @@
 //! Consumer and provider flags, these are used to signal additional information about a consumer/provider request
 
 use bitfield::bitfield;
+use num_enum::{IntoPrimitive, TryFromPrimitive};
 
 /// PSU type
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, IntoPrimitive, TryFromPrimitive)]
+#[num_enum(error_type(name = InvalidPsuType, constructor = InvalidPsuType))]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[repr(u8)]
 #[non_exhaustive]
@@ -30,29 +32,6 @@ pub enum PsuType {
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct InvalidPsuType(pub u8);
-
-impl TryFrom<u8> for PsuType {
-    type Error = InvalidPsuType;
-
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
-        match value {
-            0 => Ok(Self::Unknown),
-            1 => Ok(Self::TypeC),
-            2 => Ok(Self::DcJack),
-            12 => Ok(Self::Custom0),
-            13 => Ok(Self::Custom1),
-            14 => Ok(Self::Custom2),
-            15 => Ok(Self::Custom3),
-            value => Err(InvalidPsuType(value)),
-        }
-    }
-}
-
-impl From<PsuType> for u8 {
-    fn from(value: PsuType) -> Self {
-        value as u8
-    }
-}
 
 bitfield! {
     /// Raw consumer flags bit field
