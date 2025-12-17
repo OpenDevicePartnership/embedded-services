@@ -140,52 +140,28 @@ pub(crate) fn compute_bix<'a>(
         .model_number
         .get_mut(..moduel_number_len)
         .ok_or(())?
-        .copy_from_slice(
-            static_cache
-                .device_name
-                .get(..moduel_number_len)
-                .ok_or(())?
-                .try_into()
-                .map_err(|_| ())?,
-        );
+        .copy_from_slice(static_cache.device_name.get(..moduel_number_len).ok_or(())?);
 
     let serial_number_len = core::cmp::min(STD_BIX_SERIAL_SIZE - 1, static_cache.serial_num.len() - 1);
     bix_return
         .serial_number
         .get_mut(..serial_number_len)
         .ok_or(())?
-        .copy_from_slice(
-            static_cache
-                .serial_num
-                .get(..serial_number_len)
-                .ok_or(())?
-                .try_into()
-                .map_err(|_| ())?,
-        );
+        .copy_from_slice(static_cache.serial_num.get(..serial_number_len).ok_or(())?);
 
     let battery_type_len = core::cmp::min(STD_BIX_BATTERY_SIZE - 1, static_cache.device_chemistry.len() - 1);
     bix_return
         .battery_type
         .get_mut(..battery_type_len)
         .ok_or(())?
-        .copy_from_slice(
-            static_cache
-                .device_chemistry
-                .get(..battery_type_len)
-                .ok_or(())?
-                .try_into()
-                .map_err(|_| ())?,
-        );
+        .copy_from_slice(static_cache.device_chemistry.get(..battery_type_len).ok_or(())?);
 
     let oem_info_len = core::cmp::min(STD_BIX_OEM_SIZE - 1, static_cache.manufacturer_name.len() - 1);
-    bix_return.oem_info.get_mut(..oem_info_len).ok_or(())?.copy_from_slice(
-        static_cache
-            .manufacturer_name
-            .get(..oem_info_len)
-            .ok_or(())?
-            .try_into()
-            .map_err(|_| ())?,
-    );
+    bix_return
+        .oem_info
+        .get_mut(..oem_info_len)
+        .ok_or(())?
+        .copy_from_slice(static_cache.manufacturer_name.get(..oem_info_len).ok_or(())?);
 
     Ok(bix_return)
 }
