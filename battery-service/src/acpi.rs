@@ -135,12 +135,12 @@ pub(crate) fn compute_bix<'a>(
             battery_swapping_capability: embedded_batteries_async::acpi::BatterySwapCapability::NonSwappable,
         };
 
-    let moduel_number_len = core::cmp::min(STD_BIX_MODEL_SIZE - 1, static_cache.device_name.len() - 1);
+    let model_number_len = core::cmp::min(STD_BIX_MODEL_SIZE - 1, static_cache.device_name.len() - 1);
     bix_return
         .model_number
-        .get_mut(..moduel_number_len)
+        .get_mut(..model_number_len)
         .ok_or(())?
-        .copy_from_slice(static_cache.device_name.get(..moduel_number_len).ok_or(())?);
+        .copy_from_slice(static_cache.device_name.get(..model_number_len).ok_or(())?);
 
     let serial_number_len = core::cmp::min(STD_BIX_SERIAL_SIZE - 1, static_cache.serial_num.len() - 1);
     bix_return
