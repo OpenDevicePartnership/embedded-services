@@ -119,7 +119,7 @@ impl PowerPolicy {
             // Chargers should be powered at this point, but in case they are not...
             if let embedded_services::power::policy::charger::ChargerResponseData::UnpoweredAck = device
                 .execute_command(PolicyEvent::PolicyConfiguration(
-                    connected_consumer.consumer_power_capability.capability,
+                    connected_consumer.consumer_power_capability,
                 ))
                 .await?
             {
@@ -130,7 +130,7 @@ impl PowerPolicy {
                 init_chargers().await?;
                 device
                     .execute_command(PolicyEvent::PolicyConfiguration(
-                        connected_consumer.consumer_power_capability.capability,
+                        connected_consumer.consumer_power_capability,
                     ))
                     .await?;
             }
@@ -138,7 +138,7 @@ impl PowerPolicy {
         self.comms_notify(CommsMessage {
             data: CommsData::ConsumerConnected(
                 connected_consumer.device_id,
-                connected_consumer.consumer_power_capability.capability,
+                connected_consumer.consumer_power_capability,
             ),
         })
         .await;
@@ -151,9 +151,12 @@ impl PowerPolicy {
         for node in self.context.chargers() {
             let device = node.data::<ChargerDevice>().ok_or(Error::InvalidDevice)?;
             if let embedded_services::power::policy::charger::ChargerResponseData::UnpoweredAck = device
-                .execute_command(PolicyEvent::PolicyConfiguration(PowerCapability {
-                    voltage_mv: 0,
-                    current_ma: 0,
+                .execute_command(PolicyEvent::PolicyConfiguration(ConsumerPowerCapability {
+                    capability: PowerCapability {
+                        voltage_mv: 0,
+                        current_ma: 0,
+                    },
+                    flags: flags::Consumer::none(),
                 }))
                 .await?
             {

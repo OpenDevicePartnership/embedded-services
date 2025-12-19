@@ -51,7 +51,7 @@ cortex-m.workspace = true
 critical-section = { workspace = true, features = ["std"] }
 embassy-futures.workspace = true
 embassy-sync = { workspace = true, features = ["std"] }
-embassy-time = { workspace = true, features = ["std"] }
+embassy-time = { workspace = true, features = ["std", "generic-queue-8"] }
 embassy-time-driver = { workspace = true }
 rstest.workspace = true
 static_cell.workspace = true
