@@ -26,12 +26,12 @@ impl EmbeddedCrc<u32> {
 
     pub async fn calculate(&mut self, bytes: &[u8]) -> Result<u32, EmbeddedCrcError> {
         // Set starting value for CRC calculation
-        let initial = if self.current_crc.is_none() {
+        let initial = if let Some(crc) = self.current_crc {
+            // For split calculations, undo the algorithm's output adjustments
+            self.un_finalize(crc)
+        } else {
             // Use the algorithm initial value if no CRC has begun calculation
             self.algorithm.init
-        } else {
-            // For split calculations, undo the algorithm's output adjustments
-            self.un_finalize(self.current_crc.unwrap())
         };
 
         match crate::crc_calculate_u32(initial, self.algorithm, bytes).await {
@@ -76,12 +76,12 @@ impl EmbeddedCrc<u16> {
 
     pub async fn calculate(&mut self, bytes: &[u8]) -> Result<u16, EmbeddedCrcError> {
         // Set starting value for CRC calculation
-        let initial = if self.current_crc.is_none() {
+        let initial = if let Some(crc) = self.current_crc {
+            // For split calculations, undo the algorithm's output adjustments
+            self.un_finalize(crc)
+        } else {
             // Use the algorithm initial value if no CRC has begun calculation
             self.algorithm.init
-        } else {
-            // For split calculations, undo the algorithm's output adjustments
-            self.un_finalize(self.current_crc.unwrap())
         };
 
         match crate::crc_calculate_u16(initial, self.algorithm, bytes).await {

@@ -68,5 +68,6 @@ pub async fn system_reset() -> ! {
 
     // no equivalent reset option for std environment
     #[cfg(not(feature = "cortex-m"))]
-    panic!("Cannot reset without NVIC");
+    #[allow(clippy::empty_loop)]
+    loop {}
 }
