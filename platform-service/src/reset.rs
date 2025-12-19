@@ -48,6 +48,7 @@ impl Blocker {
 }
 
 /// Signals and waits for all registered blockers to complete their async operations before performing a platform-specific reset, typically NVIC_RESET
+#[cfg(feature = "cortex-m")]
 pub async fn system_reset() -> ! {
     // signal and wait for completion as two separate events to allow for alternative scheduling algorithms to take effect
     let blockers = BLOCKERS.get();
@@ -63,11 +64,5 @@ pub async fn system_reset() -> ! {
     }
 
     // 3. perform platform reset
-    #[cfg(feature = "cortex-m")]
     cortex_m::peripheral::SCB::sys_reset();
-
-    // no equivalent reset option for std environment
-    #[cfg(not(feature = "cortex-m"))]
-    #[allow(clippy::empty_loop)]
-    loop {}
 }
