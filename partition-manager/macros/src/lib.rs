@@ -7,11 +7,15 @@ use syn::{Ident, LitStr, parse::Lookahead1};
 fn transform(input: Input) -> Result<proc_macro2::TokenStream, syn::Error> {
     let mut path = PathBuf::from(input.manifest.value());
     if path.is_relative() {
+        #[allow(clippy::unwrap_used)]
+        //panic safety: CARGO_MANIFEST_DIR is always set by cargo when invoking proc-macros, and this is not deployed code.
         let manifest_dir = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
         path = manifest_dir.join(path);
     }
 
     let mut file_contents = String::new();
+    #[allow(clippy::unwrap_used)]
+    //panic safety: This is not deployed code.
     File::open(&path)
         .map_err(|e| {
             syn::Error::new(
