@@ -250,7 +250,11 @@ impl<W: CfuWriterAsync> CfuComponentDefault<W> {
                         if let InternalResponseData::FwVersionResponse(fwv) =
                             route_request(*id, RequestData::FwVersionRequest).await?
                         {
-                            comp_info[index + 1] = fwv.component_info[0];
+                            comp_info[index + 1] = fwv
+                                .component_info
+                                .first()
+                                .cloned()
+                                .ok_or(CfuError::ProtocolError(CfuProtocolError::BadResponse))?;
                         } else {
                             /*error!(
                                 "Failed to get firmware version from sub-component: {}, adding dummy info to list",
