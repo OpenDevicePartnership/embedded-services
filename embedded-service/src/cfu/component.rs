@@ -236,12 +236,14 @@ impl<W: CfuWriterAsync> CfuComponentDefault<W> {
                         .map(|x| x.unwrap_or_default())
                         .collect::<Vec<ComponentId, MAX_SUBCMPT_COUNT>>();
                     component_count += arr.len();
+
+                    #[allow(clippy::indexing_slicing)]
+                    // panic safety: adding 1 here is safe because MAX_CMPT_COUNT is 1 more than MAX_SUBCMPT_COUNT
                     for (index, id) in arr.iter().enumerate() {
                         //info!("Forwarding GetFwVersion command to sub-component: {}", id);
                         if let InternalResponseData::FwVersionResponse(fwv) =
                             route_request(*id, RequestData::FwVersionRequest).await?
                         {
-                            // adding 1 here is safe because MAX_CMPT_COUNT is 1 more than MAX_SUBCMPT_COUNT
                             comp_info[index + 1] = fwv.component_info[0];
                         } else {
                             /*error!(
