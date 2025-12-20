@@ -237,6 +237,12 @@ impl<W: CfuWriterAsync> CfuComponentDefault<W> {
                         .collect::<Vec<ComponentId, MAX_SUBCMPT_COUNT>>();
                     component_count += arr.len();
 
+                    const _: () = {
+                        core::assert!(
+                            MAX_CMPT_COUNT == MAX_SUBCMPT_COUNT + 1,
+                            "MAX_CMPT_COUNT must be one more than MAX_SUBCMPT_COUNT"
+                        );
+                    };
                     #[allow(clippy::indexing_slicing)]
                     // panic safety: adding 1 here is safe because MAX_CMPT_COUNT is 1 more than MAX_SUBCMPT_COUNT
                     for (index, id) in arr.iter().enumerate() {
