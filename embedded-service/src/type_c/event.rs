@@ -426,8 +426,8 @@ impl PortPending {
     /// Marks the indexes given by the iterator as pending
     pub fn pend_ports<I: IntoIterator<Item = usize>>(&mut self, iter: I) {
         for port in iter {
-            if let Err(e) = self.pend_port(port) {
-                error!("Error pending port {}", e);
+            if self.pend_port(port).is_err() {
+                error!("Error pending port {}", port);
             }
         }
     }
