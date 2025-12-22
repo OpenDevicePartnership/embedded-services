@@ -6,6 +6,7 @@ use crate::CfuClient;
 pub async fn task() {
     info!("Starting cfu client task");
     static CLIENT: OnceLock<CfuClient> = OnceLock::new();
+    #[allow(clippy::expect_used)] // panic safety: singleton panic on initialization
     let cfuclient = CLIENT.get_or_init(|| CfuClient::create().expect("cfu client singleton already initialized"));
 
     if comms::register_endpoint(cfuclient, &cfuclient.tp).await.is_err() {

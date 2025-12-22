@@ -234,6 +234,8 @@ impl<'a> Buffer<'a> {
     ///
     /// If the component is busy, this will wait indefinitely since the component will not be able to process
     async fn wait_buffered_content(&self, is_busy: bool) -> FwUpdateContentCommand {
+        // panic safety: this branch is only taken if the component is busy, so this future will never complete
+        #[allow(clippy::unreachable)]
         if is_busy {
             let () = pending().await;
             unreachable!();
