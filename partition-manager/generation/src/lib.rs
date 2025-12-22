@@ -166,9 +166,7 @@ pub(crate) mod internal {
             partitions.sort_by_key(|(_, partition)| partition.offset);
 
             for (i, (partition_name_x, partition_x)) in partitions.iter().enumerate() {
-                #[allow(clippy::indexing_slicing)]
-                //panic safety: min used to avoid out-of-bounds and this code is not deployed.
-                for (partition_name_y, partition_y) in partitions[(i + 1).min(partitions.len())..].iter() {
+                for (partition_name_y, partition_y) in partitions.iter().skip(i) {
                     if partition_x.overlaps(partition_y) {
                         return Err(anyhow!(
                             "Partitions {} and {} overlap",
