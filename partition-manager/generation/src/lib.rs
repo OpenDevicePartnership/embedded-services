@@ -166,7 +166,7 @@ pub(crate) mod internal {
             partitions.sort_by_key(|(_, partition)| partition.offset);
 
             for (i, (partition_name_x, partition_x)) in partitions.iter().enumerate() {
-                for (partition_name_y, partition_y) in partitions.iter().skip(i) {
+                for (partition_name_y, partition_y) in partitions.iter().skip(i + 1) {
                     if partition_x.overlaps(partition_y) {
                         return Err(anyhow!(
                             "Partitions {} and {} overlap",
