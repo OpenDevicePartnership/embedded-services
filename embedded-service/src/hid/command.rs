@@ -387,7 +387,6 @@ impl<'a> Command<'a> {
 
     /// Encodes an operation with no report ID or additional data into a slice
     /// Returns the number of bytes written and the remaining buffer
-    ///
     // panic safety: we check the length at the start of the function
     #[allow(clippy::indexing_slicing)]
     fn encode_basic_op(buf: &mut [u8], opcode: Opcode) -> Result<(usize, &mut [u8]), Error> {
@@ -546,7 +545,7 @@ impl<'a> Command<'a> {
                 let buf_len = buf.len();
                 buf.get_mut(0..2)
                     .ok_or(Error::InvalidSize(InvalidSizeError {
-                        expected: 3,
+                        expected: 2,
                         actual: buf_len,
                     }))?
                     .copy_from_slice(&(opcode | state).to_le_bytes());
