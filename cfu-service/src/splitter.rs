@@ -89,9 +89,7 @@ impl<'a, C: Customization> Splitter<'a, C> {
         })
         .await;
 
-        if !success {
-            self.create_invalid_fw_version_response()
-        } else if let Some(versions) = versions.get(..self.devices.len()) {
+        if success && let Some(versions) = versions.get(..self.devices.len()) {
             let mut overall_version = self.customization.resolve_fw_versions(versions);
 
             // The overall component version comes first
