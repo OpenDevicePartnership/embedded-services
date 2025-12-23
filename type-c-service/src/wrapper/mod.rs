@@ -299,7 +299,9 @@ where
 
         if events != PortEvent::none() {
             let mut pending = PortPending::none();
-            pending.pend_port(global_port_id.0 as usize);
+            pending
+                .pend_port(global_port_id.0 as usize)
+                .map_err(|_| Error::Pd(PdError::InvalidPort))?;
             self.registration.pd_controller.notify_ports(pending);
             trace!("P{}: Notified service for events: {:#?}", global_port_id.0, events);
         }
@@ -333,7 +335,9 @@ where
 
         // Pend this port
         let mut pending = PortPending::none();
-        pending.pend_port(global_port_id.0 as usize);
+        pending
+            .pend_port(global_port_id.0 as usize)
+            .map_err(|_| Error::Pd(PdError::InvalidPort))?;
         self.registration.pd_controller.notify_ports(pending);
         Ok(())
     }

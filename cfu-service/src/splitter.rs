@@ -89,13 +89,14 @@ impl<'a, C: Customization> Splitter<'a, C> {
         })
         .await;
 
-        if !success {
-            self.create_invalid_fw_version_response()
-        } else {
-            let mut overall_version = self.customization.resolve_fw_versions(&versions[..self.devices.len()]);
+        if success && let Some(versions) = versions.get(..self.devices.len()) {
+            let mut overall_version = self.customization.resolve_fw_versions(versions);
+
             // The overall component version comes first
             overall_version.component_info[0].component_id = self.cfu_device.component_id();
             InternalResponseData::FwVersionResponse(overall_version)
+        } else {
+            self.create_invalid_fw_version_response()
         }
     }
 
@@ -119,13 +120,10 @@ impl<'a, C: Customization> Splitter<'a, C> {
         })
         .await;
 
-        if !success {
-            self.create_invalid_fw_version_response()
+        if success && let Some(offer_responses_slice) = offer_responses.get(..self.devices.len()) {
+            InternalResponseData::OfferResponse(self.customization.resolve_offer_response(offer_responses_slice))
         } else {
-            InternalResponseData::OfferResponse(
-                self.customization
-                    .resolve_offer_response(&offer_responses[..self.devices.len()]),
-            )
+            self.create_invalid_fw_version_response()
         }
     }
 
@@ -145,13 +143,10 @@ impl<'a, C: Customization> Splitter<'a, C> {
         })
         .await;
 
-        if !success {
-            Self::create_content_rejection(content.header.sequence_num)
+        if success && let Some(content_responses_slice) = content_responses.get(..self.devices.len()) {
+            InternalResponseData::ContentResponse(self.customization.resolve_content_response(content_responses_slice))
         } else {
-            InternalResponseData::ContentResponse(
-                self.customization
-                    .resolve_content_response(&content_responses[..self.devices.len()]),
-            )
+            Self::create_content_rejection(content.header.sequence_num)
         }
     }
 
@@ -230,6 +225,8 @@ async fn map_slice_join<'i, 'o, I, O, F: Future<Output = Option<O>>>(
 ) -> bool {
     let mut iter = zip(input.iter(), output.iter_mut());
     loop {
+        // panic safety: other combinations aren't possible because we're using a fused iterator
+        #[allow(clippy::unreachable)]
         match (iter.next(), iter.next(), iter.next(), iter.next()) {
             (None, None, None, None) => {
                 // No more items to process
@@ -273,7 +270,6 @@ async fn map_slice_join<'i, 'o, I, O, F: Future<Output = Option<O>>>(
                 }
             }
             _ => {
-                // Other combinations aren't possible because we're using a fused iterator
                 unreachable!()
             }
         }
