@@ -103,34 +103,33 @@ pub async fn send_request(from: ComponentId, request: RequestData) -> Result<Int
 
 /// Convenience function to route a request to a specific component
 pub async fn route_request(to: ComponentId, request: RequestData) -> Result<InternalResponseData, CfuError> {
-    let device = get_device(to).await;
-    if device.is_none() {
-        return Err(CfuError::InvalidComponent);
+    if let Some(device) = get_device(to).await {
+        device
+            .execute_device_request(request)
+            .await
+            .map_err(CfuError::ProtocolError)
+    } else {
+        Err(CfuError::InvalidComponent)
     }
-    device
-        .unwrap()
-        .execute_device_request(request)
-        .await
-        .map_err(CfuError::ProtocolError)
 }
 
 /// Send a request to the specific CFU device, but don't wait for a response
 pub async fn send_device_request(to: ComponentId, request: RequestData) -> Result<(), CfuError> {
-    let device = get_device(to).await;
-    if device.is_none() {
-        return Err(CfuError::InvalidComponent);
+    if let Some(device) = get_device(to).await {
+        device.send_request(request).await;
+        Ok(())
+    } else {
+        Err(CfuError::InvalidComponent)
     }
-    device.unwrap().send_request(request).await;
-    Ok(())
 }
 
 /// Wait for a response from the specific CFU device
 pub async fn wait_device_response(to: ComponentId) -> Result<InternalResponseData, CfuError> {
-    let device = get_device(to).await;
-    if device.is_none() {
-        return Err(CfuError::InvalidComponent);
+    if let Some(device) = get_device(to).await {
+        Ok(device.wait_response().await)
+    } else {
+        Err(CfuError::InvalidComponent)
     }
-    Ok(device.unwrap().wait_response().await)
 }
 
 /// Singleton struct to give access to the cfu client context

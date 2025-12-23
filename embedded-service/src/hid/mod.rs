@@ -76,6 +76,8 @@ pub struct Descriptor {
 
 impl Descriptor {
     /// Serializes a descriptor into the slice
+    // panic safety: we check the length at the start of the function
+    #[allow(clippy::indexing_slicing)]
     pub fn encode_into_slice(&self, buf: &mut [u8]) -> Result<usize, Error> {
         if buf.len() < DESCRIPTOR_LEN {
             return Err(Error::InvalidSize(InvalidSizeError {
@@ -104,6 +106,8 @@ impl Descriptor {
     }
 
     /// Deserializes a descriptor from the slice
+    // panic safety: we check the length at the start of the function
+    #[allow(clippy::indexing_slicing)]
     pub fn decode_from_slice(buf: &[u8]) -> Result<Self, Error> {
         if buf.len() < DESCRIPTOR_LEN {
             return Err(Error::InvalidSize(InvalidSizeError {

@@ -236,13 +236,25 @@ impl<W: CfuWriterAsync> CfuComponentDefault<W> {
                         .map(|x| x.unwrap_or_default())
                         .collect::<Vec<ComponentId, MAX_SUBCMPT_COUNT>>();
                     component_count += arr.len();
+
+                    const _: () = {
+                        core::assert!(
+                            MAX_CMPT_COUNT == MAX_SUBCMPT_COUNT + 1,
+                            "MAX_CMPT_COUNT must be one more than MAX_SUBCMPT_COUNT"
+                        );
+                    };
+                    #[allow(clippy::indexing_slicing)]
+                    // panic safety: adding 1 here is safe because MAX_CMPT_COUNT is 1 more than MAX_SUBCMPT_COUNT
                     for (index, id) in arr.iter().enumerate() {
                         //info!("Forwarding GetFwVersion command to sub-component: {}", id);
                         if let InternalResponseData::FwVersionResponse(fwv) =
                             route_request(*id, RequestData::FwVersionRequest).await?
                         {
-                            // adding 1 here is safe because MAX_CMPT_COUNT is 1 more than MAX_SUBCMPT_COUNT
-                            comp_info[index + 1] = fwv.component_info[0];
+                            comp_info[index + 1] = fwv
+                                .component_info
+                                .first()
+                                .cloned()
+                                .ok_or(CfuError::ProtocolError(CfuProtocolError::BadResponse))?;
                         } else {
                             /*error!(
                                 "Failed to get firmware version from sub-component: {}, adding dummy info to list",

@@ -2,6 +2,7 @@
 use embedded_usb_pd::pdo::{Common, Contract};
 use embedded_usb_pd::type_c;
 
+use crate::error;
 use crate::power::policy;
 
 pub mod comms;

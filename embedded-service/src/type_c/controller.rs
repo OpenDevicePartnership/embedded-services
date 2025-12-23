@@ -475,11 +475,7 @@ impl<'a> Device<'a> {
 
     /// Covert a local port ID to a global port ID
     pub fn lookup_global_port(&self, port: LocalPortId) -> Result<GlobalPortId, PdError> {
-        if port.0 >= self.num_ports as u8 {
-            return Err(PdError::InvalidParams);
-        }
-
-        Ok(self.ports[port.0 as usize])
+        Ok(*self.ports.get(port.0 as usize).ok_or(PdError::InvalidParams)?)
     }
 
     /// Convert a global port ID to a local port ID
