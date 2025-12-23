@@ -61,7 +61,7 @@ mod espi_service {
                     }
                     HostMsg::Response(acpi) => {
                         // Stage the response bytes into the mock OOB buffer for the host
-                        let mut access = self.resp_owned.borrow_mut();
+                        let mut access = self.resp_owned.borrow_mut().unwrap();
                         let buf: &mut [u8] = core::borrow::BorrowMut::borrow_mut(&mut access);
                         if let StdHostPayload::DebugGetMsgsResponse { debug_buf } = acpi.payload {
                             let copy_len = core::cmp::min(debug_buf.len(), buf.len());
@@ -121,7 +121,7 @@ mod espi_service {
             let request = b"GetDebugBuffer";
             let req_len = request.len();
             {
-                let mut access = req_owned.borrow_mut();
+                let mut access = req_owned.borrow_mut().unwrap();
                 let buf: &mut [u8] = BorrowMut::borrow_mut(&mut access);
                 buf[..req_len].copy_from_slice(request);
             }
@@ -143,7 +143,7 @@ mod espi_service {
             // Wait for the response payload staged by the Debug service, then "forward" it to host
             let len = wait_response_len().await;
             let buf = response_buf();
-            let access = buf.borrow();
+            let access = buf.borrow().unwrap();
             let slice: &[u8] = core::borrow::Borrow::borrow(&access);
             let bytes = &slice[..len.min(slice.len())];
             let preview = bytes
@@ -194,8 +194,8 @@ async fn debug_service() -> ! {
 
 #[embassy_executor::task]
 async fn defmt_to_host_task() -> ! {
-    debug_service::task::defmt_to_host_task().await;
-    unreachable!()
+    let Err(e) = debug_service::task::defmt_to_host_task().await;
+    panic!("defmt_to_host_task error: {e:?}");
 }
 
 fn main() {

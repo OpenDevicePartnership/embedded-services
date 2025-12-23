@@ -35,7 +35,7 @@ impl<A: AddressMode + Copy, B: I2c<A>> Device<A, B> {
             }
         }
         let mut bus = self.bus.lock().await;
-        let mut borrow = self.buffer.borrow_mut();
+        let mut borrow = self.buffer.borrow_mut().map_err(Error::Buffer)?;
         let mut reg = [0u8; 2];
         let buf: &mut [u8] = borrow.borrow_mut();
         let buf_len = buf.len();
@@ -70,19 +70,19 @@ impl<A: AddressMode + Copy, B: I2c<A>> Device<A, B> {
     pub async fn read_hid_descriptor(&self) -> Result<SharedRef<'static, u8>, Error<B::Error>> {
         let desc = self.get_hid_descriptor().await?;
 
-        let mut borrow = self.buffer.borrow_mut();
+        let mut borrow = self.buffer.borrow_mut().map_err(Error::Buffer)?;
         let buf: &mut [u8] = borrow.borrow_mut();
 
         let len = desc.encode_into_slice(buf).map_err(Error::Hid)?;
         trace!("HID descriptor length: {}", len);
-        Ok(self.buffer.reference().slice(0..len))
+        self.buffer.reference().slice(0..len).map_err(Error::Buffer)
     }
 
     pub async fn read_report_descriptor(&self) -> Result<SharedRef<'static, u8>, Error<B::Error>> {
         info!("Sending report descriptor");
         let desc = self.get_hid_descriptor().await?;
 
-        let mut borrow = self.buffer.borrow_mut();
+        let mut borrow = self.buffer.borrow_mut().map_err(Error::Buffer)?;
         let buf: &mut [u8] = borrow.borrow_mut();
         let buffer_len = buf.len();
         let reg = desc.w_report_desc_register.to_le_bytes();
@@ -105,14 +105,14 @@ impl<A: AddressMode + Copy, B: I2c<A>> Device<A, B> {
             return Err(Error::Bus(e));
         }
 
-        Ok(self.buffer.reference().slice(0..len))
+        self.buffer.reference().slice(0..len).map_err(Error::Buffer)
     }
 
     pub async fn handle_input_report(&self) -> Result<SharedRef<'static, u8>, Error<B::Error>> {
         info!("Handling input report");
         let desc = self.get_hid_descriptor().await?;
 
-        let mut borrow = self.buffer.borrow_mut();
+        let mut borrow = self.buffer.borrow_mut().map_err(Error::Buffer)?;
         let buf: &mut [u8] = borrow.borrow_mut();
         let buffer_len = buf.len();
         let buf = buf
@@ -128,7 +128,10 @@ impl<A: AddressMode + Copy, B: I2c<A>> Device<A, B> {
             return Err(Error::Bus(e));
         }
 
-        Ok(self.buffer.reference().slice(0..desc.w_max_input_length as usize))
+        self.buffer
+            .reference()
+            .slice(0..desc.w_max_input_length as usize)
+            .map_err(Error::Buffer)
     }
 
     pub async fn handle_command(
@@ -137,7 +140,7 @@ impl<A: AddressMode + Copy, B: I2c<A>> Device<A, B> {
     ) -> Result<Option<Response<'static>>, Error<B::Error>> {
         info!("Handling command");
 
-        let mut borrow = self.buffer.borrow_mut();
+        let mut borrow = self.buffer.borrow_mut().map_err(Error::Buffer)?;
         let buf: &mut [u8] = borrow.borrow_mut();
         let buffer_len = buf.len();
 

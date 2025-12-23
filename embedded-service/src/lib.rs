@@ -62,6 +62,14 @@ pub type SyncCell<T> = critical_section_cell::CriticalSectionCell<T>;
 #[cfg(all(not(test), target_os = "none", target_arch = "arm"))]
 pub type SyncCell<T> = thread_mode_cell::ThreadModeCell<T>;
 
+/// Until the Never type (`!`) is stable, the best we have is `Infallible`.
+///
+/// Although they mean the same thing for the most part from the type system pov,
+/// `Never` typically reads better than `Infallible` in some cases.
+///
+/// For example, a result that should never return unless there is an error: `Result<Never, Error>`.
+pub type Never = core::convert::Infallible;
+
 /// initialize all service static interfaces as required. Ideally, this is done before subsystem initialization
 #[allow(clippy::unused_async)]
 pub async fn init() {

@@ -485,7 +485,7 @@ impl<'a> Command<'a> {
                 len += register_len;
             }
             Command::SetReport(report_type, report_id, data) => {
-                let borrow = data.borrow();
+                let borrow = data.borrow().map_err(|_| Error::InvalidData)?;
                 let data: &[u8] = borrow.borrow();
 
                 let (command_len, buf) = Self::encode_common(buf, Opcode::SetReport, Some(*report_type), *report_id)?;

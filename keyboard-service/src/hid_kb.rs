@@ -82,7 +82,7 @@ impl HidI2cReport {
 
         let err = match error {
             super::KeyboardError::Ghosting | super::KeyboardError::Rollover => [ERROR_ROLL_OVER; REPORT_MAX_SZ],
-            super::KeyboardError::Scan | super::KeyboardError::Command => [ERROR_UNDEFINED; REPORT_MAX_SZ],
+            _ => [ERROR_UNDEFINED; REPORT_MAX_SZ],
         };
 
         HidI2cReport::from_report_slice(super::HidReportSlice(&err), max_len)
@@ -121,7 +121,7 @@ pub(crate) fn init(reg_file: hid::RegisterFile) -> &'static hid::Device {
 /// This task handles calling the keyboard `scan` in a loop, while also listening for commands
 /// from the HID request handler task. To minimize delay between scan loops, we quickly process commands
 /// and let the HID request handler task handle forwarding the response to the host.
-pub async fn handle_keyboard<T: HidKeyboard>(mut hid_kb: T) {
+pub async fn handle_keyboard<T: HidKeyboard>(mut hid_kb: T) -> Result<embedded_services::Never, super::KeyboardError> {
     let context = CONTEXT.get().await;
 
     // Buffer holding immediate report requests
@@ -172,7 +172,7 @@ pub async fn handle_keyboard<T: HidKeyboard>(mut hid_kb: T) {
                     {
                         let report = hid_kb.get_report(report_type, report_id);
                         let report = HidI2cReport::from_report_slice(report, max_input_len).to_bytes();
-                        let mut buf = owned_buf.borrow_mut();
+                        let mut buf = owned_buf.borrow_mut().map_err(super::KeyboardError::Buffer)?;
                         let buf: &mut [u8] = buf.borrow_mut();
                         buf[..report.len()].copy_from_slice(&report);
                     }
@@ -250,7 +250,7 @@ pub async fn handle_keyboard<T: HidKeyboard>(mut hid_kb: T) {
 /// This is a separate task because we want the main `scan` loop to quickly fire off an available report
 /// without it being blocked waiting for communication with the host. We also use a queue in case multiple reports
 /// are available before one is fully processed to prevent any lost key events.
-pub async fn handle_reports(mut kb_int: impl OutputPin) {
+pub async fn handle_reports(mut kb_int: impl OutputPin) -> Result<embedded_services::Never, super::KeyboardError> {
     let context = CONTEXT.get().await;
 
     embedded_services::define_static_buffer!(input_buf, u8, [0u8; INPUT_MAX]);
@@ -266,7 +266,7 @@ pub async fn handle_reports(mut kb_int: impl OutputPin) {
 
         // Once we have one, copy it to outgoing buffer
         {
-            let mut buf = owned_buf.borrow_mut();
+            let mut buf = owned_buf.borrow_mut().map_err(super::KeyboardError::Buffer)?;
             let buf: &mut [u8] = buf.borrow_mut();
             buf.copy_from_slice(&report);
         }
@@ -302,6 +302,7 @@ pub async fn handle_host_requests(host: &'static mut hid_service::i2c::Host<impl
             Ok(()) => context.send_complete.signal(()),
             Err(hid_service::Error::Bus(_)) => error!("Host I2C bus error"),
             Err(hid_service::Error::Hid(e)) => error!("Host HID error: {:?}", e),
+            Err(hid_service::Error::Buffer(e)) => error!("Host buffer error: {:?}", e),
         }
     }
 }

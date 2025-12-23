@@ -98,8 +98,8 @@ unsafe extern "C" {
 
 #[embassy_executor::task]
 async fn espi_service_task(espi: embassy_imxrt::espi::Espi<'static>, memory_map_buffer: &'static mut [u8]) -> ! {
-    espi_service::task::espi_service(espi, memory_map_buffer).await;
-    unreachable!()
+    let Err(e) = espi_service::task::espi_service(espi, memory_map_buffer).await;
+    panic!("espi_service_task error: {e:?}");
 }
 
 #[embassy_executor::main]

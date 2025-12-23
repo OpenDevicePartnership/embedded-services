@@ -27,7 +27,7 @@ mod sender {
 
         pub async fn send(&self, even: bool) {
             {
-                let mut borrow = self.buffer.borrow_mut();
+                let mut borrow = self.buffer.borrow_mut().unwrap();
                 let data: &mut [u8] = borrow.borrow_mut();
                 let data = &mut data[0..4];
                 if even {
@@ -69,7 +69,7 @@ mod receiver {
                 .get::<SharedRef<'_, u8>>()
                 .ok_or(comms::MailboxDelegateError::MessageNotFound)?;
 
-            let borrow = data.borrow();
+            let borrow = data.borrow().unwrap();
             let data: &[u8] = borrow.borrow();
             info!("Received data: {data:?}");
 

@@ -25,7 +25,7 @@ mod device {
 
         pub async fn key_down(&self, key: Key) {
             {
-                let mut borrow = self.event_buffer.borrow_mut();
+                let mut borrow = self.event_buffer.borrow_mut().unwrap();
                 let buf: &mut [KeyEvent] = borrow.borrow_mut();
 
                 buf[0] = KeyEvent::Make(key);
@@ -33,14 +33,17 @@ mod device {
 
             keyboard::broadcast_message(
                 self.id,
-                MessageData::Event(Event::KeyEvent(self.id, self.event_buffer.reference().slice(0..1))),
+                MessageData::Event(Event::KeyEvent(
+                    self.id,
+                    self.event_buffer.reference().slice(0..1).unwrap(),
+                )),
             )
             .await;
         }
 
         pub async fn key_up(&self, key: Key) {
             {
-                let mut borrow = self.event_buffer.borrow_mut();
+                let mut borrow = self.event_buffer.borrow_mut().unwrap();
                 let buf: &mut [KeyEvent] = borrow.borrow_mut();
 
                 buf[0] = KeyEvent::Break(key);
@@ -48,7 +51,10 @@ mod device {
 
             keyboard::broadcast_message(
                 self.id,
-                MessageData::Event(Event::KeyEvent(self.id, self.event_buffer.reference().slice(0..1))),
+                MessageData::Event(Event::KeyEvent(
+                    self.id,
+                    self.event_buffer.reference().slice(0..1).unwrap(),
+                )),
             )
             .await;
         }
@@ -84,7 +90,7 @@ mod host {
 
             match &message.data {
                 MessageData::Event(Event::KeyEvent(id, events)) => {
-                    let borrow = events.borrow();
+                    let borrow = events.borrow().unwrap();
                     let buf: &[KeyEvent] = borrow.borrow();
 
                     for event in buf {

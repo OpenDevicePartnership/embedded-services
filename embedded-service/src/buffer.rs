@@ -18,11 +18,26 @@ use core::ops::Range;
 use crate::SyncCell;
 use core::sync::atomic::AtomicPtr;
 
+/// Buffer error.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum Error {
+    /// Buffer already borrowed immutably.
+    BorrowedImmutably,
+    /// Buffer already borrowed mutably.
+    BorrowedMutably,
+    /// Range is out-of-bounds.
+    InvalidRange,
+    /// Buffer is poisoned and should be considered no longer valid.
+    Poisoned,
+}
+
 #[derive(Copy, Clone, PartialEq, Eq)]
 enum Status {
     None,
     Mutable,
     Immutable(u32),
+    Poisoned,
 }
 
 /// Underlying buffer storage struct
@@ -65,24 +80,33 @@ impl<'a, T> Buffer<'a, T> {
         self.len == 0
     }
 
-    fn borrow(&self, mutable: bool) {
+    fn borrow(&self, mutable: bool) -> Result<(), Error> {
         let status = match (self.status.get(), mutable) {
             (Status::None, false) => Status::Immutable(1),
             (Status::None, true) => Status::Mutable,
-            (Status::Mutable, _) => panic!("Buffer already borrowed mutably"),
+            (Status::Mutable, _) => return Err(Error::BorrowedMutably),
             (Status::Immutable(count), false) => Status::Immutable(count + 1),
-            (Status::Immutable(_), true) => panic!("Buffer already borrowed immutably"),
+            (Status::Immutable(_), true) => return Err(Error::BorrowedImmutably),
+            (Status::Poisoned, _) => return Err(Error::Poisoned),
         };
         self.status.set(status);
+        Ok(())
     }
 
+    // In the case of invalid status, we can't return an error since this is within the drop handler,
+    // but don't want to panic either.
+    // Instead, mark this buffer `Poisoned` to signify it's now in a bad/unexpected state.
     fn drop_borrow(&self) {
         let status = match self.status.get() {
-            Status::None => panic!("Unborrowed buffer dropped"),
+            // Unborrowed buffer dropped
+            Status::None => Status::Poisoned,
             Status::Mutable => Status::None,
-            Status::Immutable(0) => panic!("Buffer borrow count underflow"),
+            // Buffer borrow count underflow
+            Status::Immutable(0) => Status::Poisoned,
             Status::Immutable(1) => Status::None,
             Status::Immutable(count) => Status::Immutable(count - 1),
+            // Buffer already poisoned
+            Status::Poisoned => Status::Poisoned,
         };
         self.status.set(status);
     }
@@ -94,18 +118,20 @@ pub struct OwnedRef<'a, T>(&'a Buffer<'a, T>);
 impl<'a, T> OwnedRef<'a, T> {
     /// Creates an immutable reference to the buffer
     pub fn reference(&self) -> SharedRef<'a, T> {
-        SharedRef::new(self.0, 0..self.0.len())
+        SharedRef::new_full_len(self.0)
     }
 
     /// Borrows the buffer immutably
-    /// Panics if the buffer is already borrowed mutably
-    pub fn borrow(&self) -> Access<'a, T> {
+    ///
+    /// Returns an error if the buffer is already borrowed mutably
+    pub fn borrow(&self) -> Result<Access<'a, T>, Error> {
         Access::new(self.0, 0..self.0.len())
     }
 
     /// Borrows the buffer mutably
-    /// Panics if the buffer is already borrowed
-    pub fn borrow_mut(&self) -> AccessMut<'a, T> {
+    ///
+    /// Returns an error if the buffer is already borrowed
+    pub fn borrow_mut(&self) -> Result<AccessMut<'a, T>, Error> {
         AccessMut::new(self.0)
     }
 
@@ -124,9 +150,9 @@ impl<'a, T> OwnedRef<'a, T> {
 pub struct AccessMut<'a, T>(&'a Buffer<'a, T>);
 
 impl<'a, T> AccessMut<'a, T> {
-    fn new(buffer: &'a Buffer<'a, T>) -> Self {
-        buffer.borrow(true);
-        Self(buffer)
+    fn new(buffer: &'a Buffer<'a, T>) -> Result<Self, Error> {
+        buffer.borrow(true)?;
+        Ok(Self(buffer))
     }
 }
 
@@ -160,26 +186,44 @@ pub struct SharedRef<'a, T> {
 }
 
 impl<'a, T> SharedRef<'a, T> {
-    /// Creates a new immutable buffer refference
-    pub fn new(buffer: &'a Buffer<'a, T>, slice: Range<usize>) -> Self {
-        Self { buffer, slice }
+    // Creates a new immutable buffer reference with the same length as the original buffer
+    // Allows us to make an infallible version of `Self::new()` for `OwnedRef::reference()`
+    fn new_full_len(buffer: &'a Buffer<'a, T>) -> Self {
+        Self {
+            buffer,
+            slice: 0..buffer.len(),
+        }
+    }
+
+    /// Creates a new immutable buffer reference
+    ///
+    /// Returns an error if the given slice is out-of-bounds
+    pub fn new(buffer: &'a Buffer<'a, T>, slice: Range<usize>) -> Result<Self, Error> {
+        if slice.start >= buffer.len() || slice.end > buffer.len() {
+            Err(Error::InvalidRange)
+        } else {
+            Ok(Self { buffer, slice })
+        }
     }
 
     /// Borrows the buffer immutably
-    /// Panics if the buffer is already borrowed mutably
-    pub fn borrow<'s>(&'s self) -> Access<'a, T> {
+    ///
+    /// Returns an error if the buffer is already borrowed mutably
+    pub fn borrow<'s>(&'s self) -> Result<Access<'a, T>, Error> {
         Access::new(self.buffer, self.slice.clone())
     }
 
     /// Produces a new slice into the buffer
-    pub fn slice(&self, range: Range<usize>) -> SharedRef<'a, T> {
+    ///
+    /// Returns an error if the given range is out-of-bounds
+    pub fn slice(&self, range: Range<usize>) -> Result<SharedRef<'a, T>, Error> {
         if range.start >= self.slice.len() || range.end > self.slice.len() {
-            panic!("Slice out of bounds");
+            Err(Error::InvalidRange)
+        } else {
+            let start = self.slice.start + range.start;
+            let end = start + range.len();
+            SharedRef::new(self.buffer, start..end)
         }
-
-        let start = self.slice.start + range.start;
-        let end = start + range.len();
-        SharedRef::new(self.buffer, start..end)
     }
 
     /// Returns the length of the buffer
@@ -200,9 +244,13 @@ pub struct Access<'a, T> {
 }
 
 impl<'a, T> Access<'a, T> {
-    fn new(buffer: &'a Buffer<'a, T>, slice: Range<usize>) -> Self {
-        buffer.borrow(false);
-        Self { buffer, slice }
+    fn new(buffer: &'a Buffer<'a, T>, slice: Range<usize>) -> Result<Self, Error> {
+        if slice.start >= buffer.len() || slice.end > buffer.len() {
+            Err(Error::InvalidRange)
+        } else {
+            buffer.borrow(false)?;
+            Ok(Self { buffer, slice })
+        }
     }
 }
 
@@ -215,6 +263,10 @@ impl<T> Borrow<[T]> for Access<'_, T> {
                 self.buffer.len,
             )
         };
+
+        // Panic safety: The public API prevents a slice from being stored that would
+        // be outside the bounds of the buffer
+        #[allow(clippy::indexing_slicing)]
         &buffer[self.slice.clone()]
     }
 }
@@ -274,32 +326,32 @@ mod test {
 
     // Verify that only one mutable borrow is allowed
     #[test]
-    #[should_panic(expected = "Buffer already borrowed mutably")]
+    #[should_panic]
     fn test_mut_mut_fail() {
         define_static_buffer!(buffer, u8, [0; 16]);
         let buffer = buffer::get_mut().unwrap();
-        let _mut_a = buffer.borrow_mut();
-        let _mut_b = buffer.borrow_mut();
+        let _mut_a = buffer.borrow_mut().unwrap();
+        let _mut_b = buffer.borrow_mut().unwrap();
     }
 
     // Verify that mutable and immutable borrows are not allowed
     #[test]
-    #[should_panic(expected = "Buffer already borrowed mutably")]
+    #[should_panic]
     fn test_mut_imm_fail() {
         define_static_buffer!(buffer, u8, [0; 16]);
         let buffer = buffer::get_mut().unwrap();
-        let _mut_a = buffer.borrow_mut();
-        let _b = buffer.borrow();
+        let _mut_a = buffer.borrow_mut().unwrap();
+        let _b = buffer.borrow().unwrap();
     }
 
     // Verify that mutable and immutable borrows are not allowed
     #[test]
-    #[should_panic(expected = "Buffer already borrowed immutably")]
+    #[should_panic]
     fn test_imm_mut_fail() {
         define_static_buffer!(buffer, u8, [0u8; 16]);
         let buffer = buffer::get_mut().unwrap();
-        let _a = buffer.borrow();
-        let _mut_b = buffer.borrow_mut();
+        let _a = buffer.borrow().unwrap();
+        let _mut_b = buffer.borrow_mut().unwrap();
     }
 
     // Verify that multiple immutable borrows are allowed
@@ -307,8 +359,8 @@ mod test {
     fn test_immutable() {
         define_static_buffer!(buffer, u8, [0; 16]);
         let buffer = buffer::get_mut().unwrap();
-        let _a = buffer.borrow();
-        let _b = buffer.borrow();
+        let _a = buffer.borrow().unwrap();
+        let _b = buffer.borrow().unwrap();
     }
 
     // Verify dropping a mutable borrow releases the buffer
@@ -316,11 +368,11 @@ mod test {
     fn test_drop() {
         define_static_buffer!(buffer, u8, [0; 16]);
         let buffer = buffer::get_mut().unwrap();
-        let mut_a = buffer.borrow_mut();
+        let mut_a = buffer.borrow_mut().unwrap();
         drop(mut_a);
-        let mut_b = buffer.borrow_mut();
+        let mut_b = buffer.borrow_mut().unwrap();
         drop(mut_b);
-        let _c = buffer.borrow();
+        let _c = buffer.borrow().unwrap();
     }
 
     // Test slicing
@@ -329,44 +381,44 @@ mod test {
         define_static_buffer!(buffer, u8, [0, 1, 2, 3, 4, 5, 6, 7]);
         let buffer = buffer::get_mut().unwrap();
 
-        let slice = buffer.reference().slice(0..8);
-        let sliced = slice.borrow();
+        let slice = buffer.reference().slice(0..8).unwrap();
+        let sliced = slice.borrow().unwrap();
         assert_eq!(sliced.borrow(), [0, 1, 2, 3, 4, 5, 6, 7]);
 
-        let slice = buffer.reference().slice(0..4);
-        let sliced = slice.borrow();
+        let slice = buffer.reference().slice(0..4).unwrap();
+        let sliced = slice.borrow().unwrap();
         assert_eq!(sliced.borrow(), [0, 1, 2, 3]);
 
-        let slice = buffer.reference().slice(4..8);
-        let sliced = slice.borrow();
+        let slice = buffer.reference().slice(4..8).unwrap();
+        let sliced = slice.borrow().unwrap();
         assert_eq!(sliced.borrow(), [4, 5, 6, 7]);
 
-        let slice = buffer.reference().slice(4..8).slice(1..4);
-        let sliced = slice.borrow();
+        let slice = buffer.reference().slice(4..8).unwrap().slice(1..4).unwrap();
+        let sliced = slice.borrow().unwrap();
         assert_eq!(sliced.borrow(), [5, 6, 7]);
 
-        let slice = buffer.reference().slice(3..7);
-        let sliced = slice.borrow();
+        let slice = buffer.reference().slice(3..7).unwrap();
+        let sliced = slice.borrow().unwrap();
         assert_eq!(sliced.borrow(), [3, 4, 5, 6]);
     }
 
     // Test slice starting index out of bounds
     #[test]
-    #[should_panic(expected = "Slice out of bounds")]
+    #[should_panic]
     fn test_slice_bounds_start_fail() {
         define_static_buffer!(buffer, u8, [0, 1, 2, 3, 4, 5, 6, 7]);
         let buffer = buffer::get_mut().unwrap();
 
-        let _slice = buffer.reference().slice(8..8);
+        let _slice = buffer.reference().slice(8..8).unwrap();
     }
 
     // Test slice ending index out of bounds
     #[test]
-    #[should_panic(expected = "Slice out of bounds")]
+    #[should_panic]
     fn test_slice_bounds_end_fail() {
         define_static_buffer!(buffer, u8, [0, 1, 2, 3, 4, 5, 6, 7]);
         let buffer = buffer::get_mut().unwrap();
 
-        let _slice = buffer.reference().slice(0..9);
+        let _slice = buffer.reference().slice(0..9).unwrap();
     }
 }
