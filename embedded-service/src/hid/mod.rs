@@ -350,6 +350,7 @@ pub async fn send_request(tp: &Endpoint, to: DeviceId, request: Request<'static>
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod test {
     use super::*;
 

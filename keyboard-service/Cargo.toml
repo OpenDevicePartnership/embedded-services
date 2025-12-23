@@ -36,3 +36,6 @@ log = [
     "embassy-sync/log",
     "hid-service/log",
 ]
+
+[lints]
+workspace = true
