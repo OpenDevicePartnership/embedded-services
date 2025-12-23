@@ -4,6 +4,7 @@
 //! Processing these events typically requires acessing similar registers so they are grouped together.
 //! [`PortNotification`] contains events that are typically more message-like (PD alerts, VDMs, etc) and can be processed independently.
 //! Consequently [`PortNotification`] implements iterator traits to allow for processing these events as a stream.
+use super::error;
 use bitfield::bitfield;
 use bitvec::BitArr;
 
@@ -31,6 +32,14 @@ bitfield! {
     pub u8, alt_mode_entered, set_alt_mode_entered: 7, 7;
     /// PD hard reset
     pub u8, pd_hard_reset, set_pd_hard_reset: 8, 8;
+}
+
+/// Port pending errors
+#[derive(Clone, Copy, Debug, PartialEq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum PortPendingError {
+    /// Invalid port
+    InvalidPort(usize),
 }
 
 /// Port status change events
@@ -405,25 +414,37 @@ impl PortPending {
     }
 
     /// Marks the given port as pending
-    pub fn pend_port(&mut self, port: usize) {
+    pub fn pend_port(&mut self, port: usize) -> Result<(), PortPendingError> {
+        if port >= self.0.len() {
+            return Err(PortPendingError::InvalidPort(port));
+        }
         self.0.set(port, true);
+
+        Ok(())
     }
 
     /// Marks the indexes given by the iterator as pending
     pub fn pend_ports<I: IntoIterator<Item = usize>>(&mut self, iter: I) {
         for port in iter {
-            self.pend_port(port);
+            if self.pend_port(port).is_err() {
+                error!("Error pending port {}", port);
+            }
         }
     }
 
     /// Clears the pending status of the given port
-    pub fn clear_port(&mut self, port: usize) {
+    pub fn clear_port(&mut self, port: usize) -> Result<(), PortPendingError> {
+        if port >= self.0.len() {
+            return Err(PortPendingError::InvalidPort(port));
+        }
+
         self.0.set(port, false);
+        Ok(())
     }
 
     /// Returns true if the given port is pending
-    pub fn is_pending(&self, port: usize) -> bool {
-        self.0[port]
+    pub fn is_pending(&self, port: usize) -> Result<bool, PortPendingError> {
+        Ok(*self.0.get(port).ok_or(PortPendingError::InvalidPort(port))?)
     }
 
     /// Returns a combination of the current pending ports and other
@@ -474,9 +495,12 @@ impl Iterator for PortPendingIter {
         while self.index < self.flags.len() {
             let port_index = self.index;
             self.index += 1;
-            if self.flags.is_pending(port_index) {
-                self.flags.clear_port(port_index);
-                return Some(port_index);
+            if self.flags.is_pending(port_index).unwrap_or(false) {
+                if self.flags.clear_port(port_index).is_ok() {
+                    return Some(port_index);
+                } else {
+                    continue;
+                }
             }
         }
         None
@@ -500,12 +524,16 @@ mod tests {
     fn test_port_event_flags_iter() {
         let mut pending = PortPending::none();
 
-        pending.pend_port(0);
-        pending.pend_port(1);
-        pending.pend_port(2);
-        pending.pend_port(10);
-        pending.pend_port(23);
-        pending.pend_port(31);
+        pending.pend_port(0).unwrap();
+        pending.pend_port(1).unwrap();
+        pending.pend_port(2).unwrap();
+        pending.pend_port(10).unwrap();
+        pending.pend_port(23).unwrap();
+        pending.pend_port(31).unwrap();
+
+        let result = pending.pend_port(32);
+        let expected = Err(PortPendingError::InvalidPort(32));
+        assert_eq!(expected, result);
 
         let mut iter = pending.into_iter();
         assert_eq!(iter.next(), Some(0));

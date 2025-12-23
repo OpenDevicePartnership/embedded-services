@@ -10,6 +10,10 @@ pub struct Config {
     pub provider_unlimited: PowerCapability,
     /// Power capability of every provider in limited power mode
     pub provider_limited: PowerCapability,
+    /// Minimum power threshold to consume power from.
+    ///
+    /// If [`None`], the service will consume from providers, regardless of how much power they provide.
+    pub min_consumer_threshold_mw: Option<u32>,
 }
 
 impl Default for Config {
@@ -27,6 +31,8 @@ impl Default for Config {
                 voltage_mv: 5000,
                 current_ma: 1500,
             },
+            // No minimum threshold
+            min_consumer_threshold_mw: None,
         }
     }
 }

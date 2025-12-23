@@ -148,9 +148,9 @@ mod tests {
     #[tokio::test]
     async fn test_port_status_changed() {
         let mut pending_ports = PortPending::none();
-        pending_ports.pend_port(0);
-        pending_ports.pend_port(2);
-        pending_ports.pend_port(3);
+        pending_ports.pend_port(0).unwrap();
+        pending_ports.pend_port(2).unwrap();
+        pending_ports.pend_port(3).unwrap();
 
         let mut streamer = PortEventStreamer::new(pending_ports.into_iter());
 
@@ -197,7 +197,7 @@ mod tests {
     #[tokio::test]
     async fn test_port_notification() {
         let mut pending_ports = PortPending::none();
-        pending_ports.pend_port(0);
+        pending_ports.pend_port(0).unwrap();
 
         let mut streamer = PortEventStreamer::new(pending_ports.into_iter());
         let event = streamer
@@ -229,7 +229,7 @@ mod tests {
     #[tokio::test]
     async fn test_last_notifications() {
         let mut pending_ports = PortPending::none();
-        pending_ports.pend_port(0);
+        pending_ports.pend_port(0).unwrap();
 
         let mut streamer = PortEventStreamer::new(pending_ports.into_iter());
 
@@ -252,8 +252,8 @@ mod tests {
     #[tokio::test]
     async fn test_port_event() {
         let mut pending_ports = PortPending::none();
-        pending_ports.pend_port(0);
-        pending_ports.pend_port(6);
+        pending_ports.pend_port(0).unwrap();
+        pending_ports.pend_port(6).unwrap();
 
         let mut streamer = PortEventStreamer::new(pending_ports.into_iter());
 
@@ -321,7 +321,7 @@ mod tests {
     #[tokio::test]
     async fn test_empty_event() {
         let mut pending_ports = PortPending::none();
-        pending_ports.pend_port(0);
+        pending_ports.pend_port(0).unwrap();
 
         let mut streamer = PortEventStreamer::new(pending_ports.into_iter());
         let event = streamer.next::<(), _, _>(async |_| Ok(PortEvent::none())).await;
@@ -332,8 +332,8 @@ mod tests {
     #[tokio::test]
     async fn test_skip_no_pending() {
         let mut pending_ports = PortPending::none();
-        pending_ports.pend_port(0);
-        pending_ports.pend_port(1);
+        pending_ports.pend_port(0).unwrap();
+        pending_ports.pend_port(1).unwrap();
 
         let mut streamer = PortEventStreamer::new(pending_ports.into_iter());
         let event = streamer

@@ -226,6 +226,7 @@ async fn type_c_service_task() -> ! {
                 .set_swap_to_snk(true)
                 .set_swap_to_src(true),
         ),
+        ..Default::default()
     })
     .await;
     unreachable!()

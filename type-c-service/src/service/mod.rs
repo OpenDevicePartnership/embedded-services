@@ -72,6 +72,10 @@ pub struct Service<'a> {
 pub enum PowerPolicyEvent {
     /// Unconstrained state changed
     Unconstrained(power_policy::UnconstrainedState),
+    /// Consumer disconnected
+    ConsumerDisconnected,
+    /// Consumer connected
+    ConsumerConnected,
 }
 
 /// Type-C service events
@@ -149,7 +153,7 @@ impl<'a> Service<'a> {
         }
 
         self.set_cached_port_status(port_id, status).await?;
-        self.generate_ucsi_event(port_id, event).await;
+        self.handle_ucsi_port_event(port_id, event, &status).await;
 
         Ok(())
     }

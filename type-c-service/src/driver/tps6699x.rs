@@ -284,13 +284,13 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
     /// Returns the current status of the port
     async fn get_port_status(&mut self, port: LocalPortId) -> Result<PortStatus, Error<Self::BusError>> {
         let status = self.tps6699x.get_port_status(port).await?;
-        trace!("Port{} status: {:#?}", port.0, status);
+        debug!("Port{} status: {:#?}", port.0, status);
 
         let pd_status = self.tps6699x.get_pd_status(port).await?;
-        trace!("Port{} PD status: {:#?}", port.0, pd_status);
+        debug!("Port{} PD status: {:#?}", port.0, pd_status);
 
         let port_control = self.tps6699x.get_port_control(port).await?;
-        trace!("Port{} control: {:#?}", port.0, port_control);
+        debug!("Port{} control: {:#?}", port.0, port_control);
 
         let mut port_status = PortStatus::default();
 

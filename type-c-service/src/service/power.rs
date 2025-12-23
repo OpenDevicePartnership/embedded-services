@@ -16,6 +16,12 @@ impl<'a> Service<'a> {
                     power_policy::CommsData::Unconstrained(state) => {
                         return Event::PowerPolicy(PowerPolicyEvent::Unconstrained(state));
                     }
+                    power_policy::CommsData::ConsumerDisconnected(_) => {
+                        return Event::PowerPolicy(PowerPolicyEvent::ConsumerDisconnected);
+                    }
+                    power_policy::CommsData::ConsumerConnected(_, _) => {
+                        return Event::PowerPolicy(PowerPolicyEvent::ConsumerConnected);
+                    }
                     _ => {
                         // No other events currently implemented
                     }
@@ -91,6 +97,20 @@ impl<'a> Service<'a> {
     pub(super) async fn process_power_policy_event(&self, message: &PowerPolicyEvent) -> Result<(), Error> {
         match message {
             PowerPolicyEvent::Unconstrained(state) => self.process_unconstrained_state_change(state).await,
+            PowerPolicyEvent::ConsumerDisconnected => {
+                let mut state = self.state.lock().await;
+                state.ucsi.psu_connected = false;
+                // Notify OPM because this can affect battery charging capability status
+                self.pend_ucsi_connected_ports(&mut state).await;
+                Ok(())
+            }
+            PowerPolicyEvent::ConsumerConnected => {
+                let mut state = self.state.lock().await;
+                state.ucsi.psu_connected = true;
+                // Notify OPM because this can affect battery charging capability status
+                self.pend_ucsi_connected_ports(&mut state).await;
+                Ok(())
+            }
         }
     }
 }

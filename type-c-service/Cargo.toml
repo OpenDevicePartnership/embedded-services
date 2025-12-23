@@ -29,9 +29,9 @@ static_cell = { workspace = true }
 tps6699x = { workspace = true, features = ["embassy"] }
 
 [dev-dependencies]
+embassy-time = { workspace = true, features = ["std", "generic-queue-8"] }
 embassy-sync = { workspace = true, features = ["std"] }
 critical-section = { workspace = true, features = ["std"] }
-embassy-time = { workspace = true, features = ["std"] }
 embassy-time-driver = { workspace = true }
 embassy-futures.workspace = true
 tokio = { workspace = true, features = ["rt", "macros", "time"] }

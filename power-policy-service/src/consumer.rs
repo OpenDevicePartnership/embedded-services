@@ -40,8 +40,21 @@ impl PowerPolicy {
         for node in self.context.devices() {
             let device = node.data::<Device>().ok_or(Error::InvalidDevice)?;
 
+            let consumer_capability = device.consumer_capability().await;
+            // Don't consider consumers below minimum threshold
+            if consumer_capability
+                .zip(self.config.min_consumer_threshold_mw)
+                .is_some_and(|(cap, min)| cap.capability.max_power_mw() < min)
+            {
+                info!(
+                    "Device{}: Not considering consumer, power capability is too low",
+                    device.id().0,
+                );
+                continue;
+            }
+
             // Update the best available consumer
-            best_consumer = match (best_consumer, device.consumer_capability().await) {
+            best_consumer = match (best_consumer, consumer_capability) {
                 // Nothing available
                 (None, None) => None,
                 // No existing consumer
