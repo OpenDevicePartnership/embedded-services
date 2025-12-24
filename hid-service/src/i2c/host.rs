@@ -72,7 +72,7 @@ impl<B: I2cSlaveAsync> Host<B> {
     }
 
     async fn process_output_report(&self) -> Result<hid::Request<'static>, Error<B::Error>> {
-        let mut borrow = self.buffer.borrow_mut();
+        let mut borrow = self.buffer.borrow_mut().map_err(Error::Buffer)?;
         let buffer: &mut [u8] = borrow.borrow_mut();
         let buffer_len = buffer.len();
 
@@ -111,7 +111,10 @@ impl<B: I2cSlaveAsync> Host<B> {
                     actual: buffer_len,
                 }),
             ))?)),
-            self.buffer.reference().slice(3..length as usize),
+            self.buffer
+                .reference()
+                .slice(3..length as usize)
+                .map_err(Error::Buffer)?,
         ))
     }
 
@@ -159,7 +162,7 @@ impl<B: I2cSlaveAsync> Host<B> {
 
             if opcode.requires_host_data() {
                 trace!("Waiting for data");
-                let mut borrow = self.buffer.borrow_mut();
+                let mut borrow = self.buffer.borrow_mut().map_err(Error::Buffer)?;
                 let buffer: &mut [u8] = borrow.borrow_mut();
                 let buffer_len = buffer.len();
 
@@ -192,7 +195,12 @@ impl<B: I2cSlaveAsync> Host<B> {
                         })))?,
                 )
                 .await?;
-                Some(self.buffer.reference().slice(2..length as usize))
+                Some(
+                    self.buffer
+                        .reference()
+                        .slice(2..length as usize)
+                        .map_err(Error::Buffer)?,
+                )
             } else {
                 None
             }
@@ -315,7 +323,7 @@ impl<B: I2cSlaveAsync> Host<B> {
                 | hid::Response::ReportDescriptor(data)
                 | hid::Response::InputReport(data)
                 | hid::Response::FeatureReport(data) => {
-                    let bytes = data.borrow();
+                    let bytes = data.borrow().map_err(Error::Buffer)?;
                     self.write_bus(DEVICE_RESPONSE_TIMEOUT_MS, bytes.borrow()).await
                 }
                 hid::Response::Command(cmd) => match cmd {

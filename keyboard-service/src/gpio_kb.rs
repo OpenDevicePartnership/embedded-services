@@ -526,7 +526,7 @@ impl<
         match report_type {
             // Received a set output report for LEDs
             hid::ReportType::Output if report_id.0 == REPORT_ID => {
-                let buf = buf.borrow();
+                let buf = buf.borrow().map_err(super::KeyboardError::Buffer)?;
                 let leds: &[u8] = buf.borrow();
                 let flags = LedFlags::from_bits_retain(leds[0]);
 

@@ -4,7 +4,10 @@ use embedded_services::{comms, ec_type, info};
 
 use crate::{ESPI_SERVICE, Service, process_controller_event};
 
-pub async fn espi_service(mut espi: espi::Espi<'static>, memory_map_buffer: &'static mut [u8]) {
+pub async fn espi_service(
+    mut espi: espi::Espi<'static>,
+    memory_map_buffer: &'static mut [u8],
+) -> Result<embedded_services::Never, crate::espi_service::Error> {
     info!("Reserved eSPI memory map buffer size: {}", memory_map_buffer.len());
     info!("eSPI MemoryMap size: {}", size_of::<ec_type::structure::ECMemory>());
 
@@ -35,7 +38,7 @@ pub async fn espi_service(mut espi: espi::Espi<'static>, memory_map_buffer: &'st
 
         match event {
             embassy_futures::select::Either::First(controller_event) => {
-                process_controller_event(&mut espi, espi_service, controller_event).await
+                process_controller_event(&mut espi, espi_service, controller_event).await?
             }
             embassy_futures::select::Either::Second(host_msg) => {
                 espi_service.process_subsystem_msg(&mut espi, host_msg).await

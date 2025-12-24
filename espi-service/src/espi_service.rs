@@ -29,8 +29,9 @@ type HostMsgInternal = (EndpointID, StdHostMsg);
 
 #[derive(Debug, Clone, Copy)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-enum Error {
+pub enum Error {
     Serialize,
+    Buffer(embedded_services::buffer::Error),
 }
 
 pub struct Service<'a> {
@@ -169,7 +170,7 @@ impl Service<'_> {
         response: &StdHostRequest,
         endpoint: EndpointID,
     ) -> Result<(), Error> {
-        let mut assembly_buf_access = self.assembly_buf_owned_ref.borrow_mut();
+        let mut assembly_buf_access = self.assembly_buf_owned_ref.borrow_mut().map_err(Error::Buffer)?;
         let pkt_ctx_buf = assembly_buf_access.borrow_mut();
         let mut mctp_ctx = mctp_rs::MctpPacketContext::new(mctp_rs::smbus_espi::SmbusEspiMedium, pkt_ctx_buf);
 
@@ -229,7 +230,7 @@ impl Service<'_> {
 
             // Immediately service the packet with the ESPI HAL
             let event = espi.wait_for_event().await;
-            process_controller_event(espi, self, event).await;
+            process_controller_event(espi, self, event).await?;
         }
         Ok(())
     }
@@ -314,7 +315,7 @@ pub(crate) async fn process_controller_event(
     espi: &mut espi::Espi<'static>,
     espi_service: &Service<'_>,
     event: Result<embassy_imxrt::espi::Event, embassy_imxrt::espi::Error>,
-) {
+) -> Result<(), Error> {
     match event {
         Ok(espi::Event::PeripheralEvent(port_event)) => {
             info!(
@@ -361,7 +362,10 @@ pub(crate) async fn process_controller_event(
                 let endpoint: EndpointID;
 
                 {
-                    let mut assembly_access = espi_service.assembly_buf_owned_ref.borrow_mut();
+                    let mut assembly_access = espi_service
+                        .assembly_buf_owned_ref
+                        .borrow_mut()
+                        .map_err(Error::Buffer)?;
                     // let mut comms_access = espi_service.comms_buf_owned_ref.borrow_mut();
                     let mut mctp_ctx = mctp_rs::MctpPacketContext::<SmbusEspiMedium>::new(
                         SmbusEspiMedium,
@@ -409,7 +413,7 @@ pub(crate) async fn process_controller_event(
                                         EndpointID::Internal(embedded_services::comms::Internal::Debug),
                                         espi,
                                     );
-                                    return;
+                                    return Err(Error::Serialize);
                                 }
                             }
                         }
@@ -425,7 +429,7 @@ pub(crate) async fn process_controller_event(
                                 EndpointID::Internal(embedded_services::comms::Internal::Debug),
                                 espi,
                             );
-                            return;
+                            return Err(Error::Serialize);
                         }
                         Err(_e) => {
                             // Handle protocol or medium error
@@ -439,7 +443,7 @@ pub(crate) async fn process_controller_event(
                                 EndpointID::Internal(embedded_services::comms::Internal::Debug),
                                 espi,
                             );
-                            return;
+                            return Err(Error::Serialize);
                         }
                     }
                 }
@@ -461,4 +465,5 @@ pub(crate) async fn process_controller_event(
             error!("eSPI Failed with error: {:?}", e);
         }
     }
+    Ok(())
 }

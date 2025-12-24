@@ -4,11 +4,15 @@ use embedded_services::hid;
 
 use crate::hid_kb::{self, CONTEXT};
 
-pub async fn keyboard_task<T: crate::HidKeyboard>(keyboard: T) {
+pub async fn keyboard_task<T: crate::HidKeyboard>(
+    keyboard: T,
+) -> Result<embedded_services::Never, super::KeyboardError> {
     crate::hid_kb::handle_keyboard(keyboard).await
 }
 
-pub async fn reports_task<T: embedded_hal::digital::OutputPin>(keyboard_interrupt: T) {
+pub async fn reports_task<T: embedded_hal::digital::OutputPin>(
+    keyboard_interrupt: T,
+) -> Result<embedded_services::Never, super::KeyboardError> {
     crate::hid_kb::handle_reports(keyboard_interrupt).await
 }
 
@@ -48,7 +52,7 @@ pub async fn init_and_recv_device_requests_task(
     hid_descriptor: hid::Descriptor,
     report_descriptor: &'static [u8],
     reg_file: hid::RegisterFile,
-) {
+) -> Result<embedded_services::Never, super::KeyboardError> {
     let device = crate::hid_kb::init(reg_file);
     hid::register_device(device)
         .await
@@ -60,7 +64,8 @@ pub async fn init_and_recv_device_requests_task(
     {
         let mut buf = hid_desc_buf::get_mut()
             .expect("Must not already be borrowed mutably")
-            .borrow_mut();
+            .borrow_mut()
+            .map_err(super::KeyboardError::Buffer)?;
         let buf: &mut [u8] = buf.borrow_mut();
         hid_descriptor
             .encode_into_slice(buf)
@@ -72,7 +77,8 @@ pub async fn init_and_recv_device_requests_task(
     {
         let mut buf = report_desc_buf::get_mut()
             .expect("Must not already be borrowed mutably")
-            .borrow_mut();
+            .borrow_mut()
+            .map_err(super::KeyboardError::Buffer)?;
         let buf: &mut [u8] = buf.borrow_mut();
         buf[..report_descriptor.len()].copy_from_slice(report_descriptor);
     }
@@ -88,7 +94,9 @@ pub async fn init_and_recv_device_requests_task(
                 device.send_response(response).await.expect("Infallible");
             }
             hid::Request::ReportDescriptor => {
-                let response = report_desc_buf::get().slice(0..report_descriptor.len());
+                let response = report_desc_buf::get()
+                    .slice(0..report_descriptor.len())
+                    .map_err(super::KeyboardError::Buffer)?;
                 let response = Some(hid::Response::ReportDescriptor(response));
                 device.send_response(response).await.expect("Infallible");
             }
@@ -99,7 +107,9 @@ pub async fn init_and_recv_device_requests_task(
                 let ipc = context.report_ipc.receive().await;
                 let report = ipc.command.clone();
                 let response = Some(hid::Response::InputReport(
-                    report.slice(0..hid_descriptor.w_max_input_length as usize),
+                    report
+                        .slice(0..hid_descriptor.w_max_input_length as usize)
+                        .map_err(super::KeyboardError::Buffer)?,
                 ));
 
                 // Then send it to the host

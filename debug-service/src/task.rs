@@ -7,11 +7,16 @@ use embedded_services::{
 
 use crate::{debug_service_entry, defmt_ring_logger::DEFMT_BUFFER, frame_available, shared_buffer};
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum Error {
+    Buffer(embedded_services::buffer::Error),
+}
+
 pub async fn debug_service(endpoint: comms::Endpoint) {
     debug_service_entry(endpoint).await;
 }
 
-pub async fn defmt_to_host_task() {
+pub async fn defmt_to_host_task() -> Result<embedded_services::Never, Error> {
     embedded_services::info!("defmt to host task start");
     use crate::debug_service::{host_endpoint_id, response_notify_signal};
     use embedded_services::comms::{self, EndpointID, Internal};
@@ -34,7 +39,7 @@ pub async fn defmt_to_host_task() {
         // destination length to be robust if the staging buffer size changes.
         let copy_len = core::cmp::min(frame.len(), acpi_owned.len());
         {
-            let mut access = acpi_owned.borrow_mut();
+            let mut access = acpi_owned.borrow_mut().map_err(Error::Buffer)?;
             let buf: &mut [u8] = BorrowMut::borrow_mut(&mut access);
 
             buf[..copy_len].copy_from_slice(&frame[..copy_len]);
@@ -69,7 +74,7 @@ pub async fn defmt_to_host_task() {
                 status: 0,
                 payload: StdHostPayload::DebugGetMsgsResponse {
                     debug_buf: {
-                        let access = shared_buffer().borrow();
+                        let access = shared_buffer().borrow().map_err(Error::Buffer)?;
                         let slice: &[u8] = access.borrow();
                         slice.try_into().unwrap()
                     },
@@ -81,14 +86,14 @@ pub async fn defmt_to_host_task() {
 
         // Clear the staged portion of the buffer
         {
-            let mut access = acpi_owned.borrow_mut();
+            let mut access = acpi_owned.borrow_mut().map_err(Error::Buffer)?;
             let buf: &mut [u8] = BorrowMut::borrow_mut(&mut access);
             buf[..copy_len].fill(0);
         }
     }
 }
 
-pub async fn no_avail_to_host_task() {
+pub async fn no_avail_to_host_task() -> Result<embedded_services::Never, Error> {
     embedded_services::define_static_buffer!(no_avail_acpi_buf, u8, [0u8; 12]);
 
     embedded_services::info!("no avail to host task start");
@@ -100,7 +105,7 @@ pub async fn no_avail_to_host_task() {
 
     let acpi_owned = no_avail_acpi_buf::get_mut().expect("defmt staging buffer already initialized elsewhere");
     {
-        let mut access = acpi_owned.borrow_mut();
+        let mut access = acpi_owned.borrow_mut().map_err(Error::Buffer)?;
         let buf: &mut [u8] = BorrowMut::borrow_mut(&mut access);
         // Use 0xDEADBEEF to signify no frame available
         buf[4..12].copy_from_slice(&0xDEADBEEFu64.to_be_bytes());

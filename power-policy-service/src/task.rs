@@ -1,5 +1,3 @@
-use core::convert::Infallible;
-
 use embassy_sync::once_lock::OnceLock;
 use embedded_services::{comms, error, info};
 
@@ -14,7 +12,7 @@ pub enum InitError {
     RegistrationFailed,
 }
 
-pub async fn task(config: config::Config) -> Result<Infallible, InitError> {
+pub async fn task(config: config::Config) -> Result<embedded_services::Never, InitError> {
     info!("Starting power policy task");
     static POLICY: OnceLock<PowerPolicy> = OnceLock::new();
     let policy = if let Some(policy) = PowerPolicy::create(config) {

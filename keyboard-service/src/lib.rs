@@ -25,6 +25,8 @@ pub enum KeyboardError {
     Ghosting,
     /// Command error
     Command,
+    /// Buffer error
+    Buffer(embedded_services::buffer::Error),
 }
 
 /// A slice of a HID report.

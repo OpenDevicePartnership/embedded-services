@@ -9,5 +9,8 @@ pub mod i2c;
 pub enum Error<B> {
     /// Error from the underlying bus
     Bus(B),
+    /// HID error
     Hid(hid::Error),
+    /// Error from the underlying buffer
+    Buffer(embedded_services::buffer::Error),
 }
