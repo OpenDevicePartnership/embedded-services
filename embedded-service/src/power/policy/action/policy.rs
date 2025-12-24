@@ -232,7 +232,7 @@ impl<'a> Policy<'a, ConnectedProvider> {
     }
 
     /// Get the provider power capability of this device
-    pub async fn power_capability(&self) -> ProviderPowerCapability {
-        self.device.provider_capability().await.unwrap()
+    pub async fn power_capability(&self) -> Option<ProviderPowerCapability> {
+        self.device.provider_capability().await
     }
 }
