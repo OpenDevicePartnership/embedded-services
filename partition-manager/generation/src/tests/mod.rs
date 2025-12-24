@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used)]
+
 mod access;
 mod duplicate;
 mod overflow;

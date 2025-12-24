@@ -414,6 +414,7 @@ mod test {
     }
 
     #[test]
+    #[allow(clippy::unwrap_used)]
     fn test_monotype_list() {
         let list_a = IntrusiveList::new();
         let list_b = IntrusiveList::new();
@@ -462,6 +463,7 @@ mod test {
     }
 
     #[test]
+    #[allow(clippy::unwrap_used)]
     fn test_multitype_list() {
         // list with multiple types within it (same registration type)
         let list_a = IntrusiveList::new();
@@ -498,6 +500,7 @@ mod test {
     }
 
     #[test]
+    #[allow(clippy::unwrap_used)]
     fn test_multi_list() {
         // nodes in multiple lists
         let list_a = IntrusiveList::new();
@@ -554,6 +557,7 @@ mod test {
     }
 
     #[test]
+    #[allow(clippy::unwrap_used)]
     fn test_multi_registration_list() {
         // list with multiple registration types
         let list = IntrusiveList::new();

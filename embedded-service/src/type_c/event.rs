@@ -517,6 +517,7 @@ impl IntoIterator for PortPending {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 

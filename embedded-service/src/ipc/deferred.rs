@@ -102,6 +102,7 @@ impl<M: RawMutex, C, R> Request<'_, M, C, R> {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use crate::GlobalRawMutex;

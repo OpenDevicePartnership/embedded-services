@@ -1,5 +1,7 @@
 //! Thermal service
 #![no_std]
+#![allow(clippy::todo)]
+#![allow(clippy::unwrap_used)]
 
 use embassy_sync::once_lock::OnceLock;
 use embedded_sensors_hal_async::temperature::DegreesCelsius;

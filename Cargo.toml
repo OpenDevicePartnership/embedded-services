@@ -28,6 +28,20 @@ repository = "https://github.com/OpenDevicePartnership/embedded-services"
 [workspace.lints.rust]
 warnings = "deny"
 
+[workspace.lints.clippy]
+correctness = "deny"
+expect_used = "deny"
+indexing_slicing = "deny"
+panic = "deny"
+panic_in_result_fn = "deny"
+perf = "deny"
+suspicious = "deny"
+style = "deny"
+todo = "deny"
+unimplemented = "deny"
+unreachable = "deny"
+unwrap_used = "deny"
+
 [workspace.dependencies]
 aligned = "0.4"
 anyhow = "1.0"

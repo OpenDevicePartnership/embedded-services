@@ -504,6 +504,7 @@ pub fn mem_map_to_time_alarm_msg(
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 

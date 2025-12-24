@@ -1341,6 +1341,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::panic)]
     fn odp_header_error_on_short_buffer() {
         let header = OdpHeader {
             request_bit: false,

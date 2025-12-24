@@ -74,6 +74,7 @@ impl<T: Clone + 'static> Immediate<T> {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod test {
     use super::*;
     use embassy_sync::pubsub::{PubSubChannel, WaitResult};

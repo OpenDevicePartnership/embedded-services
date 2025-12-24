@@ -320,6 +320,7 @@ macro_rules! define_static_buffer {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod test {
     extern crate std;
     use super::*;

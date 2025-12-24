@@ -562,6 +562,8 @@ impl<'a> Command<'a> {
 }
 
 #[cfg(test)]
+#[allow(clippy::indexing_slicing)]
+#[allow(clippy::unwrap_used)]
 mod test {
     use super::*;
     use crate::define_static_buffer;

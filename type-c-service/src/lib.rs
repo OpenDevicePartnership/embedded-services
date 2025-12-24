@@ -120,6 +120,7 @@ impl PortEventStreamer {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use core::sync::atomic::AtomicBool;
 

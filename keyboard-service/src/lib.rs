@@ -5,6 +5,10 @@
 //! Otherwise, users may manually implement the `HidKeyboard` trait for custom scanning logic
 //! or hardware-implemented key scanners.
 #![no_std]
+#![allow(clippy::expect_used)]
+#![allow(clippy::indexing_slicing)]
+#![allow(clippy::panic_in_result_fn)]
+#![allow(clippy::unwrap_used)]
 
 pub mod gpio_kb;
 pub mod hid_kb;
