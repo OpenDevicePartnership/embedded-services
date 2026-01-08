@@ -215,7 +215,6 @@ impl crate::context::Context {
             .get_fuel_gauge(device_id)
             .ok_or(AcpiBatteryError::UnknownDeviceId)?;
 
-        // TODO @matteo why is this not using fg?
         Ok(AcpiBatteryResponse::BatteryGetPsrResponse {
             psr: compute_psr(&self.get_power_info().await),
         })
@@ -228,7 +227,6 @@ impl crate::context::Context {
             .get_fuel_gauge(device_id)
             .ok_or(AcpiBatteryError::UnknownDeviceId)?;
 
-        // TODO @matteo why is this not using fg?
         Ok(AcpiBatteryResponse::BatteryGetPifResponse {
             pif: compute_pif(&self.get_power_info().await),
         })
@@ -274,7 +272,6 @@ impl crate::context::Context {
             .get_fuel_gauge(device_id)
             .ok_or(AcpiBatteryError::UnknownDeviceId)?;
 
-        // TODO @matteo as far as I can tell, this never did anything - is this correct?
         info!(
             "Battery service: Threshold ID: {:?}, Threshold value: {:?}",
             bpt.threshold_id as u32, bpt.threshold_value
@@ -306,7 +303,6 @@ impl crate::context::Context {
             .get_fuel_gauge(device_id)
             .ok_or(AcpiBatteryError::UnknownDeviceId)?;
 
-        // TODO @matteo as far as I can tell, this never did anything - is this correct?
         info!("Battery service: Bmc {}", bmc.maintenance_control_flags.bits());
 
         Ok(AcpiBatteryResponse::BatterySetBmcResponse {})
@@ -372,10 +368,6 @@ impl crate::context::Context {
             .get_fuel_gauge(device_id)
             .ok_or(AcpiBatteryError::UnknownDeviceId)?;
 
-        // TODO @matteo this one handles errors differently than all the others - why?
-        //      Previously this one returned a result with .status = 1 on failure as well as setting the failure status bit on hostmsg... what should we actually be returning here?
-        // TODO @matteo this one doesn't seem to actually do anything in the success case - why?
-        // TODO @matteo why does this not use _fg?
         info!("Recvd BMS sampling_time: {}", bms.sampling_time_ms);
         Ok(AcpiBatteryResponse::BatterySetBmsResponse { status: 0 })
     }
@@ -391,10 +383,6 @@ impl crate::context::Context {
             .get_fuel_gauge(device_id)
             .ok_or(AcpiBatteryError::UnknownDeviceId)?;
 
-        // TODO @matteo this one handles errors differently than all the others - why?
-        //      Previously this one returned a result with .status = 1 on failure as well as setting the failure status bit on hostmsg... what should we actually be returning here?
-        // TODO @matteo this one doesn't seem to actually do anything in the success case - why?
-        // TODO @matteo this one doesn't use _fg - why?
         info!("Recvd BMA averaging_interval_ms: {}", bma.averaging_interval_ms);
         Ok(AcpiBatteryResponse::BatterySetBmaResponse { status: 0 })
     }
@@ -406,7 +394,6 @@ impl crate::context::Context {
             .get_fuel_gauge(device_id)
             .ok_or(AcpiBatteryError::UnknownDeviceId)?;
 
-        // TODO @matteo this looks odd to me - we're not actually using fg? why do we take it as a parameter?
         Ok(AcpiBatteryResponse::BatteryGetStaResponse { sta: compute_sta() })
     }
 }

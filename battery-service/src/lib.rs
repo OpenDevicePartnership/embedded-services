@@ -111,7 +111,6 @@ pub fn register_fuel_gauge(device: &'static device::Device) -> Result<(), embedd
     Ok(())
 }
 
-// TODO @matteo why is this public? this lets anyone send arbitrary data from us, right?
 /// Use the battery service endpoint to send data to other subsystems and services.
 pub async fn comms_send(endpoint_id: EndpointID, data: &impl Any) -> Result<(), Infallible> {
     SERVICE.endpoint.send(endpoint_id, data).await

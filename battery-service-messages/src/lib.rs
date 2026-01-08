@@ -318,7 +318,6 @@ impl PifFixedStrings {
 #[derive(PartialEq, Clone, Copy)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum AcpiBatteryRequest {
-    // TODO @Matteo/@Kurtis it looks like the ACPI spec doesn't support having a single device ID for multiple batteries - would it make sense to remove battery_id from each of these and say that anyone who wants to have multiple batteries should just instantiate a second instance of the battery service on a different endpoint?
     BatteryGetBixRequest {
         battery_id: u8,
     },
