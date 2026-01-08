@@ -12,6 +12,7 @@ use static_cell::StaticCell;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 use thermal_service as ts;
+use thermal_service_messages::ThermalRequest;
 use ts::mptf;
 
 // Mock host service
@@ -20,6 +21,7 @@ mod host {
     use embedded_services::comms::{self, Endpoint, EndpointID, External, MailboxDelegate};
     use log::{info, warn};
     use thermal_service as ts;
+    use thermal_service_messages::{ThermalResponse, ThermalResult};
     use ts::mptf;
 
     pub struct Host {
@@ -35,13 +37,13 @@ mod host {
             }
         }
 
-        fn handle_response(&self, response: mptf::Response) {
-            match response.data {
-                mptf::ResponseData::GetTmp(tmp) => {
-                    info!("Host received temperature: {} °C", ts::utils::dk_to_c(tmp))
+        fn handle_response(&self, response: ThermalResponse) {
+            match response {
+                ThermalResponse::ThermalGetTmpResponse { temperature } => {
+                    info!("Host received temperature: {} °C", ts::utils::dk_to_c(temperature))
                 }
-                mptf::ResponseData::GetVar(_status, value) => {
-                    info!("Host received fan RPM: {value}")
+                ThermalResponse::ThermalGetVarResponse { val } => {
+                    info!("Host received fan RPM: {val}")
                 }
                 _ => info!("Received MPTF response: {response:?}"),
             }
@@ -50,8 +52,8 @@ mod host {
 
     impl MailboxDelegate for Host {
         fn receive(&self, message: &comms::Message) -> Result<(), comms::MailboxDelegateError> {
-            if let Some(&response) = message.data.get::<mptf::Response>() {
-                self.handle_response(response);
+            if let Some(&result) = message.data.get::<ThermalResult>() {
+                self.handle_response(result.map_err(|_| comms::MailboxDelegateError::Other)?);
                 Ok(())
             } else if let Some(&notification) = message.data.get::<mptf::Notify>() {
                 warn!("Received notification: {notification:?}");
@@ -215,7 +217,15 @@ async fn host() {
 
     // Set thresholds to 40 °C (3131 deciKelvin)
     host.tp
-        .send(thermal_id, &mptf::Request::SetThrs(0, 0, 0, 3131))
+        .send(
+            thermal_id,
+            &ThermalRequest::ThermalSetThrsRequest {
+                instance_id: 0,
+                timeout: 0,
+                low: 0,
+                high: 3131,
+            },
+        )
         .await
         .unwrap();
     Timer::after_millis(100).await;
@@ -224,7 +234,12 @@ async fn host() {
     host.tp
         .send(
             thermal_id,
-            &mptf::Request::SetVar(0, 4, mptf::uuid_standard::FAN_ON_TEMP, 3131),
+            &ThermalRequest::ThermalSetVarRequest {
+                instance_id: 0,
+                len: 4,
+                var_uuid: mptf::uuid_standard::FAN_ON_TEMP,
+                set_var: 3131,
+            },
         )
         .await
         .unwrap();
@@ -234,7 +249,12 @@ async fn host() {
     host.tp
         .send(
             thermal_id,
-            &mptf::Request::SetVar(0, 4, mptf::uuid_standard::FAN_RAMP_TEMP, 3231),
+            &ThermalRequest::ThermalSetVarRequest {
+                instance_id: 0,
+                len: 4,
+                var_uuid: mptf::uuid_standard::FAN_RAMP_TEMP,
+                set_var: 3231,
+            },
         )
         .await
         .unwrap();
@@ -244,7 +264,12 @@ async fn host() {
     host.tp
         .send(
             thermal_id,
-            &mptf::Request::SetVar(0, 4, mptf::uuid_standard::FAN_MAX_TEMP, 3531),
+            &ThermalRequest::ThermalSetVarRequest {
+                instance_id: 0,
+                len: 4,
+                var_uuid: mptf::uuid_standard::FAN_MAX_TEMP,
+                set_var: 3531,
+            },
         )
         .await
         .unwrap();
@@ -255,7 +280,10 @@ async fn host() {
         host.alert.wait().await;
 
         info!("Host requesting temperature in response to threshold alert");
-        host.tp.send(thermal_id, &mptf::Request::GetTmp(0)).await.unwrap();
+        host.tp
+            .send(thermal_id, &ThermalRequest::ThermalGetTmpRequest { instance_id: 0 })
+            .await
+            .unwrap();
 
         // Need to wait briefly before send is fixed to propagate errors and we can handle retries
         Timer::after_millis(100).await;
@@ -264,7 +292,11 @@ async fn host() {
         host.tp
             .send(
                 thermal_id,
-                &mptf::Request::GetVar(0, 4, mptf::uuid_standard::FAN_CURRENT_RPM),
+                &ThermalRequest::ThermalGetVarRequest {
+                    instance_id: 0,
+                    len: 4,
+                    var_uuid: mptf::uuid_standard::FAN_CURRENT_RPM,
+                },
             )
             .await
             .unwrap();

@@ -111,3 +111,5 @@ impl SerializableMessage for DebugError {
         (*self).into()
     }
 }
+
+pub type DebugResult = Result<DebugResponse, DebugError>;

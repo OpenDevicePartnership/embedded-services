@@ -39,6 +39,7 @@ type-c-service = { path = "../../type-c-service", features = ["log"] }
 embedded-sensors-hal-async = "0.3.0"
 embedded-fans-async = "0.2.0"
 thermal-service = { path = "../../thermal-service", features = ["log"] }
+thermal-service-messages = { path = "../../thermal-service-messages" }
 
 env_logger = "0.9.0"
 log = "0.4.14"
@@ -50,6 +51,7 @@ embedded-hal-mock = { version = "0.11.1", features = ["embedded-hal-async"] }
 critical-section = { version = "1.1", features = ["std"] }
 
 debug-service = { path = "../../debug-service" }
+debug-service-messages = { path = "../../debug-service-messages" }
 
 [lib]
 name = "std_examples"

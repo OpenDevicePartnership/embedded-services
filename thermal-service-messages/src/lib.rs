@@ -145,7 +145,7 @@ impl SerializableMessage for ThermalRequest {
     }
 }
 
-#[derive(PartialEq, Clone, Copy)]
+#[derive(PartialEq, Clone, Copy, Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum ThermalResponse {
     ThermalGetTmpResponse {

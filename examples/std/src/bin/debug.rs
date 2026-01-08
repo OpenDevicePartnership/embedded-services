@@ -11,13 +11,11 @@ defmt::timestamp!("{=u64}", { 0u64 });
 // Mock eSPI transport service
 mod espi_service {
     use core::borrow::BorrowMut;
+    use debug_service_messages::{DebugRequest, DebugResponse, DebugResult, STD_DEBUG_BUF_SIZE};
     use embassy_sync::{once_lock::OnceLock, signal::Signal};
     use embedded_services::GlobalRawMutex;
     use embedded_services::buffer::OwnedRef;
     use embedded_services::comms::{self, EndpointID, External, Internal};
-    use embedded_services::ec_type::message::{
-        HostMsg, NotificationMsg, STD_DEBUG_BUF_SIZE, StdHostMsg, StdHostPayload, StdHostRequest,
-    };
     use log::{info, trace};
 
     // Max defmt payload we expect to shuttle in this mock
@@ -25,6 +23,9 @@ mod espi_service {
     embedded_services::define_static_buffer!(host_oob_buf, u8, [0u8; MAX_DEFMT_BYTES]);
     // Static request buffer used to build the "GetDebugBuffer" payload
     embedded_services::define_static_buffer!(debug_req_buf, u8, [0u8; 32]);
+
+    // TODO Notifications are not currently implemented. Remove this and replace it with the real notification struct when we do implement it.
+    pub struct NotificationMsg;
 
     pub struct Service {
         endpoint: comms::Endpoint,
@@ -48,30 +49,31 @@ mod espi_service {
 
     impl comms::MailboxDelegate for Service {
         fn receive(&self, message: &comms::Message) -> Result<(), comms::MailboxDelegateError> {
-            if let Some(host_msg) = message.data.get::<StdHostMsg>() {
-                match host_msg {
-                    HostMsg::Notification(n) => {
-                        info!(
-                            "mock eSPI got Host Notification: offset={} from {:?}",
-                            n.offset, message.from
-                        );
-                        // Defer to async host task via signal (receive is not async)
-                        self.notify.signal(*n);
-                        Ok(())
-                    }
-                    HostMsg::Response(acpi) => {
-                        // Stage the response bytes into the mock OOB buffer for the host
-                        let mut access = self.resp_owned.borrow_mut().unwrap();
-                        let buf: &mut [u8] = core::borrow::BorrowMut::borrow_mut(&mut access);
-                        if let StdHostPayload::DebugGetMsgsResponse { debug_buf } = acpi.payload {
-                            let copy_len = core::cmp::min(debug_buf.len(), buf.len());
-                            buf[..copy_len].copy_from_slice(&debug_buf[..copy_len]);
-                            trace!("mock eSPI staged {copy_len} response bytes for host");
-                            self.resp_len.signal(copy_len);
-                        }
-                        Ok(())
+            if let Some(debug_result) = message.data.get::<DebugResult>() {
+                // Stage the response bytes into the mock OOB buffer for the host
+                let mut access = self.resp_owned.borrow_mut().unwrap();
+                let buf: &mut [u8] = core::borrow::BorrowMut::borrow_mut(&mut access);
+
+                let debug_response = debug_result.map_err(|_| comms::MailboxDelegateError::Other)?;
+                match debug_response {
+                    DebugResponse::DebugGetMsgsResponse { debug_buf } => {
+                        let copy_len = core::cmp::min(debug_buf.len(), buf.len());
+                        buf[..copy_len].copy_from_slice(&debug_buf[..copy_len]);
+                        trace!("mock eSPI staged {copy_len} response bytes for host");
+                        self.resp_len.signal(copy_len);
                     }
                 }
+
+                Ok(())
+                // TODO notification functionality is currently not implemented. Restore this when we implement it.
+                // } else if let Some(debug_notification) = message.data.get::<DebugNotification>() {
+                //     info!(
+                //         "mock eSPI got Host Notification: offset={} from {:?}",
+                //         n.offset, message.from
+                //     );
+                //     // Defer to async host task via signal (receive is not async)
+                //     self.notify.signal(*n);
+                //     Ok(())
             } else {
                 Err(comms::MailboxDelegateError::MessageNotFound)
             }
@@ -111,11 +113,8 @@ mod espi_service {
 
         loop {
             // Wait for a device notification via the mock eSPI transport
-            let n: NotificationMsg = wait_host_notification().await;
-            info!(
-                "eSPI: got Host Notification (offset={}), sending OOB request/ACK to Debug",
-                n.offset
-            );
+            let _n: NotificationMsg = wait_host_notification().await;
+            info!("eSPI: got Host Notification, sending OOB request/ACK to Debug",);
 
             // Build the ACPI/MCTP-style request payload for the Debug service
             let request = b"GetDebugBuffer";
@@ -130,13 +129,7 @@ mod espi_service {
             let _ = comms::send(
                 EndpointID::External(External::Host),
                 EndpointID::Internal(Internal::Debug),
-                &StdHostRequest {
-                    command: embedded_services::ec_type::message::OdpCommand::Debug(
-                        embedded_services::ec_type::protocols::debug::DebugCmd::GetMsgs,
-                    ),
-                    status: 0,
-                    payload: StdHostPayload::DebugGetMsgsRequest,
-                },
+                &DebugRequest::DebugGetMsgsRequest {},
             )
             .await;
 
