@@ -133,7 +133,7 @@ impl MctpMessageTrait<'_> for HostResponse {
 
             HostResponse::Thermal(response) => response
                 .serialize(buffer)
-                .map_err(|_| mctp_rs::MctpPacketError::SerializeError("Failed to serialize debug response")),
+                .map_err(|_| mctp_rs::MctpPacketError::SerializeError("Failed to serialize thermal response")),
         }
     }
 

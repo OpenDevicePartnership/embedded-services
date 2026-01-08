@@ -194,7 +194,7 @@ impl Service<'_> {
         };
 
         let header = OdpHeader {
-            message_type: OdpMessageType::Request,
+            message_type: OdpMessageType::Response,
             is_datagram: false,
             service: source_service,
             message_id: response.message.discriminant(),
