@@ -195,7 +195,7 @@ impl Service<'_> {
 
         let header = OdpHeader {
             message_type: OdpMessageType::Response {
-                is_error: response.message.is_ok(),
+                is_error: !response.message.is_ok(),
             },
             is_datagram: false,
             service: source_service,
