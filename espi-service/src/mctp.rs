@@ -16,6 +16,13 @@ pub(crate) enum OdpService {
     Debug = 0x0A,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub(crate) enum MctpError {
+    // The endpoint ID does not correspond to a known service
+    UnknownEndpointId,
+}
+
 impl TryFrom<comms::EndpointID> for OdpService {
     type Error = MctpError;
     fn try_from(endpoint_id: comms::EndpointID) -> Result<Self, MctpError> {
@@ -23,7 +30,7 @@ impl TryFrom<comms::EndpointID> for OdpService {
             comms::EndpointID::Internal(comms::Internal::Battery) => Ok(OdpService::Battery),
             comms::EndpointID::Internal(comms::Internal::Thermal) => Ok(OdpService::Thermal),
             comms::EndpointID::Internal(comms::Internal::Debug) => Ok(OdpService::Debug),
-            _ => Err(MctpError::InvalidDestinationEndpoint),
+            _ => Err(MctpError::UnknownEndpointId),
         }
     }
 }
@@ -231,28 +238,6 @@ pub(crate) fn try_route_request_to_comms(
     } else {
         Ok(false)
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub(crate) enum MctpError {
-    // TODO most of these are unused now - figure out if that should be the case, and if it is, prune this down to just the used ones.
-    // /// Header is not at least 9 bytes long.
-    // InvalidHeaderSize,
-    // /// Wrong destination address.
-    // WrongDestinationAddr,
-    // /// Invalid command code.
-    // InvalidCommandCode,
-    // /// Invalid byte count, encoded byte count does not match MCTP message length.
-    // InvalidByteCount,
-    // /// Invalid header version. Should be 1.
-    // InvalidHeaderVersion,
-    /// Invalid destination endpoint
-    InvalidDestinationEndpoint,
-    // /// Invalid source endpoint.
-    // InvalidSourceEndpoint,
-    // /// Multi message not supported.
-    // InvalidFlags,
 }
 
 bitfield! {
