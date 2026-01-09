@@ -1,5 +1,5 @@
 #![no_std]
-use embedded_services::ec_type::message::{MessageSerializationError, SerializableMessage};
+use embedded_services::relay::{MessageSerializationError, SerializableMessage};
 
 /// Standard Debug Service Log Buffer Size
 pub const STD_DEBUG_BUF_SIZE: usize = 128;

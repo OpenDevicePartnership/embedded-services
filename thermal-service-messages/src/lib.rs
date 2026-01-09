@@ -1,6 +1,6 @@
 #![no_std]
 
-use embedded_services::ec_type::message::{MessageSerializationError, SerializableMessage};
+use embedded_services::relay::{MessageSerializationError, SerializableMessage};
 
 /// 16-bit variable length
 pub type VarLen = u16;

@@ -4,7 +4,7 @@ use embedded_batteries_async::acpi::{
     BCT_RETURN_SIZE_BYTES, BMD_RETURN_SIZE_BYTES, BPC_RETURN_SIZE_BYTES, BPS_RETURN_SIZE_BYTES, BST_RETURN_SIZE_BYTES,
     BTM_RETURN_SIZE_BYTES, PSR_RETURN_SIZE_BYTES, STA_RETURN_SIZE_BYTES,
 };
-use embedded_services::ec_type::message::{MessageSerializationError, SerializableMessage};
+use embedded_services::relay::{MessageSerializationError, SerializableMessage};
 
 /// Standard Battery Service Model Number String Size
 pub const STD_BIX_MODEL_SIZE: usize = 8;

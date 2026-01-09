@@ -23,6 +23,7 @@ pub mod init;
 pub mod ipc;
 pub mod keyboard;
 pub mod power;
+pub mod relay;
 pub mod sync;
 pub mod type_c;
 

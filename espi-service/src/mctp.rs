@@ -2,7 +2,7 @@ use bitfield::bitfield;
 use core::convert::Infallible;
 use embedded_services::{
     comms,
-    ec_type::message::{SerializableMessage, SerializableResponse},
+    relay::{SerializableMessage, SerializableResponse},
 };
 use mctp_rs::smbus_espi::SmbusEspiMedium;
 use mctp_rs::{MctpMedium, MctpMessageHeaderTrait, MctpMessageTrait, MctpPacketError, MctpPacketResult};
