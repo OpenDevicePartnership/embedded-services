@@ -180,6 +180,14 @@ impl HostResponse {
             HostResponse::Thermal(response) => response.discriminant(),
         }
     }
+
+    pub(crate) fn is_ok(&self) -> bool {
+        match self {
+            HostResponse::Battery(response) => response.is_ok(),
+            HostResponse::Debug(response) => response.is_ok(),
+            HostResponse::Thermal(response) => response.is_ok(),
+        }
+    }
 }
 
 /// Attempt to route the provided message to the service that is registered to handle it based on its type.

@@ -119,7 +119,7 @@ async fn sensor_get_warn_thrs(instance_id: u8) -> thermal_service_messages::Ther
     match (low, high) {
         (Ok(sensor::ResponseData::Threshold(low)), Ok(sensor::ResponseData::Threshold(high))) => {
             Ok(thermal_service_messages::ThermalResponse::ThermalGetThrsResponse {
-                timeout: 0, // TODO @kurtis this strikes me as odd - why is it hardcoded to 0?
+                timeout: 0,
                 low: utils::c_to_dk(low),
                 high: utils::c_to_dk(high),
             })
@@ -130,7 +130,7 @@ async fn sensor_get_warn_thrs(instance_id: u8) -> thermal_service_messages::Ther
 
 async fn sensor_set_warn_thrs(
     instance_id: u8,
-    _timeout: Milliseconds, // TODO @kurtis this strikes me as odd - why is this unused?
+    _timeout: Milliseconds,
     low: DeciKelvin,
     high: DeciKelvin,
 ) -> thermal_service_messages::ThermalResult {
