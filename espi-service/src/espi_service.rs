@@ -1,4 +1,3 @@
-use core::mem::offset_of;
 use core::slice;
 
 use crate::mctp::{HostRequest, HostResponse, OdpHeader, OdpMessageType, OdpService};
@@ -8,7 +7,7 @@ use embassy_sync::channel::Channel;
 use embassy_sync::mutex::Mutex;
 use embassy_sync::once_lock::OnceLock;
 use embedded_services::buffer::OwnedRef;
-use embedded_services::comms::{self, EndpointID, External, Internal};
+use embedded_services::comms::{self, EndpointID, External};
 use embedded_services::{GlobalRawMutex, debug, ec_type, error, info, trace};
 use mctp_rs::smbus_espi::SmbusEspiMedium;
 use mctp_rs::smbus_espi::SmbusEspiReplyContext;
@@ -40,7 +39,7 @@ pub enum Error {
 
 pub struct Service<'a> {
     endpoint: comms::Endpoint,
-    ec_memory: Mutex<GlobalRawMutex, &'a mut ec_type::structure::ECMemory>,
+    _ec_memory: Mutex<GlobalRawMutex, &'a mut ec_type::structure::ECMemory>,
     host_tx_queue: Channel<GlobalRawMutex, HostResponseMessage, HOST_TX_QUEUE_SIZE>,
     assembly_buf_owned_ref: OwnedRef<'a, u8>,
 }
@@ -49,110 +48,10 @@ impl Service<'_> {
     pub fn new(ec_memory: &'static mut ec_type::structure::ECMemory) -> Self {
         Service {
             endpoint: comms::Endpoint::uninit(EndpointID::External(External::Host)),
-            ec_memory: Mutex::new(ec_memory),
+            _ec_memory: Mutex::new(ec_memory),
             host_tx_queue: Channel::new(),
             assembly_buf_owned_ref: assembly_buf::get_mut().unwrap(),
         }
-    }
-
-    // TODO @Phil Am I correct in understanding that this memory mapping stuff is abandoned/not used? If yes, we may want to consider ripping it out, it doesn't really seem related to eSPI
-    async fn route_to_service(&self, offset: usize, length: usize) -> Result<(), ec_type::Error> {
-        let mut offset = offset;
-        let mut length = length;
-
-        if offset + length > size_of::<ec_type::structure::ECMemory>() {
-            return Err(ec_type::Error::InvalidLocation);
-        }
-
-        while length > 0 {
-            if (offset >= offset_of!(ec_type::structure::ECMemory, ver)
-                && offset < offset_of!(ec_type::structure::ECMemory, ver) + size_of::<ec_type::structure::Version>())
-                || (offset >= offset_of!(ec_type::structure::ECMemory, caps)
-                    && offset
-                        < offset_of!(ec_type::structure::ECMemory, caps)
-                            + size_of::<ec_type::structure::Capabilities>())
-            {
-                // This is a read-only section. eSPI master should not write to it.
-                return Err(ec_type::Error::InvalidLocation);
-            } else if offset >= offset_of!(ec_type::structure::ECMemory, batt)
-                && offset < offset_of!(ec_type::structure::ECMemory, batt) + size_of::<ec_type::structure::Battery>()
-            {
-                self.route_to_battery_service(&mut offset, &mut length).await?;
-            } else if offset >= offset_of!(ec_type::structure::ECMemory, therm)
-                && offset < offset_of!(ec_type::structure::ECMemory, therm) + size_of::<ec_type::structure::Thermal>()
-            {
-                self.route_to_thermal_service(&mut offset, &mut length).await?;
-            } else if offset >= offset_of!(ec_type::structure::ECMemory, alarm)
-                && offset < offset_of!(ec_type::structure::ECMemory, alarm) + size_of::<ec_type::structure::TimeAlarm>()
-            {
-                self.route_to_time_alarm_service(&mut offset, &mut length).await?;
-            }
-        }
-
-        Ok(())
-    }
-
-    // TODO @Phil Am I correct in understanding that this memory mapping stuff is abandoned/not used? If yes, we may want to consider ripping it out, it doesn't really seem related to eSPI
-    async fn route_to_battery_service(&self, offset: &mut usize, length: &mut usize) -> Result<(), ec_type::Error> {
-        let msg = {
-            let memory_map = self
-                .ec_memory
-                .try_lock()
-                .expect("Messages handled one after another, should be infallible.");
-            ec_type::mem_map_to_battery_msg(&memory_map, offset, length)?
-        };
-
-        comms::send(
-            EndpointID::External(External::Host),
-            EndpointID::Internal(Internal::Battery),
-            &msg,
-        )
-        .await
-        .unwrap();
-
-        Ok(())
-    }
-
-    // TODO @Phil Am I correct in understanding that this memory mapping stuff is abandoned/not used? If yes, we may want to consider ripping it out, it doesn't really seem related to eSPI
-    async fn route_to_thermal_service(&self, offset: &mut usize, length: &mut usize) -> Result<(), ec_type::Error> {
-        let msg = {
-            let memory_map = self
-                .ec_memory
-                .try_lock()
-                .expect("Messages handled one after another, should be infallible.");
-            ec_type::mem_map_to_thermal_msg(&memory_map, offset, length)?
-        };
-
-        comms::send(
-            EndpointID::External(External::Host),
-            EndpointID::Internal(Internal::Thermal),
-            &msg,
-        )
-        .await
-        .unwrap();
-
-        Ok(())
-    }
-
-    // TODO @Phil Am I correct in understanding that this memory mapping stuff is abandoned/not used? If yes, we may want to consider ripping it out, it doesn't really seem related to eSPI
-    async fn route_to_time_alarm_service(&self, offset: &mut usize, length: &mut usize) -> Result<(), ec_type::Error> {
-        let msg = {
-            let memory_map = self
-                .ec_memory
-                .try_lock()
-                .expect("Messages handled one after another, should be infallible.");
-            ec_type::mem_map_to_time_alarm_msg(&memory_map, offset, length)?
-        };
-
-        comms::send(
-            EndpointID::External(External::Host),
-            EndpointID::Internal(Internal::TimeAlarm),
-            &msg,
-        )
-        .await
-        .unwrap();
-
-        Ok(())
     }
 
     pub(crate) async fn wait_for_response(&self) -> HostResponseMessage {
@@ -180,8 +79,8 @@ impl Service<'_> {
             OdpService::try_from(response.source_endpoint).map_err(|_| Error::Serialize)?;
 
         let reply_context: mctp_rs::MctpReplyContext<SmbusEspiMedium> = mctp_rs::MctpReplyContext {
-            source_endpoint_id: mctp_rs::EndpointId::Id(0x80), // TODO @Matteo/@Phil what is this endpoint ID supposed to be? Here it looks like we're using it as the endpoint ID for "the embedded controller"
-            destination_endpoint_id: mctp_rs::EndpointId::Id(source_service.into()), // TODO @Matteo/@Phil I think we're currently using this incorrectly, seems like this should be the host's bus address instead... right? Have we assigned bus addresses?
+            source_endpoint_id: mctp_rs::EndpointId::Id(0x80),
+            destination_endpoint_id: mctp_rs::EndpointId::Id(source_service.into()), // TODO We're currently using this incorrectly - it should be the bus address of the host. Revisit once we have assigned a bus address to the host.
             packet_sequence_number: mctp_rs::MctpSequenceNumber::new(0),
             message_tag: mctp_rs::MctpMessageTag::try_from(3).map_err(|e| {
                 error!("serialize_packet_from_subsystem: {:?}", e);
@@ -290,28 +189,9 @@ impl Service<'_> {
 
 impl comms::MailboxDelegate for Service<'_> {
     fn receive(&self, message: &comms::Message) -> Result<(), comms::MailboxDelegateError> {
-        if crate::mctp::try_route_request_to_comms(message, |source_endpoint, message| {
+        crate::mctp::try_route_request_to_comms(message, |source_endpoint, message| {
             self.queue_response_to_host(source_endpoint, message)
-        })? {
-            return Ok(()); // Message was handled by MCTP module
-        } else {
-            // TODO @Phil Am I correct in understanding that this memory mapping stuff is abandoned/not used? If yes, we may want to consider ripping it out, it doesn't really seem related to eSPI
-            let mut memory_map = self
-                .ec_memory
-                .try_lock()
-                .expect("Messages handled one after another, should be infallible.");
-            if let Some(msg) = message.data.get::<ec_type::message::CapabilitiesMessage>() {
-                ec_type::update_capabilities_section(msg, &mut memory_map);
-            } else if let Some(msg) = message.data.get::<ec_type::message::BatteryMessage>() {
-                ec_type::update_battery_section(msg, &mut memory_map);
-            } else if let Some(msg) = message.data.get::<ec_type::message::ThermalMessage>() {
-                ec_type::update_thermal_section(msg, &mut memory_map);
-            } else {
-                return Err(comms::MailboxDelegateError::MessageNotFound);
-            }
-        }
-
-        Ok(())
+        })
     }
 }
 
@@ -329,19 +209,7 @@ pub(crate) async fn process_controller_event(
                 port_event.port, port_event.direction, port_event.offset, port_event.base_addr, port_event.length,
             );
 
-            // If it is a peripheral channel write, then we need to notify the service
-            if port_event.direction {
-                let res = espi_service
-                    .route_to_service(port_event.offset, port_event.length)
-                    .await;
-
-                if res.is_err() {
-                    error!(
-                        "eSPI master send invalid offset: {} length: {}",
-                        port_event.offset, port_event.length
-                    );
-                }
-            }
+            // We're not handling these - communication is all through OOB
 
             espi.complete_port(port_event.port);
         }

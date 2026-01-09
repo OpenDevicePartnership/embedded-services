@@ -198,12 +198,10 @@ impl HostResponse {
 }
 
 /// Attempt to route the provided message to the service that is registered to handle it based on its type.
-/// Returns Ok(true) if the message was handled, Ok(false) if it was not handled, or an error it was recognized as
-/// intended for a known service but failed to be sent.
 pub(crate) fn try_route_request_to_comms(
     message: &comms::Message,
     send_fn: impl FnOnce(comms::EndpointID, HostResponse) -> Result<(), comms::MailboxDelegateError>,
-) -> Result<bool, comms::MailboxDelegateError> {
+) -> Result<(), comms::MailboxDelegateError> {
     // TODO we're going to have a bunch of types that all implement the SerializableResponse trait; in C++ I'd reach for dynamic_cast or a pointer-to-interface,
     //      but not sure how to do that with Rust's Any - it seems like it requires a concrete type rather than a trait to cast.  Is there a cleaner way to
     //      say "if the message implements the SerializableResponse trait" so we don't have to spell out all the types here?
@@ -216,7 +214,7 @@ pub(crate) fn try_route_request_to_comms(
             comms::EndpointID::Internal(comms::Internal::Battery),
             HostResponse::Battery(*msg),
         )?;
-        Ok(true)
+        Ok(())
     } else if let Some(msg) = message
         .data
         .get::<Result<debug_service_messages::DebugResponse, debug_service_messages::DebugError>>()
@@ -225,7 +223,7 @@ pub(crate) fn try_route_request_to_comms(
             comms::EndpointID::Internal(comms::Internal::Debug),
             HostResponse::Debug(*msg),
         )?;
-        Ok(true)
+        Ok(())
     } else if let Some(msg) = message
         .data
         .get::<Result<thermal_service_messages::ThermalResponse, thermal_service_messages::ThermalError>>()
@@ -234,9 +232,9 @@ pub(crate) fn try_route_request_to_comms(
             comms::EndpointID::Internal(comms::Internal::Thermal),
             HostResponse::Thermal(*msg),
         )?;
-        Ok(true)
+        Ok(())
     } else {
-        Ok(false)
+        Err(comms::MailboxDelegateError::MessageNotFound)
     }
 }
 
