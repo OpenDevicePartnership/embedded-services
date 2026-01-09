@@ -283,6 +283,7 @@ impl crate::context::Context {
     pub(super) async fn bpc_handler(&self, device_id: DeviceId) -> Result<AcpiBatteryResponse, AcpiBatteryError> {
         trace!("Battery service: got BPC command!");
 
+        // TODO: Save trip point
         let fg = self
             .get_fuel_gauge(device_id)
             .ok_or(AcpiBatteryError::UnknownDeviceId)?;
