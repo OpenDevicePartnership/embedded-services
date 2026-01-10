@@ -189,7 +189,7 @@ impl Service<'_> {
 
 impl comms::MailboxDelegate for Service<'_> {
     fn receive(&self, message: &comms::Message) -> Result<(), comms::MailboxDelegateError> {
-        crate::mctp::try_route_request_to_comms(message, |source_endpoint, message| {
+        crate::mctp::send_to_comms(message, |source_endpoint, message| {
             self.queue_response_to_host(source_endpoint, message)
         })
     }

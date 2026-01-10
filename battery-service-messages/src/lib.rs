@@ -685,6 +685,8 @@ pub enum AcpiBatteryError {
     UnspecifiedFailure = 2,
 }
 
+pub type AcpiBatteryResult = Result<AcpiBatteryResponse, AcpiBatteryError>;
+
 impl SerializableMessage for AcpiBatteryError {
     fn serialize(self, _buffer: &mut [u8]) -> Result<usize, MessageSerializationError> {
         match self {
