@@ -1,6 +1,6 @@
 use embedded_services::{
     comms,
-    relay::{mctp::impl_odp_mctp_relay_types, SerializableMessage, SerializableResponse},
+    relay::{mctp::impl_odp_mctp_relay_types, SerializableMessage, SerializableResult},
 };
 
 // TODO We'd ideally like these types to be passed in as a generic or something when the eSPI service is instantiated

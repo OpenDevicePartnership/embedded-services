@@ -30,7 +30,7 @@ pub trait SerializableMessage: Sized {
     fn deserialize(discriminant: u16, buffer: &[u8]) -> Result<Self, MessageSerializationError>;
 }
 
-// Prevent other types from implementing SerializableResponse - they should instead use SerializableMessage on a Response type and an Error type
+// Prevent other types from implementing SerializableResult - they should instead use SerializableMessage on a Response type and an Error type
 #[doc(hidden)]
 mod private {
     pub trait Sealed {}
@@ -39,7 +39,7 @@ mod private {
 }
 
 /// Responses are of type Result<T, E> where T and E both implement SerializableMessage
-pub trait SerializableResponse: private::Sealed + Sized {
+pub trait SerializableResult: private::Sealed + Sized {
     /// The type of the response when the operation being responsed to succeeded
     type SuccessType: SerializableMessage;
 
@@ -61,7 +61,7 @@ pub trait SerializableResponse: private::Sealed + Sized {
     fn deserialize(is_error: bool, discriminant: u16, buffer: &[u8]) -> Result<Self, MessageSerializationError>;
 }
 
-impl<T, E> SerializableResponse for Result<T, E>
+impl<T, E> SerializableResult for Result<T, E>
 where
     T: SerializableMessage,
     E: SerializableMessage,
@@ -108,13 +108,13 @@ pub mod mctp {
     }
 
     /// This macro generates the necessary types and impls to support relaying ODP messages to and from the comms system.
-    /// It takes as input a list of (service name, service ID, comms endpoint ID, request type, response type) tuples and
+    /// It takes as input a list of (service name, service ID, comms endpoint ID, request type, result type) tuples and
     /// emits the following types:
     ///   - enum OdpService - a mapping from service name to MCTP endpoint ID
     ///   - enum HostRequest - an enum containing all the possible request types that were passed into the macro
-    ///   - enum HostResult - an enum containing all the possible response types that were passed into the macro
+    ///   - enum HostResult - an enum containing all the possible result types that were passed into the macro
     ///   - struct OdpHeader - a type representing the an ODP MCTP header.
-    ///   - fn send_to_comms(&comms::Message, impl FnOnce(comms::EndpointID, HostResponse) -> Result<(), comms::MailboxDelegateError>,
+    ///   - fn send_to_comms(&comms::Message, impl FnOnce(comms::EndpointID, HostResult) -> Result<(), comms::MailboxDelegateError>,
     ///        a function that takes a received message and sends it to the appropriate service based on its type using the provided send function.
     ///
     /// Because this macro emits a number of types, it is recommended to invoke it inside a dedicated module.
@@ -225,17 +225,17 @@ pub mod mctp {
 
         #[derive(Clone)]
         #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-        pub(crate) enum HostResponse {
+        pub(crate) enum HostResult {
             $(
                 $service_name($response_type),
             )+
         }
 
-        impl HostResponse {
+        impl HostResult {
             pub(crate) fn discriminant(&self) -> u16 {
                 match self {
                     $(
-                        HostResponse::$service_name(response) => response.discriminant(),
+                        HostResult::$service_name(response) => response.discriminant(),
                     )+
                 }
             }
@@ -243,13 +243,13 @@ pub mod mctp {
             pub(crate) fn is_ok(&self) -> bool {
                 match self {
                     $(
-                        HostResponse::$service_name(response) => response.is_ok(),
+                        HostResult::$service_name(response) => response.is_ok(),
                     )+
                 }
             }
         }
 
-        impl MctpMessageTrait<'_> for HostResponse {
+        impl MctpMessageTrait<'_> for HostResult {
             const MESSAGE_TYPE: u8 = 0x7D; // ODP message type
 
             type Header = OdpHeader;
@@ -257,7 +257,7 @@ pub mod mctp {
             fn serialize<M: MctpMedium>(self, buffer: &mut [u8]) -> MctpPacketResult<usize, M> {
                 match self {
                     $(
-                        HostResponse::$service_name(response) => response
+                        HostResult::$service_name(response) => response
                             .serialize(buffer)
                             .map_err(|_| mctp_rs::MctpPacketError::SerializeError(concat!("Failed to serialize ", stringify!($service_name), " response"))),
                     )+
@@ -273,7 +273,7 @@ pub mod mctp {
                                     Err(MctpPacketError::CommandParseError(concat!("Received ", stringify!($service_name), " request when expecting response")))
                                 }
                                 OdpMessageType::Response { is_error } => {
-                                    Ok(HostResponse::$service_name(<$response_type as SerializableResponse>::deserialize(is_error, header.message_id, buffer)
+                                    Ok(HostResult::$service_name(<$response_type as SerializableResult>::deserialize(is_error, header.message_id, buffer)
                                         .map_err(|_| MctpPacketError::CommandParseError(concat!("Could not parse ", stringify!($service_name), " response")))?))
                                 }
                             }
@@ -400,14 +400,14 @@ pub mod mctp {
         /// Attempt to route the provided message to the service that is registered to handle it based on its type.
         pub(crate) fn send_to_comms(
             message: &comms::Message,
-            send_fn: impl FnOnce(comms::EndpointID, HostResponse) -> Result<(), comms::MailboxDelegateError>,
+            send_fn: impl FnOnce(comms::EndpointID, HostResult) -> Result<(), comms::MailboxDelegateError>,
         ) -> Result<(), comms::MailboxDelegateError> {
             if (false) { unreachable!() }
             $(
                 else if let Some(msg) = message.data.get::<$response_type>() {
                     send_fn(
                         $($endpoint_id)+,
-                        HostResponse::$service_name(*msg),
+                        HostResult::$service_name(*msg),
                     )?;
                     Ok(())
                 }
