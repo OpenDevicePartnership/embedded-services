@@ -40,24 +40,24 @@ mod private {
 
 /// Responses are of type Result<T, E> where T and E both implement SerializableMessage
 pub trait SerializableResult: private::Sealed + Sized {
-    /// The type of the response when the operation being responsed to succeeded
+    /// The type of the result when the operation being responded to succeeded
     type SuccessType: SerializableMessage;
 
-    /// The type of the response when the operation being responsed to failed
+    /// The type of the result when the operation being responded to failed
     type ErrorType: SerializableMessage;
 
-    /// Returns true if the response represents a successful operation, false otherwise
+    /// Returns true if the result represents a successful operation, false otherwise
     fn is_ok(&self) -> bool;
 
-    /// Returns a unique discriminant that can be used to deserialize the specific type of response.
+    /// Returns a unique discriminant that can be used to deserialize the specific type of result.
     /// Discriminants can be reused for success and error messages.
     fn discriminant(&self) -> u16;
 
-    /// Writes the response into the provided buffer.
+    /// Writes the result into the provided buffer.
     /// On success, returns the number of bytes written
     fn serialize(self, buffer: &mut [u8]) -> Result<usize, MessageSerializationError>;
 
-    /// Attempts to deserialize the response from the provided buffer.
+    /// Attempts to deserialize the result from the provided buffer.
     fn deserialize(is_error: bool, discriminant: u16, buffer: &[u8]) -> Result<Self, MessageSerializationError>;
 }
 
@@ -142,7 +142,7 @@ pub mod mctp {
         $service_id:expr,
         ($($endpoint_id:tt)+),
         $request_type:ty,
-        $response_type:ty;
+        $result_type:ty;
         )+) => {
 
         use bitfield::bitfield;
@@ -227,7 +227,7 @@ pub mod mctp {
         #[cfg_attr(feature = "defmt", derive(defmt::Format))]
         pub(crate) enum HostResult {
             $(
-                $service_name($response_type),
+                $service_name($result_type),
             )+
         }
 
@@ -235,7 +235,7 @@ pub mod mctp {
             pub(crate) fn discriminant(&self) -> u16 {
                 match self {
                     $(
-                        HostResult::$service_name(response) => response.discriminant(),
+                        HostResult::$service_name(result) => result.discriminant(),
                     )+
                 }
             }
@@ -243,7 +243,7 @@ pub mod mctp {
             pub(crate) fn is_ok(&self) -> bool {
                 match self {
                     $(
-                        HostResult::$service_name(response) => response.is_ok(),
+                        HostResult::$service_name(result) => result.is_ok(),
                     )+
                 }
             }
@@ -257,9 +257,9 @@ pub mod mctp {
             fn serialize<M: MctpMedium>(self, buffer: &mut [u8]) -> MctpPacketResult<usize, M> {
                 match self {
                     $(
-                        HostResult::$service_name(response) => response
+                        HostResult::$service_name(result) => result
                             .serialize(buffer)
-                            .map_err(|_| mctp_rs::MctpPacketError::SerializeError(concat!("Failed to serialize ", stringify!($service_name), " response"))),
+                            .map_err(|_| mctp_rs::MctpPacketError::SerializeError(concat!("Failed to serialize ", stringify!($service_name), " result"))),
                     )+
                 }
             }
@@ -270,11 +270,11 @@ pub mod mctp {
                         OdpService::$service_name => {
                             match header.message_type {
                                 OdpMessageType::Request => {
-                                    Err(MctpPacketError::CommandParseError(concat!("Received ", stringify!($service_name), " request when expecting response")))
+                                    Err(MctpPacketError::CommandParseError(concat!("Received ", stringify!($service_name), " request when expecting result")))
                                 }
-                                OdpMessageType::Response { is_error } => {
-                                    Ok(HostResult::$service_name(<$response_type as SerializableResult>::deserialize(is_error, header.message_id, buffer)
-                                        .map_err(|_| MctpPacketError::CommandParseError(concat!("Could not parse ", stringify!($service_name), " response")))?))
+                                OdpMessageType::Result { is_error } => {
+                                    Ok(HostResult::$service_name(<$result_type as SerializableResult>::deserialize(is_error, header.message_id, buffer)
+                                        .map_err(|_| MctpPacketError::CommandParseError(concat!("Could not parse ", stringify!($service_name), " result")))?))
                                 }
                             }
                         },
@@ -290,7 +290,7 @@ pub mod mctp {
             struct OdpHeaderWireFormat(u32);
             impl Debug;
             impl new;
-            /// If true, represents a request; otherwise, represents a response
+            /// If true, represents a request; otherwise, represents a result
             is_request, set_is_request: 25;
 
             // TODO do we even want this bit? I think we just cribbed it off of a different message type, but it's not clear to me that we actually need it...
@@ -300,7 +300,7 @@ pub mod mctp {
             /// Note: Error checking is done when you access the field, not when you construct the OdpHeader. Take care when constructing a header.
             u8, service_id, set_service_id: 23, 16;
 
-            /// On responses, indicates if the response message is an error. Unused on requests.
+            /// On results, indicates if the result message is an error. Unused on requests.
             is_error, set_is_error: 15;
 
             /// The message type/discriminant
@@ -311,7 +311,7 @@ pub mod mctp {
         #[cfg_attr(feature = "defmt", derive(defmt::Format))]
         pub(crate) enum OdpMessageType {
             Request,
-            Response { is_error: bool },
+            Result { is_error: bool },
         }
 
         #[derive(Copy, Clone, PartialEq, Eq)]
@@ -331,7 +331,7 @@ pub mod mctp {
                     src.service.into(),
                     match src.message_type {
                         OdpMessageType::Request => false, // unused on requests
-                        OdpMessageType::Response { is_error } => is_error,
+                        OdpMessageType::Result { is_error } => is_error,
                     },
                     src.message_id,
                 )
@@ -348,7 +348,7 @@ pub mod mctp {
                 let message_type = if src.is_request() {
                     OdpMessageType::Request
                 } else {
-                    OdpMessageType::Response {
+                    OdpMessageType::Result {
                         is_error: src.is_error(),
                     }
                 };
@@ -404,7 +404,7 @@ pub mod mctp {
         ) -> Result<(), comms::MailboxDelegateError> {
             if (false) { unreachable!() }
             $(
-                else if let Some(msg) = message.data.get::<$response_type>() {
+                else if let Some(msg) = message.data.get::<$result_type>() {
                     send_fn(
                         $($endpoint_id)+,
                         HostResult::$service_name(*msg),

@@ -69,14 +69,13 @@ impl Service<'_> {
     async fn serialize_packet_from_subsystem(
         &self,
         espi: &mut espi::Espi<'static>,
-        response: &HostResultMessage,
+        result: &HostResultMessage,
     ) -> Result<(), Error> {
         let mut assembly_buf_access = self.assembly_buf_owned_ref.borrow_mut().map_err(Error::Buffer)?;
         let pkt_ctx_buf = assembly_buf_access.borrow_mut();
         let mut mctp_ctx = mctp_rs::MctpPacketContext::new(mctp_rs::smbus_espi::SmbusEspiMedium, pkt_ctx_buf);
 
-        let source_service: OdpService =
-            OdpService::try_from(response.source_endpoint).map_err(|_| Error::Serialize)?;
+        let source_service: OdpService = OdpService::try_from(result.source_endpoint).map_err(|_| Error::Serialize)?;
 
         let reply_context: mctp_rs::MctpReplyContext<SmbusEspiMedium> = mctp_rs::MctpReplyContext {
             source_endpoint_id: mctp_rs::EndpointId::Id(0x80),
@@ -93,16 +92,16 @@ impl Service<'_> {
         };
 
         let header = OdpHeader {
-            message_type: OdpMessageType::Response {
-                is_error: !response.message.is_ok(),
+            message_type: OdpMessageType::Result {
+                is_error: !result.message.is_ok(),
             },
             is_datagram: false,
             service: source_service,
-            message_id: response.message.discriminant(),
+            message_id: result.message.discriminant(),
         };
 
         let mut packet_state = mctp_ctx
-            .serialize_packet(reply_context, (header, response.message.clone()))
+            .serialize_packet(reply_context, (header, result.message.clone()))
             .map_err(|e| {
                 error!("serialize_packet_from_subsystem: {:?}", e);
                 Error::Serialize
