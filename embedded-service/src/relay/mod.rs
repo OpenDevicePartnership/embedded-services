@@ -38,7 +38,7 @@ mod private {
     impl<T, E> Sealed for Result<T, E> {}
 }
 
-/// Responses are of type Result<T, E> where T and E both implement SerializableMessage
+/// Responses sent over MCTP are called "Results" are of type Result<T, E> where T and E both implement SerializableMessage
 pub trait SerializableResult: private::Sealed + Sized {
     /// The type of the result when the operation being responded to succeeded
     type SuccessType: SerializableMessage;
@@ -284,7 +284,7 @@ pub mod mctp {
         }
 
         bitfield! {
-            /// Raw bitfield of possible port status events
+            /// Wire format for ODP MCTP headers. Not user-facing - use OdpHeader instead.
             #[derive(Copy, Clone, PartialEq, Eq)]
             #[cfg_attr(feature = "defmt", derive(defmt::Format))]
             struct OdpHeaderWireFormat(u32);
