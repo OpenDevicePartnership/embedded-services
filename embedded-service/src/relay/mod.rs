@@ -113,7 +113,7 @@ pub mod mctp {
     ///   - enum OdpService - a mapping from service name to MCTP endpoint ID
     ///   - enum HostRequest - an enum containing all the possible request types that were passed into the macro
     ///   - enum HostResult - an enum containing all the possible result types that were passed into the macro
-    ///   - struct OdpHeader - a type representing the an ODP MCTP header.
+    ///   - struct OdpHeader - a type representing the ODP MCTP header.
     ///   - fn send_to_comms(&comms::Message, impl FnOnce(comms::EndpointID, HostResult) -> Result<(), comms::MailboxDelegateError>,
     ///     a function that takes a received message and sends it to the appropriate service based on its type using the provided send function.
     ///
