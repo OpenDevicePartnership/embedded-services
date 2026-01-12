@@ -38,7 +38,7 @@ mod private {
     impl<T, E> Sealed for Result<T, E> {}
 }
 
-/// Responses sent over MCTP are called "Results" are of type Result<T, E> where T and E both implement SerializableMessage
+/// Responses sent over MCTP are called "Results" and are of type Result<T, E> where T and E both implement SerializableMessage
 pub trait SerializableResult: private::Sealed + Sized {
     /// The type of the result when the operation being responded to succeeded
     type SuccessType: SerializableMessage;
@@ -402,17 +402,16 @@ pub mod mctp {
             message: &comms::Message,
             send_fn: impl FnOnce(comms::EndpointID, HostResult) -> Result<(), comms::MailboxDelegateError>,
         ) -> Result<(), comms::MailboxDelegateError> {
-            if (false) { unreachable!() }
             $(
-                else if let Some(msg) = message.data.get::<$result_type>() {
+                if let Some(msg) = message.data.get::<$result_type>() {
                     send_fn(
                         $($endpoint_id)+,
                         HostResult::$service_name(*msg),
                     )?;
                     Ok(())
-                }
+                } else
             )+
-            else {
+            {
                 Err(comms::MailboxDelegateError::MessageNotFound)
             }
         }
