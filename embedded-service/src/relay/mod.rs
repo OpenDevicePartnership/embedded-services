@@ -134,9 +134,8 @@ pub mod mctp {
     ///     Thermal, 0x09, (comms::EndpointID::Internal(comms::Internal::Thermal)), thermal_service_messages::ThermalRequest, thermal_service_messages::ThermalResult;
     ///     Debug,   0x0A, (comms::EndpointID::Internal(comms::Internal::Debug)),   debug_service_messages::DebugRequest, debug_service_messages::DebugResult;
     /// );
-    ///
-    /// Note that due to technical limitations in Rust macros, the endpoint ID (the third argument) must be passed in as a parenthesized expression.
-    ///
+    ///                    ^                                                   ^
+    ///                    note the above parentheses - these are required
     #[macro_export]
     macro_rules! impl_odp_mctp_relay_types {
         ($($service_name:ident,
