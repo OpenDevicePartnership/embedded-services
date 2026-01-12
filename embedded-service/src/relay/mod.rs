@@ -124,7 +124,7 @@ pub mod mctp {
     ///    $service_id (u8) - the service ID that will be used in the ODP MCTP header for messages related to this service.
     ///    $endpoint_id (comms::EndpointID value) - the comms endpoint ID that this service corresponds to.
     ///                                             NOTE: due to technical limitations in Rust macros, this must be surrounded with parentheses.
-    ///    $request_type (type implementing SerializableRequest) - the type that represents requests for this service
+    ///    $request_type (type implementing SerializableMessage) - the type that represents requests for this service
     ///    $result_type (type implementing SerializableResult) - the type that represents results for this service
     ///
     /// Example usage:
