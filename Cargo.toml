@@ -8,6 +8,7 @@ members = [
     "cfu-service",
     "embedded-service",
     "espi-service",
+    "uart-service",
     "hid-service",
     "partition-manager/generation",
     "partition-manager/macros",

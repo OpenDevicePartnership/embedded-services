@@ -2241,6 +2241,25 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1dccffe3ce07af9386bfd29e80c0ab1a8205a2fc34e4bcd40364df902cfa8f3f"
 
 [[package]]
+name = "uart-service"
+version = "0.1.0"
+dependencies = [
+ "battery-service-messages",
+ "bitfield 0.17.0",
+ "debug-service-messages",
+ "defmt 0.3.100",
+ "embassy-futures",
+ "embassy-sync",
+ "embassy-time",
+ "embedded-io-async",
+ "embedded-services",
+ "log",
+ "mctp-rs",
+ "num_enum",
+ "thermal-service-messages",
+]
+
+[[package]]
 name = "ufmt-write"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
