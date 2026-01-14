@@ -107,7 +107,7 @@ dependencies = [
  "embassy-futures",
  "embassy-sync",
  "embassy-time",
- "embedded-batteries-async 0.3.1",
+ "embedded-batteries-async 0.3.4",
  "embedded-hal 1.0.0",
  "embedded-hal-async",
  "embedded-services",
@@ -120,7 +120,7 @@ name = "battery-service-messages"
 version = "0.1.0"
 dependencies = [
  "defmt 0.3.100",
- "embedded-batteries-async 0.3.1",
+ "embedded-batteries-async 0.3.4",
  "embedded-services",
  "num_enum",
 ]
@@ -192,6 +192,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "bitfield-struct"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8769c4854c5ada2852ddf6fd09d15cf43d4c2aaeccb4de6432f5402f08a6003b"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.104",
+]
+
+[[package]]
 name = "bitflags"
 version = "1.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -233,7 +244,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "55262eaa8d376e3db634b2cf851d2f255fbe86076abc3d4f8088248340836bb6"
 dependencies = [
  "device-driver",
- "embedded-batteries-async 0.3.1",
+ "embedded-batteries-async 0.3.4",
  "embedded-hal 1.0.0",
  "embedded-hal-async",
  "smbus-pec",
@@ -632,7 +643,7 @@ version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "31e14d288a59ef41f4e05468eae9b1c9fef6866977cea86d3f1a1ced295b6cab"
 dependencies = [
- "bitfield-struct",
+ "bitfield-struct 0.10.1",
  "bitflags 2.9.1",
  "defmt 0.3.100",
  "embedded-hal 1.0.0",
@@ -645,7 +656,7 @@ version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3b8996d7168535579180a0eead82efaba718ebd598782f986bfd635458259df2"
 dependencies = [
- "bitfield-struct",
+ "bitfield-struct 0.10.1",
  "bitflags 2.9.1",
  "defmt 0.3.100",
  "embedded-hal 1.0.0",
@@ -658,18 +669,18 @@ version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "98cb543f4eea7e2c57544f345a5cf40fd90e9d3593b96cb7515f6c1d62c7fc68"
 dependencies = [
- "bitfield-struct",
+ "bitfield-struct 0.10.1",
  "embedded-batteries 0.2.1",
  "embedded-hal 1.0.0",
 ]
 
 [[package]]
 name = "embedded-batteries-async"
-version = "0.3.1"
+version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fa9493dcbd0c520b9c7b60d59f601cb7e762c5fdc50fe70f30d4b5ecf05d09fb"
+checksum = "a3bf0e4be67770cfc31f1cea8b73baf98c0baf2c57d6bd8c3a4c315acb1d8bd4"
 dependencies = [
- "bitfield-struct",
+ "bitfield-struct 0.12.1",
  "defmt 0.3.100",
  "embedded-batteries 0.3.1",
  "embedded-hal 1.0.0",
@@ -763,7 +774,7 @@ dependencies = [
  "document-features",
  "embassy-sync",
  "embassy-time",
- "embedded-batteries-async 0.3.1",
+ "embedded-batteries-async 0.3.4",
  "embedded-cfu-protocol",
  "embedded-hal-async",
  "embedded-io",
@@ -1382,7 +1393,7 @@ dependencies = [
  "embassy-imxrt",
  "embassy-sync",
  "embassy-time",
- "embedded-batteries-async 0.3.1",
+ "embedded-batteries-async 0.3.4",
  "embedded-hal-async",
  "embedded-services",
  "espi-service",

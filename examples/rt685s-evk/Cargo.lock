@@ -620,9 +620,9 @@ dependencies = [
 
 [[package]]
 name = "embedded-batteries-async"
-version = "0.3.1"
+version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fa9493dcbd0c520b9c7b60d59f601cb7e762c5fdc50fe70f30d4b5ecf05d09fb"
+checksum = "6465f32edac01ccd4d55931896177b3a61a5286205c5269f30b91ce7dbf51b5e"
 dependencies = [
  "bitfield-struct",
  "embedded-batteries 0.3.1",
