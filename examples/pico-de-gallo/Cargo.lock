@@ -538,9 +538,9 @@ dependencies = [
 
 [[package]]
 name = "embedded-batteries"
-version = "0.2.1"
+version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "31e14d288a59ef41f4e05468eae9b1c9fef6866977cea86d3f1a1ced295b6cab"
+checksum = "3b8996d7168535579180a0eead82efaba718ebd598782f986bfd635458259df2"
 dependencies = [
  "bitfield-struct",
  "bitflags",
@@ -550,9 +550,9 @@ dependencies = [
 
 [[package]]
 name = "embedded-batteries-async"
-version = "0.3.0"
+version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6645cb40f176edbc0270de06c8df1e8fc1a165d12fa213f0c429b161dd81a811"
+checksum = "fa9493dcbd0c520b9c7b60d59f601cb7e762c5fdc50fe70f30d4b5ecf05d09fb"
 dependencies = [
  "bitfield-struct",
  "embedded-batteries",
@@ -1214,6 +1214,8 @@ dependencies = [
 [[package]]
 name = "pico-de-gallo-hal"
 version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bc711fd7d8c333ac344e434a61a90a9e9076cc7c9fdb9d7d790a4425a9187c0a"
 dependencies = [
  "embedded-hal 1.0.0",
  "embedded-hal-async",

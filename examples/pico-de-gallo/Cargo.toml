@@ -23,10 +23,10 @@ embassy-time = { version = "0.5.0", features = [
 embassy-time-driver = { version = "0.2.1", optional = true }
 embassy-futures = "0.1.2"
 
-embedded-batteries-async = "0.3.0"
+embedded-batteries-async = "0.3.1"
 battery-service = { path = "../../battery-service", features = ["log"] }
 
-pico-de-gallo-hal = { path = "../../../pico-de-gallo/crates/pico-de-gallo-hal" }
+pico-de-gallo-hal = "0.1.0"
 
 env_logger = "0.11"
 log = "0.4.14"
