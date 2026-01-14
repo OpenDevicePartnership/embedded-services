@@ -104,6 +104,8 @@ pub struct Data<'a> {
     contents: &'a dyn Any,
 }
 
+unsafe impl<'a> Send for Data<'a> {}
+
 impl<'a> Data<'a> {
     /// Construct a Data portion of a Message from some data input
     pub fn new(from: &'a impl Any) -> Self {

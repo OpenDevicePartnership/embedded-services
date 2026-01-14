@@ -1,0 +1,41 @@
+
+[workspace]
+
+[package]
+name = "pico-de-gallo"
+version = "0.1.0"
+edition = "2024"
+
+[workspace.lints.rust]
+warnings = "deny"
+
+[lints]
+workspace = true
+
+[dependencies]
+tokio = { version = "1.48.0", features = ["rt-multi-thread", "macros"] }
+embedded-services = { path = "../../embedded-service", features = ["log"] }
+embassy-time = { version = "0.5.0", features = [
+    "log",
+    "std",
+    "generic-queue-8",
+] }
+embassy-time-driver = { version = "0.2.1", optional = true }
+embassy-futures = "0.1.2"
+
+embedded-batteries-async = "0.3.0"
+battery-service = { path = "../../battery-service", features = ["log"] }
+
+pico-de-gallo-hal = { path = "../../../pico-de-gallo/crates/pico-de-gallo-hal" }
+
+env_logger = "0.11"
+log = "0.4.14"
+static_cell = "2"
+embedded-hal-async = "1.0.0"
+
+critical-section = { version = "1.1", features = ["std"] }
+bq40z50-rx = { version = "0.8", features = ["r5", "embassy-timeout"] }
+
+# Needed otherwise cargo will pull from git
+[patch."https://github.com/OpenDevicePartnership/embedded-services"]
+embedded-services = { path = "../../embedded-service" }

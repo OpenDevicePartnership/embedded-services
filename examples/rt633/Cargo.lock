@@ -107,7 +107,7 @@ dependencies = [
  "embassy-futures",
  "embassy-sync",
  "embassy-time",
- "embedded-batteries-async",
+ "embedded-batteries-async 0.3.0",
  "embedded-hal 1.0.0",
  "embedded-hal-async",
  "embedded-services",
@@ -120,7 +120,7 @@ name = "battery-service-messages"
 version = "0.1.0"
 dependencies = [
  "defmt 0.3.100",
- "embedded-batteries-async",
+ "embedded-batteries-async 0.3.0",
  "embedded-services",
  "num_enum",
 ]
@@ -221,7 +221,7 @@ version = "0.1.0"
 source = "git+https://github.com/OpenDevicePartnership/bq25773#20bc26219b5372bc6146cdc509c21f6d43e257b3"
 dependencies = [
  "device-driver",
- "embedded-batteries-async",
+ "embedded-batteries-async 0.2.1",
  "embedded-hal 1.0.0",
  "embedded-hal-async",
 ]
@@ -233,7 +233,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6490641e82ed3770614a0f2a301fc26422ee83b52eb7d2802805e41f471be318"
 dependencies = [
  "device-driver",
- "embedded-batteries-async",
+ "embedded-batteries-async 0.2.1",
  "embedded-hal 1.0.0",
  "embedded-hal-async",
 ]
@@ -651,6 +651,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "embedded-batteries-async"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6645cb40f176edbc0270de06c8df1e8fc1a165d12fa213f0c429b161dd81a811"
+dependencies = [
+ "bitfield-struct",
+ "defmt 0.3.100",
+ "embedded-batteries",
+ "embedded-hal 1.0.0",
+]
+
+[[package]]
 name = "embedded-cfu-protocol"
 version = "0.2.0"
 source = "git+https://github.com/OpenDevicePartnership/embedded-cfu#a4cc8707842b878048447abbf2af4efa79fed368"
@@ -738,7 +750,7 @@ dependencies = [
  "document-features",
  "embassy-sync",
  "embassy-time",
- "embedded-batteries-async",
+ "embedded-batteries-async 0.3.0",
  "embedded-cfu-protocol",
  "embedded-hal-async",
  "embedded-io",
@@ -1357,7 +1369,7 @@ dependencies = [
  "embassy-imxrt",
  "embassy-sync",
  "embassy-time",
- "embedded-batteries-async",
+ "embedded-batteries-async 0.2.1",
  "embedded-hal-async",
  "embedded-services",
  "espi-service",
