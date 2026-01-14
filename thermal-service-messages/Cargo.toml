@@ -10,6 +10,7 @@ defmt = { workspace = true, optional = true }
 embedded-services.workspace = true
 num_enum.workspace = true
 uuid.workspace = true
+zerocopy.workspace = true
 
 [lints]
 workspace = true

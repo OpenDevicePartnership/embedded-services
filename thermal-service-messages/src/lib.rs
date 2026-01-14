@@ -1,18 +1,19 @@
 #![no_std]
 
 use embedded_services::relay::{MessageSerializationError, SerializableMessage};
+use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, LE, U16, U32};
 
 /// 16-bit variable length
-pub type VarLen = u16;
+pub type VarLen = U16<LE>;
 
 /// Instance ID
 pub type InstanceId = u8;
 
 /// Time in milliseconds
-pub type Milliseconds = u32;
+pub type Milliseconds = U32<LE>;
 
 /// MPTF expects temperatures in tenth Kelvins
-pub type DeciKelvin = u32;
+pub type DeciKelvin = U32<LE>;
 
 /// Standard MPTF requests expected by the thermal subsystem
 #[derive(num_enum::IntoPrimitive, num_enum::TryFromPrimitive, Copy, Clone, Debug, PartialEq)]
@@ -36,12 +37,12 @@ enum ThermalCmd {
 impl From<&ThermalRequest> for ThermalCmd {
     fn from(request: &ThermalRequest) -> Self {
         match request {
-            ThermalRequest::ThermalGetTmpRequest { .. } => ThermalCmd::GetTmp,
-            ThermalRequest::ThermalSetThrsRequest { .. } => ThermalCmd::SetThrs,
-            ThermalRequest::ThermalGetThrsRequest { .. } => ThermalCmd::GetThrs,
-            ThermalRequest::ThermalSetScpRequest { .. } => ThermalCmd::SetScp,
-            ThermalRequest::ThermalGetVarRequest { .. } => ThermalCmd::GetVar,
-            ThermalRequest::ThermalSetVarRequest { .. } => ThermalCmd::SetVar,
+            ThermalRequest::ThermalGetTmpRequest(_) => ThermalCmd::GetTmp,
+            ThermalRequest::ThermalSetThrsRequest(_) => ThermalCmd::SetThrs,
+            ThermalRequest::ThermalGetThrsRequest(_) => ThermalCmd::GetThrs,
+            ThermalRequest::ThermalSetScpRequest(_) => ThermalCmd::SetScp,
+            ThermalRequest::ThermalGetVarRequest(_) => ThermalCmd::GetVar,
+            ThermalRequest::ThermalSetVarRequest(_) => ThermalCmd::SetVar,
         }
     }
 }
@@ -49,94 +50,94 @@ impl From<&ThermalRequest> for ThermalCmd {
 impl From<&ThermalResponse> for ThermalCmd {
     fn from(response: &ThermalResponse) -> Self {
         match response {
-            ThermalResponse::ThermalGetTmpResponse { .. } => ThermalCmd::GetTmp,
+            ThermalResponse::ThermalGetTmpResponse(_) => ThermalCmd::GetTmp,
             ThermalResponse::ThermalSetThrsResponse => ThermalCmd::SetThrs,
-            ThermalResponse::ThermalGetThrsResponse { .. } => ThermalCmd::GetThrs,
+            ThermalResponse::ThermalGetThrsResponse(_) => ThermalCmd::GetThrs,
             ThermalResponse::ThermalSetScpResponse => ThermalCmd::SetScp,
-            ThermalResponse::ThermalGetVarResponse { .. } => ThermalCmd::GetVar,
+            ThermalResponse::ThermalGetVarResponse(_) => ThermalCmd::GetVar,
             ThermalResponse::ThermalSetVarResponse => ThermalCmd::SetVar,
         }
     }
 }
 
+#[derive(PartialEq, Clone, Copy, Debug, IntoBytes, FromBytes, Immutable, KnownLayout)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct ThermalGetTmpRequest {
+    pub instance_id: u8,
+}
+
+#[derive(PartialEq, Clone, Copy, Debug, IntoBytes, FromBytes, Immutable, KnownLayout)]
+pub struct ThermalSetThrsRequest {
+    pub instance_id: u8,
+    pub timeout: Milliseconds,
+    pub low: DeciKelvin,
+    pub high: DeciKelvin,
+}
+
+#[derive(PartialEq, Clone, Copy, Debug, IntoBytes, FromBytes, Immutable, KnownLayout)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct ThermalGetThrsRequest {
+    pub instance_id: u8,
+}
+
+#[derive(PartialEq, Clone, Copy, Debug, IntoBytes, FromBytes, Immutable, KnownLayout)]
+pub struct ThermalSetScpRequest {
+    pub instance_id: u8,
+    pub policy_id: U32<LE>,
+    pub acoustic_lim: U32<LE>,
+    pub power_lim: U32<LE>,
+}
+
+#[derive(PartialEq, Clone, Copy, Debug, IntoBytes, FromBytes, Immutable, KnownLayout)]
+pub struct ThermalGetVarRequest {
+    pub instance_id: u8,
+    pub len: VarLen, // TODO why is there a len here? as far as I can tell we're always discarding it, and I think values are only u32?
+    pub var_uuid: uuid::Bytes,
+}
+
+#[derive(PartialEq, Clone, Copy, Debug, IntoBytes, FromBytes, Immutable, KnownLayout)]
+pub struct ThermalSetVarRequest {
+    pub instance_id: u8,
+    pub len: VarLen, // TODO why is there a len here? as far as I can tell we're always discarding it, and I think values are only u32?
+    pub var_uuid: uuid::Bytes,
+    pub set_var: U32<LE>,
+}
+
 #[derive(PartialEq, Clone, Copy)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum ThermalRequest {
-    ThermalGetTmpRequest {
-        instance_id: u8,
-    },
-    ThermalSetThrsRequest {
-        instance_id: u8,
-        timeout: Milliseconds,
-        low: DeciKelvin,
-        high: DeciKelvin,
-    },
-    ThermalGetThrsRequest {
-        instance_id: u8,
-    },
-    ThermalSetScpRequest {
-        instance_id: u8,
-        policy_id: u32,
-        acoustic_lim: u32,
-        power_lim: u32,
-    },
-    ThermalGetVarRequest {
-        instance_id: u8,
-        len: VarLen, // TODO why is there a len here? as far as I can tell we're always discarding it, and I think values are only u32?
-        var_uuid: uuid::Bytes,
-    },
-    ThermalSetVarRequest {
-        instance_id: u8,
-        len: VarLen, // TODO why is there a len here? as far as I can tell we're always discarding it, and I think values are only u32?
-        var_uuid: uuid::Bytes,
-        set_var: u32,
-    },
+    ThermalGetTmpRequest(ThermalGetTmpRequest),
+    ThermalSetThrsRequest(ThermalSetThrsRequest),
+    ThermalGetThrsRequest(ThermalGetThrsRequest),
+    ThermalSetScpRequest(ThermalSetScpRequest),
+    ThermalGetVarRequest(ThermalGetVarRequest),
+    ThermalSetVarRequest(ThermalSetVarRequest),
 }
 
-// TODO this is essentially a hand-written reinterpret_cast - can we codegen some of this instead?
 impl SerializableMessage for ThermalRequest {
-    fn serialize(self, _buffer: &mut [u8]) -> Result<usize, MessageSerializationError> {
-        Err(MessageSerializationError::Other(
-            "unimplemented - don't need to serialize requests on the EC side",
-        ))
+    fn serialize(self, buffer: &mut [u8]) -> Result<usize, MessageSerializationError> {
+        match self {
+            Self::ThermalGetTmpRequest(req) => serialize_inner(req, buffer),
+            Self::ThermalSetThrsRequest(req) => serialize_inner(req, buffer),
+            Self::ThermalGetThrsRequest(req) => serialize_inner(req, buffer),
+            Self::ThermalSetScpRequest(req) => serialize_inner(req, buffer),
+            Self::ThermalGetVarRequest(req) => serialize_inner(req, buffer),
+            Self::ThermalSetVarRequest(req) => serialize_inner(req, buffer),
+        }
     }
 
     fn deserialize(discriminant: u16, buffer: &[u8]) -> Result<Self, MessageSerializationError> {
-        Ok(
-            match ThermalCmd::try_from(discriminant)
-                .map_err(|_| MessageSerializationError::UnknownMessageDiscriminant(discriminant))?
-            {
-                ThermalCmd::GetTmp => Self::ThermalGetTmpRequest {
-                    instance_id: safe_get_u8(buffer, 0)?,
-                },
-                ThermalCmd::SetThrs => Self::ThermalSetThrsRequest {
-                    instance_id: safe_get_u8(buffer, 0)?,
-                    timeout: safe_get_dword(buffer, 1)?,
-                    low: safe_get_dword(buffer, 5)?,
-                    high: safe_get_dword(buffer, 9)?,
-                },
-                ThermalCmd::GetThrs => Self::ThermalGetThrsRequest {
-                    instance_id: safe_get_u8(buffer, 0)?,
-                },
-                ThermalCmd::SetScp => Self::ThermalSetScpRequest {
-                    instance_id: safe_get_u8(buffer, 0)?,
-                    policy_id: safe_get_dword(buffer, 1)?,
-                    acoustic_lim: safe_get_dword(buffer, 5)?,
-                    power_lim: safe_get_dword(buffer, 9)?,
-                },
-                ThermalCmd::GetVar => Self::ThermalGetVarRequest {
-                    instance_id: safe_get_u8(buffer, 0)?,
-                    len: safe_get_u16(buffer, 1)?,
-                    var_uuid: safe_get_uuid(buffer, 3)?,
-                },
-                ThermalCmd::SetVar => Self::ThermalSetVarRequest {
-                    instance_id: safe_get_u8(buffer, 0)?,
-                    len: safe_get_u16(buffer, 1)?,
-                    var_uuid: safe_get_uuid(buffer, 3)?,
-                    set_var: safe_get_dword(buffer, 19)?,
-                },
-            },
-        )
+        let cmd = ThermalCmd::try_from(discriminant)
+            .map_err(|_| MessageSerializationError::UnknownMessageDiscriminant(discriminant))?;
+
+        Ok(match cmd {
+            ThermalCmd::GetTmp => Self::ThermalGetTmpRequest(deserialize_inner(buffer)?),
+            ThermalCmd::SetThrs => Self::ThermalSetThrsRequest(deserialize_inner(buffer)?),
+            ThermalCmd::GetThrs => Self::ThermalGetThrsRequest(deserialize_inner(buffer)?),
+            ThermalCmd::SetScp => Self::ThermalSetScpRequest(deserialize_inner(buffer)?),
+            ThermalCmd::GetVar => Self::ThermalGetVarRequest(deserialize_inner(buffer)?),
+            ThermalCmd::SetVar => Self::ThermalSetVarRequest(deserialize_inner(buffer)?),
+        })
     }
 
     fn discriminant(&self) -> u16 {
@@ -145,68 +146,56 @@ impl SerializableMessage for ThermalRequest {
     }
 }
 
+#[derive(PartialEq, Clone, Copy, Debug, IntoBytes, FromBytes, Immutable, KnownLayout)]
+pub struct ThermalGetTmpResponse {
+    pub temperature: DeciKelvin,
+}
+
+#[derive(PartialEq, Clone, Copy, Debug, IntoBytes, FromBytes, Immutable, KnownLayout)]
+pub struct ThermalGetThrsResponse {
+    pub timeout: Milliseconds,
+    pub low: DeciKelvin,
+    pub high: DeciKelvin,
+}
+
+#[derive(PartialEq, Clone, Copy, Debug, IntoBytes, FromBytes, Immutable, KnownLayout)]
+pub struct ThermalGetVarResponse {
+    pub val: U32<LE>,
+}
+
 #[derive(PartialEq, Clone, Copy, Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum ThermalResponse {
-    ThermalGetTmpResponse {
-        temperature: DeciKelvin,
-    },
+    ThermalGetTmpResponse(ThermalGetTmpResponse),
     ThermalSetThrsResponse,
-    ThermalGetThrsResponse {
-        timeout: Milliseconds,
-        low: DeciKelvin,
-        high: DeciKelvin,
-    },
+    ThermalGetThrsResponse(ThermalGetThrsResponse),
     ThermalSetScpResponse,
-    ThermalGetVarResponse {
-        val: u32,
-    },
+    ThermalGetVarResponse(ThermalGetVarResponse),
     ThermalSetVarResponse,
 }
 
 impl SerializableMessage for ThermalResponse {
     fn serialize(self, buffer: &mut [u8]) -> Result<usize, MessageSerializationError> {
         match self {
-            Self::ThermalGetTmpResponse { temperature } => {
-                buffer
-                    .get_mut(..4)
-                    .ok_or(MessageSerializationError::BufferTooSmall)?
-                    .copy_from_slice(&u32::to_le_bytes(temperature));
-
-                Ok(4)
-            }
-            Self::ThermalGetThrsResponse { timeout, low, high } => {
-                buffer
-                    .get_mut(..4)
-                    .ok_or(MessageSerializationError::BufferTooSmall)?
-                    .copy_from_slice(&u32::to_le_bytes(timeout));
-                buffer
-                    .get_mut(4..8)
-                    .ok_or(MessageSerializationError::BufferTooSmall)?
-                    .copy_from_slice(&u32::to_le_bytes(low));
-                buffer
-                    .get_mut(8..12)
-                    .ok_or(MessageSerializationError::BufferTooSmall)?
-                    .copy_from_slice(&u32::to_le_bytes(high));
-
-                Ok(12)
-            }
-
-            Self::ThermalGetVarResponse { val } => {
-                buffer
-                    .get_mut(..4)
-                    .ok_or(MessageSerializationError::BufferTooSmall)?
-                    .copy_from_slice(&u32::to_le_bytes(val));
-                Ok(4)
-            }
-            Self::ThermalSetVarResponse | Self::ThermalSetScpResponse | Self::ThermalSetThrsResponse => Ok(0),
+            Self::ThermalGetTmpResponse(resp) => serialize_inner(resp, buffer),
+            Self::ThermalGetThrsResponse(resp) => serialize_inner(resp, buffer),
+            Self::ThermalGetVarResponse(resp) => serialize_inner(resp, buffer),
+            Self::ThermalSetVarResponse | Self::ThermalSetThrsResponse | Self::ThermalSetScpResponse => Ok(0),
         }
     }
 
-    fn deserialize(_discriminant: u16, _buffer: &[u8]) -> Result<Self, MessageSerializationError> {
-        Err(MessageSerializationError::Other(
-            "unimplemented - don't need to deserialize responses on the EC side",
-        ))
+    fn deserialize(discriminant: u16, buffer: &[u8]) -> Result<Self, MessageSerializationError> {
+        let cmd = ThermalCmd::try_from(discriminant)
+            .map_err(|_| MessageSerializationError::UnknownMessageDiscriminant(discriminant))?;
+
+        Ok(match cmd {
+            ThermalCmd::GetTmp => Self::ThermalGetTmpResponse(deserialize_inner(buffer)?),
+            ThermalCmd::GetThrs => Self::ThermalGetThrsResponse(deserialize_inner(buffer)?),
+            ThermalCmd::GetVar => Self::ThermalGetVarResponse(deserialize_inner(buffer)?),
+            ThermalCmd::SetThrs => Self::ThermalSetThrsResponse,
+            ThermalCmd::SetScp => Self::ThermalSetScpResponse,
+            ThermalCmd::SetVar => Self::ThermalSetVarResponse,
+        })
     }
 
     fn discriminant(&self) -> u16 {
@@ -225,15 +214,12 @@ pub enum ThermalError {
 
 impl SerializableMessage for ThermalError {
     fn serialize(self, _buffer: &mut [u8]) -> Result<usize, MessageSerializationError> {
-        match self {
-            Self::UnsupportedRevision | Self::InvalidParameter | Self::HardwareError => Ok(0),
-        }
+        Ok(0)
     }
 
-    fn deserialize(_discriminant: u16, _buffer: &[u8]) -> Result<Self, MessageSerializationError> {
-        Err(MessageSerializationError::Other(
-            "unimplemented - don't need to deserialize responses on the EC side",
-        ))
+    fn deserialize(discriminant: u16, _buffer: &[u8]) -> Result<Self, MessageSerializationError> {
+        ThermalError::try_from(discriminant)
+            .map_err(|_| MessageSerializationError::UnknownMessageDiscriminant(discriminant))
     }
 
     fn discriminant(&self) -> u16 {
@@ -243,35 +229,102 @@ impl SerializableMessage for ThermalError {
 
 pub type ThermalResult = Result<ThermalResponse, ThermalError>;
 
-fn safe_get_u8(buffer: &[u8], index: usize) -> Result<u8, MessageSerializationError> {
-    buffer
-        .get(index)
-        .copied()
-        .ok_or(MessageSerializationError::BufferTooSmall)
-}
-
-fn safe_get_u16(buffer: &[u8], index: usize) -> Result<u16, MessageSerializationError> {
-    let bytes = buffer
-        .get(index..index + 2)
-        .ok_or(MessageSerializationError::BufferTooSmall)?
-        .try_into()
+#[inline(always)]
+fn serialize_inner<T: IntoBytes + Immutable>(req: T, buffer: &mut [u8]) -> Result<usize, MessageSerializationError> {
+    req.write_to_prefix(buffer)
         .map_err(|_| MessageSerializationError::BufferTooSmall)?;
-    Ok(u16::from_le_bytes(bytes))
+    Ok(req.as_bytes().len())
 }
 
-fn safe_get_dword(buffer: &[u8], index: usize) -> Result<u32, MessageSerializationError> {
-    let bytes = buffer
-        .get(index..index + 4)
-        .ok_or(MessageSerializationError::BufferTooSmall)?
-        .try_into()
-        .map_err(|_| MessageSerializationError::BufferTooSmall)?;
-    Ok(u32::from_le_bytes(bytes))
+#[inline(always)]
+fn deserialize_inner<T: FromBytes>(buffer: &[u8]) -> Result<T, MessageSerializationError> {
+    Ok(T::read_from_prefix(buffer)
+        .map_err(|_| MessageSerializationError::BufferTooSmall)?
+        .0)
 }
 
-fn safe_get_uuid(buffer: &[u8], index: usize) -> Result<uuid::Bytes, MessageSerializationError> {
-    buffer
-        .get(index..index + 16)
-        .ok_or(MessageSerializationError::BufferTooSmall)?
-        .try_into()
-        .map_err(|_| MessageSerializationError::BufferTooSmall)
+// NOTE: zerocopy::byteorder::UN types unfortunately don't implement `defmt::Format`, so the structs
+// can't derive it. Thus we have to manually implement it.
+//
+// Revisit: Upstream defmt support to zerocopy?
+#[cfg(feature = "defmt")]
+impl defmt::Format for ThermalSetThrsRequest {
+    fn format(&self, f: defmt::Formatter) {
+        defmt::write!(
+            f,
+            "ThermalSetThrsRequest {{ instance_id: {}, timeout: {}, low: {}, high: {} }}",
+            self.instance_id,
+            self.timeout.get(),
+            self.low.get(),
+            self.high.get(),
+        );
+    }
+}
+
+#[cfg(feature = "defmt")]
+impl defmt::Format for ThermalSetScpRequest {
+    fn format(&self, f: defmt::Formatter) {
+        defmt::write!(
+            f,
+            "ThermalSetScpRequest {{ instance_id: {}, policy_id: {}, acoustic_lim: {}, power_lim: {} }}",
+            self.instance_id,
+            self.policy_id.get(),
+            self.acoustic_lim.get(),
+            self.power_lim.get(),
+        );
+    }
+}
+
+#[cfg(feature = "defmt")]
+impl defmt::Format for ThermalGetVarRequest {
+    fn format(&self, f: defmt::Formatter) {
+        defmt::write!(
+            f,
+            "ThermalGetVarRequest {{ instance_id: {}, len: {}, var_uuid: {=[u8; 16]} }}",
+            self.instance_id,
+            self.len.get(),
+            self.var_uuid,
+        );
+    }
+}
+
+#[cfg(feature = "defmt")]
+impl defmt::Format for ThermalSetVarRequest {
+    fn format(&self, f: defmt::Formatter) {
+        defmt::write!(
+            f,
+            "ThermalSetVarRequest {{ instance_id: {}, len: {}, var_uuid: {=[u8; 16]}, set_var: {} }}",
+            self.instance_id,
+            self.len.get(),
+            self.var_uuid,
+            self.set_var.get(),
+        );
+    }
+}
+
+#[cfg(feature = "defmt")]
+impl defmt::Format for ThermalGetTmpResponse {
+    fn format(&self, f: defmt::Formatter) {
+        defmt::write!(f, "ThermalGetTmpResponse {{ temperature: {} }}", self.temperature.get());
+    }
+}
+
+#[cfg(feature = "defmt")]
+impl defmt::Format for ThermalGetThrsResponse {
+    fn format(&self, f: defmt::Formatter) {
+        defmt::write!(
+            f,
+            "ThermalGetThrsResponse {{ timeout: {}, low: {}, high: {} }}",
+            self.timeout.get(),
+            self.low.get(),
+            self.high.get(),
+        );
+    }
+}
+
+#[cfg(feature = "defmt")]
+impl defmt::Format for ThermalGetVarResponse {
+    fn format(&self, f: defmt::Formatter) {
+        defmt::write!(f, "ThermalGetVarResponse {{ val: {} }}", self.val.get());
+    }
 }

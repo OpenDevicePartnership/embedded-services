@@ -4,7 +4,11 @@
 //!
 //! This interface is subject to change as the eSPI OOB service is developed
 use crate::{self as ts, fan, sensor, utils};
-use thermal_service_messages::{DeciKelvin, Milliseconds};
+use thermal_service_messages::{
+    DeciKelvin, Milliseconds, ThermalError, ThermalGetThrsRequest, ThermalGetThrsResponse, ThermalGetTmpRequest,
+    ThermalGetTmpResponse, ThermalGetVarRequest, ThermalGetVarResponse, ThermalRequest, ThermalResponse, ThermalResult,
+    ThermalSetScpRequest, ThermalSetThrsRequest, ThermalSetVarRequest,
+};
 
 use embedded_services::error;
 
@@ -33,19 +37,19 @@ pub enum Notify {
     Critical,
 }
 
-async fn sensor_get_tmp(instance_id: u8) -> thermal_service_messages::ThermalResult {
+async fn sensor_get_tmp(instance_id: u8) -> ThermalResult {
     if let Ok(ts::sensor::ResponseData::Temp(temp)) =
         ts::execute_sensor_request(sensor::DeviceId(instance_id), sensor::Request::GetTemp).await
     {
-        Ok(thermal_service_messages::ThermalResponse::ThermalGetTmpResponse {
+        Ok(ThermalResponse::ThermalGetTmpResponse(ThermalGetTmpResponse {
             temperature: utils::c_to_dk(temp),
-        })
+        }))
     } else {
-        Err(thermal_service_messages::ThermalError::InvalidParameter)
+        Err(ThermalError::InvalidParameter)
     }
 }
 
-async fn get_var_handler(instance_id: u8, var_uuid: uuid::Bytes) -> thermal_service_messages::ThermalResult {
+async fn get_var_handler(instance_id: u8, var_uuid: uuid::Bytes) -> ThermalResult {
     match var_uuid {
         uuid_standard::CRT_TEMP => sensor_get_thrs(instance_id, sensor::ThresholdType::Critical).await,
         uuid_standard::PROC_HOT_TEMP => sensor_get_thrs(instance_id, sensor::ThresholdType::Prochot).await,
@@ -63,7 +67,7 @@ async fn get_var_handler(instance_id: u8, var_uuid: uuid::Bytes) -> thermal_serv
         // TODO: Allow OEM to handle these?
         uuid => {
             error!("Received GetVar for unrecognized UUID: {:?}", uuid);
-            Err(thermal_service_messages::ThermalError::InvalidParameter)
+            Err(ThermalError::InvalidParameter)
         }
     }
 }
@@ -80,12 +84,14 @@ async fn set_var_handler(
         uuid_standard::PROFILE_TYPE => {
             todo!()
         }
-        uuid_standard::FAN_ON_TEMP => fan_set_var(instance_id, fan::Request::SetOnTemp(utils::dk_to_c(set_var))).await,
+        uuid_standard::FAN_ON_TEMP => {
+            fan_set_var(instance_id, fan::Request::SetOnTemp(utils::dk_to_c(set_var.into()))).await
+        }
         uuid_standard::FAN_RAMP_TEMP => {
-            fan_set_var(instance_id, fan::Request::SetRampTemp(utils::dk_to_c(set_var))).await
+            fan_set_var(instance_id, fan::Request::SetRampTemp(utils::dk_to_c(set_var.into()))).await
         }
         uuid_standard::FAN_MAX_TEMP => {
-            fan_set_var(instance_id, fan::Request::SetMaxTemp(utils::dk_to_c(set_var))).await
+            fan_set_var(instance_id, fan::Request::SetMaxTemp(utils::dk_to_c(set_var.into()))).await
         }
         // TODO: What does it mean to set the min/max RPM? Aren't these hardware defined?
         uuid_standard::FAN_MIN_RPM => {
@@ -99,12 +105,12 @@ async fn set_var_handler(
         // TODO: Allow OEM to handle these?
         uuid => {
             error!("Received SetVar for unrecognized UUID: {:?}", uuid);
-            Err(thermal_service_messages::ThermalError::InvalidParameter)
+            Err(ThermalError::InvalidParameter)
         }
     }
 }
 
-async fn sensor_get_warn_thrs(instance_id: u8) -> thermal_service_messages::ThermalResult {
+async fn sensor_get_warn_thrs(instance_id: u8) -> ThermalResult {
     let low = ts::execute_sensor_request(
         sensor::DeviceId(instance_id),
         sensor::Request::GetThreshold(sensor::ThresholdType::WarnLow),
@@ -118,13 +124,13 @@ async fn sensor_get_warn_thrs(instance_id: u8) -> thermal_service_messages::Ther
 
     match (low, high) {
         (Ok(sensor::ResponseData::Threshold(low)), Ok(sensor::ResponseData::Threshold(high))) => {
-            Ok(thermal_service_messages::ThermalResponse::ThermalGetThrsResponse {
-                timeout: 0,
+            Ok(ThermalResponse::ThermalGetThrsResponse(ThermalGetThrsResponse {
+                timeout: 0.into(),
                 low: utils::c_to_dk(low),
                 high: utils::c_to_dk(high),
-            })
+            }))
         }
-        _ => Err(thermal_service_messages::ThermalError::InvalidParameter),
+        _ => Err(ThermalError::InvalidParameter),
     }
 }
 
@@ -133,7 +139,7 @@ async fn sensor_set_warn_thrs(
     _timeout: Milliseconds,
     low: DeciKelvin,
     high: DeciKelvin,
-) -> thermal_service_messages::ThermalResult {
+) -> ThermalResult {
     let low_res = ts::execute_sensor_request(
         sensor::DeviceId(instance_id),
         sensor::Request::SetThreshold(sensor::ThresholdType::WarnLow, utils::dk_to_c(low)),
@@ -146,9 +152,9 @@ async fn sensor_set_warn_thrs(
     .await;
 
     if low_res.is_ok() && high_res.is_ok() {
-        Ok(thermal_service_messages::ThermalResponse::ThermalSetThrsResponse)
+        Ok(ThermalResponse::ThermalSetThrsResponse)
     } else {
-        Err(thermal_service_messages::ThermalError::InvalidParameter)
+        Err(ThermalError::InvalidParameter)
     }
 }
 
@@ -162,82 +168,76 @@ async fn sensor_get_thrs(
     )
     .await
     {
-        Ok(sensor::ResponseData::Temp(temp)) => Ok(thermal_service_messages::ThermalResponse::ThermalGetVarResponse {
+        Ok(sensor::ResponseData::Temp(temp)) => Ok(ThermalResponse::ThermalGetVarResponse(ThermalGetVarResponse {
             val: utils::c_to_dk(temp),
-        }),
-        _ => Err(thermal_service_messages::ThermalError::HardwareError),
+        })),
+        _ => Err(ThermalError::HardwareError),
     }
 }
 
-async fn fan_get_temp(instance: u8, fan_request: fan::Request) -> thermal_service_messages::ThermalResult {
+async fn fan_get_temp(instance: u8, fan_request: fan::Request) -> ThermalResult {
     match ts::execute_fan_request(fan::DeviceId(instance), fan_request).await {
-        Ok(fan::ResponseData::Temp(temp)) => Ok(thermal_service_messages::ThermalResponse::ThermalGetVarResponse {
+        Ok(fan::ResponseData::Temp(temp)) => Ok(ThermalResponse::ThermalGetVarResponse(ThermalGetVarResponse {
             val: utils::c_to_dk(temp),
-        }),
-        _ => Err(thermal_service_messages::ThermalError::HardwareError),
+        })),
+        _ => Err(ThermalError::HardwareError),
     }
 }
 
-async fn fan_get_rpm(instance: u8, fan_request: fan::Request) -> thermal_service_messages::ThermalResult {
+async fn fan_get_rpm(instance: u8, fan_request: fan::Request) -> ThermalResult {
     match ts::execute_fan_request(fan::DeviceId(instance), fan_request).await {
-        Ok(fan::ResponseData::Rpm(rpm)) => {
-            Ok(thermal_service_messages::ThermalResponse::ThermalGetVarResponse { val: rpm.into() })
-        }
-        _ => Err(thermal_service_messages::ThermalError::HardwareError),
+        Ok(fan::ResponseData::Rpm(rpm)) => Ok(ThermalResponse::ThermalGetVarResponse(ThermalGetVarResponse {
+            val: u32::from(rpm).into(),
+        })),
+        _ => Err(ThermalError::HardwareError),
     }
 }
 
-async fn sensor_set_thrs(
-    instance: u8,
-    threshold_type: sensor::ThresholdType,
-    threshold_dk: u32,
-) -> thermal_service_messages::ThermalResult {
+async fn sensor_set_thrs(instance: u8, threshold_type: sensor::ThresholdType, threshold_dk: u32) -> ThermalResult {
     match ts::execute_sensor_request(
         sensor::DeviceId(instance),
-        sensor::Request::SetThreshold(threshold_type, utils::dk_to_c(threshold_dk)),
+        sensor::Request::SetThreshold(threshold_type, utils::dk_to_c(threshold_dk.into())),
     )
     .await
     {
-        Ok(sensor::ResponseData::Success) => Ok(thermal_service_messages::ThermalResponse::ThermalSetVarResponse),
-        _ => Err(thermal_service_messages::ThermalError::HardwareError),
+        Ok(sensor::ResponseData::Success) => Ok(ThermalResponse::ThermalSetVarResponse),
+        _ => Err(ThermalError::HardwareError),
     }
 }
 
-async fn fan_set_var(instance: u8, fan_request: fan::Request) -> thermal_service_messages::ThermalResult {
+async fn fan_set_var(instance: u8, fan_request: fan::Request) -> ThermalResult {
     match ts::execute_fan_request(fan::DeviceId(instance), fan_request).await {
-        Ok(fan::ResponseData::Success) => Ok(thermal_service_messages::ThermalResponse::ThermalSetVarResponse),
-        _ => Err(thermal_service_messages::ThermalError::HardwareError),
+        Ok(fan::ResponseData::Success) => Ok(ThermalResponse::ThermalSetVarResponse),
+        _ => Err(ThermalError::HardwareError),
     }
 }
 
-pub(crate) async fn process_request(
-    request: &thermal_service_messages::ThermalRequest,
-) -> thermal_service_messages::ThermalResult {
+pub(crate) async fn process_request(request: &ThermalRequest) -> ThermalResult {
     match request {
-        thermal_service_messages::ThermalRequest::ThermalGetTmpRequest { instance_id } => {
+        ThermalRequest::ThermalGetTmpRequest(ThermalGetTmpRequest { instance_id }) => {
             sensor_get_tmp(*instance_id).await
         }
-        thermal_service_messages::ThermalRequest::ThermalSetThrsRequest {
+        ThermalRequest::ThermalSetThrsRequest(ThermalSetThrsRequest {
             instance_id,
             timeout,
             low,
             high,
-        } => sensor_set_warn_thrs(*instance_id, *timeout, *low, *high).await,
-        thermal_service_messages::ThermalRequest::ThermalGetThrsRequest { instance_id } => {
+        }) => sensor_set_warn_thrs(*instance_id, *timeout, *low, *high).await,
+        ThermalRequest::ThermalGetThrsRequest(ThermalGetThrsRequest { instance_id }) => {
             sensor_get_warn_thrs(*instance_id).await
         }
         // TODO: How do we handle this generically?
-        thermal_service_messages::ThermalRequest::ThermalSetScpRequest { .. } => todo!(),
-        thermal_service_messages::ThermalRequest::ThermalGetVarRequest {
+        ThermalRequest::ThermalSetScpRequest(ThermalSetScpRequest { .. }) => todo!(),
+        ThermalRequest::ThermalGetVarRequest(ThermalGetVarRequest {
             instance_id,
             len: _len,
             var_uuid,
-        } => get_var_handler(*instance_id, *var_uuid).await,
-        thermal_service_messages::ThermalRequest::ThermalSetVarRequest {
+        }) => get_var_handler(*instance_id, *var_uuid).await,
+        ThermalRequest::ThermalSetVarRequest(ThermalSetVarRequest {
             instance_id,
             len: _len,
             var_uuid,
             set_var,
-        } => set_var_handler(*instance_id, *var_uuid, *set_var).await,
+        }) => set_var_handler(*instance_id, *var_uuid, set_var.get()).await,
     }
 }

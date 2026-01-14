@@ -1639,6 +1639,7 @@ dependencies = [
  "embedded-services",
  "num_enum",
  "uuid",
+ "zerocopy",
 ]
 
 [[package]]
