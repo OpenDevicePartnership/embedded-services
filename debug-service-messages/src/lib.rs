@@ -38,10 +38,11 @@ pub enum DebugRequest {
 
 impl SerializableMessage for DebugRequest {
     fn serialize(self, _buffer: &mut [u8]) -> Result<usize, MessageSerializationError> {
-        Err(MessageSerializationError::Other(
-            "unimplemented - don't need to serialize requests on the EC side",
-        ))
+        match self {
+            Self::DebugGetMsgsRequest => Ok(0),
+        }
     }
+
     fn deserialize(discriminant: u16, _buffer: &[u8]) -> Result<Self, MessageSerializationError> {
         Ok(
             match DebugCmd::try_from(discriminant)
@@ -76,10 +77,21 @@ impl SerializableMessage for DebugResponse {
             }
         }
     }
-    fn deserialize(_discriminant: u16, _buffer: &[u8]) -> Result<Self, MessageSerializationError> {
-        Err(MessageSerializationError::Other(
-            "unimplemented - don't need to serialize requests on the EC side",
-        ))
+
+    fn deserialize(discriminant: u16, buffer: &[u8]) -> Result<Self, MessageSerializationError> {
+        Ok(
+            match DebugCmd::try_from(discriminant)
+                .map_err(|_| MessageSerializationError::UnknownMessageDiscriminant(discriminant))?
+            {
+                DebugCmd::GetMsgs => Self::DebugGetMsgsResponse {
+                    debug_buf: buffer
+                        .get(0..STD_DEBUG_BUF_SIZE)
+                        .ok_or(MessageSerializationError::BufferTooSmall)?
+                        .try_into()
+                        .map_err(|_| MessageSerializationError::BufferTooSmall)?,
+                },
+            },
+        )
     }
 
     fn discriminant(&self) -> u16 {

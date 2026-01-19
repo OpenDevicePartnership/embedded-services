@@ -95,10 +95,45 @@ pub enum ThermalRequest {
 
 // TODO this is essentially a hand-written reinterpret_cast - can we codegen some of this instead?
 impl SerializableMessage for ThermalRequest {
-    fn serialize(self, _buffer: &mut [u8]) -> Result<usize, MessageSerializationError> {
-        Err(MessageSerializationError::Other(
-            "unimplemented - don't need to serialize requests on the EC side",
-        ))
+    fn serialize(self, buffer: &mut [u8]) -> Result<usize, MessageSerializationError> {
+        match self {
+            Self::ThermalGetTmpRequest { instance_id } => safe_put_u8(buffer, 0, instance_id),
+            Self::ThermalSetThrsRequest {
+                instance_id,
+                timeout,
+                low,
+                high,
+            } => Ok(safe_put_u8(buffer, 0, instance_id)?
+                + safe_put_dword(buffer, 1, timeout)?
+                + safe_put_dword(buffer, 5, low)?
+                + safe_put_dword(buffer, 9, high)?),
+            Self::ThermalGetThrsRequest { instance_id } => safe_put_u8(buffer, 0, instance_id),
+            Self::ThermalSetScpRequest {
+                instance_id,
+                policy_id,
+                acoustic_lim,
+                power_lim,
+            } => Ok(safe_put_u8(buffer, 0, instance_id)?
+                + safe_put_dword(buffer, 1, policy_id)?
+                + safe_put_dword(buffer, 5, acoustic_lim)?
+                + safe_put_dword(buffer, 9, power_lim)?),
+            Self::ThermalGetVarRequest {
+                instance_id,
+                len,
+                var_uuid,
+            } => Ok(safe_put_u8(buffer, 0, instance_id)?
+                + safe_put_u16(buffer, 1, len)?
+                + safe_put_uuid(buffer, 3, var_uuid)?),
+            Self::ThermalSetVarRequest {
+                instance_id,
+                len,
+                var_uuid,
+                set_var,
+            } => Ok(safe_put_u8(buffer, 0, instance_id)?
+                + safe_put_u16(buffer, 1, len)?
+                + safe_put_uuid(buffer, 3, var_uuid)?
+                + safe_put_dword(buffer, 19, set_var)?),
+        }
     }
 
     fn deserialize(discriminant: u16, buffer: &[u8]) -> Result<Self, MessageSerializationError> {
@@ -167,46 +202,36 @@ pub enum ThermalResponse {
 impl SerializableMessage for ThermalResponse {
     fn serialize(self, buffer: &mut [u8]) -> Result<usize, MessageSerializationError> {
         match self {
-            Self::ThermalGetTmpResponse { temperature } => {
-                buffer
-                    .get_mut(..4)
-                    .ok_or(MessageSerializationError::BufferTooSmall)?
-                    .copy_from_slice(&u32::to_le_bytes(temperature));
-
-                Ok(4)
-            }
-            Self::ThermalGetThrsResponse { timeout, low, high } => {
-                buffer
-                    .get_mut(..4)
-                    .ok_or(MessageSerializationError::BufferTooSmall)?
-                    .copy_from_slice(&u32::to_le_bytes(timeout));
-                buffer
-                    .get_mut(4..8)
-                    .ok_or(MessageSerializationError::BufferTooSmall)?
-                    .copy_from_slice(&u32::to_le_bytes(low));
-                buffer
-                    .get_mut(8..12)
-                    .ok_or(MessageSerializationError::BufferTooSmall)?
-                    .copy_from_slice(&u32::to_le_bytes(high));
-
-                Ok(12)
-            }
-
-            Self::ThermalGetVarResponse { val } => {
-                buffer
-                    .get_mut(..4)
-                    .ok_or(MessageSerializationError::BufferTooSmall)?
-                    .copy_from_slice(&u32::to_le_bytes(val));
-                Ok(4)
-            }
+            Self::ThermalGetTmpResponse { temperature } => safe_put_dword(buffer, 0, temperature),
+            Self::ThermalGetThrsResponse { timeout, low, high } => Ok(safe_put_dword(buffer, 0, timeout)?
+                + safe_put_dword(buffer, 4, low)?
+                + safe_put_dword(buffer, 8, high)?),
+            Self::ThermalGetVarResponse { val } => safe_put_dword(buffer, 0, val),
             Self::ThermalSetVarResponse | Self::ThermalSetScpResponse | Self::ThermalSetThrsResponse => Ok(0),
         }
     }
 
-    fn deserialize(_discriminant: u16, _buffer: &[u8]) -> Result<Self, MessageSerializationError> {
-        Err(MessageSerializationError::Other(
-            "unimplemented - don't need to deserialize responses on the EC side",
-        ))
+    fn deserialize(discriminant: u16, buffer: &[u8]) -> Result<Self, MessageSerializationError> {
+        Ok(
+            match ThermalCmd::try_from(discriminant)
+                .map_err(|_| MessageSerializationError::UnknownMessageDiscriminant(discriminant))?
+            {
+                ThermalCmd::GetTmp => Self::ThermalGetTmpResponse {
+                    temperature: safe_get_dword(buffer, 0)?,
+                },
+                ThermalCmd::SetThrs => Self::ThermalSetThrsResponse,
+                ThermalCmd::GetThrs => Self::ThermalGetThrsResponse {
+                    timeout: safe_get_dword(buffer, 0)?,
+                    low: safe_get_dword(buffer, 4)?,
+                    high: safe_get_dword(buffer, 8)?,
+                },
+                ThermalCmd::SetScp => Self::ThermalSetScpResponse,
+                ThermalCmd::GetVar => Self::ThermalGetVarResponse {
+                    val: safe_get_dword(buffer, 0)?,
+                },
+                ThermalCmd::SetVar => Self::ThermalSetVarResponse,
+            },
+        )
     }
 
     fn discriminant(&self) -> u16 {
@@ -230,10 +255,9 @@ impl SerializableMessage for ThermalError {
         }
     }
 
-    fn deserialize(_discriminant: u16, _buffer: &[u8]) -> Result<Self, MessageSerializationError> {
-        Err(MessageSerializationError::Other(
-            "unimplemented - don't need to deserialize responses on the EC side",
-        ))
+    fn deserialize(discriminant: u16, _buffer: &[u8]) -> Result<Self, MessageSerializationError> {
+        ThermalError::try_from(discriminant)
+            .map_err(|_| MessageSerializationError::UnknownMessageDiscriminant(discriminant))
     }
 
     fn discriminant(&self) -> u16 {
@@ -274,4 +298,33 @@ fn safe_get_uuid(buffer: &[u8], index: usize) -> Result<uuid::Bytes, MessageSeri
         .ok_or(MessageSerializationError::BufferTooSmall)?
         .try_into()
         .map_err(|_| MessageSerializationError::BufferTooSmall)
+}
+
+fn safe_put_u8(buffer: &mut [u8], index: usize, val: u8) -> Result<usize, MessageSerializationError> {
+    *buffer.get_mut(index).ok_or(MessageSerializationError::BufferTooSmall)? = val;
+    Ok(1)
+}
+
+fn safe_put_u16(buffer: &mut [u8], index: usize, val: u16) -> Result<usize, MessageSerializationError> {
+    buffer
+        .get_mut(index..index + 2)
+        .ok_or(MessageSerializationError::BufferTooSmall)?
+        .copy_from_slice(&val.to_le_bytes());
+    Ok(2)
+}
+
+fn safe_put_dword(buffer: &mut [u8], index: usize, val: u32) -> Result<usize, MessageSerializationError> {
+    buffer
+        .get_mut(index..index + 4)
+        .ok_or(MessageSerializationError::BufferTooSmall)?
+        .copy_from_slice(&val.to_le_bytes());
+    Ok(4)
+}
+
+fn safe_put_uuid(buffer: &mut [u8], index: usize, uuid: uuid::Bytes) -> Result<usize, MessageSerializationError> {
+    buffer
+        .get_mut(index..index + 16)
+        .ok_or(MessageSerializationError::BufferTooSmall)?
+        .copy_from_slice(&uuid);
+    Ok(16)
 }

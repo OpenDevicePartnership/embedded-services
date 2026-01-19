@@ -1,10 +1,61 @@
 #![no_std]
 
-use embedded_batteries_async::acpi::{
-    BCT_RETURN_SIZE_BYTES, BMD_RETURN_SIZE_BYTES, BPC_RETURN_SIZE_BYTES, BPS_RETURN_SIZE_BYTES, BST_RETURN_SIZE_BYTES,
-    BTM_RETURN_SIZE_BYTES, PSR_RETURN_SIZE_BYTES, STA_RETURN_SIZE_BYTES,
+use embedded_batteries_async::acpi::ThresholdId;
+pub use embedded_batteries_async::acpi::{
+    BatteryState, BatterySwapCapability, BatteryTechnology, Bct, BctReturnResult, Bma, Bmc, BmcControlFlags, Bmd,
+    BmdCapabilityFlags, BmdStatusFlags, Bms, Bpc, Bps, Bpt, BstReturn, Btm, BtmReturnResult, Btp, PowerSource,
+    PowerSourceState, PowerThresholdSupport, PowerUnit, PsrReturn, StaReturn,
 };
 use embedded_services::relay::{MessageSerializationError, SerializableMessage};
+
+// Unfortunately `TryFrom<u32>` is not implemented by embedded-batteries for these types
+
+/// Attempt to convert a `u32` to a `PowerUnit`.
+pub fn power_unit_try_from_u32(value: u32) -> Result<PowerUnit, MessageSerializationError> {
+    match value {
+        0 => Ok(PowerUnit::MilliWatts),
+        1 => Ok(PowerUnit::MilliAmps),
+        _ => Err(MessageSerializationError::InvalidPayload("Invalid PowerUnit")),
+    }
+}
+
+/// Attempt to convert a `u32` to a `BatteryTechnology`.
+pub fn bat_tech_try_from_u32(value: u32) -> Result<BatteryTechnology, MessageSerializationError> {
+    match value {
+        0 => Ok(BatteryTechnology::Primary),
+        1 => Ok(BatteryTechnology::Secondary),
+        _ => Err(MessageSerializationError::InvalidPayload("Invalid BatteryTechnology")),
+    }
+}
+
+/// Attempt to convert a `u32` to a `BatterySwapCapability`.
+pub fn bat_swap_try_from_u32(value: u32) -> Result<BatterySwapCapability, MessageSerializationError> {
+    match value {
+        0 => Ok(BatterySwapCapability::NonSwappable),
+        1 => Ok(BatterySwapCapability::ColdSwappable),
+        2 => Ok(BatterySwapCapability::HotSwappable),
+        _ => Err(MessageSerializationError::InvalidPayload("Invalid BatteryTechnology")),
+    }
+}
+
+/// Attempt to convert a `u32` to a `ThresholdId`.
+pub fn thres_id_try_from_u32(value: u32) -> Result<ThresholdId, MessageSerializationError> {
+    match value {
+        0 => Ok(ThresholdId::ClearAll),
+        1 => Ok(ThresholdId::InstantaneousPeakPower),
+        2 => Ok(ThresholdId::SustainablePeakPower),
+        _ => Err(MessageSerializationError::InvalidPayload("Invalid ThresholdId")),
+    }
+}
+
+/// Attempt to convert a `u32` to a `PowerSource`.
+pub fn pwr_src_try_from_u32(value: u32) -> Result<PowerSource, MessageSerializationError> {
+    match value {
+        0 => Ok(PowerSource::Offline),
+        1 => Ok(PowerSource::Online),
+        _ => Err(MessageSerializationError::InvalidPayload("Invalid PowerSource")),
+    }
+}
 
 /// Standard Battery Service Model Number String Size
 pub const STD_BIX_MODEL_SIZE: usize = 8;
@@ -102,19 +153,28 @@ impl From<&AcpiBatteryResponse> for BatteryCmd {
     }
 }
 
-#[derive(PartialEq, Clone, Copy)]
+const BIX_MODEL_NUM_START_IDX: usize = 64;
+const BIX_MODEL_NUM_END_IDX: usize = BIX_MODEL_NUM_START_IDX + STD_BIX_MODEL_SIZE;
+const BIX_SERIAL_NUM_START_IDX: usize = BIX_MODEL_NUM_END_IDX;
+const BIX_SERIAL_NUM_END_IDX: usize = BIX_SERIAL_NUM_START_IDX + STD_BIX_SERIAL_SIZE;
+const BIX_BATTERY_TYPE_START_IDX: usize = BIX_SERIAL_NUM_END_IDX;
+const BIX_BATTERY_TYPE_END_IDX: usize = BIX_BATTERY_TYPE_START_IDX + STD_BIX_BATTERY_SIZE;
+const BIX_OEM_INFO_START_IDX: usize = BIX_BATTERY_TYPE_END_IDX;
+const BIX_OEM_INFO_END_IDX: usize = BIX_OEM_INFO_START_IDX + STD_BIX_OEM_SIZE;
+
+#[derive(PartialEq, Clone, Copy, Default)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct BixFixedStrings {
     /// Revision of the BIX structure. Current revision is 1.
     pub revision: u32,
     /// Unit used for capacity and rate values.
-    pub power_unit: embedded_batteries_async::acpi::PowerUnit,
+    pub power_unit: PowerUnit,
     /// Design capacity of the battery (in mWh or mAh).
     pub design_capacity: u32,
     /// Last full charge capacity (in mWh or mAh).
     pub last_full_charge_capacity: u32,
     /// Battery technology type.
-    pub battery_technology: embedded_batteries_async::acpi::BatteryTechnology,
+    pub battery_technology: BatteryTechnology,
     /// Design voltage (in mV).
     pub design_voltage: u32,
     /// Warning capacity threshold (in mWh or mAh).
@@ -146,118 +206,78 @@ pub struct BixFixedStrings {
     /// OEM-specific information (ASCIIZ).
     pub oem_info: [u8; STD_BIX_OEM_SIZE],
     /// Battery swapping capability.
-    pub battery_swapping_capability: embedded_batteries_async::acpi::BatterySwapCapability,
+    pub battery_swapping_capability: BatterySwapCapability,
 }
 
 // TODO this is essentially a hand-written reinterpret_cast - can we codegen some of this instead?
 impl BixFixedStrings {
-    pub fn to_bytes(self, dst_slice: &mut [u8]) -> Result<(), MessageSerializationError> {
-        const MODEL_NUM_START_IDX: usize = 64;
-        let model_num_end_idx: usize = MODEL_NUM_START_IDX + STD_BIX_MODEL_SIZE;
-        let serial_num_start_idx = model_num_end_idx;
-        let serial_num_end_idx = serial_num_start_idx + STD_BIX_SERIAL_SIZE;
-        let battery_type_start_idx = serial_num_end_idx;
-        let battery_type_end_idx = battery_type_start_idx + STD_BIX_BATTERY_SIZE;
-        let oem_info_start_idx = battery_type_end_idx;
-        let oem_info_end_idx = oem_info_start_idx + STD_BIX_OEM_SIZE;
-
-        if dst_slice.len() < oem_info_end_idx {
+    pub fn to_bytes(self, dst_slice: &mut [u8]) -> Result<usize, MessageSerializationError> {
+        if dst_slice.len() < BIX_OEM_INFO_END_IDX {
             return Err(MessageSerializationError::BufferTooSmall);
         }
 
-        dst_slice
-            .get_mut(..4)
-            .ok_or(MessageSerializationError::BufferTooSmall)?
-            .copy_from_slice(&u32::to_le_bytes(self.revision));
-        dst_slice
-            .get_mut(4..8)
-            .ok_or(MessageSerializationError::BufferTooSmall)?
-            .copy_from_slice(&u32::to_le_bytes(self.power_unit.into()));
-        dst_slice
-            .get_mut(8..12)
-            .ok_or(MessageSerializationError::BufferTooSmall)?
-            .copy_from_slice(&u32::to_le_bytes(self.design_capacity));
-        dst_slice
-            .get_mut(12..16)
-            .ok_or(MessageSerializationError::BufferTooSmall)?
-            .copy_from_slice(&u32::to_le_bytes(self.last_full_charge_capacity));
-        dst_slice
-            .get_mut(16..20)
-            .ok_or(MessageSerializationError::BufferTooSmall)?
-            .copy_from_slice(&u32::to_le_bytes(self.battery_technology.into()));
-        dst_slice
-            .get_mut(20..24)
-            .ok_or(MessageSerializationError::BufferTooSmall)?
-            .copy_from_slice(&u32::to_le_bytes(self.design_voltage));
-        dst_slice
-            .get_mut(24..28)
-            .ok_or(MessageSerializationError::BufferTooSmall)?
-            .copy_from_slice(&u32::to_le_bytes(self.design_cap_of_warning));
-        dst_slice
-            .get_mut(28..32)
-            .ok_or(MessageSerializationError::BufferTooSmall)?
-            .copy_from_slice(&u32::to_le_bytes(self.design_cap_of_low));
-        dst_slice
-            .get_mut(32..36)
-            .ok_or(MessageSerializationError::BufferTooSmall)?
-            .copy_from_slice(&u32::to_le_bytes(self.cycle_count));
-        dst_slice
-            .get_mut(36..40)
-            .ok_or(MessageSerializationError::BufferTooSmall)?
-            .copy_from_slice(&u32::to_le_bytes(self.measurement_accuracy));
-        dst_slice
-            .get_mut(40..44)
-            .ok_or(MessageSerializationError::BufferTooSmall)?
-            .copy_from_slice(&u32::to_le_bytes(self.max_sampling_time));
-        dst_slice
-            .get_mut(44..48)
-            .ok_or(MessageSerializationError::BufferTooSmall)?
-            .copy_from_slice(&u32::to_le_bytes(self.min_sampling_time));
-        dst_slice
-            .get_mut(48..52)
-            .ok_or(MessageSerializationError::BufferTooSmall)?
-            .copy_from_slice(&u32::to_le_bytes(self.max_averaging_interval));
-        dst_slice
-            .get_mut(52..56)
-            .ok_or(MessageSerializationError::BufferTooSmall)?
-            .copy_from_slice(&u32::to_le_bytes(self.min_averaging_interval));
-        dst_slice
-            .get_mut(56..60)
-            .ok_or(MessageSerializationError::BufferTooSmall)?
-            .copy_from_slice(&u32::to_le_bytes(self.battery_capacity_granularity_1));
-        dst_slice
-            .get_mut(60..64)
-            .ok_or(MessageSerializationError::BufferTooSmall)?
-            .copy_from_slice(&u32::to_le_bytes(self.battery_capacity_granularity_2));
-        dst_slice
-            .get_mut(MODEL_NUM_START_IDX..model_num_end_idx)
-            .ok_or(MessageSerializationError::BufferTooSmall)?
-            .copy_from_slice(&self.model_number);
-        dst_slice
-            .get_mut(serial_num_start_idx..serial_num_end_idx)
-            .ok_or(MessageSerializationError::BufferTooSmall)?
-            .copy_from_slice(&self.serial_number);
-        dst_slice
-            .get_mut(battery_type_start_idx..battery_type_end_idx)
-            .ok_or(MessageSerializationError::BufferTooSmall)?
-            .copy_from_slice(&self.battery_type);
-        dst_slice
-            .get_mut(oem_info_start_idx..oem_info_end_idx)
-            .ok_or(MessageSerializationError::BufferTooSmall)?
-            .copy_from_slice(&self.oem_info);
-        dst_slice
-            .get_mut(oem_info_end_idx..oem_info_end_idx + 4)
-            .ok_or(MessageSerializationError::BufferTooSmall)?
-            .copy_from_slice(&u32::to_le_bytes(self.battery_swapping_capability.into()));
-        Ok(())
+        Ok(safe_put_dword(dst_slice, 0, self.revision)?
+            + safe_put_dword(dst_slice, 4, self.power_unit.into())?
+            + safe_put_dword(dst_slice, 8, self.design_capacity)?
+            + safe_put_dword(dst_slice, 12, self.last_full_charge_capacity)?
+            + safe_put_dword(dst_slice, 16, self.battery_technology.into())?
+            + safe_put_dword(dst_slice, 20, self.design_voltage)?
+            + safe_put_dword(dst_slice, 24, self.design_cap_of_warning)?
+            + safe_put_dword(dst_slice, 28, self.design_cap_of_low)?
+            + safe_put_dword(dst_slice, 32, self.cycle_count)?
+            + safe_put_dword(dst_slice, 36, self.measurement_accuracy)?
+            + safe_put_dword(dst_slice, 40, self.max_sampling_time)?
+            + safe_put_dword(dst_slice, 44, self.min_sampling_time)?
+            + safe_put_dword(dst_slice, 48, self.max_averaging_interval)?
+            + safe_put_dword(dst_slice, 52, self.min_averaging_interval)?
+            + safe_put_dword(dst_slice, 56, self.battery_capacity_granularity_1)?
+            + safe_put_dword(dst_slice, 60, self.battery_capacity_granularity_2)?
+            + safe_put_bytes(dst_slice, BIX_MODEL_NUM_START_IDX, &self.model_number)?
+            + safe_put_bytes(dst_slice, BIX_SERIAL_NUM_START_IDX, &self.serial_number)?
+            + safe_put_bytes(dst_slice, BIX_BATTERY_TYPE_START_IDX, &self.battery_type)?
+            + safe_put_bytes(dst_slice, BIX_OEM_INFO_START_IDX, &self.oem_info)?
+            + safe_put_dword(dst_slice, BIX_OEM_INFO_END_IDX, self.battery_swapping_capability.into())?)
+    }
+
+    pub fn from_bytes(src_slice: &[u8]) -> Result<Self, MessageSerializationError> {
+        Ok(Self {
+            revision: safe_get_dword(src_slice, 0)?,
+            power_unit: power_unit_try_from_u32(safe_get_dword(src_slice, 4)?)?,
+            design_capacity: safe_get_dword(src_slice, 8)?,
+            last_full_charge_capacity: safe_get_dword(src_slice, 12)?,
+            battery_technology: bat_tech_try_from_u32(safe_get_dword(src_slice, 16)?)?,
+            design_voltage: safe_get_dword(src_slice, 20)?,
+            design_cap_of_warning: safe_get_dword(src_slice, 24)?,
+            design_cap_of_low: safe_get_dword(src_slice, 28)?,
+            cycle_count: safe_get_dword(src_slice, 32)?,
+            measurement_accuracy: safe_get_dword(src_slice, 36)?,
+            max_sampling_time: safe_get_dword(src_slice, 40)?,
+            min_sampling_time: safe_get_dword(src_slice, 44)?,
+            max_averaging_interval: safe_get_dword(src_slice, 48)?,
+            min_averaging_interval: safe_get_dword(src_slice, 52)?,
+            battery_capacity_granularity_1: safe_get_dword(src_slice, 56)?,
+            battery_capacity_granularity_2: safe_get_dword(src_slice, 60)?,
+            model_number: safe_get_bytes::<STD_BIX_MODEL_SIZE>(src_slice, BIX_MODEL_NUM_START_IDX)?,
+            serial_number: safe_get_bytes::<STD_BIX_SERIAL_SIZE>(src_slice, BIX_SERIAL_NUM_START_IDX)?,
+            battery_type: safe_get_bytes::<STD_BIX_BATTERY_SIZE>(src_slice, BIX_BATTERY_TYPE_START_IDX)?,
+            oem_info: safe_get_bytes::<STD_BIX_OEM_SIZE>(src_slice, BIX_OEM_INFO_START_IDX)?,
+            battery_swapping_capability: bat_swap_try_from_u32(safe_get_dword(src_slice, BIX_OEM_INFO_END_IDX)?)?,
+        })
     }
 }
+
+const PIF_MODEL_NUM_START_IDX: usize = 12;
+const PIF_MODEL_NUM_END_IDX: usize = PIF_MODEL_NUM_START_IDX + STD_BIX_MODEL_SIZE;
+const PIF_SERIAL_NUM_START_IDX: usize = PIF_MODEL_NUM_END_IDX;
+const PIF_SERIAL_NUM_END_IDX: usize = PIF_SERIAL_NUM_START_IDX + STD_BIX_SERIAL_SIZE;
+const PIF_OEM_INFO_START_IDX: usize = PIF_SERIAL_NUM_END_IDX;
+const PIF_OEM_INFO_END_IDX: usize = PIF_OEM_INFO_START_IDX + STD_BIX_OEM_SIZE;
 
 #[derive(PartialEq, Clone, Copy)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct PifFixedStrings {
     /// Bitfield describing the state and characteristics of the power source.
-    pub power_source_state: embedded_batteries_async::acpi::PowerSourceState,
+    pub power_source_state: PowerSourceState,
     /// Maximum rated output power in milliwatts (mW).
     ///
     /// 0xFFFFFFFF indicates the value is unavailable.
@@ -275,109 +295,89 @@ pub struct PifFixedStrings {
 }
 
 impl PifFixedStrings {
-    pub fn to_bytes(self, dst_slice: &mut [u8]) -> Result<(), MessageSerializationError> {
-        const MODEL_NUM_START_IDX: usize = 12;
-        let model_num_end_idx: usize = MODEL_NUM_START_IDX + STD_BIX_MODEL_SIZE;
-        let serial_num_start_idx = model_num_end_idx;
-        let serial_num_end_idx = serial_num_start_idx + STD_BIX_SERIAL_SIZE;
-        let oem_info_start_idx = serial_num_end_idx;
-        let oem_info_end_idx = oem_info_start_idx + STD_BIX_OEM_SIZE;
-
-        if dst_slice.len() < oem_info_end_idx {
+    pub fn to_bytes(self, dst_slice: &mut [u8]) -> Result<usize, MessageSerializationError> {
+        if dst_slice.len() < PIF_OEM_INFO_END_IDX {
             return Err(MessageSerializationError::BufferTooSmall);
         }
 
-        dst_slice
-            .get_mut(..4)
-            .ok_or(MessageSerializationError::BufferTooSmall)?
-            .copy_from_slice(&u32::to_le_bytes(self.power_source_state.bits()));
-        dst_slice
-            .get_mut(4..8)
-            .ok_or(MessageSerializationError::BufferTooSmall)?
-            .copy_from_slice(&u32::to_le_bytes(self.max_output_power));
-        dst_slice
-            .get_mut(8..12)
-            .ok_or(MessageSerializationError::BufferTooSmall)?
-            .copy_from_slice(&u32::to_le_bytes(self.max_input_power));
-        dst_slice
-            .get_mut(MODEL_NUM_START_IDX..model_num_end_idx)
-            .ok_or(MessageSerializationError::BufferTooSmall)?
-            .copy_from_slice(&self.model_number);
-        dst_slice
-            .get_mut(serial_num_start_idx..serial_num_end_idx)
-            .ok_or(MessageSerializationError::BufferTooSmall)?
-            .copy_from_slice(&self.serial_number);
-        dst_slice
-            .get_mut(oem_info_start_idx..oem_info_end_idx)
-            .ok_or(MessageSerializationError::BufferTooSmall)?
-            .copy_from_slice(&self.oem_info);
-        Ok(())
+        Ok(safe_put_dword(dst_slice, 0, self.power_source_state.bits())?
+            + safe_put_dword(dst_slice, 4, self.max_output_power)?
+            + safe_put_dword(dst_slice, 8, self.max_input_power)?
+            + safe_put_bytes(dst_slice, PIF_MODEL_NUM_START_IDX, &self.model_number)?
+            + safe_put_bytes(dst_slice, PIF_SERIAL_NUM_START_IDX, &self.serial_number)?
+            + safe_put_bytes(dst_slice, PIF_OEM_INFO_START_IDX, &self.oem_info)?)
+    }
+
+    pub fn from_bytes(src_slice: &[u8]) -> Result<Self, MessageSerializationError> {
+        Ok(Self {
+            power_source_state: PowerSourceState::from_bits(safe_get_dword(src_slice, 0)?)
+                .ok_or(MessageSerializationError::InvalidPayload("Invalid PowerSourceState"))?,
+            max_output_power: safe_get_dword(src_slice, 4)?,
+            max_input_power: safe_get_dword(src_slice, 8)?,
+            model_number: safe_get_bytes::<STD_BIX_MODEL_SIZE>(src_slice, PIF_MODEL_NUM_START_IDX)?,
+            serial_number: safe_get_bytes::<STD_BIX_SERIAL_SIZE>(src_slice, PIF_SERIAL_NUM_START_IDX)?,
+            oem_info: safe_get_bytes::<STD_BIX_OEM_SIZE>(src_slice, PIF_OEM_INFO_START_IDX)?,
+        })
     }
 }
 
 #[derive(PartialEq, Clone, Copy)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum AcpiBatteryRequest {
-    BatteryGetBixRequest {
-        battery_id: u8,
-    },
-    BatteryGetBstRequest {
-        battery_id: u8,
-    },
-    BatteryGetPsrRequest {
-        battery_id: u8,
-    },
-    BatteryGetPifRequest {
-        battery_id: u8,
-    },
-    BatteryGetBpsRequest {
-        battery_id: u8,
-    },
-    BatterySetBtpRequest {
-        battery_id: u8,
-        btp: embedded_batteries_async::acpi::Btp,
-    },
-    BatterySetBptRequest {
-        battery_id: u8,
-        bpt: embedded_batteries_async::acpi::Bpt,
-    },
-    BatteryGetBpcRequest {
-        battery_id: u8,
-    },
-    BatterySetBmcRequest {
-        battery_id: u8,
-        bmc: embedded_batteries_async::acpi::Bmc,
-    },
-    BatteryGetBmdRequest {
-        battery_id: u8,
-    },
-    BatteryGetBctRequest {
-        battery_id: u8,
-        bct: embedded_batteries_async::acpi::Bct,
-    },
-    BatteryGetBtmRequest {
-        battery_id: u8,
-        btm: embedded_batteries_async::acpi::Btm,
-    },
-    BatterySetBmsRequest {
-        battery_id: u8,
-        bms: embedded_batteries_async::acpi::Bms,
-    },
-    BatterySetBmaRequest {
-        battery_id: u8,
-        bma: embedded_batteries_async::acpi::Bma,
-    },
-    BatteryGetStaRequest {
-        battery_id: u8,
-    },
+    BatteryGetBixRequest { battery_id: u8 },
+    BatteryGetBstRequest { battery_id: u8 },
+    BatteryGetPsrRequest { battery_id: u8 },
+    BatteryGetPifRequest { battery_id: u8 },
+    BatteryGetBpsRequest { battery_id: u8 },
+    BatterySetBtpRequest { battery_id: u8, btp: Btp },
+    BatterySetBptRequest { battery_id: u8, bpt: Bpt },
+    BatteryGetBpcRequest { battery_id: u8 },
+    BatterySetBmcRequest { battery_id: u8, bmc: Bmc },
+    BatteryGetBmdRequest { battery_id: u8 },
+    BatteryGetBctRequest { battery_id: u8, bct: Bct },
+    BatteryGetBtmRequest { battery_id: u8, btm: Btm },
+    BatterySetBmsRequest { battery_id: u8, bms: Bms },
+    BatterySetBmaRequest { battery_id: u8, bma: Bma },
+    BatteryGetStaRequest { battery_id: u8 },
 }
 
 impl SerializableMessage for AcpiBatteryRequest {
-    fn serialize(self, _buffer: &mut [u8]) -> Result<usize, MessageSerializationError> {
-        Err(MessageSerializationError::Other(
-            "unimplemented - don't need to serialize requests on the EC side",
-        ))
+    fn serialize(self, buffer: &mut [u8]) -> Result<usize, MessageSerializationError> {
+        match self {
+            Self::BatteryGetBixRequest { battery_id } => safe_put_u8(buffer, 0, battery_id),
+            Self::BatteryGetBstRequest { battery_id } => safe_put_u8(buffer, 0, battery_id),
+            Self::BatteryGetPsrRequest { battery_id } => safe_put_u8(buffer, 0, battery_id),
+            Self::BatteryGetPifRequest { battery_id } => safe_put_u8(buffer, 0, battery_id),
+            Self::BatteryGetBpsRequest { battery_id } => safe_put_u8(buffer, 0, battery_id),
+            Self::BatterySetBtpRequest { battery_id, btp } => {
+                Ok(safe_put_u8(buffer, 0, battery_id)? + safe_put_dword(buffer, 1, btp.trip_point)?)
+            }
+            Self::BatterySetBptRequest { battery_id, bpt } => Ok(safe_put_u8(buffer, 0, battery_id)?
+                + safe_put_dword(buffer, 1, bpt.revision)?
+                + safe_put_dword(buffer, 5, bpt.threshold_id as u32)?
+                + safe_put_dword(buffer, 9, bpt.threshold_value)?),
+            Self::BatteryGetBpcRequest { battery_id } => safe_put_u8(buffer, 0, battery_id),
+            Self::BatterySetBmcRequest { battery_id, bmc } => {
+                Ok(safe_put_u8(buffer, 0, battery_id)?
+                    + safe_put_dword(buffer, 1, bmc.maintenance_control_flags.bits())?)
+            }
+            Self::BatteryGetBmdRequest { battery_id } => safe_put_u8(buffer, 0, battery_id),
+            Self::BatteryGetBctRequest { battery_id, bct } => {
+                Ok(safe_put_u8(buffer, 0, battery_id)? + safe_put_dword(buffer, 1, bct.charge_level_percent)?)
+            }
+            Self::BatteryGetBtmRequest { battery_id, btm } => {
+                Ok(safe_put_u8(buffer, 0, battery_id)? + safe_put_dword(buffer, 1, btm.discharge_rate)?)
+            }
+            Self::BatterySetBmsRequest { battery_id, bms } => {
+                Ok(safe_put_u8(buffer, 0, battery_id)? + safe_put_dword(buffer, 1, bms.sampling_time_ms)?)
+            }
+            Self::BatterySetBmaRequest { battery_id, bma } => {
+                Ok(safe_put_u8(buffer, 0, battery_id)? + safe_put_dword(buffer, 1, bma.averaging_interval_ms)?)
+            }
+            Self::BatteryGetStaRequest { battery_id } => safe_put_u8(buffer, 0, battery_id),
+        }
     }
+
     fn deserialize(discriminant: u16, buffer: &[u8]) -> Result<Self, MessageSerializationError> {
         Ok(
             match BatteryCmd::try_from(discriminant)
@@ -400,22 +400,15 @@ impl SerializableMessage for AcpiBatteryRequest {
                 },
                 BatteryCmd::SetBtp => Self::BatterySetBtpRequest {
                     battery_id: safe_get_u8(buffer, 0)?,
-                    btp: embedded_batteries_async::acpi::Btp {
+                    btp: Btp {
                         trip_point: safe_get_dword(buffer, 1)?,
                     },
                 },
                 BatteryCmd::SetBpt => Self::BatterySetBptRequest {
                     battery_id: safe_get_u8(buffer, 0)?,
-                    bpt: embedded_batteries_async::acpi::Bpt {
+                    bpt: Bpt {
                         revision: safe_get_dword(buffer, 1)?,
-                        threshold_id: match safe_get_dword(buffer, 5)? {
-                            0 => embedded_batteries_async::acpi::ThresholdId::ClearAll,
-                            1 => embedded_batteries_async::acpi::ThresholdId::InstantaneousPeakPower,
-                            2 => embedded_batteries_async::acpi::ThresholdId::SustainablePeakPower,
-                            _ => {
-                                return Err(MessageSerializationError::InvalidPayload("Unsupported threshold id"));
-                            }
-                        },
+                        threshold_id: thres_id_try_from_u32(safe_get_dword(buffer, 5)?)?,
                         threshold_value: safe_get_dword(buffer, 9)?,
                     },
                 },
@@ -424,10 +417,8 @@ impl SerializableMessage for AcpiBatteryRequest {
                 },
                 BatteryCmd::SetBmc => Self::BatterySetBmcRequest {
                     battery_id: safe_get_u8(buffer, 0)?,
-                    bmc: embedded_batteries_async::acpi::Bmc {
-                        maintenance_control_flags: embedded_batteries_async::acpi::BmcControlFlags::from_bits_retain(
-                            safe_get_dword(buffer, 1)?,
-                        ),
+                    bmc: Bmc {
+                        maintenance_control_flags: BmcControlFlags::from_bits_retain(safe_get_dword(buffer, 1)?),
                     },
                 },
                 BatteryCmd::GetBmd => Self::BatteryGetBmdRequest {
@@ -435,25 +426,25 @@ impl SerializableMessage for AcpiBatteryRequest {
                 },
                 BatteryCmd::GetBct => Self::BatteryGetBctRequest {
                     battery_id: safe_get_u8(buffer, 0)?,
-                    bct: embedded_batteries_async::acpi::Bct {
+                    bct: Bct {
                         charge_level_percent: safe_get_dword(buffer, 1)?,
                     },
                 },
                 BatteryCmd::GetBtm => Self::BatteryGetBtmRequest {
                     battery_id: safe_get_u8(buffer, 0)?,
-                    btm: embedded_batteries_async::acpi::Btm {
+                    btm: Btm {
                         discharge_rate: safe_get_dword(buffer, 1)?,
                     },
                 },
                 BatteryCmd::SetBms => Self::BatterySetBmsRequest {
                     battery_id: safe_get_u8(buffer, 0)?,
-                    bms: embedded_batteries_async::acpi::Bms {
+                    bms: Bms {
                         sampling_time_ms: safe_get_dword(buffer, 1)?,
                     },
                 },
                 BatteryCmd::SetBma => Self::BatterySetBmaRequest {
                     battery_id: safe_get_u8(buffer, 0)?,
-                    bma: embedded_batteries_async::acpi::Bma {
+                    bma: Bma {
                         averaging_interval_ms: safe_get_dword(buffer, 1)?,
                     },
                 },
@@ -472,199 +463,135 @@ impl SerializableMessage for AcpiBatteryRequest {
 #[derive(PartialEq, Clone, Copy)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum AcpiBatteryResponse {
-    BatteryGetBixResponse {
-        bix: BixFixedStrings,
-    },
-    BatteryGetBstResponse {
-        bst: embedded_batteries_async::acpi::BstReturn,
-    },
-    BatteryGetPsrResponse {
-        psr: embedded_batteries_async::acpi::PsrReturn,
-    },
-    BatteryGetPifResponse {
-        pif: PifFixedStrings,
-    },
-    BatteryGetBpsResponse {
-        bps: embedded_batteries_async::acpi::Bps,
-    },
+    BatteryGetBixResponse { bix: BixFixedStrings },
+    BatteryGetBstResponse { bst: BstReturn },
+    BatteryGetPsrResponse { psr: PsrReturn },
+    BatteryGetPifResponse { pif: PifFixedStrings },
+    BatteryGetBpsResponse { bps: Bps },
     BatterySetBtpResponse {},
     BatterySetBptResponse {},
-    BatteryGetBpcResponse {
-        bpc: embedded_batteries_async::acpi::Bpc,
-    },
+    BatteryGetBpcResponse { bpc: Bpc },
     BatterySetBmcResponse {},
-    BatteryGetBmdResponse {
-        bmd: embedded_batteries_async::acpi::Bmd,
-    },
-    BatteryGetBctResponse {
-        bct_response: embedded_batteries_async::acpi::BctReturnResult,
-    },
-    BatteryGetBtmResponse {
-        btm_response: embedded_batteries_async::acpi::BtmReturnResult,
-    },
-    BatterySetBmsResponse {
-        status: u32,
-    },
-    BatterySetBmaResponse {
-        status: u32,
-    },
-    BatteryGetStaResponse {
-        sta: embedded_batteries_async::acpi::StaReturn,
-    },
+    BatteryGetBmdResponse { bmd: Bmd },
+    BatteryGetBctResponse { bct_response: BctReturnResult },
+    BatteryGetBtmResponse { btm_response: BtmReturnResult },
+    BatterySetBmsResponse { status: u32 },
+    BatterySetBmaResponse { status: u32 },
+    BatteryGetStaResponse { sta: StaReturn },
 }
 
 impl SerializableMessage for AcpiBatteryResponse {
     fn serialize(self, buffer: &mut [u8]) -> Result<usize, MessageSerializationError> {
         match self {
-            Self::BatteryGetBixResponse { bix } => bix.to_bytes(buffer).map(|_| 100),
-            Self::BatteryGetBstResponse { bst } => {
-                buffer
-                    .get_mut(..4)
-                    .ok_or(MessageSerializationError::BufferTooSmall)?
-                    .copy_from_slice(&u32::to_le_bytes(bst.battery_state.bits()));
-                buffer
-                    .get_mut(4..8)
-                    .ok_or(MessageSerializationError::BufferTooSmall)?
-                    .copy_from_slice(&u32::to_le_bytes(bst.battery_present_rate));
-                buffer
-                    .get_mut(8..12)
-                    .ok_or(MessageSerializationError::BufferTooSmall)?
-                    .copy_from_slice(&u32::to_le_bytes(bst.battery_remaining_capacity));
-                buffer
-                    .get_mut(12..16)
-                    .ok_or(MessageSerializationError::BufferTooSmall)?
-                    .copy_from_slice(&u32::to_le_bytes(bst.battery_present_voltage));
+            Self::BatteryGetBixResponse { bix } => bix.to_bytes(buffer),
+            Self::BatteryGetBstResponse { bst } => Ok(safe_put_dword(buffer, 0, bst.battery_state.bits())?
+                + safe_put_dword(buffer, 4, bst.battery_present_rate)?
+                + safe_put_dword(buffer, 8, bst.battery_remaining_capacity)?
+                + safe_put_dword(buffer, 12, bst.battery_present_voltage)?),
+            Self::BatteryGetPsrResponse { psr } => safe_put_dword(buffer, 0, psr.power_source.into()),
 
-                Ok(BST_RETURN_SIZE_BYTES)
-            }
-            Self::BatteryGetPsrResponse { psr } => {
-                buffer
-                    .get_mut(..4)
-                    .ok_or(MessageSerializationError::BufferTooSmall)?
-                    .copy_from_slice(&u32::to_le_bytes(psr.power_source.into()));
-
-                Ok(PSR_RETURN_SIZE_BYTES)
-            }
-
-            Self::BatteryGetPifResponse { pif } => pif.to_bytes(buffer).map(|_| 36),
-            Self::BatteryGetBpsResponse { bps } => {
-                buffer
-                    .get_mut(..4)
-                    .ok_or(MessageSerializationError::BufferTooSmall)?
-                    .copy_from_slice(&u32::to_le_bytes(bps.revision));
-                buffer
-                    .get_mut(4..8)
-                    .ok_or(MessageSerializationError::BufferTooSmall)?
-                    .copy_from_slice(&u32::to_le_bytes(bps.instantaneous_peak_power_level));
-                buffer
-                    .get_mut(8..12)
-                    .ok_or(MessageSerializationError::BufferTooSmall)?
-                    .copy_from_slice(&u32::to_le_bytes(bps.instantaneous_peak_power_period));
-                buffer
-                    .get_mut(12..16)
-                    .ok_or(MessageSerializationError::BufferTooSmall)?
-                    .copy_from_slice(&u32::to_le_bytes(bps.sustainable_peak_power_level));
-                buffer
-                    .get_mut(16..20)
-                    .ok_or(MessageSerializationError::BufferTooSmall)?
-                    .copy_from_slice(&u32::to_le_bytes(bps.sustainable_peak_power_period));
-
-                Ok(BPS_RETURN_SIZE_BYTES)
-            }
+            Self::BatteryGetPifResponse { pif } => pif.to_bytes(buffer),
+            Self::BatteryGetBpsResponse { bps } => Ok(safe_put_dword(buffer, 0, bps.revision)?
+                + safe_put_dword(buffer, 4, bps.instantaneous_peak_power_level)?
+                + safe_put_dword(buffer, 8, bps.instantaneous_peak_power_period)?
+                + safe_put_dword(buffer, 12, bps.sustainable_peak_power_level)?
+                + safe_put_dword(buffer, 16, bps.sustainable_peak_power_period)?),
             Self::BatterySetBtpResponse {} => Ok(0),
             Self::BatterySetBptResponse {} => Ok(0),
-            Self::BatteryGetBpcResponse { bpc } => {
-                buffer
-                    .get_mut(..4)
-                    .ok_or(MessageSerializationError::BufferTooSmall)?
-                    .copy_from_slice(&u32::to_le_bytes(bpc.revision));
-                buffer
-                    .get_mut(4..8)
-                    .ok_or(MessageSerializationError::BufferTooSmall)?
-                    .copy_from_slice(&u32::to_le_bytes(bpc.power_threshold_support.bits()));
-                buffer
-                    .get_mut(8..12)
-                    .ok_or(MessageSerializationError::BufferTooSmall)?
-                    .copy_from_slice(&u32::to_le_bytes(bpc.max_instantaneous_peak_power_threshold));
-                buffer
-                    .get_mut(12..16)
-                    .ok_or(MessageSerializationError::BufferTooSmall)?
-                    .copy_from_slice(&u32::to_le_bytes(bpc.max_sustainable_peak_power_threshold));
-
-                Ok(BPC_RETURN_SIZE_BYTES)
-            }
+            Self::BatteryGetBpcResponse { bpc } => Ok(safe_put_dword(buffer, 0, bpc.revision)?
+                + safe_put_dword(buffer, 4, bpc.power_threshold_support.bits())?
+                + safe_put_dword(buffer, 8, bpc.max_instantaneous_peak_power_threshold)?
+                + safe_put_dword(buffer, 12, bpc.max_sustainable_peak_power_threshold)?),
             Self::BatterySetBmcResponse {} => Ok(0),
-            Self::BatteryGetBmdResponse { bmd } => {
-                buffer
-                    .get_mut(..4)
-                    .ok_or(MessageSerializationError::BufferTooSmall)?
-                    .copy_from_slice(&u32::to_le_bytes(bmd.status_flags.bits()));
-                buffer
-                    .get_mut(4..8)
-                    .ok_or(MessageSerializationError::BufferTooSmall)?
-                    .copy_from_slice(&u32::to_le_bytes(bmd.capability_flags.bits()));
-                buffer
-                    .get_mut(8..12)
-                    .ok_or(MessageSerializationError::BufferTooSmall)?
-                    .copy_from_slice(&u32::to_le_bytes(bmd.recalibrate_count));
-                buffer
-                    .get_mut(12..16)
-                    .ok_or(MessageSerializationError::BufferTooSmall)?
-                    .copy_from_slice(&u32::to_le_bytes(bmd.quick_recalibrate_time));
-                buffer
-                    .get_mut(16..20)
-                    .ok_or(MessageSerializationError::BufferTooSmall)?
-                    .copy_from_slice(&u32::to_le_bytes(bmd.slow_recalibrate_time));
-
-                Ok(BMD_RETURN_SIZE_BYTES)
-            }
-            Self::BatteryGetBctResponse { bct_response } => {
-                buffer
-                    .get_mut(..4)
-                    .ok_or(MessageSerializationError::BufferTooSmall)?
-                    .copy_from_slice(&u32::to_le_bytes(bct_response.into()));
-
-                Ok(BCT_RETURN_SIZE_BYTES)
-            }
-            Self::BatteryGetBtmResponse { btm_response } => {
-                buffer
-                    .get_mut(..4)
-                    .ok_or(MessageSerializationError::BufferTooSmall)?
-                    .copy_from_slice(&u32::to_le_bytes(btm_response.into()));
-
-                Ok(BTM_RETURN_SIZE_BYTES)
-            }
-            Self::BatterySetBmsResponse { status } => {
-                buffer
-                    .get_mut(..4)
-                    .ok_or(MessageSerializationError::BufferTooSmall)?
-                    .copy_from_slice(&u32::to_le_bytes(status));
-
-                Ok(4)
-            }
-            Self::BatterySetBmaResponse { status } => {
-                buffer
-                    .get_mut(..4)
-                    .ok_or(MessageSerializationError::BufferTooSmall)?
-                    .copy_from_slice(&u32::to_le_bytes(status));
-
-                Ok(4)
-            }
-            Self::BatteryGetStaResponse { sta } => {
-                buffer
-                    .get_mut(..4)
-                    .ok_or(MessageSerializationError::BufferTooSmall)?
-                    .copy_from_slice(&u32::to_le_bytes(sta.bits()));
-
-                Ok(STA_RETURN_SIZE_BYTES)
-            }
+            Self::BatteryGetBmdResponse { bmd } => Ok(safe_put_dword(buffer, 0, bmd.status_flags.bits())?
+                + safe_put_dword(buffer, 4, bmd.capability_flags.bits())?
+                + safe_put_dword(buffer, 8, bmd.recalibrate_count)?
+                + safe_put_dword(buffer, 12, bmd.quick_recalibrate_time)?
+                + safe_put_dword(buffer, 16, bmd.slow_recalibrate_time)?),
+            Self::BatteryGetBctResponse { bct_response } => safe_put_dword(buffer, 0, bct_response.into()),
+            Self::BatteryGetBtmResponse { btm_response } => safe_put_dword(buffer, 0, btm_response.into()),
+            Self::BatterySetBmsResponse { status } => safe_put_dword(buffer, 0, status),
+            Self::BatterySetBmaResponse { status } => safe_put_dword(buffer, 0, status),
+            Self::BatteryGetStaResponse { sta } => safe_put_dword(buffer, 0, sta.bits()),
         }
     }
 
-    fn deserialize(_discriminant: u16, _buffer: &[u8]) -> Result<Self, MessageSerializationError> {
-        Err(MessageSerializationError::Other(
-            "unimplemented - don't need to deserialize responses on the EC side",
-        ))
+    fn deserialize(discriminant: u16, buffer: &[u8]) -> Result<Self, MessageSerializationError> {
+        Ok(
+            match BatteryCmd::try_from(discriminant)
+                .map_err(|_| MessageSerializationError::UnknownMessageDiscriminant(discriminant))?
+            {
+                BatteryCmd::GetBix => Self::BatteryGetBixResponse {
+                    bix: BixFixedStrings::from_bytes(buffer)?,
+                },
+                BatteryCmd::GetBst => {
+                    let bst = BstReturn {
+                        battery_state: BatteryState::from_bits(safe_get_dword(buffer, 0)?)
+                            .ok_or(MessageSerializationError::BufferTooSmall)?,
+                        battery_present_rate: safe_get_dword(buffer, 4)?,
+                        battery_remaining_capacity: safe_get_dword(buffer, 8)?,
+                        battery_present_voltage: safe_get_dword(buffer, 12)?,
+                    };
+                    Self::BatteryGetBstResponse { bst }
+                }
+                BatteryCmd::GetPsr => Self::BatteryGetPsrResponse {
+                    psr: PsrReturn {
+                        power_source: pwr_src_try_from_u32(safe_get_dword(buffer, 0)?)?,
+                    },
+                },
+                BatteryCmd::GetPif => Self::BatteryGetPifResponse {
+                    pif: PifFixedStrings::from_bytes(buffer)?,
+                },
+                BatteryCmd::GetBps => Self::BatteryGetBpsResponse {
+                    bps: Bps {
+                        revision: safe_get_dword(buffer, 0)?,
+                        instantaneous_peak_power_level: safe_get_dword(buffer, 4)?,
+                        instantaneous_peak_power_period: safe_get_dword(buffer, 8)?,
+                        sustainable_peak_power_level: safe_get_dword(buffer, 12)?,
+                        sustainable_peak_power_period: safe_get_dword(buffer, 16)?,
+                    },
+                },
+                BatteryCmd::SetBtp => Self::BatterySetBtpResponse {},
+                BatteryCmd::SetBpt => Self::BatterySetBptResponse {},
+                BatteryCmd::GetBpc => Self::BatteryGetBpcResponse {
+                    bpc: Bpc {
+                        revision: safe_get_dword(buffer, 0)?,
+                        power_threshold_support: PowerThresholdSupport::from_bits(safe_get_dword(buffer, 4)?)
+                            .ok_or(MessageSerializationError::InvalidPayload("Invalid BpcThresholdSupport"))?,
+                        max_instantaneous_peak_power_threshold: safe_get_dword(buffer, 8)?,
+                        max_sustainable_peak_power_threshold: safe_get_dword(buffer, 12)?,
+                    },
+                },
+                BatteryCmd::SetBmc => Self::BatterySetBmcResponse {},
+                BatteryCmd::GetBmd => Self::BatteryGetBmdResponse {
+                    bmd: Bmd {
+                        status_flags: BmdStatusFlags::from_bits(safe_get_dword(buffer, 0)?)
+                            .ok_or(MessageSerializationError::InvalidPayload("Invalid BmdStatusFlags"))?,
+                        capability_flags: BmdCapabilityFlags::from_bits(safe_get_dword(buffer, 4)?)
+                            .ok_or(MessageSerializationError::InvalidPayload("Invalid BmdCapabilityFlags"))?,
+                        recalibrate_count: safe_get_dword(buffer, 8)?,
+                        quick_recalibrate_time: safe_get_dword(buffer, 12)?,
+                        slow_recalibrate_time: safe_get_dword(buffer, 16)?,
+                    },
+                },
+                BatteryCmd::GetBct => Self::BatteryGetBctResponse {
+                    bct_response: safe_get_dword(buffer, 0)?.into(),
+                },
+                BatteryCmd::GetBtm => Self::BatteryGetBtmResponse {
+                    btm_response: safe_get_dword(buffer, 0)?.into(),
+                },
+                BatteryCmd::SetBms => Self::BatterySetBmsResponse {
+                    status: safe_get_dword(buffer, 0)?,
+                },
+                BatteryCmd::SetBma => Self::BatterySetBmaResponse {
+                    status: safe_get_dword(buffer, 0)?,
+                },
+                BatteryCmd::GetSta => Self::BatteryGetStaResponse {
+                    sta: StaReturn::from_bits(safe_get_dword(buffer, 0)?)
+                        .ok_or(MessageSerializationError::InvalidPayload("Invalid STA flags"))?,
+                },
+            },
+        )
     }
 
     fn discriminant(&self) -> u16 {
@@ -718,4 +645,33 @@ fn safe_get_dword(buffer: &[u8], index: usize) -> Result<u32, MessageSerializati
         .try_into()
         .map_err(|_| MessageSerializationError::BufferTooSmall)?;
     Ok(u32::from_le_bytes(bytes))
+}
+
+fn safe_get_bytes<const N: usize>(buffer: &[u8], index: usize) -> Result<[u8; N], MessageSerializationError> {
+    buffer
+        .get(index..index + N)
+        .ok_or(MessageSerializationError::BufferTooSmall)?
+        .try_into()
+        .map_err(|_| MessageSerializationError::BufferTooSmall)
+}
+
+fn safe_put_u8(buffer: &mut [u8], index: usize, val: u8) -> Result<usize, MessageSerializationError> {
+    *buffer.get_mut(index).ok_or(MessageSerializationError::BufferTooSmall)? = val;
+    Ok(1)
+}
+
+fn safe_put_dword(buffer: &mut [u8], index: usize, val: u32) -> Result<usize, MessageSerializationError> {
+    buffer
+        .get_mut(index..index + 4)
+        .ok_or(MessageSerializationError::BufferTooSmall)?
+        .copy_from_slice(&val.to_le_bytes());
+    Ok(4)
+}
+
+fn safe_put_bytes(buffer: &mut [u8], index: usize, bytes: &[u8]) -> Result<usize, MessageSerializationError> {
+    buffer
+        .get_mut(index..index + bytes.len())
+        .ok_or(MessageSerializationError::BufferTooSmall)?
+        .copy_from_slice(bytes);
+    Ok(bytes.len())
 }
