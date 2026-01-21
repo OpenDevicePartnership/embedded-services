@@ -2,7 +2,6 @@ use core::cmp::Ordering;
 use embedded_services::debug;
 use embedded_services::power::policy::charger::Device as ChargerDevice;
 use embedded_services::power::policy::charger::PolicyEvent;
-use embedded_services::power::policy::device::StateKind;
 use embedded_services::power::policy::policy::check_chargers_ready;
 use embedded_services::power::policy::policy::init_chargers;
 
@@ -234,34 +233,26 @@ where
         let device = self.context.get_device(new_consumer.device_id)?;
         let device_state = device.state.lock().await.state();
 
-        if matches!(device_state, device::State::Idle | device::State::ConnectedConsumer(_)) {
+        if let e @ Err(_) = device
+            .state
+            .lock()
+            .await
+            .connect_consumer(new_consumer.consumer_power_capability)
+        {
+            error!(
+                "Device{}: Not ready to connect consumer, state: {:#?}",
+                device.id().0,
+                device_state
+            );
+            e
+        } else {
             device
                 .device
                 .lock()
                 .await
                 .connect_consumer(new_consumer.consumer_power_capability)
                 .await?;
-            if let Err(e) = device
-                .state
-                .lock()
-                .await
-                .connect_consumer(new_consumer.consumer_power_capability)
-            {
-                // Should never happen because we checked the state above, log an error instead of a panic
-                error!(
-                    "Device{}: Connect state transition failed: {:#?}",
-                    new_consumer.device_id.0, e
-                );
-            }
-            self.post_consumer_connected(state, new_consumer).await?;
-            Ok(())
-        } else {
-            error!(
-                "Device{}: Not ready to connect consumer, state: {:#?}",
-                device.id().0,
-                device_state
-            );
-            Err(Error::InvalidState(&[StateKind::Idle], device_state.kind()))
+            self.post_consumer_connected(state, new_consumer).await
         }
     }
 

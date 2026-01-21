@@ -28,7 +28,6 @@ use embassy_sync::signal::Signal;
 use embassy_time::Instant;
 use embedded_cfu_protocol::protocol_definitions::{FwUpdateOffer, FwUpdateOfferResponse, FwVersion};
 use embedded_services::event;
-use embedded_services::power::policy::device::StateKind;
 use embedded_services::power::policy::policy;
 use embedded_services::sync::Lockable;
 use embedded_services::type_c::controller::{self, Controller, PortStatus};
@@ -215,12 +214,10 @@ where
         info!("Plug event");
         if status.is_connected() {
             info!("Plug inserted");
-            if let Err(e) = power.state.attach() {
-                warn!("Power device not in detached state, recovering: {:#?}", e);
-            }
+            power.sender.send(policy::RequestData::Attached).await;
         } else {
             info!("Plug removed");
-            power.state.detach();
+            power.sender.send(policy::RequestData::Detached).await;
         }
 
         Ok(())

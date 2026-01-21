@@ -3,12 +3,7 @@
 //! the system is in unlimited power state. In this mode up to [provider_unlimited](super::Config::provider_unlimited)
 //! is provided to each device. Above this threshold, the system is in limited power state.
 //! In this mode [provider_limited](super::Config::provider_limited) is provided to each device
-use embedded_services::{
-    debug,
-    event::Receiver,
-    power::policy::{device::StateKind, policy::RequestData},
-    trace,
-};
+use embedded_services::{debug, event::Receiver, power::policy::policy::RequestData, trace};
 
 use super::*;
 
@@ -46,7 +41,7 @@ where
                 return Err(Error::CannotProvide(None));
             }
         };
-        let mut state = self.state.lock().await;
+        let mut policy_state = self.state.lock().await;
         let mut total_power_mw = 0;
 
         // Determine total requested power draw
@@ -60,17 +55,17 @@ where
                 device.provider_capability().await
             };
             total_power_mw += target_provider_cap.map_or(0, |cap| cap.capability.max_power_mw());
-
-            if total_power_mw > self.config.limited_power_threshold_mw {
-                state.current_provider_state.state = PowerState::Limited;
-            } else {
-                state.current_provider_state.state = PowerState::Unlimited;
-            }
         }
 
-        debug!("New power state: {:?}", state.current_provider_state.state);
+        if total_power_mw > self.config.limited_power_threshold_mw {
+            policy_state.current_provider_state.state = PowerState::Limited;
+        } else {
+            policy_state.current_provider_state.state = PowerState::Unlimited;
+        }
 
-        let target_power = match state.current_provider_state.state {
+        debug!("New power state: {:?}", policy_state.current_provider_state.state);
+
+        let target_power = match policy_state.current_provider_state.state {
             PowerState::Limited => ProviderPowerCapability {
                 capability: self.config.provider_limited,
                 flags: requested_power_capability.flags,
@@ -89,21 +84,20 @@ where
             }
         };
 
-        let mut policy_state = self.state.lock().await;
         let device = self.context.get_device(requester_id)?;
-        let state = device.state.lock().await.state();
-        if matches!(state, device::State::Idle | device::State::ConnectedProvider(_)) {
-            device.device.lock().await.connect_provider(target_power).await?;
-            self.post_provider_connected(&mut policy_state, requester_id, target_power)
-                .await;
-            Ok(())
-        } else {
+        if let e @ Err(_) = device.state.lock().await.connect_provider(target_power) {
+            let state = device.state.lock().await.state();
             error!(
                 "Device{}: Cannot provide, device is in state {:#?}",
                 device.id().0,
                 state
             );
-            Err(Error::InvalidState(&[StateKind::Idle], state.kind()))
+            e
+        } else {
+            device.device.lock().await.connect_provider(target_power).await?;
+            self.post_provider_connected(&mut policy_state, requester_id, target_power)
+                .await;
+            Ok(())
         }
     }
 

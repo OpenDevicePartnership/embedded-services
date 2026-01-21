@@ -175,10 +175,13 @@ impl InternalState {
 
     /// Handle a request to connect as a provider from the policy
     pub fn connect_provider(&mut self, capability: ProviderPowerCapability) -> Result<(), Error> {
-        let result = if self.state == State::Idle {
+        let result = if matches!(self.state, State::Idle | State::ConnectedProvider(_)) {
             Ok(())
         } else {
-            Err(Error::InvalidState(&[StateKind::Idle], self.state.kind()))
+            Err(Error::InvalidState(
+                &[StateKind::Idle, StateKind::ConnectedProvider],
+                self.state.kind(),
+            ))
         };
         self.state = State::ConnectedProvider(capability);
         result

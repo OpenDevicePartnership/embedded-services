@@ -36,10 +36,6 @@ where
         status: &PortStatus,
     ) -> Result<(), Error<<D::Inner as Controller>::BusError>> {
         info!("Process new consumer contract");
-
-        let current_state = power.state.state();
-        info!("current power state: {:?}", current_state);
-
         let available_sink_contract = status.available_sink_contract.map(|c| {
             let mut c: ConsumerPowerCapability = c.into();
             let unconstrained = match self.config.unconstrained_sink {
@@ -52,12 +48,10 @@ where
             c
         });
 
-        if let Err(e) = power.state.update_consumer_power_capability(available_sink_contract) {
-            warn!(
-                "Device was not in correct state for consumer contract, recovered: {:#?}",
-                e
-            );
-        }
+        power
+            .sender
+            .send(policy::RequestData::UpdatedConsumerCapability(available_sink_contract))
+            .await;
         Ok(())
     }
 
@@ -68,18 +62,12 @@ where
         status: &PortStatus,
     ) -> Result<(), Error<<D::Inner as Controller>::BusError>> {
         info!("Process New provider contract");
-
-        let current_state = power.state.state();
-        info!("current power state: {:?}", current_state);
-
-        if let Err(e) = power.state.update_requested_provider_power_capability(
-            status.available_sink_contract.map(ProviderPowerCapability::from),
-        ) {
-            warn!(
-                "Device was not in correct state for provider contract, recovered: {:#?}",
-                e
-            );
-        }
+        power
+            .sender
+            .send(policy::RequestData::RequestedProviderCapability(
+                status.available_source_contract.map(ProviderPowerCapability::from),
+            ))
+            .await;
         Ok(())
     }
 
@@ -88,23 +76,11 @@ where
         &self,
         port: LocalPortId,
         controller: &mut D::Inner,
-        power: &mut PortPower<S>,
     ) -> Result<(), Error<<D::Inner as Controller>::BusError>> {
-        if power.state.state().kind() == StateKind::ConnectedConsumer {
-            info!("Port{}: Disconnect from ConnectedConsumer", port.0);
-            if controller.enable_sink_path(port, false).await.is_err() {
-                error!("Error disabling sink path");
-                return PdError::Failed.into();
-            }
-
-            if let Err(e) = power.state.disconnect(false) {
-                warn!(
-                    "{:?}: Device was not in correct state for disconnect, recovered: {:#?}",
-                    port, e
-                );
-            }
+        if controller.enable_sink_path(port, false).await.is_err() {
+            error!("Error disabling sink path");
+            return PdError::Failed.into();
         }
-
         Ok(())
     }
 
@@ -159,12 +135,6 @@ where
             return Err(PowerError::Busy);
         }
 
-        let power = state.port_power_mut().get_mut(port.0 as usize);
-        if power.is_none() {
-            return Err(PowerError::InvalidDevice);
-        }
-
-        let power = power.unwrap();
         match command {
             PowerCommand::ConnectAsConsumer(capability) => {
                 info!(
@@ -183,7 +153,7 @@ where
                 }
             }
             PowerCommand::Disconnect => {
-                if self.process_disconnect(port, controller, power).await.is_err() {
+                if self.process_disconnect(port, controller).await.is_err() {
                     error!("Error processing disconnect");
                     return Err(PowerError::Failed);
                 }
