@@ -1,4 +1,5 @@
 use embassy_executor::{Executor, Spawner};
+use embassy_sync::channel::{Channel, DynamicReceiver, DynamicSender};
 use embassy_sync::mutex::Mutex;
 use embassy_sync::once_lock::OnceLock;
 use embassy_sync::pubsub::PubSubChannel;
@@ -12,13 +13,16 @@ use embedded_usb_pd::GlobalPortId;
 use embedded_usb_pd::ado::Ado;
 use embedded_usb_pd::type_c::Current;
 use log::*;
+use power_policy_service::PowerPolicy;
 use static_cell::StaticCell;
 use std_examples::type_c::mock_controller;
 use std_examples::type_c::mock_controller::Wrapper;
 use type_c_service::service::Service;
 use type_c_service::service::config::Config;
+use type_c_service::wrapper::backing::Storage;
 use type_c_service::wrapper::backing::{ReferencedStorage, Storage};
 use type_c_service::wrapper::message::*;
+use type_c_service::wrapper::proxy::PowerProxyDevice;
 
 const NUM_PD_CONTROLLERS: usize = 1;
 const CONTROLLER0_ID: ControllerId = ControllerId(0);
@@ -63,10 +67,54 @@ mod debug {
 }
 
 #[embassy_executor::task]
-async fn controller_task(
-    wrapper: &'static Wrapper<'static>,
-    controller: &'static Mutex<GlobalRawMutex, mock_controller::Controller<'static>>,
-) {
+async fn controller_task(state: &'static mock_controller::ControllerState) {
+    static STORAGE: StaticCell<Storage<1, GlobalRawMutex>> = StaticCell::new();
+    let storage = STORAGE.init(Storage::new(
+        CONTROLLER0_ID,
+        0, // CFU component ID (unused)
+        [(PORT0_ID)],
+    ));
+
+    static INTERMEDIATE: StaticCell<type_c_service::wrapper::backing::IntermediateStorage<1, GlobalRawMutex>> =
+        StaticCell::new();
+    let intermediate = INTERMEDIATE.init(storage.create_intermediate());
+
+    static POLICY_CHANNEL: StaticCell<Channel<GlobalRawMutex, policy::RequestData, 1>> = StaticCell::new();
+    let policy_channel = POLICY_CHANNEL.init(Channel::new());
+
+    let policy_sender = policy_channel.dyn_sender();
+    let policy_receiver = policy_channel.dyn_receiver();
+
+    static REFERENCED: StaticCell<
+        type_c_service::wrapper::backing::ReferencedStorage<
+            1,
+            GlobalRawMutex,
+            DynamicSender<'_, policy::RequestData>,
+            DynamicReceiver<'_, policy::RequestData>,
+        >,
+    > = StaticCell::new();
+    let referenced = REFERENCED.init(
+        intermediate
+            .try_create_referenced([(POWER0_ID, policy_sender, policy_receiver)])
+            .expect("Failed to create referenced storage"),
+    );
+
+    static CONTROLLER: StaticCell<Mutex<GlobalRawMutex, mock_controller::Controller>> = StaticCell::new();
+    let controller = CONTROLLER.init(Mutex::new(mock_controller::Controller::new(state)));
+
+    static WRAPPER: StaticCell<mock_controller::Wrapper> = StaticCell::new();
+    let wrapper = WRAPPER.init(
+        mock_controller::Wrapper::try_new(
+            controller,
+            Default::default(),
+            referenced,
+            crate::mock_controller::Validator,
+        )
+        .expect("Failed to create wrapper"),
+    );
+
+    wrapper.register().await.unwrap();
+
     controller.lock().await.custom_function();
 
     loop {
@@ -132,14 +180,18 @@ async fn task(
 }
 
 #[embassy_executor::task]
-async fn power_policy_service_task(policy: &'static power_policy_service::PowerPolicy<POLICY_CHANNEL_SIZE>) {
-    power_policy_service::task::task(
-        policy,
-        None::<[&std_examples::type_c::DummyPowerDevice<POLICY_CHANNEL_SIZE>; 0]>,
-        None::<[&std_examples::type_c::DummyCharger; 0]>,
-    )
-    .await
-    .expect("Failed to start power policy service task");
+async fn power_policy_service_task() {
+    static POWER_POLICY: static_cell::StaticCell<
+        PowerPolicy<Mutex<GlobalRawMutex, PowerProxyDevice<'static>>, DynamicReceiver<'static, policy::RequestData>>,
+    > = static_cell::StaticCell::new();
+    let power_policy =
+        POWER_POLICY.init(PowerPolicy::create(Default::default()).expect("Failed to create power policy"));
+
+    // TODO: remove once power policy task accepts context
+    Timer::after_millis(100).await;
+    power_policy_service::task::task(power_policy)
+        .await
+        .expect("Failed to start power policy service task");
 }
 
 #[embassy_executor::task]

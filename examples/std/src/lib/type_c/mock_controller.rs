@@ -42,22 +42,24 @@ impl ControllerState {
         } else {
             ConnectionState::Attached
         });
+
+        let mut events = PortEvent::none();
         match role {
             PowerRole::Source => {
                 status.available_source_contract = Some(capability);
                 status.unconstrained_power = unconstrained;
+                events.status.set_new_power_contract_as_provider(true);
             }
             PowerRole::Sink => {
                 status.available_sink_contract = Some(capability);
                 status.unconstrained_power = unconstrained;
+                events.status.set_new_power_contract_as_consumer(true);
+                events.status.set_sink_ready(true);
             }
         }
         *self.status.lock().await = status;
 
-        let mut events = PortEvent::none();
         events.status.set_plug_inserted_or_removed(true);
-        events.status.set_new_power_contract_as_consumer(true);
-        events.status.set_sink_ready(true);
         self.events.signal(events);
     }
 
@@ -96,13 +98,13 @@ impl Default for ControllerState {
     }
 }
 
-pub struct Controller {
-    state: ControllerState,
+pub struct Controller<'a> {
+    state: &'a ControllerState,
     events: PortEvent,
 }
 
-impl Controller {
-    pub fn new(state: ControllerState) -> Self {
+impl<'a> Controller<'a> {
+    pub fn new(state: &'a ControllerState) -> Self {
         Self {
             state,
             events: PortEvent::none(),
@@ -115,13 +117,13 @@ impl Controller {
     }
 }
 
-impl embedded_services::type_c::controller::Controller for Controller {
+impl embedded_services::type_c::controller::Controller for Controller<'_> {
     type BusError = ();
 
     async fn wait_port_event(&mut self) -> Result<(), Error<Self::BusError>> {
         let events = self.state.events.wait().await;
         trace!("Port event: {events:#?}");
-        self.events.set(events);
+        self.events = self.events.union(events);
         Ok(())
     }
 

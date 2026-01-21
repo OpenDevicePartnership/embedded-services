@@ -12,8 +12,6 @@ use static_cell::StaticCell;
 const CONTROLLER0_ID: ControllerId = ControllerId(0);
 const PORT0_ID: GlobalPortId = GlobalPortId(0);
 const PORT1_ID: GlobalPortId = GlobalPortId(1);
-const POWER0_ID: power::policy::DeviceId = power::policy::DeviceId(0);
-const POWER_POLICY_CHANNEL_SIZE: usize = 1;
 
 mod test_controller {
     use embedded_services::type_c::controller::{ControllerStatus, PortStatus};
@@ -23,7 +21,6 @@ mod test_controller {
 
     pub struct Controller<'a> {
         pub controller: controller::Device<'a>,
-        pub power_policy: power::policy::device::Device<POWER_POLICY_CHANNEL_SIZE>,
     }
 
     impl controller::DeviceContainer for Controller<'_> {
@@ -32,22 +29,10 @@ mod test_controller {
         }
     }
 
-    impl power::policy::device::DeviceContainer<POWER_POLICY_CHANNEL_SIZE> for Controller<'_> {
-        fn get_power_policy_device(&self) -> &power::policy::device::Device<POWER_POLICY_CHANNEL_SIZE> {
-            &self.power_policy
-        }
-    }
-
     impl<'a> Controller<'a> {
-        pub fn new(
-            id: ControllerId,
-            power_id: power::policy::DeviceId,
-            ports: &'a [GlobalPortId],
-            power_context: &'static crate::power::policy::policy::Context<POWER_POLICY_CHANNEL_SIZE>,
-        ) -> Self {
+        pub fn new(id: ControllerId, ports: &'a [GlobalPortId]) -> Self {
             Self {
                 controller: controller::Device::new(id, ports),
-                power_policy: power::policy::device::Device::new(power_id, power_context),
             }
         }
 
@@ -139,9 +124,8 @@ async fn controller_task(
 
     static PORTS: [GlobalPortId; 2] = [PORT0_ID, PORT1_ID];
 
-    let controller =
-        CONTROLLER.get_or_init(|| test_controller::Controller::new(CONTROLLER0_ID, POWER0_ID, &PORTS, power_context));
-    controller::register_controller(controller_list, controller).unwrap();
+    let controller = CONTROLLER.get_or_init(|| test_controller::Controller::new(CONTROLLER0_ID, &PORTS));
+    controller::register_controller(controller).unwrap();
 
     loop {
         controller.process().await;

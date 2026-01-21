@@ -67,14 +67,17 @@ impl<'a> ExampleDevice<'a> {
 
 impl DeviceTrait for ExampleDevice<'_> {
     async fn disconnect(&mut self) -> Result<(), Error> {
+        debug!("ExampleDevice disconnect");
         Ok(())
     }
 
-    async fn connect_provider(&mut self, _capability: ProviderPowerCapability) -> Result<(), Error> {
+    async fn connect_provider(&mut self, capability: ProviderPowerCapability) -> Result<(), Error> {
+        debug!("ExampleDevice connect_provider with {:?}", capability);
         Ok(())
     }
 
-    async fn connect_consumer(&mut self, _capability: ConsumerPowerCapability) -> Result<(), Error> {
+    async fn connect_consumer(&mut self, capability: ConsumerPowerCapability) -> Result<(), Error> {
+        debug!("ExampleDevice connect_consumer with {:?}", capability);
         Ok(())
     }
 }
@@ -102,7 +105,7 @@ async fn run(_spawner: Spawner) {
         device0,
         device0_event_channel.dyn_receiver(),
     ));
-    policy::register_device(device0_registration).await.unwrap();
+    policy::register_device(device0_registration).unwrap();
 
     info!("Creating device 1");
     static DEVICE1_EVENT_CHANNEL: StaticCell<Channel<NoopRawMutex, policy::policy::RequestData, 4>> = StaticCell::new();
@@ -121,7 +124,7 @@ async fn run(_spawner: Spawner) {
         device1,
         device1_event_channel.dyn_receiver(),
     ));
-    policy::register_device(device1_registration).await.unwrap();
+    policy::register_device(device1_registration).unwrap();
 
     spawner.must_spawn(power_policy_service_task(service, [device0_mock, device1_mock]));
 
@@ -199,7 +202,16 @@ async fn run(_spawner: Spawner) {
     }
     Timer::after_millis(PER_CALL_DELAY_MS).await;
 
-    // Switch to provider on device0
+    // Switch device 0 to provider
+    info!("Device 0 switch to provider");
+    {
+        let mut dev0 = device0.lock().await;
+        dev0.simulate_update_requested_provider_power_capability(Some(HIGH_POWER.into()))
+            .await;
+    }
+    Timer::after_millis(PER_CALL_DELAY_MS).await;
+
+    // Attach device 1 and request provider
     info!("Device 1 attach and requesting provider");
     {
         let mut dev1 = device1.lock().await;
@@ -209,7 +221,7 @@ async fn run(_spawner: Spawner) {
     }
     Timer::after_millis(PER_CALL_DELAY_MS).await;
 
-    // Provider upgrade should fail because device 0 is already connected
+    // Provider upgrade should fail because device 0 is already connected at high power
     info!("Device 1 attempting provider upgrade");
     {
         let mut dev1 = device1.lock().await;

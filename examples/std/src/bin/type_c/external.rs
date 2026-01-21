@@ -1,9 +1,10 @@
 //! Low-level example of external messaging with a simple type-C service
 use embassy_executor::{Executor, Spawner};
+use embassy_sync::channel::{Channel, DynamicReceiver, DynamicSender};
 use embassy_sync::mutex::Mutex;
 use embassy_sync::pubsub::PubSubChannel;
 use embassy_time::Timer;
-use embedded_services::power::policy::*;
+use embedded_services::power::policy::policy;
 use embedded_services::{
     GlobalRawMutex, IntrusiveList, power,
     type_c::{Cached, ControllerId, controller::Context},
@@ -139,15 +140,30 @@ fn create_wrapper(
         controller_context,
         CONTROLLER0_ID,
         0, // CFU component ID (unused)
-        [(PORT0_ID, POWER0_ID)],
-        power_context,
+        [PORT0_ID],
     ));
+
+    static INTERMEDIATE: StaticCell<type_c_service::wrapper::backing::IntermediateStorage<1, GlobalRawMutex>> =
+        StaticCell::new();
+    let intermediate = INTERMEDIATE.init(backing_storage.create_intermediate());
+
+    static POLICY_CHANNEL: StaticCell<Channel<GlobalRawMutex, policy::RequestData, 1>> = StaticCell::new();
+    let policy_channel = POLICY_CHANNEL.init(Channel::new());
+
+    let policy_sender = policy_channel.dyn_sender();
+    let policy_receiver = policy_channel.dyn_receiver();
+
     static REFERENCED: StaticCell<
-        type_c_service::wrapper::backing::ReferencedStorage<1, GlobalRawMutex, POLICY_CHANNEL_SIZE>,
+        type_c_service::wrapper::backing::ReferencedStorage<
+            1,
+            GlobalRawMutex,
+            DynamicSender<'_, policy::RequestData>,
+            DynamicReceiver<'_, policy::RequestData>,
+        >,
     > = StaticCell::new();
     let referenced = REFERENCED.init(
-        backing_storage
-            .create_referenced()
+        intermediate
+            .try_create_referenced([(POWER0_ID, policy_sender, policy_receiver)])
             .expect("Failed to create referenced storage"),
     );
 
