@@ -33,13 +33,13 @@ impl FwUpdateState {
 impl<
     'device,
     M: RawMutex,
-    C: Lockable,
+    D: Lockable,
     S: event::Sender<policy::RequestData>,
     R: event::Receiver<policy::RequestData>,
     V: FwOfferValidator,
-> ControllerWrapper<'device, M, C, S, R, V>
+> ControllerWrapper<'device, M, D, S, R, V>
 where
-    <C as Lockable>::Inner: Controller,
+    <D as Lockable>::Inner: Controller,
 {
     /// Create a new invalid FW version response
     fn create_invalid_fw_version_response(&self) -> InternalResponseData {
@@ -52,7 +52,7 @@ where
     }
 
     /// Process a GetFwVersion command
-    async fn process_get_fw_version(&self, target: &mut C::Inner) -> InternalResponseData {
+    async fn process_get_fw_version(&self, target: &mut D::Inner) -> InternalResponseData {
         let version = match target.get_active_fw_version().await {
             Ok(v) => v,
             Err(Error::Pd(e)) => {
@@ -83,7 +83,7 @@ where
     }
 
     /// Process a GiveOffer command
-    async fn process_give_offer(&self, target: &mut C::Inner, offer: &FwUpdateOffer) -> InternalResponseData {
+    async fn process_give_offer(&self, target: &mut D::Inner, offer: &FwUpdateOffer) -> InternalResponseData {
         if offer.component_info.component_id != self.registration.cfu_device.component_id() {
             return Self::create_offer_rejection();
         }
@@ -105,7 +105,7 @@ where
 
     async fn process_abort_update(
         &self,
-        controller: &mut C::Inner,
+        controller: &mut D::Inner,
         state: &mut dyn DynPortState<'_, S>,
     ) -> InternalResponseData {
         // abort the update process
@@ -130,7 +130,7 @@ where
     /// Process a GiveContent command
     async fn process_give_content(
         &self,
-        controller: &mut C::Inner,
+        controller: &mut D::Inner,
         state: &mut dyn DynPortState<'_, S>,
         content: &FwUpdateContentCommand,
     ) -> InternalResponseData {
@@ -233,7 +233,7 @@ where
     }
 
     /// Process a CFU tick
-    pub async fn process_cfu_tick(&self, controller: &mut C::Inner, state: &mut dyn DynPortState<'_, S>) {
+    pub async fn process_cfu_tick(&self, controller: &mut D::Inner, state: &mut dyn DynPortState<'_, S>) {
         match state.controller_state_mut().fw_update_state {
             FwUpdateState::Idle => {
                 // No FW update in progress, nothing to do
@@ -275,7 +275,7 @@ where
     /// Process a CFU command
     pub async fn process_cfu_command(
         &self,
-        controller: &mut C::Inner,
+        controller: &mut D::Inner,
         state: &mut dyn DynPortState<'_, S>,
         command: &RequestData,
     ) -> InternalResponseData {

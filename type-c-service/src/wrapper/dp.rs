@@ -7,20 +7,20 @@ use embedded_usb_pd::{Error, LocalPortId};
 impl<
     'device,
     M: RawMutex,
-    C: Lockable,
+    D: Lockable,
     S: event::Sender<policy::RequestData>,
     R: event::Receiver<policy::RequestData>,
     V: FwOfferValidator,
-> ControllerWrapper<'device, M, C, S, R, V>
+> ControllerWrapper<'device, M, D, S, R, V>
 where
-    <C as Lockable>::Inner: Controller,
+    <D as Lockable>::Inner: Controller,
 {
     /// Process a DisplayPort status update by retrieving the current DP status from the `controller` for the appropriate `port`.
     pub(super) async fn process_dp_status_update(
         &self,
-        controller: &mut C::Inner,
+        controller: &mut D::Inner,
         port: LocalPortId,
-    ) -> Result<OutputDpStatusChanged, Error<<C::Inner as Controller>::BusError>> {
+    ) -> Result<OutputDpStatusChanged, Error<<D::Inner as Controller>::BusError>> {
         trace!("Processing DP status update event on port {}", port.0);
 
         let status = controller.get_dp_status(port).await?;

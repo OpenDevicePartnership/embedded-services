@@ -74,14 +74,14 @@ pub const MAX_SUPPORTED_PORTS: usize = 2;
 pub struct ControllerWrapper<
     'device,
     M: RawMutex,
-    C: Lockable,
+    D: Lockable,
     S: event::Sender<policy::RequestData>,
     R: event::Receiver<policy::RequestData>,
     V: FwOfferValidator,
 > where
-    <C as Lockable>::Inner: Controller,
+    <D as Lockable>::Inner: Controller,
 {
-    controller: &'device C,
+    controller: &'device D,
     /// Trait object for validating firmware versions
     fw_version_validator: V,
     /// FW update ticker used to check for timeouts and recovery attempts
@@ -101,17 +101,17 @@ pub struct ControllerWrapper<
 impl<
     'device,
     M: RawMutex,
-    C: Lockable,
+    D: Lockable,
     S: event::Sender<policy::RequestData>,
     R: event::Receiver<policy::RequestData>,
     V: FwOfferValidator,
-> ControllerWrapper<'device, M, C, S, R, V>
+> ControllerWrapper<'device, M, D, S, R, V>
 where
-    <C as Lockable>::Inner: Controller,
+    <D as Lockable>::Inner: Controller,
 {
     /// Create a new controller wrapper, returns `None` if the backing storage is already in use
     pub fn try_new<const N: usize>(
-        controller: &'device C,
+        controller: &'device D,
         config: config::Config,
         storage: &'device backing::ReferencedStorage<'device, N, M, S, R>,
         fw_version_validator: V,
@@ -155,7 +155,7 @@ where
     }
 
     /// Synchronize the state between the controller and the internal state
-    pub async fn sync_state(&self) -> Result<(), Error<<C::Inner as Controller>::BusError>> {
+    pub async fn sync_state(&self) -> Result<(), Error<<D::Inner as Controller>::BusError>> {
         let mut controller = self.controller.lock().await;
         let mut state = self.state.lock().await;
         self.sync_state_internal(&mut controller, state.deref_mut().deref_mut())
@@ -165,9 +165,9 @@ where
     /// Synchronize the state between the controller and the internal state
     async fn sync_state_internal(
         &self,
-        controller: &mut C::Inner,
+        controller: &mut D::Inner,
         state: &mut dyn DynPortState<'_, S>,
-    ) -> Result<(), Error<<C::Inner as Controller>::BusError>> {
+    ) -> Result<(), Error<<D::Inner as Controller>::BusError>> {
         // Sync the controller state with the PD controller
         for (i, port_state) in state.port_states_mut().iter_mut().enumerate() {
             let mut status_changed = port_state.sw_status_event;
@@ -202,11 +202,11 @@ where
     /// Handle a plug event
     async fn process_plug_event(
         &self,
-        _controller: &mut C::Inner,
+        _controller: &mut D::Inner,
         power: &mut PortPower<S>,
         port: LocalPortId,
         status: &PortStatus,
-    ) -> Result<(), Error<<C::Inner as Controller>::BusError>> {
+    ) -> Result<(), Error<<D::Inner as Controller>::BusError>> {
         if port.0 as usize >= self.registration.num_ports() {
             error!("Invalid port {}", port.0);
             return PdError::InvalidPort.into();
@@ -229,11 +229,11 @@ where
     /// Process port status changed events
     async fn process_port_status_changed<'b>(
         &self,
-        controller: &mut C::Inner,
+        controller: &mut D::Inner,
         state: &mut dyn DynPortState<'_, S>,
         local_port_id: LocalPortId,
         status_event: PortStatusChanged,
-    ) -> Result<Output<'b>, Error<<C::Inner as Controller>::BusError>> {
+    ) -> Result<Output<'b>, Error<<D::Inner as Controller>::BusError>> {
         let global_port_id = self
             .registration
             .pd_controller
@@ -284,7 +284,7 @@ where
         local_port: LocalPortId,
         status_event: PortStatusChanged,
         status: PortStatus,
-    ) -> Result<(), Error<<C::Inner as Controller>::BusError>> {
+    ) -> Result<(), Error<<D::Inner as Controller>::BusError>> {
         let port_index = local_port.0 as usize;
         let global_port_id = self
             .registration
@@ -321,7 +321,7 @@ where
         state: &mut dyn DynPortState<'_, S>,
         local_port: LocalPortId,
         alert: Ado,
-    ) -> Result<(), Error<<C::Inner as Controller>::BusError>> {
+    ) -> Result<(), Error<<D::Inner as Controller>::BusError>> {
         let port_index = local_port.0 as usize;
         let global_port_id = self
             .registration
@@ -355,8 +355,8 @@ where
     /// DROP SAFETY: No state that needs to be restored
     async fn wait_port_pending(
         &self,
-        controller: &mut C::Inner,
-    ) -> Result<PortEventStreamer, Error<<C::Inner as Controller>::BusError>> {
+        controller: &mut D::Inner,
+    ) -> Result<PortEventStreamer, Error<<D::Inner as Controller>::BusError>> {
         if self.state.lock().await.controller_state().fw_update_state.in_progress() {
             // Don't process events while firmware update is in progress
             debug!("Firmware update in progress, ignoring port events");
@@ -373,7 +373,7 @@ where
             // DROP SAFETY: Safe as long as `wait_port_event` is drop safe
             match select(controller.wait_port_event(), async {
                 self.sw_status_event.wait().await;
-                Ok::<_, Error<<C::Inner as Controller>::BusError>>(())
+                Ok::<_, Error<<D::Inner as Controller>::BusError>>(())
             })
             .await
             {
@@ -386,7 +386,7 @@ where
     }
 
     /// Wait for the next event
-    pub async fn wait_next(&self) -> Result<Event<'_>, Error<<C::Inner as Controller>::BusError>> {
+    pub async fn wait_next(&self) -> Result<Event<'_>, Error<<D::Inner as Controller>::BusError>> {
         // This loop is to ensure that if we finish streaming events we go back to waiting for the next port event
         loop {
             let event = {
@@ -405,7 +405,7 @@ where
                 Either5::First(stream) => {
                     let mut stream = stream?;
                     if let Some((port_index, event)) = stream
-                        .next::<Error<<C::Inner as Controller>::BusError>, _, _>(async |port_index| {
+                        .next::<Error<<D::Inner as Controller>::BusError>, _, _>(async |port_index| {
                             // Combine the event read from the controller with any software generated events
                             // Acquire the locks first to centralize the awaits here
                             let mut controller = self.controller.lock().await;
@@ -477,10 +477,10 @@ where
     /// Process a port notification
     async fn process_port_notification<'b>(
         &self,
-        controller: &mut C::Inner,
+        controller: &mut D::Inner,
         port: LocalPortId,
         notification: PortNotificationSingle,
-    ) -> Result<Output<'b>, Error<<C::Inner as Controller>::BusError>> {
+    ) -> Result<Output<'b>, Error<<D::Inner as Controller>::BusError>> {
         match notification {
             PortNotificationSingle::Alert => {
                 let ado = controller.get_pd_alert(port).await?;
@@ -512,7 +512,7 @@ where
     pub async fn process_event<'b>(
         &self,
         event: Event<'b>,
-    ) -> Result<Output<'b>, Error<<C::Inner as Controller>::BusError>> {
+    ) -> Result<Output<'b>, Error<<D::Inner as Controller>::BusError>> {
         let mut controller = self.controller.lock().await;
         let mut state = self.state.lock().await;
         match event {
@@ -554,7 +554,7 @@ where
     }
 
     /// Event loop finalize
-    pub async fn finalize<'b>(&self, output: Output<'b>) -> Result<(), Error<<C::Inner as Controller>::BusError>> {
+    pub async fn finalize<'b>(&self, output: Output<'b>) -> Result<(), Error<<D::Inner as Controller>::BusError>> {
         let mut state = self.state.lock().await;
 
         match output {
@@ -604,13 +604,13 @@ where
     pub async fn process_and_finalize_event<'b>(
         &self,
         event: Event<'b>,
-    ) -> Result<(), Error<<C::Inner as Controller>::BusError>> {
+    ) -> Result<(), Error<<D::Inner as Controller>::BusError>> {
         let output = self.process_event(event).await?;
         self.finalize(output).await
     }
 
     /// Combined processing function
-    pub async fn process_next_event(&self) -> Result<(), Error<<C::Inner as Controller>::BusError>> {
+    pub async fn process_next_event(&self) -> Result<(), Error<<D::Inner as Controller>::BusError>> {
         let event = self.wait_next().await?;
         self.process_and_finalize_event(event).await
     }

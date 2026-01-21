@@ -18,21 +18,21 @@ use super::{ControllerWrapper, FwOfferValidator, message::vdm::Output};
 impl<
     'device,
     M: RawMutex,
-    C: Lockable,
+    D: Lockable,
     S: event::Sender<policy::RequestData>,
     R: event::Receiver<policy::RequestData>,
     V: FwOfferValidator,
-> ControllerWrapper<'device, M, C, S, R, V>
+> ControllerWrapper<'device, M, D, S, R, V>
 where
-    <C as Lockable>::Inner: Controller,
+    <D as Lockable>::Inner: Controller,
 {
     /// Process a VDM event by retrieving the relevant VDM data from the `controller` for the appropriate `port`.
     pub(super) async fn process_vdm_event(
         &self,
-        controller: &mut C::Inner,
+        controller: &mut D::Inner,
         port: LocalPortId,
         event: VdmNotification,
-    ) -> Result<Output, Error<<C::Inner as Controller>::BusError>> {
+    ) -> Result<Output, Error<<D::Inner as Controller>::BusError>> {
         trace!("Processing VDM event: {:?} on port {}", event, port.0);
         let kind = match event {
             VdmNotification::Entered => OutputKind::Entered(controller.get_other_vdm(port).await?),

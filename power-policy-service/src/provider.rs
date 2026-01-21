@@ -37,7 +37,7 @@ where
     /// Attempt to connect the requester as a provider
     pub(super) async fn connect_provider(&self, requester_id: DeviceId) -> Result<(), Error> {
         trace!("Device{}: Attempting to connect as provider", requester_id.0);
-        let requester = self.context.get_device(requester_id).await?;
+        let requester = self.context.get_device(requester_id)?;
         let requested_power_capability = match requester.requested_provider_capability().await {
             Some(cap) => cap,
             // Requester is no longer requesting power
@@ -50,7 +50,7 @@ where
         let mut total_power_mw = 0;
 
         // Determine total requested power draw
-        for device in self.context.devices().await.iter_only::<device::Device<D, R>>() {
+        for device in self.context.devices().iter_only::<device::Device<D, R>>() {
             let target_provider_cap = if device.id() == requester_id {
                 // Use the requester's requested power capability
                 // this handles both new connections and upgrade requests
@@ -89,10 +89,14 @@ where
             }
         };
 
-        let device = self.context.get_device(requester_id).await?;
+        let mut policy_state = self.state.lock().await;
+        let device = self.context.get_device(requester_id)?;
         let state = device.state.lock().await.state();
         if matches!(state, device::State::Idle | device::State::ConnectedProvider(_)) {
-            device.device.lock().await.connect_provider(target_power).await
+            device.device.lock().await.connect_provider(target_power).await?;
+            self.post_provider_connected(&mut policy_state, requester_id, target_power)
+                .await;
+            Ok(())
         } else {
             error!(
                 "Device{}: Cannot provide, device is in state {:#?}",

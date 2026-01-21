@@ -13,13 +13,13 @@ use super::*;
 impl<
     'device,
     M: RawMutex,
-    C: Lockable,
+    D: Lockable,
     S: event::Sender<policy::RequestData>,
     R: event::Receiver<policy::RequestData>,
     V: FwOfferValidator,
-> ControllerWrapper<'device, M, C, S, R, V>
+> ControllerWrapper<'device, M, D, S, R, V>
 where
-    <C as Lockable>::Inner: Controller,
+    <D as Lockable>::Inner: Controller,
 {
     async fn process_get_pd_alert(
         &self,
@@ -126,7 +126,7 @@ where
     /// Process a request to set the maximum sink voltage for a port
     async fn process_set_max_sink_voltage(
         &self,
-        controller: &mut C::Inner,
+        controller: &mut D::Inner,
         state: &mut dyn DynPortState<'_, S>,
         local_port: LocalPortId,
         voltage_mv: Option<u16>,
@@ -163,7 +163,7 @@ where
 
     async fn process_get_port_status(
         &self,
-        controller: &mut C::Inner,
+        controller: &mut D::Inner,
         state: &mut dyn DynPortState<'_, S>,
         local_port: LocalPortId,
         cached: Cached,
@@ -190,7 +190,7 @@ where
     /// Handle a port command
     async fn process_port_command(
         &self,
-        controller: &mut C::Inner,
+        controller: &mut D::Inner,
         state: &mut dyn DynPortState<'_, S>,
         command: &controller::PortCommand,
     ) -> Response<'static> {
@@ -399,7 +399,7 @@ where
 
     async fn process_controller_command(
         &self,
-        controller: &mut C::Inner,
+        controller: &mut D::Inner,
         state: &mut dyn DynPortState<'_, S>,
         command: &controller::InternalCommandData,
     ) -> Response<'static> {
@@ -435,7 +435,7 @@ where
     /// Handle a PD controller command
     pub(super) async fn process_pd_command(
         &self,
-        controller: &mut C::Inner,
+        controller: &mut D::Inner,
         state: &mut dyn DynPortState<'_, S>,
         command: &controller::Command,
     ) -> Response<'static> {

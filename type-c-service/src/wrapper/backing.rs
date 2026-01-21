@@ -46,7 +46,10 @@
 //!    let _backing = referenced.create_backing().unwrap();
 //! }
 //! ```
-use core::cell::{RefCell, RefMut};
+use core::{
+    array::from_fn,
+    cell::{RefCell, RefMut},
+};
 
 use embassy_sync::{
     blocking_mutex::raw::RawMutex,
@@ -120,18 +123,25 @@ struct InternalState<'a, const N: usize, S: event::Sender<policy::RequestData>> 
 
 impl<'a, const N: usize, S: event::Sender<policy::RequestData>> InternalState<'a, N, S> {
     fn try_new<M: RawMutex>(storage: &'a Storage<N, M>, power_events: [S; N]) -> Option<Self> {
-        Some(Self {
-            controller_state: ControllerState::default(),
-            port_states: from_fn(|i| PortState {
+        let port_states = storage.pd_alerts.each_ref().map(|pd_alert| {
+            Some(PortState {
                 status: PortStatus::new(),
                 sw_status_event: PortStatusChanged::none(),
                 sink_ready_deadline: None,
                 pending_events: PortEvent::none(),
-                pd_alerts: (
-                    storage.pd_alerts[i].dyn_immediate_publisher(),
-                    storage.pd_alerts[i].dyn_subscriber()?,
-                ),
-            }),
+                pd_alerts: (pd_alert.dyn_immediate_publisher(), pd_alert.dyn_subscriber().ok()?),
+            })
+        });
+
+        if port_states.iter().any(|s| s.is_none()) {
+            return None;
+        }
+
+        Some(Self {
+            controller_state: ControllerState::default(),
+            // Panic safety: All array elements checked above
+            #[allow(clippy::unwrap_used)]
+            port_states: port_states.map(|s| s.unwrap()),
             port_power: power_events.map(|sender| PortPower {
                 sender,
                 state: Default::default(),
@@ -252,18 +262,18 @@ pub struct IntermediateStorage<'a, const N: usize, M: RawMutex> {
 }
 
 impl<'a, const N: usize, M: RawMutex> IntermediateStorage<'a, N, M> {
+    // Panic Safety: size of everything is fixed at compile time to N
     fn from_storage(storage: &'a Storage<N, M>) -> Self {
         let mut power_proxy_devices = heapless::Vec::<_, N>::new();
         let mut power_proxy_receivers = heapless::Vec::<_, N>::new();
 
         for power_proxy_channel in storage.power_proxy_channels.iter() {
-            // Safe because everything has a length of N
             power_proxy_devices
                 .push(Mutex::new(power_proxy_channel.get_device()))
-                .expect("Failed to insert power proxy device");
+                .unwrap_or_else(|_| panic!("Failed to insert power proxy device"));
             power_proxy_receivers
                 .push(Mutex::new(power_proxy_channel.get_receiver()))
-                .expect("Failed to insert power proxy receiver");
+                .unwrap_or_else(|_| panic!("Failed to insert power proxy receiver"));
         }
 
         Self {
@@ -271,22 +281,22 @@ impl<'a, const N: usize, M: RawMutex> IntermediateStorage<'a, N, M> {
             // Safe because both have N elements
             power_proxy_devices: power_proxy_devices
                 .into_array()
-                .expect("Failed to create power devices"),
+                .unwrap_or_else(|_| panic!("Failed to create power devices")),
             power_proxy_receivers: power_proxy_receivers
                 .into_array()
-                .expect("Failed to create power receivers"),
+                .unwrap_or_else(|_| panic!("Failed to create power receivers")),
         }
     }
 
     /// Create referenced storage from this intermediate storage
-    pub fn create_referenced<'b, S: event::Sender<policy::RequestData>, R: event::Receiver<policy::RequestData>>(
+    pub fn try_create_referenced<'b, S: event::Sender<policy::RequestData>, R: event::Receiver<policy::RequestData>>(
         &'b self,
         policy_args: [(DeviceId, S, R); N],
-    ) -> ReferencedStorage<'b, N, M, S, R>
+    ) -> Option<ReferencedStorage<'b, N, M, S, R>>
     where
         'b: 'a,
     {
-        ReferencedStorage::from_intermediate(self, policy_args)
+        ReferencedStorage::try_from_intermediate(self, policy_args)
     }
 }
 
@@ -311,7 +321,10 @@ impl<'a, const N: usize, M: RawMutex, S: event::Sender<policy::RequestData>, R: 
     ReferencedStorage<'a, N, M, S, R>
 {
     /// Create a new referenced storage from the given intermediate storage
-    fn from_intermediate(intermediate: &'a IntermediateStorage<'a, N, M>, policy_args: [(DeviceId, S, R); N]) -> Self {
+    fn try_from_intermediate(
+        intermediate: &'a IntermediateStorage<'a, N, M>,
+        policy_args: [(DeviceId, S, R); N],
+    ) -> Option<Self> {
         let mut power_senders = heapless::Vec::<_, N>::new();
         let mut power_devices = heapless::Vec::<_, N>::new();
 
@@ -328,15 +341,15 @@ impl<'a, const N: usize, M: RawMutex, S: event::Sender<policy::RequestData>, R: 
                 .unwrap_or_else(|_| panic!("Failed to insert power device"));
         }
 
-        Self {
+        Some(Self {
             intermediate,
-            state: RefCell::new(InternalState::new(
+            state: RefCell::new(InternalState::try_new(
                 intermediate.storage,
                 // Safe because both have N elements
                 power_senders
                     .into_array()
                     .unwrap_or_else(|_| panic!("Failed to create power events")),
-            )),
+            )?),
             pd_controller: embedded_services::type_c::controller::Device::new(
                 intermediate.storage.controller_id,
                 intermediate.storage.pd_ports.as_slice(),

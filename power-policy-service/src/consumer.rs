@@ -41,7 +41,7 @@ where
         let mut best_consumer = None;
         let current_consumer_id = state.current_consumer_state.map(|f| f.device_id);
 
-        for node in self.context.devices().await {
+        for node in self.context.devices() {
             let device = node.data::<Device<D, R>>().ok_or(Error::InvalidDevice)?;
 
             let consumer_capability = device.consumer_capability().await;
@@ -95,7 +95,7 @@ where
     async fn update_unconstrained_state(&self, state: &mut InternalState) -> Result<(), Error> {
         // Count how many available unconstrained devices we have
         let mut unconstrained_new = UnconstrainedState::default();
-        for node in self.context.devices().await {
+        for node in self.context.devices() {
             let device = node.data::<Device<D, R>>().ok_or(Error::InvalidDevice)?;
             if let Some(capability) = device.consumer_capability().await {
                 if capability.flags.unconstrained_power() {
@@ -201,7 +201,7 @@ where
             }
 
             state.current_consumer_state = None;
-            let consumer_device = self.context.get_device(current_consumer.device_id).await?;
+            let consumer_device = self.context.get_device(current_consumer.device_id)?;
             if matches!(consumer_device.state.lock().await.state(), State::ConnectedConsumer(_)) {
                 // Disconnect the current consumer if needed
                 info!("Device{}: Disconnecting current consumer", current_consumer.device_id.0);
@@ -231,7 +231,7 @@ where
         }
 
         info!("Device {}, connecting new consumer", new_consumer.device_id.0);
-        let device = self.context.get_device(new_consumer.device_id).await?;
+        let device = self.context.get_device(new_consumer.device_id)?;
         let device_state = device.state.lock().await.state();
 
         if matches!(device_state, device::State::Idle | device::State::ConnectedConsumer(_)) {

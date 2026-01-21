@@ -277,12 +277,12 @@ where
     pub receiver: Mutex<GlobalRawMutex, R>,
 }
 
-impl<'a, C: Lockable, R: Receiver<RequestData>> Device<'a, C, R>
+impl<'a, D: Lockable, R: Receiver<RequestData>> Device<'a, D, R>
 where
-    C::Inner: DeviceTrait,
+    D::Inner: DeviceTrait,
 {
     /// Create a new device
-    pub fn new(id: DeviceId, device: &'a C, receiver: R) -> Self {
+    pub fn new(id: DeviceId, device: &'a D, receiver: R) -> Self {
         Self {
             node: intrusive_list::Node::uninit(),
             id,
@@ -331,9 +331,9 @@ where
     }
 }
 
-impl<C: Lockable, R: Receiver<RequestData> + 'static> intrusive_list::NodeContainer for Device<'static, C, R>
+impl<D: Lockable, R: Receiver<RequestData> + 'static> intrusive_list::NodeContainer for Device<'static, D, R>
 where
-    C::Inner: DeviceTrait,
+    D::Inner: DeviceTrait,
 {
     fn get_node(&self) -> &crate::Node {
         &self.node
@@ -341,19 +341,19 @@ where
 }
 
 /// Trait for any container that holds a device
-pub trait DeviceContainer<C: Lockable, R: Receiver<RequestData>>
+pub trait DeviceContainer<D: Lockable, R: Receiver<RequestData>>
 where
-    C::Inner: DeviceTrait,
+    D::Inner: DeviceTrait,
 {
     /// Get the underlying device struct
-    fn get_power_policy_device(&self) -> &Device<'_, C, R>;
+    fn get_power_policy_device(&self) -> &Device<'_, D, R>;
 }
 
-impl<C: Lockable, R: Receiver<RequestData>> DeviceContainer<C, R> for Device<'_, C, R>
+impl<D: Lockable, R: Receiver<RequestData>> DeviceContainer<D, R> for Device<'_, D, R>
 where
-    C::Inner: DeviceTrait,
+    D::Inner: DeviceTrait,
 {
-    fn get_power_policy_device(&self) -> &Device<'_, C, R> {
+    fn get_power_policy_device(&self) -> &Device<'_, D, R> {
         self
     }
 }

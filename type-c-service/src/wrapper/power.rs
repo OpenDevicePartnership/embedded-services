@@ -7,31 +7,34 @@ use embedded_services::{
     power::policy::{
         ConsumerPowerCapability, ProviderPowerCapability,
         device::{CommandData, InternalResponseData, ResponseData},
+        flags::PsuType,
     },
 };
 
 use embedded_services::power::policy::Error as PowerError;
 use embedded_services::power::policy::device::CommandData as PowerCommand;
 
+use crate::wrapper::config::UnconstrainedSink;
+
 use super::*;
 
 impl<
     'device,
     M: RawMutex,
-    C: Lockable,
+    D: Lockable,
     S: event::Sender<policy::RequestData>,
     R: event::Receiver<policy::RequestData>,
     V: FwOfferValidator,
-> ControllerWrapper<'device, M, C, S, R, V>
+> ControllerWrapper<'device, M, D, S, R, V>
 where
-    <C as Lockable>::Inner: Controller,
+    <D as Lockable>::Inner: Controller,
 {
     /// Handle a new contract as consumer
     pub(super) async fn process_new_consumer_contract(
         &self,
         power: &mut PortPower<S>,
         status: &PortStatus,
-    ) -> Result<(), Error<<C::Inner as Controller>::BusError>> {
+    ) -> Result<(), Error<<D::Inner as Controller>::BusError>> {
         info!("Process new consumer contract");
 
         let current_state = power.state.state();
@@ -63,7 +66,7 @@ where
         &self,
         power: &mut PortPower<S>,
         status: &PortStatus,
-    ) -> Result<(), Error<<C::Inner as Controller>::BusError>> {
+    ) -> Result<(), Error<<D::Inner as Controller>::BusError>> {
         info!("Process New provider contract");
 
         let current_state = power.state.state();
@@ -84,9 +87,9 @@ where
     async fn process_disconnect(
         &self,
         port: LocalPortId,
-        controller: &mut C::Inner,
+        controller: &mut D::Inner,
         power: &mut PortPower<S>,
-    ) -> Result<(), Error<<C::Inner as Controller>::BusError>> {
+    ) -> Result<(), Error<<D::Inner as Controller>::BusError>> {
         if power.state.state().kind() == StateKind::ConnectedConsumer {
             info!("Port{}: Disconnect from ConnectedConsumer", port.0);
             if controller.enable_sink_path(port, false).await.is_err() {
@@ -110,8 +113,8 @@ where
         &self,
         port: LocalPortId,
         capability: ProviderPowerCapability,
-        _controller: &mut C::Inner,
-    ) -> Result<(), Error<<C::Inner as Controller>::BusError>> {
+        _controller: &mut D::Inner,
+    ) -> Result<(), Error<<D::Inner as Controller>::BusError>> {
         info!("Port{}: Connect as provider: {:#?}", port.0, capability);
         // TODO: double check explicit contract handling
         Ok(())
@@ -145,7 +148,7 @@ where
     /// Returns no error because this is a top-level function
     pub(super) async fn process_power_command(
         &self,
-        controller: &mut C::Inner,
+        controller: &mut D::Inner,
         state: &mut dyn DynPortState<'_, S>,
         port: LocalPortId,
         command: &CommandData,
@@ -174,11 +177,7 @@ where
                 }
             }
             PowerCommand::ConnectAsProvider(capability) => {
-                if self
-                    .process_connect_as_provider(port, *capability, controller)
-                    .await
-                    .is_err()
-                {
+                if self.process_connect_as_provider(port, *capability, controller).is_err() {
                     error!("Error processing connect provider");
                     return Err(PowerError::Failed);
                 }

@@ -1,10 +1,7 @@
 //! Context for any power policy implementations
-<<<<<<< HEAD
-=======
 use core::marker::PhantomData;
 use core::pin::pin;
 use core::sync::atomic::{AtomicBool, Ordering};
->>>>>>> 34701dd (Add device and receiver arguments to context token)
 
 use crate::broadcaster::immediate as broadcaster;
 use crate::event::Receiver;
@@ -12,7 +9,6 @@ use crate::power::policy::device::DeviceTrait;
 use crate::power::policy::{CommsMessage, ConsumerPowerCapability, ProviderPowerCapability};
 use crate::sync::Lockable;
 use embassy_futures::select::select_slice;
-use embassy_sync::once_lock::OnceLock;
 
 use super::charger::ChargerResponse;
 use super::device::{self};
@@ -95,7 +91,7 @@ impl<const POLICY_CHANNEL_SIZE: usize> Context<POLICY_CHANNEL_SIZE> {
         Self {
             devices: intrusive_list::IntrusiveList::new(),
             chargers: intrusive_list::IntrusiveList::new(),
-            broadcaster: broadcaster::Immediate::default(),
+            broadcaster: broadcaster::Immediate::new(),
         }
     }
 
@@ -104,14 +100,14 @@ impl<const POLICY_CHANNEL_SIZE: usize> Context<POLICY_CHANNEL_SIZE> {
 pub fn init() {}
 
 /// Register a device with the power policy service
-pub async fn register_device<C: Lockable + 'static, R: Receiver<RequestData> + 'static>(
-    device: &'static impl device::DeviceContainer<C, R>,
+pub fn register_device<D: Lockable + 'static, R: Receiver<RequestData> + 'static>(
+    device: &'static impl device::DeviceContainer<D, R>,
 ) -> Result<(), intrusive_list::Error>
 where
-    C::Inner: DeviceTrait,
+    D::Inner: DeviceTrait,
 {
     let device = device.get_power_policy_device();
-    if get_device::<C, R>(device.id()).await.is_some() {
+    if get_device::<D, R>(device.id()).is_some() {
         return Err(intrusive_list::Error::NodeAlreadyInList);
     }
 
@@ -129,14 +125,14 @@ pub fn register_charger(device: &'static impl charger::ChargerContainer) -> Resu
 }
 
 /// Find a device by its ID
-async fn get_device<C: Lockable + 'static, R: Receiver<RequestData> + 'static>(
+fn get_device<D: Lockable + 'static, R: Receiver<RequestData> + 'static>(
     id: DeviceId,
-) -> Option<&'static device::Device<'static, C, R>>
+) -> Option<&'static device::Device<'static, D, R>>
 where
-    C::Inner: DeviceTrait,
+    D::Inner: DeviceTrait,
 {
-    for device in &CONTEXT.get().await.devices {
-        if let Some(data) = device.data::<device::Device<'static, C, R>>() {
+    for device in &CONTEXT.devices {
+        if let Some(data) = device.data::<device::Device<'static, D, R>>() {
             if data.id() == id {
                 return Some(data);
             }
@@ -177,17 +173,21 @@ where
     }
 
     /// Returns the total amount of power that is being supplied to external devices
-    pub async fn compute_total_provider_power_mw(&self) -> u32 {
-        let mut total = 0;
-        for device in self.power_devices.iter_only::<device::Device<POLICY_CHANNEL_SIZE>>() {
-            if let Some(capability) = device.provider_capability().await {
-                if device.is_provider().await {
-                    total += capability.capability.max_power_mw();
-                }
+pub async fn compute_total_provider_power_mw<D: Lockable + 'static, R: Receiver<RequestData> + 'static>() -> u32
+where
+    D::Inner: DeviceTrait,
+{
+    let mut total = 0;
+    for device in CONTEXT.devices.iter_only::<device::Device<'static, D, R>>() {
+        if let Some(capability) = device.provider_capability().await {
+            if device.is_provider().await {
+                total += capability.capability.max_power_mw();
             }
         }
-        total
     }
+
+    total
+}
 
     /// Get a charger by its ID
     pub fn get_charger(&self, id: charger::ChargerId) -> Result<&'static charger::Device, Error> {
@@ -310,8 +310,8 @@ where
     }
 
     /// Get a device by its ID
-    pub async fn get_device(&self, id: DeviceId) -> Result<&'static device::Device<'static, D, R>, Error> {
-        get_device(id).await.ok_or(Error::InvalidDevice)
+    pub fn get_device(&self, id: DeviceId) -> Result<&'static device::Device<'static, D, R>, Error> {
+        get_device(id).ok_or(Error::InvalidDevice)
     }
 
     /// Provides access to the device list
@@ -332,7 +332,7 @@ where
     /// Get the next pending device event
     pub async fn wait_request(&self) -> Request {
         let mut futures = heapless::Vec::<_, 16>::new();
-        for device in self.devices().await.iter_only::<device::Device<'static, D, R>>() {
+        for device in self.devices().iter_only::<device::Device<'static, D, R>>() {
             // TODO: check this at compile time
             let _ = futures.push(async { device.receiver.lock().await.wait_next().await });
         }
@@ -340,7 +340,6 @@ where
         let (event, index) = select_slice(pin!(&mut futures)).await;
         let device = self
             .devices()
-            .await
             .iter_only::<device::Device<'static, D, R>>()
             .nth(index)
             .unwrap();
