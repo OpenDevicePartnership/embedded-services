@@ -8,6 +8,7 @@ use embassy_imxrt::gpio::{Input, Inverter, Pull};
 use embassy_imxrt::i2c::Async;
 use embassy_imxrt::i2c::master::{Config, I2cMaster};
 use embassy_imxrt::{bind_interrupts, peripherals};
+use embassy_sync::channel::{Channel, DynamicReceiver, DynamicSender};
 use embassy_sync::mutex::Mutex;
 use embassy_sync::pubsub::PubSubChannel;
 use embassy_time::Timer;
@@ -16,18 +17,20 @@ use embedded_cfu_protocol::protocol_definitions::*;
 use embedded_cfu_protocol::protocol_definitions::{FwUpdateOffer, FwUpdateOfferResponse, FwVersion};
 use embedded_services::cfu::component::InternalResponseData;
 use embedded_services::cfu::component::RequestData;
-use embedded_services::power::policy::{CommsMessage, DeviceId as PowerId};
+use embedded_services::power::policy::{CommsMessage, DeviceId as PowerId, policy};
 use embedded_services::type_c::ControllerId;
 use embedded_services::type_c::controller::Context;
 use embedded_services::{GlobalRawMutex, IntrusiveList, cfu};
 use embedded_services::{error, info};
 use embedded_usb_pd::GlobalPortId;
+use power_policy_service::PowerPolicy;
 use static_cell::StaticCell;
 use tps6699x::asynchronous::embassy as tps6699x;
 use type_c_service::driver::tps6699x::{self as tps6699x_drv};
 use type_c_service::service::Service;
 use type_c_service::wrapper::ControllerWrapper;
-use type_c_service::wrapper::backing::{ReferencedStorage, Storage};
+use type_c_service::wrapper::backing::{IntermediateStorage, ReferencedStorage, Storage};
+use type_c_service::wrapper::proxy::PowerProxyDevice;
 
 extern crate rt685s_evk_example;
 
@@ -47,7 +50,14 @@ impl type_c_service::wrapper::FwOfferValidator for Validator {
 type BusMaster<'a> = I2cMaster<'a, Async>;
 type BusDevice<'a> = I2cDevice<'a, GlobalRawMutex, BusMaster<'a>>;
 type Tps6699xMutex<'a> = Mutex<GlobalRawMutex, tps6699x_drv::Tps6699x<'a, GlobalRawMutex, BusDevice<'a>>>;
-type Wrapper<'a> = ControllerWrapper<'a, GlobalRawMutex, Tps6699xMutex<'a>, Validator, POLICY_CHANNEL_SIZE>;
+type Wrapper<'a> = ControllerWrapper<
+    'a,
+    GlobalRawMutex,
+    Tps6699xMutex<'a>,
+    DynamicSender<'a, policy::RequestData>,
+    DynamicReceiver<'a, policy::RequestData>,
+    Validator,
+>;
 type Controller<'a> = tps6699x::controller::Controller<GlobalRawMutex, BusDevice<'a>>;
 type Interrupt<'a> = tps6699x::Interrupt<'a, GlobalRawMutex, BusDevice<'a>>;
 
@@ -107,7 +117,7 @@ async fn fw_update_task() {
         .unwrap();
     info!("Got response: {:?}", offer);
 
-    let fw = &[]; //include_bytes!("../../fw.bin");
+    let fw = include_bytes!("../../TPS66994_Host.bin").as_slice();
     let num_chunks = fw.len() / DEFAULT_DATA_LENGTH + (fw.len() % DEFAULT_DATA_LENGTH != 0) as usize;
 
     for (i, chunk) in fw.chunks(DEFAULT_DATA_LENGTH).enumerate() {
@@ -156,14 +166,18 @@ async fn fw_update_task() {
 }
 
 #[embassy_executor::task]
-async fn power_policy_service_task(policy: &'static power_policy_service::PowerPolicy<POLICY_CHANNEL_SIZE>) {
-    power_policy_service::task::task(
-        policy,
-        None::<[&rt685s_evk_example::DummyPowerDevice<POLICY_CHANNEL_SIZE>; 0]>,
-        None::<[&rt685s_evk_example::DummyCharger; 0]>,
-    )
-    .await
-    .expect("Failed to start power policy service task");
+async fn power_policy_service_task() {
+    static POWER_POLICY: static_cell::StaticCell<
+        PowerPolicy<Mutex<GlobalRawMutex, PowerProxyDevice<'static>>, DynamicReceiver<'static, policy::RequestData>>,
+    > = static_cell::StaticCell::new();
+    let power_policy =
+        POWER_POLICY.init(PowerPolicy::create(Default::default()).expect("Failed to create power policy"));
+
+    // TODO: remove once power policy task accepts context
+    Timer::after_millis(100).await;
+    power_policy_service::task::task(power_policy)
+        .await
+        .expect("Failed to start power policy service task");
 }
 
 #[embassy_executor::task]
@@ -256,15 +270,40 @@ async fn main(spawner: Spawner) {
         controller_context,
         CONTROLLER0_ID,
         CONTROLLER0_CFU_ID,
-        [(PORT0_ID, PORT0_PWR_ID), (PORT1_ID, PORT1_PWR_ID)],
-        &power_service.context,
+        [PORT0_ID, PORT1_ID],
     ));
 
-    static REFERENCED: StaticCell<ReferencedStorage<TPS66994_NUM_PORTS, GlobalRawMutex, POLICY_CHANNEL_SIZE>> =
-        StaticCell::new();
-    let referenced = REFERENCED.init(
+    static INTERMEDIATE: StaticCell<IntermediateStorage<TPS66994_NUM_PORTS, GlobalRawMutex>> = StaticCell::new();
+    let intermediate = INTERMEDIATE.init(
         storage
-            .create_referenced()
+            .try_create_intermediate()
+            .expect("Failed to create intermediate storage"),
+    );
+
+    static POLICY_CHANNEL0: StaticCell<Channel<GlobalRawMutex, policy::RequestData, 1>> = StaticCell::new();
+    let policy_channel0 = POLICY_CHANNEL0.init(Channel::new());
+    let policy_sender0 = policy_channel0.dyn_sender();
+    let policy_receiver0 = policy_channel0.dyn_receiver();
+
+    static POLICY_CHANNEL1: StaticCell<Channel<GlobalRawMutex, policy::RequestData, 1>> = StaticCell::new();
+    let policy_channel1 = POLICY_CHANNEL1.init(Channel::new());
+    let policy_sender1 = policy_channel1.dyn_sender();
+    let policy_receiver1 = policy_channel1.dyn_receiver();
+
+    static REFERENCED: StaticCell<
+        ReferencedStorage<
+            TPS66994_NUM_PORTS,
+            GlobalRawMutex,
+            DynamicSender<'_, policy::RequestData>,
+            DynamicReceiver<'_, policy::RequestData>,
+        >,
+    > = StaticCell::new();
+    let referenced = REFERENCED.init(
+        intermediate
+            .try_create_referenced([
+                (PORT0_PWR_ID, policy_sender0, policy_receiver0),
+                (PORT1_PWR_ID, policy_sender1, policy_receiver1),
+            ])
             .expect("Failed to create referenced storage"),
     );
 
