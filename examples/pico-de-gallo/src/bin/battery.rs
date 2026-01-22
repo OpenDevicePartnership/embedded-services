@@ -109,7 +109,6 @@ impl bs::controller::Controller for Battery {
             turbo_vload_mv: 0,
             turbo_rhf_effective_mohm: 0,
         };
-        // embedded_services::debug!("{:?}", new_msgs);
         Ok(new_msgs)
     }
 

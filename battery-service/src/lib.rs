@@ -112,7 +112,7 @@ pub fn register_fuel_gauge(device: &'static device::Device) -> Result<(), embedd
 }
 
 /// Use the battery service endpoint to send data to other subsystems and services.
-pub async fn comms_send(endpoint_id: EndpointID, data: &impl Any) -> Result<(), Infallible> {
+pub async fn comms_send(endpoint_id: EndpointID, data: &(impl Any + Send + Sync)) -> Result<(), Infallible> {
     SERVICE.endpoint.send(endpoint_id, data).await
 }
 
