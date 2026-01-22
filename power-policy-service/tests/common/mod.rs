@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used)]
 use embassy_futures::{
     join::join,
     select::{Either, select},
@@ -43,13 +44,8 @@ async fn power_policy_task(
         DynamicReceiver<'static, RequestData>,
     >,
 ) {
-    loop {
-        match select(power_policy.process(), completion_signal.wait()).await {
-            Either::First(result) => result.unwrap(),
-            Either::Second(_) => {
-                break;
-            }
-        }
+    while let Either::First(result) = select(power_policy.process(), completion_signal.wait()).await {
+        result.unwrap();
     }
 }
 

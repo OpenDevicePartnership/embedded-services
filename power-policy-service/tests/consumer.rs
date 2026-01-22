@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used)]
 use embassy_sync::{channel::DynamicSender, mutex::Mutex, signal::Signal};
 use embassy_time::{Duration, TimeoutError, with_timeout};
 use embedded_services::{

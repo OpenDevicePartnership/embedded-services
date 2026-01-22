@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used)]
 use embassy_sync::signal::Signal;
 use embedded_services::power::policy::device::{DeviceTrait, InternalState};
 use embedded_services::power::policy::flags::Consumer;
