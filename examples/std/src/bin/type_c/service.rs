@@ -1,4 +1,4 @@
-use embassy_executor::{Executor, Spawner};
+use embassy_executor::Executor;
 use embassy_sync::channel::{Channel, DynamicReceiver, DynamicSender};
 use embassy_sync::mutex::Mutex;
 use embassy_sync::once_lock::OnceLock;
@@ -20,7 +20,6 @@ use std_examples::type_c::mock_controller::Wrapper;
 use type_c_service::service::Service;
 use type_c_service::service::config::Config;
 use type_c_service::wrapper::backing::Storage;
-use type_c_service::wrapper::backing::{ReferencedStorage, Storage};
 use type_c_service::wrapper::message::*;
 use type_c_service::wrapper::proxy::PowerProxyDevice;
 
@@ -67,54 +66,10 @@ mod debug {
 }
 
 #[embassy_executor::task]
-async fn controller_task(state: &'static mock_controller::ControllerState) {
-    static STORAGE: StaticCell<Storage<1, GlobalRawMutex>> = StaticCell::new();
-    let storage = STORAGE.init(Storage::new(
-        CONTROLLER0_ID,
-        0, // CFU component ID (unused)
-        [(PORT0_ID)],
-    ));
-
-    static INTERMEDIATE: StaticCell<type_c_service::wrapper::backing::IntermediateStorage<1, GlobalRawMutex>> =
-        StaticCell::new();
-    let intermediate = INTERMEDIATE.init(storage.create_intermediate());
-
-    static POLICY_CHANNEL: StaticCell<Channel<GlobalRawMutex, policy::RequestData, 1>> = StaticCell::new();
-    let policy_channel = POLICY_CHANNEL.init(Channel::new());
-
-    let policy_sender = policy_channel.dyn_sender();
-    let policy_receiver = policy_channel.dyn_receiver();
-
-    static REFERENCED: StaticCell<
-        type_c_service::wrapper::backing::ReferencedStorage<
-            1,
-            GlobalRawMutex,
-            DynamicSender<'_, policy::RequestData>,
-            DynamicReceiver<'_, policy::RequestData>,
-        >,
-    > = StaticCell::new();
-    let referenced = REFERENCED.init(
-        intermediate
-            .try_create_referenced([(POWER0_ID, policy_sender, policy_receiver)])
-            .expect("Failed to create referenced storage"),
-    );
-
-    static CONTROLLER: StaticCell<Mutex<GlobalRawMutex, mock_controller::Controller>> = StaticCell::new();
-    let controller = CONTROLLER.init(Mutex::new(mock_controller::Controller::new(state)));
-
-    static WRAPPER: StaticCell<mock_controller::Wrapper> = StaticCell::new();
-    let wrapper = WRAPPER.init(
-        mock_controller::Wrapper::try_new(
-            controller,
-            Default::default(),
-            referenced,
-            crate::mock_controller::Validator,
-        )
-        .expect("Failed to create wrapper"),
-    );
-
-    wrapper.register().await.unwrap();
-
+async fn controller_task(
+    wrapper: &'static Wrapper<'static>,
+    controller: &'static Mutex<GlobalRawMutex, mock_controller::Controller<'static>>,
+) {
     controller.lock().await.custom_function();
 
     loop {
@@ -140,12 +95,7 @@ async fn controller_task(state: &'static mock_controller::ControllerState) {
 }
 
 #[embassy_executor::task]
-async fn task(
-    spawner: Spawner,
-    wrapper: &'static Wrapper<'static>,
-    controller: &'static Mutex<GlobalRawMutex, mock_controller::Controller<'static>>,
-    state: &'static mock_controller::ControllerState,
-) {
+async fn task(state: &'static mock_controller::ControllerState) {
     embedded_services::init().await;
 
     // Register debug accessory listener
@@ -153,8 +103,6 @@ async fn task(
     let listener = LISTENER.get_or_init(debug::Listener::new);
     comms::register_endpoint(listener, &listener.tp).await.unwrap();
 
-    info!("Starting controller task");
-    spawner.must_spawn(controller_task(wrapper, controller));
     // Wait for controller to be registered
     Timer::after_secs(1).await;
 
@@ -230,7 +178,7 @@ fn create_wrapper(
     context: &'static Context,
     power_policy_context: &'static policy::Context<POLICY_CHANNEL_SIZE>,
 ) -> (
-    &'static mut Wrapper<'static>,
+    &'static Wrapper<'static>,
     &'static Mutex<GlobalRawMutex, mock_controller::Controller<'static>>,
     &'static mock_controller::ControllerState,
 ) {
@@ -242,13 +190,30 @@ fn create_wrapper(
         context,
         CONTROLLER0_ID,
         0, // CFU component ID (unused)
-        [(PORT0_ID, POWER0_ID)],
-        power_policy_context,
+        [PORT0_ID],
     ));
-    static REFERENCED: StaticCell<ReferencedStorage<1, GlobalRawMutex, POLICY_CHANNEL_SIZE>> = StaticCell::new();
+
+    static INTERMEDIATE: StaticCell<type_c_service::wrapper::backing::IntermediateStorage<1, GlobalRawMutex>> =
+        StaticCell::new();
+    let intermediate = INTERMEDIATE.init(storage.create_intermediate());
+
+    static POLICY_CHANNEL: StaticCell<Channel<GlobalRawMutex, policy::RequestData, 1>> = StaticCell::new();
+    let policy_channel = POLICY_CHANNEL.init(Channel::new());
+
+    let policy_sender = policy_channel.dyn_sender();
+    let policy_receiver = policy_channel.dyn_receiver();
+
+    static REFERENCED: StaticCell<
+        type_c_service::wrapper::backing::ReferencedStorage<
+            1,
+            GlobalRawMutex,
+            DynamicSender<'_, policy::RequestData>,
+            DynamicReceiver<'_, policy::RequestData>,
+        >,
+    > = StaticCell::new();
     let referenced = REFERENCED.init(
-        storage
-            .create_referenced()
+        intermediate
+            .try_create_referenced([(POWER0_ID, policy_sender, policy_receiver)])
             .expect("Failed to create referenced storage"),
     );
 
@@ -290,13 +255,9 @@ fn main() {
     let (wrapper, controller, state) = create_wrapper(controller_context, &power_policy_service.context);
 
     executor.run(|spawner| {
-        spawner.must_spawn(power_policy_service_task(power_policy_service));
-        spawner.must_spawn(service_task(
-            controller_context,
-            controller_list,
-            [wrapper],
-            &power_policy_service.context,
-        ));
-        spawner.must_spawn(task(spawner, wrapper, controller, state));
+        spawner.must_spawn(power_policy_service_task());
+        spawner.must_spawn(service_task(controller_context, controller_list, [wrapper]));
+        spawner.must_spawn(task(state));
+        spawner.must_spawn(controller_task(wrapper, controller));
     });
 }

@@ -217,7 +217,7 @@ pub struct PortPower<S: event::Sender<policy::RequestData>> {
 }
 
 /// Base storage
-pub struct Storage<'a, const N: usize, M: RawMutex, S: event::Sender<policy::RequestData>> {
+pub struct Storage<'a, const N: usize, M: RawMutex> {
     // Registration-related
     context: &'a embedded_services::type_c::controller::Context,
     controller_id: ControllerId,
@@ -229,14 +229,13 @@ pub struct Storage<'a, const N: usize, M: RawMutex, S: event::Sender<policy::Req
     pd_alerts: [PubSubChannel<M, Ado, MAX_BUFFERED_PD_ALERTS, 1, 0>; N],
 }
 
-impl<'a, const N: usize, M: RawMutex, S: event::Sender<policy::RequestData>> Storage<N, M, S> {
+impl<'a, const N: usize, M: RawMutex> Storage<'a, N, M> {
     pub fn new(
         context: &'a embedded_services::type_c::controller::Context,
         controller_id: ControllerId,
         cfu_id: ComponentId,
         power_policy_context: &'static embedded_services::power::policy::policy::Context<POLICY_CHANNEL_SIZE>,
         pd_ports: [GlobalPortId; N],
-        power_policy_senders: [S; N],
     ) -> Self {
         Self {
             context,
@@ -256,14 +255,14 @@ impl<'a, const N: usize, M: RawMutex, S: event::Sender<policy::RequestData>> Sto
 
 /// Intermediate storage that holds power proxy devices
 pub struct IntermediateStorage<'a, const N: usize, M: RawMutex> {
-    storage: &'a Storage<N, M>,
+    storage: &'a Storage<'a, N, M>,
     power_proxy_devices: [Mutex<M, PowerProxyDevice<'a>>; N],
     power_proxy_receivers: [Mutex<M, PowerProxyReceiver<'a>>; N],
 }
 
 impl<'a, const N: usize, M: RawMutex> IntermediateStorage<'a, N, M> {
     // Panic Safety: size of everything is fixed at compile time to N
-    fn from_storage(storage: &'a Storage<N, M>) -> Self {
+    fn from_storage(storage: &'a Storage<'a, N, M>) -> Self {
         let mut power_proxy_devices = heapless::Vec::<_, N>::new();
         let mut power_proxy_receivers = heapless::Vec::<_, N>::new();
 
@@ -367,7 +366,7 @@ impl<'a, const N: usize, M: RawMutex, S: event::Sender<policy::RequestData>, R: 
     {
         self.state.try_borrow_mut().ok().map(|state| Backing::<M, S, R> {
             registration: Registration {
-                context: self.storage.context,
+                context: self.intermediate.storage.context,
                 pd_controller: &self.pd_controller,
                 cfu_device: &self.intermediate.storage.cfu_device,
                 power_devices: &self.power_devices,

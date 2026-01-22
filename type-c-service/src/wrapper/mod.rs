@@ -27,13 +27,12 @@ use embassy_sync::mutex::Mutex;
 use embassy_sync::signal::Signal;
 use embassy_time::Instant;
 use embedded_cfu_protocol::protocol_definitions::{FwUpdateOffer, FwUpdateOfferResponse, FwVersion};
-use embedded_services::event;
 use embedded_services::power::policy::policy;
 use embedded_services::sync::Lockable;
 use embedded_services::type_c::controller::{self, Controller, PortStatus};
 use embedded_services::type_c::event::{PortEvent, PortNotificationSingle, PortPending, PortStatusChanged};
-use embedded_services::{GlobalRawMutex, event, intrusive_list};
 use embedded_services::{debug, error, info, trace, warn};
+use embedded_services::{event, intrusive_list};
 use embedded_usb_pd::ado::Ado;
 use embedded_usb_pd::{Error, LocalPortId, PdError};
 
@@ -629,11 +628,17 @@ where
     pub async fn register(
         &'static self,
         controllers: &intrusive_list::IntrusiveList,
+<<<<<<< HEAD
     ) -> Result<(), Error<<C::Inner as Controller>::BusError>> {
 >>>>>>> 41b14c1 (WIP: More type-c refactoring)
         for device in self.registration.power_event_senders {
             policy::register_device(device).await.map_err(|_| {
 >>>>>>> a10cc63 (WIP: Migrate type-C service over)
+=======
+    ) -> Result<(), Error<<D::Inner as Controller>::BusError>> {
+        for device in self.registration.power_devices {
+            policy::register_device(device).map_err(|_| {
+>>>>>>> daa1cc7 (Rebase onto upstream type-C changes)
                 error!(
                     "Controller{}: Failed to register power device {}",
                     self.registration.pd_controller.id().0,

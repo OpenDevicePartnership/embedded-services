@@ -1,9 +1,8 @@
 use embassy_executor::{Executor, Spawner};
 use embassy_sync::once_lock::OnceLock;
 use embassy_time::Timer;
-use embedded_services::power::policy::*;
+use embedded_services::IntrusiveList;
 use embedded_services::type_c::{Cached, ControllerId, controller};
-use embedded_services::{IntrusiveList, power};
 use embedded_usb_pd::ucsi::lpm;
 use embedded_usb_pd::{GlobalPortId, PdError as Error};
 use log::*;
@@ -125,7 +124,7 @@ async fn controller_task(
     static PORTS: [GlobalPortId; 2] = [PORT0_ID, PORT1_ID];
 
     let controller = CONTROLLER.get_or_init(|| test_controller::Controller::new(CONTROLLER0_ID, &PORTS));
-    controller::register_controller(controller).unwrap();
+    controller::register_controller(controller_list, controller).unwrap();
 
     loop {
         controller.process().await;
