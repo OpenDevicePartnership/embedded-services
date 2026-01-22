@@ -117,7 +117,7 @@ async fn fw_update_task() {
         .unwrap();
     info!("Got response: {:?}", offer);
 
-    let fw = include_bytes!("../../TPS66994_Host.bin").as_slice();
+    let fw = &[]; //include_bytes!("../../fw.bin");
     let num_chunks = fw.len() / DEFAULT_DATA_LENGTH + (fw.len() % DEFAULT_DATA_LENGTH != 0) as usize;
 
     for (i, chunk) in fw.chunks(DEFAULT_DATA_LENGTH).enumerate() {

@@ -22,21 +22,23 @@
 //! use embedded_services::power;
 //! use embedded_usb_pd::GlobalPortId;
 //! use type_c_service::wrapper::backing::{Storage, IntermediateStorage, ReferencedStorage};
+//! use embassy_sync::channel::{Channel, DynamicReceiver, DynamicSender};
+//! use embedded_services::power::policy::policy;
 //!
 //! fn init(context: &'static embedded_services::type_c::controller::Context) {
-//!    static STORAGE: StaticCell<Storage<1, GlobalRawMutex>> = StaticCell::new();
+//!    static STORAGE: StaticCell<Storage<1, NoopRawMutex>> = StaticCell::new();
 //!    let storage = STORAGE.init(Storage::new(
 //!        context,
 //!        ControllerId(0),
 //!        0x0, // CFU component ID (unused)
-//!        [power::policy::DeviceId(0)],
+//!        [GlobalPortId(0)],
 //!    ));
 //!
-//!    static INTERMEDIATE: StaticCell<type_c_service::wrapper::backing::IntermediateStorage<1, GlobalRawMutex>> =
+//!    static INTERMEDIATE: StaticCell<type_c_service::wrapper::backing::IntermediateStorage<1, NoopRawMutex>> =
 //!        StaticCell::new();
 //!    let intermediate = INTERMEDIATE.init(storage.try_create_intermediate().expect("Failed to create intermediate storage"));
 //!
-//!    static POLICY_CHANNEL: StaticCell<Channel<GlobalRawMutex, policy::RequestData, 1>> = StaticCell::new();
+//!    static POLICY_CHANNEL: StaticCell<Channel<NoopRawMutex, policy::RequestData, 1>> = StaticCell::new();
 //!    let policy_channel = POLICY_CHANNEL.init(Channel::new());
 //!
 //!    let policy_sender = policy_channel.dyn_sender();
@@ -45,14 +47,14 @@
 //!    static REFERENCED: StaticCell<
 //!        type_c_service::wrapper::backing::ReferencedStorage<
 //!            1,
-//!            GlobalRawMutex,
+//!            NoopRawMutex,
 //!            DynamicSender<'_, policy::RequestData>,
 //!            DynamicReceiver<'_, policy::RequestData>,
 //!        >,
 //!    > = StaticCell::new();
 //!    let referenced = REFERENCED.init(
 //!        intermediate
-//!            .try_create_referenced([(POWER0_ID, policy_sender, policy_receiver)])
+//!            .try_create_referenced([(power::policy::DeviceId(0), policy_sender, policy_receiver)])
 //!            .expect("Failed to create referenced storage"),
 //!    );
 //! }
