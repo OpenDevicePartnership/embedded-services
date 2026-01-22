@@ -72,12 +72,12 @@ impl DeviceTrait for ExampleDevice<'_> {
     }
 
     async fn connect_provider(&mut self, capability: ProviderPowerCapability) -> Result<(), Error> {
-        debug!("ExampleDevice connect_provider with {:?}", capability);
+        debug!("ExampleDevice connect_provider with {capability:?}");
         Ok(())
     }
 
     async fn connect_consumer(&mut self, capability: ConsumerPowerCapability) -> Result<(), Error> {
-        debug!("ExampleDevice connect_consumer with {:?}", capability);
+        debug!("ExampleDevice connect_consumer with {capability:?}");
         Ok(())
     }
 }

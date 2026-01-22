@@ -338,6 +338,8 @@ where
         }
 
         let (event, index) = select_slice(pin!(&mut futures)).await;
+        // Panic safety: The index is guaranteed to be within bounds since it comes from the select_slice result
+        #[allow(clippy::unwrap_used)]
         let device = self
             .devices()
             .iter_only::<device::Device<'static, D, R>>()

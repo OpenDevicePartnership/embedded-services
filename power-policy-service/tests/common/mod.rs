@@ -85,7 +85,7 @@ pub async fn run_test<F: Future<Output = ()>>(
     > = StaticCell::new();
     let device0_registration = DEVICE0_REGISTRATION.init(device::Device::new(DeviceId(0), device0, device0_receiver));
 
-    policy::register_device(device0_registration).await.unwrap();
+    policy::register_device(device0_registration).unwrap();
 
     static DEVICE1_EVENT_CHANNEL: StaticCell<Channel<GlobalRawMutex, RequestData, EVENT_CHANNEL_SIZE>> =
         StaticCell::new();
@@ -107,7 +107,7 @@ pub async fn run_test<F: Future<Output = ()>>(
     > = StaticCell::new();
     let device1_registration = DEVICE1_REGISTRATION.init(device::Device::new(DeviceId(1), device1, device1_receiver));
 
-    policy::register_device(device1_registration).await.unwrap();
+    policy::register_device(device1_registration).unwrap();
 
     static POWER_POLICY: StaticCell<
         PowerPolicy<

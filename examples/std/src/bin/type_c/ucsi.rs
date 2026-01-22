@@ -243,7 +243,11 @@ async fn type_c_service_task(spawner: Spawner) {
 
     static INTERMEDIATE0: StaticCell<type_c_service::wrapper::backing::IntermediateStorage<1, GlobalRawMutex>> =
         StaticCell::new();
-    let intermediate0 = INTERMEDIATE0.init(storage0.create_intermediate());
+    let intermediate0 = INTERMEDIATE0.init(
+        storage0
+            .try_create_intermediate()
+            .expect("Failed to create intermediate storage"),
+    );
 
     static POLICY_CHANNEL0: StaticCell<Channel<GlobalRawMutex, policy::RequestData, 1>> = StaticCell::new();
     let policy_channel0 = POLICY_CHANNEL0.init(Channel::new());
@@ -278,7 +282,11 @@ async fn type_c_service_task(spawner: Spawner) {
     let storage1 = STORAGE1.init(Storage::new(context, CONTROLLER1_ID, CFU1_ID, [PORT1_ID]));
     static INTERMEDIATE1: StaticCell<type_c_service::wrapper::backing::IntermediateStorage<1, GlobalRawMutex>> =
         StaticCell::new();
-    let intermediate1 = INTERMEDIATE1.init(storage1.create_intermediate());
+    let intermediate1 = INTERMEDIATE1.init(
+        storage1
+            .try_create_intermediate()
+            .expect("Failed to create intermediate storage"),
+    );
 
     static POLICY_CHANNEL1: StaticCell<Channel<GlobalRawMutex, policy::RequestData, 1>> = StaticCell::new();
     let policy_channel1 = POLICY_CHANNEL1.init(Channel::new());

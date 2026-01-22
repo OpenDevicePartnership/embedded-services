@@ -97,3 +97,9 @@ impl<'a> DeviceTrait for PowerProxyDevice<'a> {
             .complete_or_err()
     }
 }
+
+impl<M: RawMutex> Default for PowerProxyChannel<M> {
+    fn default() -> Self {
+        Self::new()
+    }
+}

@@ -162,7 +162,11 @@ fn main() {
     static STORAGE0: StaticCell<Storage<1, GlobalRawMutex>> = StaticCell::new();
     let storage0 = STORAGE0.init(Storage::new(context, CONTROLLER0_ID, CFU0_ID, [PORT0_ID]));
     static INTERMEDIATE0: StaticCell<IntermediateStorage<1, GlobalRawMutex>> = StaticCell::new();
-    let intermediate0 = INTERMEDIATE0.init(storage0.create_intermediate());
+    let intermediate0 = INTERMEDIATE0.init(
+        storage0
+            .try_create_intermediate()
+            .expect("Failed to create intermediate storage"),
+    );
 
     static POLICY_CHANNEL0: StaticCell<Channel<GlobalRawMutex, policy::RequestData, 1>> = StaticCell::new();
     let policy_channel0 = POLICY_CHANNEL0.init(Channel::new());
@@ -201,7 +205,11 @@ fn main() {
     static STORAGE1: StaticCell<Storage<1, GlobalRawMutex>> = StaticCell::new();
     let storage1 = STORAGE1.init(Storage::new(context, CONTROLLER1_ID, CFU1_ID, [PORT1_ID]));
     static INTERMEDIATE1: StaticCell<IntermediateStorage<1, GlobalRawMutex>> = StaticCell::new();
-    let intermediate1 = INTERMEDIATE1.init(storage1.create_intermediate());
+    let intermediate1 = INTERMEDIATE1.init(
+        storage1
+            .try_create_intermediate()
+            .expect("Failed to create intermediate storage"),
+    );
 
     static POLICY_CHANNEL1: StaticCell<Channel<GlobalRawMutex, policy::RequestData, 1>> = StaticCell::new();
     let policy_channel1 = POLICY_CHANNEL1.init(Channel::new());
@@ -240,7 +248,11 @@ fn main() {
     static STORAGE2: StaticCell<Storage<1, GlobalRawMutex>> = StaticCell::new();
     let storage2 = STORAGE2.init(Storage::new(context, CONTROLLER2_ID, CFU2_ID, [PORT2_ID]));
     static INTERMEDIATE2: StaticCell<IntermediateStorage<1, GlobalRawMutex>> = StaticCell::new();
-    let intermediate2 = INTERMEDIATE2.init(storage2.create_intermediate());
+    let intermediate2 = INTERMEDIATE2.init(
+        storage2
+            .try_create_intermediate()
+            .expect("Failed to create intermediate storage"),
+    );
 
     static POLICY_CHANNEL2: StaticCell<Channel<GlobalRawMutex, policy::RequestData, 1>> = StaticCell::new();
     let policy_channel2 = POLICY_CHANNEL2.init(Channel::new());

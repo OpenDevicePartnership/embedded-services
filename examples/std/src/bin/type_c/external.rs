@@ -145,7 +145,11 @@ fn create_wrapper(
 
     static INTERMEDIATE: StaticCell<type_c_service::wrapper::backing::IntermediateStorage<1, GlobalRawMutex>> =
         StaticCell::new();
-    let intermediate = INTERMEDIATE.init(backing_storage.create_intermediate());
+    let intermediate = INTERMEDIATE.init(
+        backing_storage
+            .try_create_intermediate()
+            .expect("Failed to create intermediate storage"),
+    );
 
     static POLICY_CHANNEL: StaticCell<Channel<GlobalRawMutex, policy::RequestData, 1>> = StaticCell::new();
     let policy_channel = POLICY_CHANNEL.init(Channel::new());

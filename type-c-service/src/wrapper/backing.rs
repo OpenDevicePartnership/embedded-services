@@ -23,27 +23,38 @@
 //! use embedded_usb_pd::GlobalPortId;
 //! use type_c_service::wrapper::backing::{Storage, IntermediateStorage, ReferencedStorage};
 //!
-//!
-//! const NUM_PORTS: usize = 2;
-//! const POLICY_CHANNEL_SIZE: usize = 1;
-//!
-//! fn init(
-//!     context: &'static embedded_services::type_c::controller::Context,
-//!     power_policy_context: &'static embedded_services::power::policy::policy::Context<POLICY_CHANNEL_SIZE>
-//! ) {
-//!    static STORAGE: StaticCell<Storage<NUM_PORTS, NoopRawMutex, POLICY_CHANNEL_SIZE>> = StaticCell::new();
+//! fn init(context: &'static embedded_services::type_c::controller::Context) {
+//!    static STORAGE: StaticCell<Storage<1, GlobalRawMutex>> = StaticCell::new();
 //!    let storage = STORAGE.init(Storage::new(
 //!        context,
 //!        ControllerId(0),
-//!        0x0,
-//!        [(GlobalPortId(0), power::policy::DeviceId(0)), (GlobalPortId(1), power::policy::DeviceId(1))],
-//!        power_policy_context
+//!        0x0, // CFU component ID (unused)
+//!        [power::policy::DeviceId(0)],
 //!    ));
-//!    static INTERMEDIATE: StaticCell<IntermediateStorage<NUM_PORTS, NoopRawMutex>> = StaticCell::new();
-//!    let intermediate = INTERMEDIATE.init(storage.create_intermediate());
-//!    static REFERENCED: StaticCell<ReferencedStorage<NUM_PORTS, NoopRawMutex>> = StaticCell::new();
-//!    let referenced = REFERENCED.init(intermediate.create_referenced());
-//!    let _backing = referenced.create_backing().unwrap();
+//!
+//!    static INTERMEDIATE: StaticCell<type_c_service::wrapper::backing::IntermediateStorage<1, GlobalRawMutex>> =
+//!        StaticCell::new();
+//!    let intermediate = INTERMEDIATE.init(storage.try_create_intermediate().expect("Failed to create intermediate storage"));
+//!
+//!    static POLICY_CHANNEL: StaticCell<Channel<GlobalRawMutex, policy::RequestData, 1>> = StaticCell::new();
+//!    let policy_channel = POLICY_CHANNEL.init(Channel::new());
+//!
+//!    let policy_sender = policy_channel.dyn_sender();
+//!    let policy_receiver = policy_channel.dyn_receiver();
+//!
+//!    static REFERENCED: StaticCell<
+//!        type_c_service::wrapper::backing::ReferencedStorage<
+//!            1,
+//!            GlobalRawMutex,
+//!            DynamicSender<'_, policy::RequestData>,
+//!            DynamicReceiver<'_, policy::RequestData>,
+//!        >,
+//!    > = StaticCell::new();
+//!    let referenced = REFERENCED.init(
+//!        intermediate
+//!            .try_create_referenced([(POWER0_ID, policy_sender, policy_receiver)])
+//!            .expect("Failed to create referenced storage"),
+//!    );
 //! }
 //! ```
 use core::{
@@ -248,8 +259,8 @@ impl<'a, const N: usize, M: RawMutex> Storage<'a, N, M> {
     }
 
     /// Create intermediate storage from this storage
-    pub fn create_intermediate(&self) -> IntermediateStorage<'_, N, M> {
-        IntermediateStorage::from_storage(self)
+    pub fn try_create_intermediate(&self) -> Option<IntermediateStorage<'_, N, M>> {
+        IntermediateStorage::try_from_storage(self)
     }
 }
 
@@ -261,30 +272,24 @@ pub struct IntermediateStorage<'a, const N: usize, M: RawMutex> {
 }
 
 impl<'a, const N: usize, M: RawMutex> IntermediateStorage<'a, N, M> {
-    // Panic Safety: size of everything is fixed at compile time to N
-    fn from_storage(storage: &'a Storage<'a, N, M>) -> Self {
+    fn try_from_storage(storage: &'a Storage<'a, N, M>) -> Option<Self> {
         let mut power_proxy_devices = heapless::Vec::<_, N>::new();
         let mut power_proxy_receivers = heapless::Vec::<_, N>::new();
 
         for power_proxy_channel in storage.power_proxy_channels.iter() {
             power_proxy_devices
                 .push(Mutex::new(power_proxy_channel.get_device()))
-                .unwrap_or_else(|_| panic!("Failed to insert power proxy device"));
+                .ok()?;
             power_proxy_receivers
                 .push(Mutex::new(power_proxy_channel.get_receiver()))
-                .unwrap_or_else(|_| panic!("Failed to insert power proxy receiver"));
+                .ok()?;
         }
 
-        Self {
+        Some(Self {
             storage,
-            // Safe because both have N elements
-            power_proxy_devices: power_proxy_devices
-                .into_array()
-                .unwrap_or_else(|_| panic!("Failed to create power devices")),
-            power_proxy_receivers: power_proxy_receivers
-                .into_array()
-                .unwrap_or_else(|_| panic!("Failed to create power receivers")),
-        }
+            power_proxy_devices: power_proxy_devices.into_array().ok()?,
+            power_proxy_receivers: power_proxy_receivers.into_array().ok()?,
+        })
     }
 
     /// Create referenced storage from this intermediate storage
@@ -328,16 +333,14 @@ impl<'a, const N: usize, M: RawMutex, S: event::Sender<policy::RequestData>, R: 
         let mut power_devices = heapless::Vec::<_, N>::new();
 
         for (i, (device_id, policy_sender, policy_receiver)) in policy_args.into_iter().enumerate() {
-            power_senders
-                .push(policy_sender)
-                .unwrap_or_else(|_| panic!("Failed to insert policy sender"));
+            power_senders.push(policy_sender).ok()?;
             power_devices
                 .push(embedded_services::power::policy::device::Device::new(
                     device_id,
-                    &intermediate.power_proxy_devices[i],
+                    intermediate.power_proxy_devices.get(i)?,
                     policy_receiver,
                 ))
-                .unwrap_or_else(|_| panic!("Failed to insert power device"));
+                .ok()?;
         }
 
         Some(Self {
@@ -345,17 +348,13 @@ impl<'a, const N: usize, M: RawMutex, S: event::Sender<policy::RequestData>, R: 
             state: RefCell::new(InternalState::try_new(
                 intermediate.storage,
                 // Safe because both have N elements
-                power_senders
-                    .into_array()
-                    .unwrap_or_else(|_| panic!("Failed to create power events")),
+                power_senders.into_array().ok()?,
             )?),
             pd_controller: embedded_services::type_c::controller::Device::new(
                 intermediate.storage.controller_id,
                 intermediate.storage.pd_ports.as_slice(),
             ),
-            power_devices: power_devices
-                .into_array()
-                .unwrap_or_else(|_| panic!("Failed to create power devices")),
+            power_devices: power_devices.into_array().ok()?,
         })
     }
 
