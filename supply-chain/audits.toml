@@ -26,6 +26,12 @@ who = "Robert Zieba <robertzieba@microsoft.com>"
 criteria = "safe-to-run"
 version = "0.3.75"
 
+[[audits.bitfield-struct]]
+who = "matteotullo <matteotullo@microsoft.com>"
+criteria = "safe-to-deploy"
+delta = "0.10.1 -> 0.12.1"
+notes = "Adds hash and bitenum derives, mostly parsing and refactoring changes. No code execution nor writing to the filesystem."
+
 [[audits.block-device-driver]]
 who = "jerrysxie <jerryxie@microsoft.com>"
 criteria = "safe-to-deploy"
@@ -64,6 +70,12 @@ notes = "ODP crates are always trusted."
 who = "matteotullo <matteotullo@microsoft.com>"
 criteria = "safe-to-deploy"
 version = "0.3.1"
+notes = "ODP crates are always trusted."
+
+[[audits.embedded-batteries]]
+who = "matteotullo <matteotullo@microsoft.com>"
+criteria = "safe-to-deploy"
+version = "0.3.4"
 notes = "ODP crates are always trusted."
 
 [[audits.embedded-batteries-async]]
@@ -449,7 +461,7 @@ version = "0.8.26"
 
 [[trusted.aho-corasick]]
 criteria = "safe-to-deploy"
-user-id = 189
+user-id = 189 # Andrew Gallant (BurntSushi)
 start = "2019-03-28"
 end = "2026-09-03"
 
@@ -473,13 +485,13 @@ end = "2026-09-03"
 
 [[trusted.loom]]
 criteria = "safe-to-deploy"
-user-id = 6741
+user-id = 6741 # Alice Ryhl (Darksonn)
 start = "2021-04-12"
 end = "2026-09-03"
 
 [[trusted.memchr]]
 criteria = "safe-to-deploy"
-user-id = 189
+user-id = 189 # Andrew Gallant (BurntSushi)
 start = "2019-07-07"
 end = "2026-09-03"
 
@@ -497,7 +509,7 @@ end = "2026-09-03"
 
 [[trusted.regex-automata]]
 criteria = "safe-to-deploy"
-user-id = 189
+user-id = 189 # Andrew Gallant (BurntSushi)
 start = "2019-02-25"
 end = "2026-09-03"
 
@@ -515,7 +527,7 @@ end = "2026-09-03"
 
 [[trusted.scoped-tls]]
 criteria = "safe-to-deploy"
-user-id = 1
+user-id = 1 # Alex Crichton (alexcrichton)
 start = "2019-02-26"
 end = "2026-09-03"
 
@@ -551,126 +563,126 @@ end = "2026-09-03"
 
 [[trusted.windows]]
 criteria = "safe-to-deploy"
-user-id = 64539
+user-id = 64539 # Kenny Kerr (kennykerr)
 start = "2021-01-15"
 end = "2026-09-03"
 
 [[trusted.windows-collections]]
 criteria = "safe-to-deploy"
-user-id = 64539
+user-id = 64539 # Kenny Kerr (kennykerr)
 start = "2025-02-06"
 end = "2026-09-03"
 
 [[trusted.windows-core]]
 criteria = "safe-to-deploy"
-user-id = 64539
+user-id = 64539 # Kenny Kerr (kennykerr)
 start = "2021-11-15"
 end = "2026-09-03"
 
 [[trusted.windows-future]]
 criteria = "safe-to-deploy"
-user-id = 64539
+user-id = 64539 # Kenny Kerr (kennykerr)
 start = "2025-02-10"
 end = "2026-09-03"
 
 [[trusted.windows-implement]]
 criteria = "safe-to-deploy"
-user-id = 64539
+user-id = 64539 # Kenny Kerr (kennykerr)
 start = "2022-01-27"
 end = "2026-09-03"
 
 [[trusted.windows-interface]]
 criteria = "safe-to-deploy"
-user-id = 64539
+user-id = 64539 # Kenny Kerr (kennykerr)
 start = "2022-02-18"
 end = "2026-09-03"
 
 [[trusted.windows-link]]
 criteria = "safe-to-deploy"
-user-id = 64539
+user-id = 64539 # Kenny Kerr (kennykerr)
 start = "2024-07-17"
 end = "2026-09-03"
 
 [[trusted.windows-numerics]]
 criteria = "safe-to-deploy"
-user-id = 64539
+user-id = 64539 # Kenny Kerr (kennykerr)
 start = "2023-05-15"
 end = "2026-09-03"
 
 [[trusted.windows-result]]
 criteria = "safe-to-deploy"
-user-id = 64539
+user-id = 64539 # Kenny Kerr (kennykerr)
 start = "2024-02-02"
 end = "2026-09-03"
 
 [[trusted.windows-strings]]
 criteria = "safe-to-deploy"
-user-id = 64539
+user-id = 64539 # Kenny Kerr (kennykerr)
 start = "2024-02-02"
 end = "2026-09-03"
 
 [[trusted.windows-sys]]
 criteria = "safe-to-deploy"
-user-id = 64539
+user-id = 64539 # Kenny Kerr (kennykerr)
 start = "2021-11-15"
 end = "2026-09-03"
 
 [[trusted.windows-targets]]
 criteria = "safe-to-deploy"
-user-id = 64539
+user-id = 64539 # Kenny Kerr (kennykerr)
 start = "2022-09-09"
 end = "2026-09-03"
 
 [[trusted.windows-threading]]
 criteria = "safe-to-deploy"
-user-id = 64539
+user-id = 64539 # Kenny Kerr (kennykerr)
 start = "2025-04-29"
 end = "2026-09-03"
 
 [[trusted.windows_aarch64_gnullvm]]
 criteria = "safe-to-deploy"
-user-id = 64539
+user-id = 64539 # Kenny Kerr (kennykerr)
 start = "2022-09-01"
 end = "2026-09-03"
 
 [[trusted.windows_aarch64_msvc]]
 criteria = "safe-to-deploy"
-user-id = 64539
+user-id = 64539 # Kenny Kerr (kennykerr)
 start = "2021-11-05"
 end = "2026-09-03"
 
 [[trusted.windows_i686_gnu]]
 criteria = "safe-to-deploy"
-user-id = 64539
+user-id = 64539 # Kenny Kerr (kennykerr)
 start = "2021-10-28"
 end = "2026-09-03"
 
 [[trusted.windows_i686_gnullvm]]
 criteria = "safe-to-deploy"
-user-id = 64539
+user-id = 64539 # Kenny Kerr (kennykerr)
 start = "2024-04-02"
 end = "2026-09-03"
 
 [[trusted.windows_i686_msvc]]
 criteria = "safe-to-deploy"
-user-id = 64539
+user-id = 64539 # Kenny Kerr (kennykerr)
 start = "2021-10-27"
 end = "2026-09-03"
 
 [[trusted.windows_x86_64_gnu]]
 criteria = "safe-to-deploy"
-user-id = 64539
+user-id = 64539 # Kenny Kerr (kennykerr)
 start = "2021-10-28"
 end = "2026-09-03"
 
 [[trusted.windows_x86_64_gnullvm]]
 criteria = "safe-to-deploy"
-user-id = 64539
+user-id = 64539 # Kenny Kerr (kennykerr)
 start = "2022-09-01"
 end = "2026-09-03"
 
 [[trusted.windows_x86_64_msvc]]
 criteria = "safe-to-deploy"
-user-id = 64539
+user-id = 64539 # Kenny Kerr (kennykerr)
 start = "2021-10-27"
 end = "2026-09-03"
