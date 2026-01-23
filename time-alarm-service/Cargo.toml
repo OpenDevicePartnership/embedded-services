@@ -26,6 +26,7 @@ defmt = [
     "embassy-time/defmt",
     "embassy-sync/defmt",
     "embassy-executor/defmt",
+    "time-alarm-service-messages/defmt",
 ]
 
 [lints]
