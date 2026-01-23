@@ -8,11 +8,12 @@ use static_cell::StaticCell;
 use {defmt_rtt as _, panic_probe as _};
 
 mod mock_espi_service {
+
     use crate::OnceLock;
     use crate::{error, info};
     use embassy_time::{Duration, Ticker};
     use embedded_services::comms::{self, EndpointID, External, Internal};
-    use time_alarm_service_messages::{AcpiTimeAlarmRequest, AcpiTimeAlarmResponse};
+    use time_alarm_service_messages::{AcpiTimeAlarmRequest, AcpiTimeAlarmResult};
 
     pub struct Service {
         endpoint: comms::Endpoint,
@@ -32,7 +33,7 @@ mod mock_espi_service {
 
     impl comms::MailboxDelegate for Service {
         fn receive(&self, message: &comms::Message) -> Result<(), comms::MailboxDelegateError> {
-            let msg = message.data.get::<AcpiTimeAlarmResponse>().ok_or_else(|| {
+            let msg = message.data.get::<AcpiTimeAlarmResult>().ok_or_else(|| {
                 error!("Mock eSPI service received unknown message type");
                 comms::MailboxDelegateError::MessageNotFound
             })?;
