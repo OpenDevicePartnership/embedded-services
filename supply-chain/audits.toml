@@ -217,10 +217,22 @@ who = "Matteo Tullo <matteotullo@microsoft.com>"
 criteria = "safe-to-deploy"
 version = "0.7.4"
 
+[[audits.num_enum]]
+who = "Billy Price <williamp@microsoft.com>"
+criteria = "safe-to-deploy"
+delta = "0.7.4 -> 0.7.5"
+notes = "Looks like this is just uptaking a new version of num_enum_derive"
+
 [[audits.num_enum_derive]]
 who = "Matteo Tullo <matteotullo@microsoft.com>"
 criteria = "safe-to-deploy"
 version = "0.7.4"
+
+[[audits.num_enum_derive]]
+who = "Billy Price <williamp@microsoft.com>"
+criteria = "safe-to-deploy"
+delta = "0.7.4 -> 0.7.5"
+notes = "Looks like mostly improvements to error messaging"
 
 [[audits.object]]
 who = "Robert Zieba <robertzieba@microsoft.com>"
@@ -241,6 +253,11 @@ version = "1.11.1"
 who = "Jerry Xie <jerryxie@microsoft.com>"
 criteria = "safe-to-deploy"
 version = "1.0.4"
+
+[[audits.rand_core]]
+who = "Billy Price <williamp@microsoft.com>"
+criteria = "safe-to-deploy"
+delta = "0.6.4 -> 0.9.5"
 
 [[audits.regex]]
 who = "Billy Price <williamp@microsoft.com>"
