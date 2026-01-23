@@ -231,10 +231,8 @@ impl Service {
                     #[cfg(feature = "defmt")]
                     info!("[Time/Alarm] Responding with: {:?}", result);
 
-                    self.endpoint
-                        .send(respond_to_endpoint, &result)
-                        .await
-                        .expect("send returns Infallible");
+                    let _: Result<(), core::convert::Infallible> =
+                        self.endpoint.send(respond_to_endpoint, &result).await;
                 }
                 Either::Second(new_power_source) => {
                     #[cfg(feature = "defmt")]
@@ -341,7 +339,11 @@ impl Service {
                             .clock_state
                             .lock(|clock_state| clock_state.borrow().datetime_clock.get_current_datetime())?;
 
-                        AlarmTimerSeconds(expiration_time.to_unix_time_seconds().saturating_sub(current_time.to_unix_time_seconds()).try_into().expect("Per the ACPI spec, timers are communicated in u32 seconds, so this shouldn't be able to overflow"))
+                        AlarmTimerSeconds(
+                            expiration_time
+                                .to_unix_time_seconds()
+                                .saturating_sub(current_time.to_unix_time_seconds()) as u32,
+                        )
                     }
                     None => AlarmTimerSeconds::DISABLED,
                 };

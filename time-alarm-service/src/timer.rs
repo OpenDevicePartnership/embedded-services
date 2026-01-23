@@ -4,7 +4,7 @@ use embassy_futures::select::{Either, select};
 use embassy_sync::{blocking_mutex::Mutex, signal::Signal};
 use embedded_mcu_hal::NvramStorage;
 use embedded_mcu_hal::time::Datetime;
-use embedded_services::GlobalRawMutex;
+use embedded_services::{GlobalRawMutex, error};
 
 /// Represents where in the timer lifecycle the current timer is
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -144,10 +144,6 @@ impl Timer {
         });
     }
 
-    // TODO [SPEC] the spec is ambiguous on whether or not this policy should include the number of seconds that have elapsed against it
-    //     (i.e. if the user set it to 60s and 45s have elapsed since we switched to the expired power source, should we report
-    //      60s or 15s?)- see if we can get a concrete answer on this.
-    //
     pub fn get_timer_wake_policy(&self) -> AlarmExpiredWakePolicy {
         self.timer_state
             .lock(|timer_state| timer_state.borrow().persistent_storage.get_timer_wake_policy())
@@ -162,9 +158,6 @@ impl Timer {
             let mut timer_state = timer_state.borrow_mut();
             timer_state.persistent_storage.set_timer_wake_policy(wake_policy);
 
-            // TODO [SPEC] verify this is correct - the spec isn't particularly clear on what should happen if reprogramming the policy while it's actively ticking down,
-            //      may need to look at the windows acpi implementation or something
-            //
             if let WakeState::ExpiredWaitingForPolicyDelay(_, _) = timer_state.wake_state {
                 timer_state.wake_state =
                     WakeState::ExpiredWaitingForPolicyDelay(Self::get_current_datetime(clock_state), 0);
@@ -224,23 +217,21 @@ impl Timer {
                         seconds_already_elapsed,
                     );
                     self.timer_signal.signal(Some(
-                        timer_state.persistent_storage
+                        timer_state
+                            .persistent_storage
                             .get_timer_wake_policy()
                             .0
                             .saturating_sub(seconds_already_elapsed),
                     ));
                 }
             } else if let WakeState::ExpiredWaitingForPolicyDelay(wait_start_time, seconds_elapsed_before_wait) =
-                    timer_state.wake_state
+                timer_state.wake_state
             {
                 let total_seconds_elapsed_on_policy_delay: u32 = seconds_elapsed_before_wait
-                    + u32::try_from(Self::get_current_datetime(clock_state)
+                    + (Self::get_current_datetime(clock_state)
                         .to_unix_time_seconds()
-                        .saturating_sub(wait_start_time.to_unix_time_seconds()))
-                        .expect("The ACPI spec expresses timeouts in terms of u32s - it's impossible to schedule a timer u32::MAX seconds in the future");
-
-                timer_state.wake_state =
-                    WakeState::ExpiredWaitingForPowerSource(total_seconds_elapsed_on_policy_delay);
+                        .saturating_sub(wait_start_time.to_unix_time_seconds()) as u32); // The ACPI spec expresses timeouts in terms of u32s - it's impossible to schedule a timer u32::MAX seconds in the future
+                timer_state.wake_state = WakeState::ExpiredWaitingForPowerSource(total_seconds_elapsed_on_policy_delay);
                 self.timer_signal.signal(None);
             }
         });
@@ -287,37 +278,45 @@ impl Timer {
                 // Clear: timer was disarmed right as we were waking - nothing to do.
                 // ExpiredOrphaned: shouldn't happen, but if we're in this state the timer should be dead, so nothing to do.
                 // ExpiredWaitingForPowerSource: shouldn't happen, but if we're in this state the timer is still waiting for power source so nothing to do.
-                WakeState::Clear | WakeState::ExpiredOrphaned | WakeState::ExpiredWaitingForPowerSource(_) => return false,
+                WakeState::Clear | WakeState::ExpiredOrphaned | WakeState::ExpiredWaitingForPowerSource(_) => {
+                    return false;
+                }
 
                 WakeState::Armed | WakeState::ExpiredWaitingForPolicyDelay(_, _) => {
                     let now = Self::get_current_datetime(clock_state);
-                    let expiration_time = timer_state.persistent_storage.get_expiration_time().expect("We should never be in the Armed or ExpiredWaitingForPolicyDelay states if there's no expiration time set");
+                    let expiration_time = timer_state.persistent_storage.get_expiration_time().unwrap_or_else(|| {
+                        error!("[Time/Alarm] Timer expired when no expiration time was set - this should never happen");
+                        Datetime::from_unix_time_seconds(0)
+                    });
                     if now.to_unix_time_seconds() < expiration_time.to_unix_time_seconds() {
                         // Time hasn't actually passed the mark yet - this can happen if we were reprogrammed with a different time right as the old timer was expiring. Reset the timer.
                         timer_state.wake_state = WakeState::Armed;
-                        self.timer_signal.signal(Some(expiration_time
-                            .to_unix_time_seconds()
-                            .saturating_sub(now.to_unix_time_seconds())
-                            .try_into()
-                            .expect("Users should not have been able to program a time greater than u32::MAX seconds in the future - the ACPI spec prevents it")));
+                        self.timer_signal.signal(Some(
+                            expiration_time
+                                .to_unix_time_seconds()
+                                .saturating_sub(now.to_unix_time_seconds()) as u32,
+                        ));
                         return false;
                     }
 
                     timer_state.timer_status.set_timer_expired(true);
                     if timer_state.is_active {
                         timer_state.timer_status.set_timer_triggered_wake(true);
-                        timer_state.persistent_storage.set_timer_wake_policy(AlarmExpiredWakePolicy::NEVER);
+                        timer_state
+                            .persistent_storage
+                            .set_timer_wake_policy(AlarmExpiredWakePolicy::NEVER);
                         self.clear_expiration_time(&mut timer_state);
                         return true;
-                    }
-                    else {
+                    } else {
                         if timer_state.persistent_storage.get_timer_wake_policy() == AlarmExpiredWakePolicy::NEVER {
                             timer_state.wake_state = WakeState::ExpiredOrphaned;
                             return false;
                         }
 
                         if let WakeState::ExpiredWaitingForPolicyDelay(_, _) = timer_state.wake_state {
-                            timer_state.wake_state = WakeState::ExpiredWaitingForPowerSource(timer_state.persistent_storage.get_timer_wake_policy().0);
+                            timer_state.wake_state = WakeState::ExpiredWaitingForPowerSource(
+                                timer_state.persistent_storage.get_timer_wake_policy().0,
+                            );
                         } else {
                             timer_state.wake_state = WakeState::ExpiredWaitingForPowerSource(0);
                         }
