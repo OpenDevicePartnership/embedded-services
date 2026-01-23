@@ -203,20 +203,6 @@ name = "bytemuck"
 version = "1.23.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3995eaeebcdf32f91f980d360f78732ddc061097ab4e39991ae7a6ace9194677"
-dependencies = [
- "bytemuck_derive",
-]
-
-[[package]]
-name = "bytemuck_derive"
-version = "1.10.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4f154e572231cb6ba2bd1176980827e3d5dc04cc183a75dea38109fbdd672d29"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
-]
 
 [[package]]
 name = "byteorder"
@@ -522,7 +508,7 @@ dependencies = [
 [[package]]
 name = "embassy-imxrt"
 version = "0.1.0"
-source = "git+https://github.com/OpenDevicePartnership/embassy-imxrt#581f66e68ceaefb77e35f230dfb114322912dd6b"
+source = "git+https://github.com/OpenDevicePartnership/embassy-imxrt#d13994d875c29342b86bef374b44b9f401b44917"
 dependencies = [
  "cfg-if",
  "cortex-m",
@@ -549,7 +535,7 @@ dependencies = [
  "itertools 0.11.0",
  "mimxrt600-fcb 0.2.2",
  "mimxrt633s-pac",
- "mimxrt685s-pac",
+ "mimxrt685s-pac 0.5.0",
  "nb 1.1.0",
  "paste",
  "rand_core",
@@ -702,9 +688,10 @@ dependencies = [
 [[package]]
 name = "embedded-mcu-hal"
 version = "0.1.0"
-source = "git+https://github.com/OpenDevicePartnership/embedded-mcu#146fda33807af6aeabcade513914da95c926fbc9"
+source = "git+https://github.com/OpenDevicePartnership/embedded-mcu#4dadf27b212ce91d884e9a33b3c2725d5d0511fb"
 dependencies = [
  "defmt 1.0.1",
+ "num_enum",
 ]
 
 [[package]]
@@ -1073,14 +1060,14 @@ dependencies = [
 
 [[package]]
 name = "mimxrt633s-pac"
-version = "0.4.1"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "843c1c63c367293e4fa270cc161b5bdfef55b4c6a0a18768f737241fb24be70c"
+checksum = "a580cd0048e0e5b1eee17208b7f95ba05ec7ca0175789333b2fa7241798d3cdc"
 dependencies = [
  "cortex-m",
  "cortex-m-rt",
  "critical-section",
- "defmt 0.3.100",
+ "defmt 1.0.1",
  "vcell",
 ]
 
@@ -1093,7 +1080,19 @@ dependencies = [
  "cortex-m",
  "cortex-m-rt",
  "critical-section",
- "defmt 0.3.100",
+ "vcell",
+]
+
+[[package]]
+name = "mimxrt685s-pac"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8c8860258951178c4f91e42581ae8f33241a0e9a3e89bf2721d932ef366db51b"
+dependencies = [
+ "cortex-m",
+ "cortex-m-rt",
+ "critical-section",
+ "defmt 1.0.1",
  "vcell",
 ]
 
@@ -1187,9 +1186,9 @@ dependencies = [
 
 [[package]]
 name = "num_enum"
-version = "0.7.4"
+version = "0.7.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a973b4e44ce6cad84ce69d797acf9a044532e4184c4f267913d1b546a0727b7a"
+checksum = "b1207a7e20ad57b847bbddc6776b968420d38292bbfe2089accff5e19e82454c"
 dependencies = [
  "num_enum_derive",
  "rustversion",
@@ -1197,9 +1196,9 @@ dependencies = [
 
 [[package]]
 name = "num_enum_derive"
-version = "0.7.4"
+version = "0.7.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "77e878c846a8abae00dd069496dbe8751b16ac1c3d6bd2a7283a938e8228f90d"
+checksum = "ff32365de1b6743cb203b710788263c44a03de03802daf96092f2da4fe6ba4d7"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1337,9 +1336,9 @@ checksum = "dc33ff2d4973d518d823d61aa239014831e521c75da58e3df4840d3f47749d09"
 
 [[package]]
 name = "rand_core"
-version = "0.6.4"
+version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ec0be4795e2f6a28069bec0b5ff3e2ac9bafc99e6a9a7dc3547996c5c816922c"
+checksum = "76afc826de14238e6e8c374ddcc1fa19e374fd8dd986b0d2af0d02377261d83c"
 
 [[package]]
 name = "rt685s-evk-example"
@@ -1364,13 +1363,14 @@ dependencies = [
  "embedded-usb-pd",
  "futures",
  "mimxrt600-fcb 0.1.0",
- "mimxrt685s-pac",
+ "mimxrt685s-pac 0.4.0",
  "panic-probe",
  "platform-service",
  "power-button-service",
  "power-policy-service",
  "static_cell",
  "time-alarm-service",
+ "time-alarm-service-messages",
  "tps6699x",
  "type-c-service",
 ]
@@ -1482,7 +1482,7 @@ dependencies = [
 [[package]]
 name = "storage_bus"
 version = "0.1.0"
-source = "git+https://github.com/OpenDevicePartnership/embedded-mcu#146fda33807af6aeabcade513914da95c926fbc9"
+source = "git+https://github.com/OpenDevicePartnership/embedded-mcu#4dadf27b212ce91d884e9a33b3c2725d5d0511fb"
 
 [[package]]
 name = "strsim"
@@ -1575,7 +1575,6 @@ name = "time-alarm-service"
 version = "0.1.0"
 dependencies = [
  "bitfield 0.17.0",
- "bytemuck",
  "defmt 0.3.100",
  "embassy-executor",
  "embassy-futures",
@@ -1583,6 +1582,20 @@ dependencies = [
  "embassy-time",
  "embedded-mcu-hal",
  "embedded-services",
+ "time-alarm-service-messages",
+ "zerocopy",
+]
+
+[[package]]
+name = "time-alarm-service-messages"
+version = "0.1.0"
+dependencies = [
+ "bitfield 0.17.0",
+ "defmt 0.3.100",
+ "embedded-mcu-hal",
+ "embedded-services",
+ "num_enum",
+ "zerocopy",
 ]
 
 [[package]]

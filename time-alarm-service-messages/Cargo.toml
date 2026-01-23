@@ -15,7 +15,7 @@ num_enum.workspace = true
 zerocopy.workspace = true
 
 [features]
-defmt = ["dep:defmt"]
+defmt = ["dep:defmt", "embedded-mcu-hal/defmt"]
 
 [lints]
 workspace = true

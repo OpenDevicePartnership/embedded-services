@@ -10,25 +10,18 @@ use {defmt_rtt as _, panic_probe as _};
 mod mock_espi_service {
     use crate::OnceLock;
     use crate::{error, info};
-    use core::borrow::{Borrow, BorrowMut};
     use embassy_time::{Duration, Ticker};
-    use embedded_services::buffer::OwnedRef;
     use embedded_services::comms::{self, EndpointID, External, Internal};
-    use embedded_services::ec_type::message::AcpiMsgComms; // TODO this is gone, rewrite
-    use embedded_services::ec_type::message::HostMsg;
-
-    embedded_services::define_static_buffer!(acpi_buf, u8, [0u8; 69]);
+    use time_alarm_service_messages::{AcpiTimeAlarmRequest, AcpiTimeAlarmResponse};
 
     pub struct Service {
         endpoint: comms::Endpoint,
-        acpi_buf_owned_ref: OwnedRef<'static, u8>,
     }
 
     impl Service {
         pub async fn init(spawner: embassy_executor::Spawner, service_storage: &'static OnceLock<Service>) {
             let instance = service_storage.get_or_init(|| Service {
                 endpoint: comms::Endpoint::uninit(EndpointID::External(External::Host)),
-                acpi_buf_owned_ref: acpi_buf::get_mut().unwrap(),
             });
 
             comms::register_endpoint(instance, &instance.endpoint).await.unwrap();
@@ -39,57 +32,29 @@ mod mock_espi_service {
 
     impl comms::MailboxDelegate for Service {
         fn receive(&self, message: &comms::Message) -> Result<(), comms::MailboxDelegateError> {
-            info!("mock eSPI service received message from time-alarm service");
-            let msg = message.data.get::<HostMsg>().ok_or_else(|| {
+            let msg = message.data.get::<AcpiTimeAlarmResponse>().ok_or_else(|| {
                 error!("Mock eSPI service received unknown message type");
                 comms::MailboxDelegateError::MessageNotFound
             })?;
 
-            match msg {
-                HostMsg::Notification(n) => {
-                    info!("Notification: offset={}", n.offset);
-                }
-                HostMsg::Response(acpi) => {
-                    let payload = acpi.payload.borrow();
-                    let payload_slice: &[u8] = payload.borrow();
-                    info!(
-                        "Response: payload_len={}, payload={:?}",
-                        acpi.payload_len,
-                        &payload_slice[..acpi.payload_len]
-                    );
-                }
-            }
+            info!("Mock eSPI service received ACPI Time Alarm Response: {:?}", msg);
 
             Ok(())
         }
     }
 
-    // espi service that will update the memory map
     #[embassy_executor::task]
     async fn run_mock_service(espi_service: &'static Service) {
         let mut ticker = Ticker::every(Duration::from_secs(1));
 
         loop {
-            // let event = select(espi_service.signal.wait(), ticker.next()).await;
             ticker.next().await;
-
-            let payload_len = {
-                // TODO alternate between different messages.
-                let mut buffer_access = espi_service.acpi_buf_owned_ref.borrow_mut();
-                let buffer: &mut [u8] = buffer_access.borrow_mut();
-                buffer[0] = 2;
-
-                4 // u32
-            };
-
-            let message = AcpiMsgComms {
-                payload: acpi_buf::get(),
-                payload_len,
-            };
-
             espi_service
                 .endpoint
-                .send(EndpointID::Internal(Internal::TimeAlarm), &message)
+                .send(
+                    EndpointID::Internal(Internal::TimeAlarm),
+                    &AcpiTimeAlarmRequest::GetRealTime,
+                )
                 .await
                 .unwrap();
         }
@@ -112,10 +77,10 @@ async fn main(spawner: embassy_executor::Spawner) {
     static MOCK_ESPI_SERVICE: OnceLock<mock_espi_service::Service> = OnceLock::new();
     mock_espi_service::Service::init(spawner, &MOCK_ESPI_SERVICE).await;
 
-    static TIME_ALARM_SERVICE: OnceLock<time_alarm_service::Service> = OnceLock::new();
-    time_alarm_service::Service::init(
-        &TIME_ALARM_SERVICE,
-        &spawner,
+    static TIME_SERVICE: embassy_sync::once_lock::OnceLock<time_alarm_service::Service> =
+        embassy_sync::once_lock::OnceLock::new();
+    let time_service = time_alarm_service::Service::init(
+        &TIME_SERVICE,
         dt_clock,
         tz,
         ac_expiration,
@@ -124,5 +89,24 @@ async fn main(spawner: embassy_executor::Spawner) {
         dc_policy,
     )
     .await
-    .unwrap();
+    .expect("Failed to initialize time-alarm service");
+
+    #[embassy_executor::task]
+    async fn command_handler_task(service: &'static time_alarm_service::Service) {
+        time_alarm_service::task::command_handler_task(service).await
+    }
+
+    #[embassy_executor::task]
+    async fn ac_timer_task(service: &'static time_alarm_service::Service) {
+        time_alarm_service::task::ac_timer_task(service).await
+    }
+
+    #[embassy_executor::task]
+    async fn dc_timer_task(service: &'static time_alarm_service::Service) {
+        time_alarm_service::task::dc_timer_task(service).await
+    }
+
+    spawner.must_spawn(command_handler_task(time_service));
+    spawner.must_spawn(ac_timer_task(time_service));
+    spawner.must_spawn(dc_timer_task(time_service));
 }
