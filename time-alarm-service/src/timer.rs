@@ -68,10 +68,8 @@ mod persistent_storage {
         pub fn set_expiration_time(&mut self, expiration_time: Option<Datetime>) {
             match expiration_time {
                 Some(dt) => {
-                    self.expiration_time_storage
-                        .write(dt.to_unix_time_seconds().try_into().expect(
-                        "Datetime::to_unix_timestamp() returns i64, which should always fit in u32 until the year 2106",
-                    ));
+                    // This won't overflow until 2106, which is acceptable for our use case.
+                    self.expiration_time_storage.write(dt.to_unix_time_seconds() as u32);
                 }
                 None => {
                     self.expiration_time_storage.write(Self::NO_EXPIRATION_TIME);
@@ -193,13 +191,12 @@ impl Timer {
 
                     // Note: If the expiration time was in the past, this will immediately trigger the timer to expire.
                     self.timer_signal.signal(Some(
-                        dt
-                            .to_unix_time_seconds()
-                            .saturating_sub(Self::get_current_datetime(clock_state).to_unix_time_seconds()).try_into()
-                            .expect("Users should not have been able to program a time greater than u32::MAX seconds in the future - the ACPI spec prevents it")
+                        dt.to_unix_time_seconds()
+                            .saturating_sub(Self::get_current_datetime(clock_state).to_unix_time_seconds())
+                            as u32, // The ACPI spec doesn't provide a facility to program a timer more than u32::MAX seconds in the future, so this cast is safe
                     ));
                 }
-                None => self.clear_expiration_time(&mut timer_state)
+                None => self.clear_expiration_time(&mut timer_state),
             }
         });
     }

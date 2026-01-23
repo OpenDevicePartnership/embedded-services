@@ -8,21 +8,21 @@ use core::array::TryFromSliceError;
 use embedded_services::relay::{MessageSerializationError, SerializableMessage};
 
 /// Message types for the ACPI Time and Alarm device service.
-/// These directly analogous to the ACPI Time and Alarm device methods.
+/// These are directly analogous to the ACPI Time and Alarm device methods.
 /// See ACPI Specification 6.4, Section 9.18 "Time and Alarm Device" for additional details on semantics.
 #[rustfmt::skip]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[derive(PartialEq, Clone, Copy)]
 pub enum AcpiTimeAlarmRequest {
-    GetCapabilities,                                            // 1: _GCP --> u32 (bitmask),                 failure: infallible
-    GetRealTime,                                                // 2: _GRT --> AcpiTimestamp,                 failure: valid bit = 0 in returned timestamp
-    SetRealTime(AcpiTimestamp),                                 // 3: _SRT --> u32 (bool),                    failure: u32::MAX
-    GetWakeStatus(AcpiTimerId),                                 // 4: _GWS --> u32 (bitmask),                 failure: infallible
-    ClearWakeStatus(AcpiTimerId),                               // 5: _CWS --> u32 (bool),                    failure: 1
-    SetTimerValue(AcpiTimerId, AlarmTimerSeconds),              // 6: _STV --> u32 (bool),                    failure: 1,
-    GetTimerValue(AcpiTimerId),                                 // 7: _TIV --> u32 (AlarmTimerSeconds),       failure: infallible, u32::MAX if disabled
-    SetExpiredTimerPolicy(AcpiTimerId, AlarmExpiredWakePolicy), // 8: _STP --> u32 (bool),                    failure: 1
-    GetExpiredTimerPolicy(AcpiTimerId),                         // 9: _TIP --> u32 (AlarmExpiredWakePolicy)   failure: infallible
+    GetCapabilities,                                            // _GCP
+    GetRealTime,                                                // _GRT
+    SetRealTime(AcpiTimestamp),                                 // _SRT
+    GetWakeStatus(AcpiTimerId),                                 // _GWS
+    ClearWakeStatus(AcpiTimerId),                               // _CWS
+    SetTimerValue(AcpiTimerId, AlarmTimerSeconds),              // _STV
+    GetTimerValue(AcpiTimerId),                                 // _TIV
+    SetExpiredTimerPolicy(AcpiTimerId, AlarmExpiredWakePolicy), // _STP
+    GetExpiredTimerPolicy(AcpiTimerId),                         // _TIP
 }
 
 #[derive(num_enum::IntoPrimitive, num_enum::TryFromPrimitive, Copy, Clone, Debug, PartialEq)]

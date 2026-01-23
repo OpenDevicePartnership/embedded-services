@@ -28,7 +28,7 @@ struct RawAcpiTimestamp {
     // For _GRT, 0 = time is not valid (request failed), 1 = time is valid.  For _SRT, this is padding and should be 0.
     valid_or_padding: u8,
 
-    // Millseconds: 0-999. Leap seconds are not supported.
+    // Milliseconds: 0-999. Leap seconds are not supported.
     milliseconds: U16<LE>,
 
     // Time zone: -1440 to 1440 in minutes from UTC, or 2047 if unspecified

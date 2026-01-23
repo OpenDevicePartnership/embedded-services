@@ -31,9 +31,7 @@ impl From<TimeAlarmError> for MailboxDelegateError {
     fn from(error: TimeAlarmError) -> Self {
         match error {
             TimeAlarmError::UnknownCommand => MailboxDelegateError::InvalidData,
-            TimeAlarmError::DoubleInitError => {
-                panic!("Should never attempt intitialization as a response to receiving a mailbox message")
-            }
+            TimeAlarmError::DoubleInitError => MailboxDelegateError::Other,
             TimeAlarmError::MailboxFullError => MailboxDelegateError::BufferFull,
             TimeAlarmError::ClockError(_) => MailboxDelegateError::Other,
         }
@@ -89,7 +87,7 @@ mod time_zone_data {
             self.storage.write(zerocopy::transmute!(representation));
         }
 
-        /// Retreives the current time zone / daylight savings time.
+        /// Retrieves the current time zone / daylight savings time.
         /// If the stored data is invalid, implying that the NVRAM has never been initialized, defaults to
         /// (AcpiTimeZone::Unknown, AcpiDaylightSavingsTimeStatus::NotObserved).
         ///
