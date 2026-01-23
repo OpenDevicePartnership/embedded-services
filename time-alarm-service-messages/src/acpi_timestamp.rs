@@ -51,7 +51,7 @@ impl From<&AcpiTimestamp> for RawAcpiTimestamp {
             minute: ts.datetime.minute(),
             second: ts.datetime.second(),
             valid_or_padding: 1, // valid
-            milliseconds: (ts.datetime.nanoseconds() / 1_000_000).try_into().expect("Datetime::nanoseconds() is capped at 10^9 and therefore should always divide by 10^6 into something that fits in u16"),
+            milliseconds: ((ts.datetime.nanoseconds() / 1_000_000) as u16).into(),
             time_zone: i16::from(ts.time_zone).into(),
             daylight: ts.dst_status.into(),
             _padding: [0; 3],
@@ -142,6 +142,10 @@ pub struct AcpiTimestamp {
 
 impl AcpiTimestamp {
     pub fn as_bytes(&self) -> [u8; core::mem::size_of::<RawAcpiTimestamp>()] /* 16 */ {
+        // Size is guaranteed to be correct by zerocopy, but zerocopy returns as a slice rather than an array,
+        // and we need to return an owned array, so we need to convert.
+        // This operation is infallible due to the size guarantee.
+        #[allow(clippy::expect_used)]
         RawAcpiTimestamp::from(self)
             .as_bytes()
             .try_into()

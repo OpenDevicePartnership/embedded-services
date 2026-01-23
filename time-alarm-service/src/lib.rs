@@ -222,19 +222,24 @@ impl Service {
 
             match select(acpi_command, power_source_change).await {
                 Either::First((respond_to_endpoint, acpi_command)) => {
+                    #[cfg(feature = "defmt")]
                     info!("[Time/Alarm] Received command: {:?}", acpi_command);
+
                     let result: AcpiTimeAlarmResult = self
                         .handle_acpi_command(acpi_command)
                         .await
                         .map_err(|_| time_alarm_service_messages::AcpiTimeAlarmError::UnspecifiedFailure);
 
+                    #[cfg(feature = "defmt")]
                     info!("[Time/Alarm] Responding with: {:?}", result);
+
                     self.endpoint
                         .send(respond_to_endpoint, &result)
                         .await
                         .expect("send returns Infallible");
                 }
                 Either::Second(new_power_source) => {
+                    #[cfg(feature = "defmt")]
                     info!("[Time/Alarm] Power source changed to {:?}", new_power_source);
 
                     self.timers
