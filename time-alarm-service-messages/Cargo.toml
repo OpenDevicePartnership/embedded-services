@@ -1,0 +1,21 @@
+[package]
+name = "time-alarm-service-messages"
+description = "Time and Alarm service message definitions"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+bitfield.workspace = true
+defmt = { workspace = true, optional = true }
+embedded-mcu-hal.workspace = true
+embedded-services.workspace = true
+num_enum.workspace = true
+zerocopy.workspace = true
+
+[features]
+defmt = ["dep:defmt"]
+
+[lints]
+workspace = true

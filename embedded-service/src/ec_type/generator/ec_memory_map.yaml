@@ -39,44 +39,6 @@ Capabilities:
   res0:
     type: u16
 
-# Size 0x28
-TimeAlarm:
-  events:
-    type: u32
-  capability:
-    type: u32
-  year:
-    type: u16
-  month:
-    type: u8
-  day:
-    type: u8
-  hour:
-    type: u8
-  minute:
-    type: u8
-  second:
-    type: u8
-  valid:
-    type: u8
-  daylight:
-    type: u8
-  res1:
-    type: u8
-  milli:
-    type: u16
-  time_zone:
-    type: u16
-  res2:
-    type: u16
-  alarm_status:
-    type: u32
-  ac_time_val:
-    type: u32
-  dc_time_val:
-    type: u32
-
-
 # Size 0x64
 Battery:
   events:

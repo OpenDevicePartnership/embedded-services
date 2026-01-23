@@ -81,29 +81,6 @@ pub fn update_thermal_section(msg: &message::ThermalMessage, memory_map: &mut st
     }
 }
 
-/// Update time alarm section of memory map based on battery message
-pub fn update_time_alarm_section(msg: &message::TimeAlarmMessage, memory_map: &mut structure::ECMemory) {
-    match msg {
-        message::TimeAlarmMessage::Events(events) => memory_map.alarm.events = *events,
-        message::TimeAlarmMessage::Capability(capability) => memory_map.alarm.capability = *capability,
-        message::TimeAlarmMessage::Year(year) => memory_map.alarm.year = *year,
-        message::TimeAlarmMessage::Month(month) => memory_map.alarm.month = *month,
-        message::TimeAlarmMessage::Day(day) => memory_map.alarm.day = *day,
-        message::TimeAlarmMessage::Hour(hour) => memory_map.alarm.hour = *hour,
-        message::TimeAlarmMessage::Minute(minute) => memory_map.alarm.minute = *minute,
-        message::TimeAlarmMessage::Second(second) => memory_map.alarm.second = *second,
-        message::TimeAlarmMessage::Valid(valid) => memory_map.alarm.valid = *valid,
-        message::TimeAlarmMessage::Daylight(daylight) => memory_map.alarm.daylight = *daylight,
-        message::TimeAlarmMessage::Res1(res1) => memory_map.alarm.res1 = *res1,
-        message::TimeAlarmMessage::Milli(milli) => memory_map.alarm.milli = *milli,
-        message::TimeAlarmMessage::TimeZone(time_zone) => memory_map.alarm.time_zone = *time_zone,
-        message::TimeAlarmMessage::Res2(res2) => memory_map.alarm.res2 = *res2,
-        message::TimeAlarmMessage::AlarmStatus(alarm_status) => memory_map.alarm.alarm_status = *alarm_status,
-        message::TimeAlarmMessage::AcTimeVal(ac_time_val) => memory_map.alarm.ac_time_val = *ac_time_val,
-        message::TimeAlarmMessage::DcTimeVal(dc_time_val) => memory_map.alarm.dc_time_val = *dc_time_val,
-    }
-}
-
 /// Helper macro to simplify the conversion of memory map to message
 macro_rules! into_message {
     ($offset:ident, $length:ident, $member:expr, $msg:expr) => {
@@ -403,99 +380,6 @@ pub fn mem_map_to_thermal_msg(
             length,
             memory_map.therm.tmp1_high,
             message::ThermalMessage::Tmp1High
-        );
-    } else {
-        Err(Error::InvalidLocation)
-    }
-}
-
-/// Convert from memory map offset and length to time alarm message
-/// Modifies offset and length
-pub fn mem_map_to_time_alarm_msg(
-    memory_map: &structure::ECMemory,
-    offset: &mut usize,
-    length: &mut usize,
-) -> Result<message::TimeAlarmMessage, Error> {
-    let local_offset = *offset - offset_of!(structure::ECMemory, alarm);
-
-    if local_offset == offset_of!(structure::TimeAlarm, events) {
-        into_message!(
-            offset,
-            length,
-            memory_map.alarm.events,
-            message::TimeAlarmMessage::Events
-        );
-    } else if local_offset == offset_of!(structure::TimeAlarm, capability) {
-        into_message!(
-            offset,
-            length,
-            memory_map.alarm.capability,
-            message::TimeAlarmMessage::Capability
-        );
-    } else if local_offset == offset_of!(structure::TimeAlarm, year) {
-        into_message!(offset, length, memory_map.alarm.year, message::TimeAlarmMessage::Year);
-    } else if local_offset == offset_of!(structure::TimeAlarm, month) {
-        into_message!(offset, length, memory_map.alarm.month, message::TimeAlarmMessage::Month);
-    } else if local_offset == offset_of!(structure::TimeAlarm, day) {
-        into_message!(offset, length, memory_map.alarm.day, message::TimeAlarmMessage::Day);
-    } else if local_offset == offset_of!(structure::TimeAlarm, hour) {
-        into_message!(offset, length, memory_map.alarm.hour, message::TimeAlarmMessage::Hour);
-    } else if local_offset == offset_of!(structure::TimeAlarm, minute) {
-        into_message!(
-            offset,
-            length,
-            memory_map.alarm.minute,
-            message::TimeAlarmMessage::Minute
-        );
-    } else if local_offset == offset_of!(structure::TimeAlarm, second) {
-        into_message!(
-            offset,
-            length,
-            memory_map.alarm.second,
-            message::TimeAlarmMessage::Second
-        );
-    } else if local_offset == offset_of!(structure::TimeAlarm, valid) {
-        into_message!(offset, length, memory_map.alarm.valid, message::TimeAlarmMessage::Valid);
-    } else if local_offset == offset_of!(structure::TimeAlarm, daylight) {
-        into_message!(
-            offset,
-            length,
-            memory_map.alarm.daylight,
-            message::TimeAlarmMessage::Daylight
-        );
-    } else if local_offset == offset_of!(structure::TimeAlarm, res1) {
-        into_message!(offset, length, memory_map.alarm.res1, message::TimeAlarmMessage::Res1);
-    } else if local_offset == offset_of!(structure::TimeAlarm, milli) {
-        into_message!(offset, length, memory_map.alarm.milli, message::TimeAlarmMessage::Milli);
-    } else if local_offset == offset_of!(structure::TimeAlarm, time_zone) {
-        into_message!(
-            offset,
-            length,
-            memory_map.alarm.time_zone,
-            message::TimeAlarmMessage::TimeZone
-        );
-    } else if local_offset == offset_of!(structure::TimeAlarm, res2) {
-        into_message!(offset, length, memory_map.alarm.res2, message::TimeAlarmMessage::Res2);
-    } else if local_offset == offset_of!(structure::TimeAlarm, alarm_status) {
-        into_message!(
-            offset,
-            length,
-            memory_map.alarm.alarm_status,
-            message::TimeAlarmMessage::AlarmStatus
-        );
-    } else if local_offset == offset_of!(structure::TimeAlarm, ac_time_val) {
-        into_message!(
-            offset,
-            length,
-            memory_map.alarm.ac_time_val,
-            message::TimeAlarmMessage::AcTimeVal
-        );
-    } else if local_offset == offset_of!(structure::TimeAlarm, dc_time_val) {
-        into_message!(
-            offset,
-            length,
-            memory_map.alarm.dc_time_val,
-            message::TimeAlarmMessage::DcTimeVal
         );
     } else {
         Err(Error::InvalidLocation)

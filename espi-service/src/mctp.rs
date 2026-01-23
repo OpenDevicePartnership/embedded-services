@@ -10,7 +10,8 @@ use embedded_services::{
 //      types.
 
 impl_odp_mctp_relay_types!(
-    Battery, 0x08, (comms::EndpointID::Internal(comms::Internal::Battery)), battery_service_messages::AcpiBatteryRequest, battery_service_messages::AcpiBatteryResult;
-    Thermal, 0x09, (comms::EndpointID::Internal(comms::Internal::Thermal)), thermal_service_messages::ThermalRequest, thermal_service_messages::ThermalResult;
-    Debug, 0x0A,   (comms::EndpointID::Internal(comms::Internal::Debug)  ), debug_service_messages::DebugRequest, debug_service_messages::DebugResult;
+    Battery,   0x08, (comms::EndpointID::Internal(comms::Internal::Battery)),   battery_service_messages::AcpiBatteryRequest,      battery_service_messages::AcpiBatteryResult;
+    Thermal,   0x09, (comms::EndpointID::Internal(comms::Internal::Thermal)),   thermal_service_messages::ThermalRequest,          thermal_service_messages::ThermalResult;
+    Debug,     0x0A, (comms::EndpointID::Internal(comms::Internal::Debug)),     debug_service_messages::DebugRequest,              debug_service_messages::DebugResult;
+    TimeAlarm, 0x0B, (comms::EndpointID::Internal(comms::Internal::TimeAlarm)), time_alarm_service_messages::AcpiTimeAlarmRequest, time_alarm_service_messages::AcpiTimeAlarmResult;
 );
