@@ -19,7 +19,7 @@ enum WakeState {
     /// Timer is active and waiting for power source to be consistent with the timer type.
     /// Includes the number of seconds that we've spent in the ExpiredWaitingForPolicyDelay state for so far.
     ExpiredWaitingForPowerSource(u32),
-    // Expired while the policy was set to NEVER, so the timer is effectively dead until reprogrammed
+    /// Expired while the policy was set to NEVER, so the timer is effectively dead until reprogrammed
     ExpiredOrphaned,
 }
 
