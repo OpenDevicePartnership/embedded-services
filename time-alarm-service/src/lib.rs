@@ -96,7 +96,7 @@ mod time_zone_data {
             (|| -> Result<(AcpiTimeZone, AcpiDaylightSavingsTimeStatus), time_alarm_service_messages::AcpiTimeAlarmError> {
                 Ok((representation.tz.try_into()?, representation.dst.try_into()?))
             })()
-            .unwrap_or_else(|_| (AcpiTimeZone::Unknown, AcpiDaylightSavingsTimeStatus::NotObserved))
+            .unwrap_or((AcpiTimeZone::Unknown, AcpiDaylightSavingsTimeStatus::NotObserved))
         }
     }
 }
