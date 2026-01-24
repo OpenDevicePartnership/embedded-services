@@ -3,7 +3,7 @@ use core::cell::RefCell;
 use embassy_futures::select::{Either, select};
 use embassy_sync::{blocking_mutex::Mutex, signal::Signal};
 use embedded_mcu_hal::NvramStorage;
-use embedded_mcu_hal::time::Datetime;
+use embedded_mcu_hal::time::{Datetime, DatetimeClockError};
 use embedded_services::{GlobalRawMutex, error};
 
 /// Represents where in the timer lifecycle the current timer is
@@ -114,20 +114,26 @@ impl Timer {
         }
     }
 
-    pub fn start(&self, clock_state: &'static Mutex<GlobalRawMutex, RefCell<ClockState>>, active: bool) {
+    pub fn start(
+        &self,
+        clock_state: &'static Mutex<GlobalRawMutex, RefCell<ClockState>>,
+        active: bool,
+    ) -> Result<(), DatetimeClockError> {
         self.set_timer_wake_policy(
             clock_state,
             self.timer_state
                 .lock(|timer_state| timer_state.borrow().persistent_storage.get_timer_wake_policy()),
-        );
+        )?;
 
         self.set_expiration_time(
             clock_state,
             self.timer_state
                 .lock(|timer_state| timer_state.borrow().persistent_storage.get_expiration_time()),
-        );
+        )?;
 
         self.set_active(clock_state, active);
+
+        Ok(())
     }
 
     pub fn get_wake_status(&self) -> TimerStatus {
@@ -153,16 +159,18 @@ impl Timer {
         &self,
         clock_state: &'static Mutex<GlobalRawMutex, RefCell<ClockState>>,
         wake_policy: AlarmExpiredWakePolicy,
-    ) {
+    ) -> Result<(), DatetimeClockError> {
         self.timer_state.lock(|timer_state| {
             let mut timer_state = timer_state.borrow_mut();
-            timer_state.persistent_storage.set_timer_wake_policy(wake_policy);
-
             if let WakeState::ExpiredWaitingForPolicyDelay(_, _) = timer_state.wake_state {
                 timer_state.wake_state =
-                    WakeState::ExpiredWaitingForPolicyDelay(Self::get_current_datetime(clock_state), 0);
+                    WakeState::ExpiredWaitingForPolicyDelay(Self::get_current_datetime(clock_state)?, 0);
                 self.timer_signal.signal(Some(wake_policy.0));
             }
+
+            timer_state.persistent_storage.set_timer_wake_policy(wake_policy);
+
+            Ok(())
         })
     }
 
@@ -170,7 +178,7 @@ impl Timer {
         &self,
         clock_state: &'static Mutex<GlobalRawMutex, RefCell<ClockState>>,
         expiration_time: Option<Datetime>,
-    ) {
+    ) -> Result<(), DatetimeClockError> {
         self.timer_state.lock(|timer_state| {
             let mut timer_state = timer_state.borrow_mut();
 
@@ -179,19 +187,21 @@ impl Timer {
 
             match expiration_time {
                 Some(dt) => {
-                    timer_state.persistent_storage.set_expiration_time(expiration_time);
-                    timer_state.wake_state = WakeState::Armed;
-
                     // Note: If the expiration time was in the past, this will immediately trigger the timer to expire.
                     self.timer_signal.signal(Some(
                         dt.to_unix_time_seconds()
-                            .saturating_sub(Self::get_current_datetime(clock_state).to_unix_time_seconds())
+                            .saturating_sub(Self::get_current_datetime(clock_state)?.to_unix_time_seconds())
                             as u32, // The ACPI spec doesn't provide a facility to program a timer more than u32::MAX seconds in the future, so this cast is safe
                     ));
+
+                    timer_state.persistent_storage.set_expiration_time(expiration_time);
+                    timer_state.wake_state = WakeState::Armed;
                 }
                 None => self.clear_expiration_time(&mut timer_state),
             }
-        });
+
+            Ok(())
+        })
     }
 
     pub fn get_expiration_time(&self) -> Option<Datetime> {
@@ -212,25 +222,54 @@ impl Timer {
 
             if !was_active {
                 if let WakeState::ExpiredWaitingForPowerSource(seconds_already_elapsed) = timer_state.wake_state {
-                    timer_state.wake_state = WakeState::ExpiredWaitingForPolicyDelay(
-                        Self::get_current_datetime(clock_state),
-                        seconds_already_elapsed,
-                    );
-                    self.timer_signal.signal(Some(
-                        timer_state
-                            .persistent_storage
-                            .get_timer_wake_policy()
-                            .0
-                            .saturating_sub(seconds_already_elapsed),
-                    ));
+                    match Self::get_current_datetime(clock_state) {
+                        Ok(now) => {
+                            timer_state.wake_state =
+                                WakeState::ExpiredWaitingForPolicyDelay(now, seconds_already_elapsed);
+                            self.timer_signal.signal(Some(
+                                timer_state
+                                    .persistent_storage
+                                    .get_timer_wake_policy()
+                                    .0
+                                    .saturating_sub(seconds_already_elapsed),
+                            ));
+                        }
+                        Err(_) => {
+                            // This should never happen, because it means the clock is not working after we've successfully initialized (which
+                            // requires the clock to be working).
+                            // If it does, though, we don't have a way to communicate failure to the host PC at this point, so we'll just
+                            // forego the power source policy and wake the device immediately.
+                            error!(
+                                "[Time/Alarm] Failed to get current datetime when transitioning timer to active state"
+                            );
+                            timer_state.wake_state = WakeState::Armed;
+                            self.timer_signal.signal(Some(0));
+                        }
+                    }
                 }
             } else if let WakeState::ExpiredWaitingForPolicyDelay(wait_start_time, seconds_elapsed_before_wait) =
                 timer_state.wake_state
             {
-                let total_seconds_elapsed_on_policy_delay: u32 = seconds_elapsed_before_wait
-                    + (Self::get_current_datetime(clock_state)
-                        .to_unix_time_seconds()
-                        .saturating_sub(wait_start_time.to_unix_time_seconds()) as u32); // The ACPI spec expresses timeouts in terms of u32s - it's impossible to schedule a timer u32::MAX seconds in the future
+                let total_seconds_elapsed_on_policy_delay = match Self::get_current_datetime(clock_state) {
+                    Ok(now) => {
+                        seconds_elapsed_before_wait
+                            + (now
+                                .to_unix_time_seconds()
+                                .saturating_sub(wait_start_time.to_unix_time_seconds())
+                                as u32) // The ACPI spec expresses timeouts in terms of u32s - it's impossible to schedule a timer u32::MAX seconds in the future
+                    }
+                    Err(_) => {
+                        // This should never happen, because it means the clock is not working after we've successfully initialized (which
+                        // requires the clock to be working).
+                        // If it does, though, we don't have a way to communicate failure to the host PC at this point, so we'll just
+                        // pretend that the entire policy delay has elapsed.  This will trigger an immediate wake when the power source becomes active again.
+                        error!(
+                                "[Time/Alarm] Failed to get current datetime when transitioning expired timer waiting for policy delay to inactive state"
+                            );
+                        u32::MAX
+                    }
+                };
+
                 timer_state.wake_state = WakeState::ExpiredWaitingForPowerSource(total_seconds_elapsed_on_policy_delay);
                 self.timer_signal.signal(None);
             }
@@ -283,20 +322,39 @@ impl Timer {
                 }
 
                 WakeState::Armed | WakeState::ExpiredWaitingForPolicyDelay(_, _) => {
-                    let now = Self::get_current_datetime(clock_state);
-                    let expiration_time = timer_state.persistent_storage.get_expiration_time().unwrap_or_else(|| {
-                        error!("[Time/Alarm] Timer expired when no expiration time was set - this should never happen");
-                        Datetime::from_unix_time_seconds(0)
-                    });
-                    if now.to_unix_time_seconds() < expiration_time.to_unix_time_seconds() {
-                        // Time hasn't actually passed the mark yet - this can happen if we were reprogrammed with a different time right as the old timer was expiring. Reset the timer.
-                        timer_state.wake_state = WakeState::Armed;
-                        self.timer_signal.signal(Some(
-                            expiration_time
-                                .to_unix_time_seconds()
-                                .saturating_sub(now.to_unix_time_seconds()) as u32,
-                        ));
-                        return false;
+                    let expiration_time = match timer_state.persistent_storage.get_expiration_time() {
+                        Some(now) => now,
+                        None => {
+                            error!(
+                                "[Time/Alarm] Timer expired when no expiration time was set - this should never happen"
+                            );
+                            return false;
+                        }
+                    };
+
+                    match Self::get_current_datetime(clock_state) {
+                        Ok(now) => {
+                            if now.to_unix_time_seconds() < expiration_time.to_unix_time_seconds() {
+                                // Time hasn't actually passed the mark yet - this can happen if we were reprogrammed with a different time right as the old timer was expiring. Reset the timer.
+                                timer_state.wake_state = WakeState::Armed;
+                                self.timer_signal.signal(Some(
+                                    expiration_time
+                                        .to_unix_time_seconds()
+                                        .saturating_sub(now.to_unix_time_seconds())
+                                        as u32,
+                                ));
+                                return false;
+                            }
+                        }
+                        Err(_) => {
+                            // This should never happen, because it means the clock is not working after we've successfully initialized (which
+                            // requires the clock to be working).
+                            // If it does, though, we don't have a way to communicate failure to the host PC at this point, so we'll just
+                            // wake the device immediately on the assumption that the alarm has actually expired.  This gets it wrong in the case
+                            // where the timer is reprogrammed immediately as it expires, but that's an extremely rare case and we can't do better
+                            // than that if our clock is broken.
+                            error!("[Time/Alarm] Failed to get current datetime when processing expired timer");
+                        }
                     }
 
                     timer_state.timer_status.set_timer_expired(true);
@@ -334,13 +392,9 @@ impl Timer {
         self.timer_signal.signal(None);
     }
 
-    fn get_current_datetime(clock_state: &'static Mutex<GlobalRawMutex, RefCell<ClockState>>) -> Datetime {
-        clock_state.lock(|clock_state| {
-            clock_state
-                .borrow()
-                .datetime_clock
-                .get_current_datetime()
-                .expect("Datetime clock should have already been initialized before we were constructed")
-        })
+    fn get_current_datetime(
+        clock_state: &'static Mutex<GlobalRawMutex, RefCell<ClockState>>,
+    ) -> Result<Datetime, DatetimeClockError> {
+        clock_state.lock(|clock_state| clock_state.borrow().datetime_clock.get_current_datetime())
     }
 }

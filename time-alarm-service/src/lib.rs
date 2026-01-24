@@ -205,8 +205,8 @@ impl Service {
 
         // TODO [POWER_SOURCE] we need to subscribe to messages that tell us if we're on AC or DC power so we can decide which alarms to trigger, but those notifications are not yet implemented - revisit when they are.
         // TODO [POWER_SOURCE] if it's possible to learn which power source is active at init time, we should set that one active rather than defaulting to the AC timer.
-        service.timers.ac_timer.start(&service.clock_state, true);
-        service.timers.dc_timer.start(&service.clock_state, false);
+        service.timers.ac_timer.start(&service.clock_state, true)?;
+        service.timers.dc_timer.start(&service.clock_state, false)?;
 
         comms::register_endpoint(service, &service.endpoint).await?;
 
@@ -256,7 +256,8 @@ impl Service {
             // TODO [SPEC] section 9.18.7 indicates that when a timer expires, both timers have their wake policies reset,
             //      but I can't find any similar rule for the actual timer value - that seems odd to me, verify that's actually how
             //      it's supposed to work
-            self.timers
+            let _ = self
+                .timers
                 .get_timer(timer_id.get_other_timer_id())
                 .set_timer_wake_policy(&self.clock_state, AlarmExpiredWakePolicy::NEVER);
 
@@ -305,7 +306,7 @@ impl Service {
             AcpiTimeAlarmRequest::SetExpiredTimerPolicy(timer_id, timer_policy) => {
                 self.timers
                     .get_timer(timer_id)
-                    .set_timer_wake_policy(&self.clock_state, timer_policy);
+                    .set_timer_wake_policy(&self.clock_state, timer_policy)?;
                 Ok(AcpiTimeAlarmResponse::OkNoData)
             }
             AcpiTimeAlarmRequest::SetTimerValue(timer_id, timer_value) => {
@@ -324,7 +325,7 @@ impl Service {
 
                 self.timers
                     .get_timer(timer_id)
-                    .set_expiration_time(&self.clock_state, new_expiration_time);
+                    .set_expiration_time(&self.clock_state, new_expiration_time)?;
                 Ok(AcpiTimeAlarmResponse::OkNoData)
             }
             AcpiTimeAlarmRequest::GetExpiredTimerPolicy(timer_id) => Ok(AcpiTimeAlarmResponse::WakePolicy(
