@@ -41,6 +41,7 @@ defmt = [
     "thermal-service-messages/defmt",
     "battery-service-messages/defmt",
     "debug-service-messages/defmt",
+    "time-alarm-service-messages/defmt",
 ]
 
 log = ["dep:log", "embedded-services/log", "embassy-time/log"]
