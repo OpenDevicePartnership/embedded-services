@@ -53,6 +53,9 @@ embedded-services = { path = "../../embedded-service", features = ["defmt"] }
 embedded-batteries-async = { version = "0.3", features = ["defmt"] }
 bq25773 = { git = "https://github.com/OpenDevicePartnership/bq25773" }
 battery-service = { path = "../../battery-service", features = ["defmt"] }
+battery-service-messages = { path = "../../battery-service-messages", features = [
+    "defmt",
+] }
 bq40z50-rx = { version = "0.8", features = ["r5"] }
 static_cell = "2.1.0"
 embassy-embedded-hal = { version = "0.5.0", default-features = false }

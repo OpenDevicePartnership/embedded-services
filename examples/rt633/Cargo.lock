@@ -1390,6 +1390,7 @@ name = "rt633-examples"
 version = "0.1.0"
 dependencies = [
  "battery-service",
+ "battery-service-messages",
  "bq25773",
  "bq40z50-rx",
  "cortex-m",

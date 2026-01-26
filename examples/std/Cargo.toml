@@ -34,6 +34,7 @@ embedded-cfu-protocol = { git = "https://github.com/OpenDevicePartnership/embedd
 
 embedded-batteries-async = "0.3"
 battery-service = { path = "../../battery-service", features = ["log"] }
+battery-service-messages = { path = "../../battery-service-messages" }
 type-c-service = { path = "../../type-c-service", features = ["log"] }
 
 embedded-sensors-hal-async = "0.3.0"
