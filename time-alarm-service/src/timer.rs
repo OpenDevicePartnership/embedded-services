@@ -323,7 +323,7 @@ impl Timer {
 
                 WakeState::Armed | WakeState::ExpiredWaitingForPolicyDelay(_, _) => {
                     let expiration_time = match timer_state.persistent_storage.get_expiration_time() {
-                        Some(now) => now,
+                        Some(expiration_time) => expiration_time,
                         None => {
                             error!(
                                 "[Time/Alarm] Timer expired when no expiration time was set - this should never happen"

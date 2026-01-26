@@ -2366,6 +2366,7 @@ dependencies = [
  "mctp-rs",
  "num_enum",
  "thermal-service-messages",
+ "time-alarm-service-messages",
 ]
 
 [[package]]

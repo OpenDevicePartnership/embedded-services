@@ -27,6 +27,7 @@ num_enum.workspace = true
 battery-service-messages.workspace = true
 debug-service-messages.workspace = true
 thermal-service-messages.workspace = true
+time-alarm-service-messages.workspace = true
 
 [features]
 default = []
