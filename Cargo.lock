@@ -2172,6 +2172,7 @@ dependencies = [
  "defmt 0.3.100",
  "embedded-mcu-hal",
  "embedded-services",
+ "log",
  "num_enum",
  "zerocopy",
 ]

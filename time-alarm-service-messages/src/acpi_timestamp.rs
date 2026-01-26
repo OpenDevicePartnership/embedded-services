@@ -61,7 +61,7 @@ impl From<&AcpiTimestamp> for RawAcpiTimestamp {
 
 // -------------------------------------------------
 
-#[derive(Copy, Clone, Debug, PartialEq, num_enum::IntoPrimitive, num_enum::TryFromPrimitive)]
+#[derive(Clone, Copy, Debug, PartialEq, num_enum::IntoPrimitive, num_enum::TryFromPrimitive)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[repr(u8)]
 pub enum AcpiDaylightSavingsTimeStatus {
@@ -79,7 +79,7 @@ pub enum AcpiDaylightSavingsTimeStatus {
 
 // -------------------------------------------------
 
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct AcpiTimeZoneOffset {
     minutes_from_utc: i16, // minutes from UTC
@@ -133,7 +133,7 @@ impl From<AcpiTimeZone> for i16 {
 // -------------------------------------------------
 
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-#[derive(PartialEq, Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct AcpiTimestamp {
     pub datetime: Datetime,
     pub time_zone: AcpiTimeZone,

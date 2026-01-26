@@ -29,5 +29,7 @@ defmt = [
     "time-alarm-service-messages/defmt",
 ]
 
+log = ["dep:log", "embedded-services/log", "embassy-time/log"]
+
 [lints]
 workspace = true

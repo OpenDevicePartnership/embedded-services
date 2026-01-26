@@ -12,7 +12,7 @@ use embedded_services::relay::{MessageSerializationError, SerializableMessage};
 /// See ACPI Specification 6.4, Section 9.18 "Time and Alarm Device" for additional details on semantics.
 #[rustfmt::skip]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-#[derive(PartialEq, Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum AcpiTimeAlarmRequest {
     GetCapabilities,                                            // _GCP
     GetRealTime,                                                // _GRT
@@ -25,7 +25,7 @@ pub enum AcpiTimeAlarmRequest {
     GetExpiredTimerPolicy(AcpiTimerId),                         // _TIP
 }
 
-#[derive(num_enum::IntoPrimitive, num_enum::TryFromPrimitive, Copy, Clone, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, num_enum::IntoPrimitive, num_enum::TryFromPrimitive)]
 #[repr(u16)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 enum AcpiTimeAlarmRequestDiscriminant {
@@ -186,7 +186,7 @@ impl Default for AlarmExpiredWakePolicy {
 // -------------------------------------------------
 
 // Timer ID as defined in the ACPI spec.
-#[derive(Debug, Clone, Copy, PartialEq, num_enum::TryFromPrimitive, num_enum::IntoPrimitive)]
+#[derive(Clone, Copy, Debug, PartialEq, num_enum::TryFromPrimitive, num_enum::IntoPrimitive)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[repr(u32)]
 pub enum AcpiTimerId {
@@ -234,7 +234,7 @@ bitfield!(
 
 // -------------------------------------------------
 
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum AcpiTimeAlarmResponse {
     Capabilities(TimeAlarmDeviceCapabilities),
@@ -247,7 +247,7 @@ pub enum AcpiTimeAlarmResponse {
     OkNoData,
 }
 
-#[derive(Copy, Clone, PartialEq, num_enum::IntoPrimitive, num_enum::TryFromPrimitive)]
+#[derive(Copy, Clone, Debug, PartialEq, num_enum::IntoPrimitive, num_enum::TryFromPrimitive)]
 #[repr(u16)]
 enum AcpiTimeAlarmResponseDiscriminant {
     Capabilities = 1,
@@ -315,7 +315,7 @@ impl SerializableMessage for AcpiTimeAlarmResponse {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, num_enum::IntoPrimitive, num_enum::TryFromPrimitive)]
+#[derive(Clone, Copy, Debug, PartialEq, num_enum::IntoPrimitive, num_enum::TryFromPrimitive)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[repr(u16)]
 pub enum AcpiTimeAlarmError {
