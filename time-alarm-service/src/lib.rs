@@ -156,12 +156,6 @@ pub struct Service {
 }
 
 impl Service {
-    // TODO [DYN] if we want to allow taking the HAL traits as concrete types rather than as dyn references, we'll likely need to make this a macro
-    //      in order to accommodate the restriction that embassy tasks can't have generic parameters. When we do that, it may be worthwhile to
-    //      also investigate ways to take the backing storage as a slice rather than as a bunch of individual references - currently, we can't
-    //      take a slice of the array because that would be a slice of trait impls and we need dyn references here to accommodate the constraints
-    //      on embassy task implementation.
-    //
     pub async fn init(
         service_storage: &'static OnceLock<Service>,
         backing_clock: &'static mut impl DatetimeClock,
@@ -250,9 +244,6 @@ impl Service {
         let timer = self.timers.get_timer(timer_id);
         loop {
             timer.wait_until_wake(&self.clock_state).await;
-            // TODO [SPEC] section 9.18.7 indicates that when a timer expires, both timers have their wake policies reset,
-            //      but I can't find any similar rule for the actual timer value - that seems odd to me, verify that's actually how
-            //      it's supposed to work
             let _ = self
                 .timers
                 .get_timer(timer_id.get_other_timer_id())
@@ -282,16 +273,13 @@ impl Service {
                     dst_status,
                 }))
             }),
-            AcpiTimeAlarmRequest::SetRealTime(timestamp) => {
-                self.clock_state.lock(|clock_state| {
-                    let mut clock_state = clock_state.borrow_mut();
-                    clock_state.datetime_clock.set_current_datetime(&timestamp.datetime)?;
-                    clock_state.tz_data.set_data(timestamp.time_zone, timestamp.dst_status);
+            AcpiTimeAlarmRequest::SetRealTime(timestamp) => self.clock_state.lock(|clock_state| {
+                let mut clock_state = clock_state.borrow_mut();
+                clock_state.datetime_clock.set_current_datetime(&timestamp.datetime)?;
+                clock_state.tz_data.set_data(timestamp.time_zone, timestamp.dst_status);
 
-                    // TODO [SPEC] the spec is ambiguous on whether or not we should adjust any outstanding timers based on the new time - see if we can find an answer elsewhere
-                    Ok(AcpiTimeAlarmResponse::OkNoData)
-                })
-            }
+                Ok(AcpiTimeAlarmResponse::OkNoData)
+            }),
             AcpiTimeAlarmRequest::GetWakeStatus(timer_id) => {
                 let status = self.timers.get_timer(timer_id).get_wake_status();
                 Ok(AcpiTimeAlarmResponse::TimerStatus(status))
@@ -360,9 +348,6 @@ impl comms::MailboxDelegate for Service {
                 .map_err(|_| MailboxDelegateError::BufferFull)?;
             Ok(())
         } else {
-            // TODO [COMMS] right now, if pushing the message to the channel fails, the error that we return this gets
-            //              discarded by our caller and we have no opportunity to raise a failure. Fixing that probably
-            //              requires changes in the mailbox system, so we're ignoring it for now.
             Err(comms::MailboxDelegateError::InvalidData)
         }
     }
