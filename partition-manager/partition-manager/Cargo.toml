@@ -26,7 +26,7 @@ partition-manager-macros = { path = "../macros", features = [
 defmt = { workspace = true, optional = true }
 
 [features]
-default = ["esa", "bdd", "macros", "defmt"]
+default = ["esa", "bdd", "macros"]
 
 macros = ["dep:partition-manager-macros"]
 
