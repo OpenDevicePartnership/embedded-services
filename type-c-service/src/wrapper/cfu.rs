@@ -29,7 +29,8 @@ impl FwUpdateState {
     }
 }
 
-impl<'device, M: RawMutex, C: Lockable, V: FwOfferValidator> ControllerWrapper<'device, M, C, V>
+impl<'device, M: RawMutex, C: Lockable, V: FwOfferValidator, const POLICY_CHANNEL_SIZE: usize>
+    ControllerWrapper<'device, M, C, V, POLICY_CHANNEL_SIZE>
 where
     <C as Lockable>::Inner: Controller,
 {

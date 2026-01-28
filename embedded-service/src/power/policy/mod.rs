@@ -5,7 +5,7 @@ pub mod device;
 pub mod flags;
 pub mod policy;
 
-pub use policy::{init, register_device};
+pub use policy::init;
 
 use crate::power::policy::charger::ChargerError;
 

@@ -5,6 +5,7 @@ use embassy_sync::mutex::Mutex;
 
 use super::{DeviceId, Error, action};
 use crate::ipc::deferred;
+use crate::power::policy::policy::Context;
 use crate::power::policy::{ConsumerPowerCapability, ProviderPowerCapability};
 use crate::{GlobalRawMutex, intrusive_list};
 
@@ -111,7 +112,7 @@ pub struct Response {
 }
 
 /// Device struct
-pub struct Device {
+pub struct Device<const CHANNEL_SIZE: usize> {
     /// Intrusive list node
     node: intrusive_list::Node,
     /// Device ID
@@ -120,11 +121,13 @@ pub struct Device {
     state: Mutex<GlobalRawMutex, InternalState>,
     /// Command channel
     command: deferred::Channel<GlobalRawMutex, CommandData, InternalResponseData>,
+    /// Reference back to the power policy context to send messages
+    pub(crate) context_ref: &'static Context<CHANNEL_SIZE>,
 }
 
-impl Device {
+impl<const CHANNEL_SIZE: usize> Device<CHANNEL_SIZE> {
     /// Create a new device
-    pub fn new(id: DeviceId) -> Self {
+    pub fn new(id: DeviceId, context_ref: &'static Context<CHANNEL_SIZE>) -> Self {
         Self {
             node: intrusive_list::Node::uninit(),
             id,
@@ -134,6 +137,7 @@ impl Device {
                 requested_provider_capability: None,
             }),
             command: deferred::Channel::new(),
+            context_ref,
         }
     }
 
@@ -209,7 +213,9 @@ impl Device {
     }
 
     /// Try to provide access to the device actions for the given state
-    pub async fn try_device_action<S: action::Kind>(&self) -> Result<action::device::Device<'_, S>, Error> {
+    pub async fn try_device_action<S: action::Kind>(
+        &self,
+    ) -> Result<action::device::Device<'_, S, CHANNEL_SIZE>, Error> {
         let state = self.state().await.kind();
         if S::kind() != state {
             return Err(Error::InvalidState(S::kind(), state));
@@ -218,7 +224,7 @@ impl Device {
     }
 
     /// Provide access to the current device state
-    pub async fn device_action(&self) -> action::device::AnyState<'_> {
+    pub async fn device_action(&self) -> action::device::AnyState<'_, CHANNEL_SIZE> {
         match self.state().await.kind() {
             StateKind::Detached => action::device::AnyState::Detached(action::device::Device::new(self)),
             StateKind::Idle => action::device::AnyState::Idle(action::device::Device::new(self)),
@@ -233,7 +239,9 @@ impl Device {
 
     /// Try to provide access to the policy actions for the given state
     /// Implemented here for lifetime reasons
-    pub(super) async fn try_policy_action<S: action::Kind>(&self) -> Result<action::policy::Policy<'_, S>, Error> {
+    pub(super) async fn try_policy_action<S: action::Kind>(
+        &self,
+    ) -> Result<action::policy::Policy<'_, S, CHANNEL_SIZE>, Error> {
         let state = self.state().await.kind();
         if S::kind() != state {
             return Err(Error::InvalidState(S::kind(), state));
@@ -243,7 +251,7 @@ impl Device {
 
     /// Provide access to the current policy actions
     /// Implemented here for lifetime reasons
-    pub(super) async fn policy_action(&self) -> action::policy::AnyState<'_> {
+    pub(super) async fn policy_action(&self) -> action::policy::AnyState<'_, CHANNEL_SIZE> {
         match self.state().await.kind() {
             StateKind::Detached => action::policy::AnyState::Detached(action::policy::Policy::new(self)),
             StateKind::Idle => action::policy::AnyState::Idle(action::policy::Policy::new(self)),
@@ -257,7 +265,7 @@ impl Device {
     }
 
     /// Detach the device, this action is available in all states
-    pub async fn detach(&self) -> Result<action::device::Device<'_, action::Detached>, Error> {
+    pub async fn detach(&self) -> Result<action::device::Device<'_, action::Detached, CHANNEL_SIZE>, Error> {
         match self.device_action().await {
             action::device::AnyState::Detached(state) => Ok(state),
             action::device::AnyState::Idle(state) => state.detach().await,
@@ -267,20 +275,21 @@ impl Device {
     }
 }
 
-impl intrusive_list::NodeContainer for Device {
+// This must be static due to a bound on IntrusiveNode needing a static reference to Any
+impl<const CHANNEL_SIZE: usize> intrusive_list::NodeContainer for Device<CHANNEL_SIZE> {
     fn get_node(&self) -> &crate::Node {
         &self.node
     }
 }
 
 /// Trait for any container that holds a device
-pub trait DeviceContainer {
+pub trait DeviceContainer<const CHANNEL_SIZE: usize> {
     /// Get the underlying device struct
-    fn get_power_policy_device(&self) -> &Device;
+    fn get_power_policy_device(&self) -> &Device<CHANNEL_SIZE>;
 }
 
-impl DeviceContainer for Device {
-    fn get_power_policy_device(&self) -> &Device {
+impl<const CHANNEL_SIZE: usize> DeviceContainer<CHANNEL_SIZE> for Device<CHANNEL_SIZE> {
+    fn get_power_policy_device(&self) -> &Device<CHANNEL_SIZE> {
         self
     }
 }

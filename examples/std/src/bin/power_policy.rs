@@ -3,7 +3,7 @@ use embassy_sync::{blocking_mutex::raw::NoopRawMutex, once_lock::OnceLock, pubsu
 use embassy_time::{self as _, Timer};
 use embedded_services::{
     broadcaster::immediate as broadcaster,
-    power::policy::{self, ConsumerPowerCapability, PowerCapability, device, flags},
+    power::policy::{self, ConsumerPowerCapability, PowerCapability, device, flags, policy::Context},
 };
 use log::*;
 use static_cell::StaticCell;
@@ -18,14 +18,17 @@ const HIGH_POWER: PowerCapability = PowerCapability {
     current_ma: 3000,
 };
 
+const POWER_POLICY_CHANNEL_SIZE: usize = 1;
+const NUM_POWER_DEVICES: usize = 2;
+
 struct ExampleDevice {
-    device: policy::device::Device,
+    device: policy::device::Device<POWER_POLICY_CHANNEL_SIZE>,
 }
 
 impl ExampleDevice {
-    fn new(id: policy::DeviceId) -> Self {
+    fn new(id: policy::DeviceId, context_ref: &'static Context<POWER_POLICY_CHANNEL_SIZE>) -> Self {
         Self {
-            device: policy::device::Device::new(id),
+            device: policy::device::Device::new(id, context_ref),
         }
     }
 
@@ -56,8 +59,8 @@ impl ExampleDevice {
     }
 }
 
-impl policy::device::DeviceContainer for ExampleDevice {
-    fn get_power_policy_device(&self) -> &policy::device::Device {
+impl policy::device::DeviceContainer<POWER_POLICY_CHANNEL_SIZE> for ExampleDevice {
+    fn get_power_policy_device(&self) -> &policy::device::Device<POWER_POLICY_CHANNEL_SIZE> {
         &self.device
     }
 }
@@ -81,22 +84,24 @@ async fn device_task1(device: &'static ExampleDevice) {
 }
 
 #[embassy_executor::task]
-async fn run(spawner: Spawner) {
+async fn run(spawner: Spawner, service: &'static power_policy_service::PowerPolicy<POWER_POLICY_CHANNEL_SIZE>) {
     embedded_services::init().await;
+
+    spawner.must_spawn(receiver_task(service));
 
     info!("Creating device 0");
     static DEVICE0: OnceLock<ExampleDevice> = OnceLock::new();
-    let device0_mock = DEVICE0.get_or_init(|| ExampleDevice::new(policy::DeviceId(0)));
-    policy::register_device(device0_mock).unwrap();
+    let device0_mock = DEVICE0.get_or_init(|| ExampleDevice::new(policy::DeviceId(0), &service.context));
     spawner.must_spawn(device_task0(device0_mock));
     let device0 = device0_mock.device.try_device_action().await.unwrap();
 
     info!("Creating device 1");
     static DEVICE1: OnceLock<ExampleDevice> = OnceLock::new();
-    let device1_mock = DEVICE1.get_or_init(|| ExampleDevice::new(policy::DeviceId(1)));
-    policy::register_device(device1_mock).unwrap();
+    let device1_mock = DEVICE1.get_or_init(|| ExampleDevice::new(policy::DeviceId(1), &service.context));
     spawner.must_spawn(device_task1(device1_mock));
     let device1 = device1_mock.device.try_device_action().await.unwrap();
+
+    spawner.must_spawn(power_policy_service_task(service, [device0_mock, device1_mock]));
 
     // Plug in device 0, should become current consumer
     info!("Connecting device 0");
@@ -156,7 +161,7 @@ async fn run(spawner: Spawner) {
     Timer::after_millis(250).await;
     info!(
         "Total provider power: {} mW",
-        policy::policy::compute_total_provider_power_mw().await
+        service.context.compute_total_provider_power_mw().await
     );
 
     info!("Device 1 attach and requesting provider");
@@ -169,7 +174,7 @@ async fn run(spawner: Spawner) {
     Timer::after_millis(250).await;
     info!(
         "Total provider power: {} mW",
-        policy::policy::compute_total_provider_power_mw().await
+        service.context.compute_total_provider_power_mw().await
     );
 
     // Provider upgrade should fail because device 0 is already connected
@@ -182,7 +187,7 @@ async fn run(spawner: Spawner) {
     Timer::after_millis(250).await;
     info!(
         "Total provider power: {} mW",
-        policy::policy::compute_total_provider_power_mw().await
+        service.context.compute_total_provider_power_mw().await
     );
 
     // Disconnect device 0
@@ -192,7 +197,7 @@ async fn run(spawner: Spawner) {
     Timer::after_millis(250).await;
     info!(
         "Total provider power: {} mW",
-        policy::policy::compute_total_provider_power_mw().await
+        service.context.compute_total_provider_power_mw().await
     );
 
     // Provider upgrade should succeed now
@@ -205,12 +210,12 @@ async fn run(spawner: Spawner) {
     Timer::after_millis(250).await;
     info!(
         "Total provider power: {} mW",
-        policy::policy::compute_total_provider_power_mw().await
+        service.context.compute_total_provider_power_mw().await
     );
 }
 
 #[embassy_executor::task]
-async fn receiver_task() {
+async fn receiver_task(service: &'static power_policy_service::PowerPolicy<POWER_POLICY_CHANNEL_SIZE>) {
     static CHANNEL: StaticCell<PubSubChannel<NoopRawMutex, policy::CommsMessage, 4, 1, 0>> = StaticCell::new();
     let channel = CHANNEL.init(PubSubChannel::new());
 
@@ -220,7 +225,7 @@ async fn receiver_task() {
     static RECEIVER: StaticCell<broadcaster::Receiver<'static, policy::CommsMessage>> = StaticCell::new();
     let receiver = RECEIVER.init(broadcaster::Receiver::new(publisher));
 
-    policy::policy::register_message_receiver(receiver).unwrap();
+    service.context.register_message_receiver(receiver).unwrap();
 
     loop {
         match subscriber.next_message().await {
@@ -235,8 +240,11 @@ async fn receiver_task() {
 }
 
 #[embassy_executor::task]
-async fn power_policy_task(config: power_policy_service::config::Config) {
-    power_policy_service::task::task(config)
+async fn power_policy_service_task(
+    service: &'static power_policy_service::PowerPolicy<POWER_POLICY_CHANNEL_SIZE>,
+    devices: [&'static ExampleDevice; NUM_POWER_DEVICES],
+) {
+    power_policy_service::task::task(service, Some(devices), None::<[&std_examples::type_c::DummyCharger; 0]>)
         .await
         .expect("Failed to start power policy service task");
 }
@@ -246,9 +254,13 @@ fn main() {
 
     static EXECUTOR: StaticCell<Executor> = StaticCell::new();
     let executor = EXECUTOR.init(Executor::new());
+
+    static SERVICE: StaticCell<power_policy_service::PowerPolicy<POWER_POLICY_CHANNEL_SIZE>> = StaticCell::new();
+    let service = SERVICE.init(power_policy_service::PowerPolicy::new(
+        power_policy_service::config::Config::default(),
+    ));
+
     executor.run(|spawner| {
-        spawner.must_spawn(power_policy_task(power_policy_service::config::Config::default()));
-        spawner.must_spawn(run(spawner));
-        spawner.must_spawn(receiver_task());
+        spawner.must_spawn(run(spawner, service));
     });
 }

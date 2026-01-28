@@ -18,6 +18,8 @@ use embedded_usb_pd::{type_c::ConnectionState, ucsi::lpm};
 use log::{debug, info, trace};
 use std::cell::Cell;
 
+const POWER_POLICY_CHANNEL_SIZE: usize = 1;
+
 pub struct ControllerState {
     events: Signal<GlobalRawMutex, PortEvent>,
     status: Mutex<GlobalRawMutex, PortStatus>,
@@ -336,5 +338,10 @@ impl type_c_service::wrapper::FwOfferValidator for Validator {
     }
 }
 
-pub type Wrapper<'a> =
-    type_c_service::wrapper::ControllerWrapper<'a, GlobalRawMutex, Mutex<GlobalRawMutex, Controller<'a>>, Validator>;
+pub type Wrapper<'a> = type_c_service::wrapper::ControllerWrapper<
+    'a,
+    GlobalRawMutex,
+    Mutex<GlobalRawMutex, Controller<'a>>,
+    Validator,
+    POWER_POLICY_CHANNEL_SIZE,
+>;

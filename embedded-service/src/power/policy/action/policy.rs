@@ -9,24 +9,24 @@ use crate::{error, info};
 const DEFAULT_TIMEOUT: Duration = Duration::from_millis(5000);
 
 /// Policy state machine control
-pub struct Policy<'a, S: Kind> {
-    device: &'a device::Device,
+pub struct Policy<'a, S: Kind, const N: usize> {
+    device: &'a device::Device<N>,
     _state: core::marker::PhantomData<S>,
 }
 
 /// Enum to contain any state
-pub enum AnyState<'a> {
+pub enum AnyState<'a, const N: usize> {
     /// Detached
-    Detached(Policy<'a, Detached>),
+    Detached(Policy<'a, Detached, N>),
     /// Idle
-    Idle(Policy<'a, Idle>),
+    Idle(Policy<'a, Idle, N>),
     /// Connected Consumer
-    ConnectedConsumer(Policy<'a, ConnectedConsumer>),
+    ConnectedConsumer(Policy<'a, ConnectedConsumer, N>),
     /// Connected Provider
-    ConnectedProvider(Policy<'a, ConnectedProvider>),
+    ConnectedProvider(Policy<'a, ConnectedProvider, N>),
 }
 
-impl AnyState<'_> {
+impl<const N: usize> AnyState<'_, N> {
     /// Return the kind of the contained state
     pub fn kind(&self) -> StateKind {
         match self {
@@ -38,9 +38,9 @@ impl AnyState<'_> {
     }
 }
 
-impl<'a, S: Kind> Policy<'a, S> {
+impl<'a, S: Kind, const N: usize> Policy<'a, S, N> {
     /// Create a new state machine
-    pub(crate) fn new(device: &'a device::Device) -> Self {
+    pub(crate) fn new(device: &'a device::Device<N>) -> Self {
         Self {
             device,
             _state: core::marker::PhantomData,
@@ -97,14 +97,14 @@ impl<'a, S: Kind> Policy<'a, S> {
 }
 
 // The policy can do nothing when no device is attached
-impl Policy<'_, Detached> {}
+impl<const N: usize> Policy<'_, Detached, N> {}
 
-impl<'a> Policy<'a, Idle> {
+impl<'a, const N: usize> Policy<'a, Idle, N> {
     /// Connect this device as a consumer
     pub async fn connect_as_consumer_no_timeout(
         self,
         capability: ConsumerPowerCapability,
-    ) -> Result<Policy<'a, ConnectedConsumer>, Error> {
+    ) -> Result<Policy<'a, ConnectedConsumer, N>, Error> {
         info!("Device {} connecting as consumer", self.device.id().0);
 
         self.device
@@ -122,7 +122,7 @@ impl<'a> Policy<'a, Idle> {
     pub async fn connect_consumer(
         self,
         capability: ConsumerPowerCapability,
-    ) -> Result<Policy<'a, ConnectedConsumer>, Error> {
+    ) -> Result<Policy<'a, ConnectedConsumer, N>, Error> {
         match with_timeout(DEFAULT_TIMEOUT, self.connect_as_consumer_no_timeout(capability)).await {
             Ok(r) => r,
             Err(TimeoutError) => Err(Error::Timeout),
@@ -133,7 +133,7 @@ impl<'a> Policy<'a, Idle> {
     pub async fn connect_provider_no_timeout(
         self,
         capability: ProviderPowerCapability,
-    ) -> Result<Policy<'a, ConnectedProvider>, Error> {
+    ) -> Result<Policy<'a, ConnectedProvider, N>, Error> {
         self.connect_as_provider_internal_no_timeout(capability)
             .await
             .map(|_| Policy::new(self.device))
@@ -143,30 +143,30 @@ impl<'a> Policy<'a, Idle> {
     pub async fn connect_provider(
         self,
         capability: ProviderPowerCapability,
-    ) -> Result<Policy<'a, ConnectedProvider>, Error> {
+    ) -> Result<Policy<'a, ConnectedProvider, N>, Error> {
         self.connect_provider_internal(capability)
             .await
             .map(|_| Policy::new(self.device))
     }
 }
 
-impl<'a> Policy<'a, ConnectedConsumer> {
+impl<'a, const N: usize> Policy<'a, ConnectedConsumer, N> {
     /// Disconnect this device
-    pub async fn disconnect_no_timeout(self) -> Result<Policy<'a, Idle>, Error> {
+    pub async fn disconnect_no_timeout(self) -> Result<Policy<'a, Idle, N>, Error> {
         self.disconnect_internal_no_timeout()
             .await
             .map(|_| Policy::new(self.device))
     }
 
     /// Disconnect this device
-    pub async fn disconnect(self) -> Result<Policy<'a, Idle>, Error> {
+    pub async fn disconnect(self) -> Result<Policy<'a, Idle, N>, Error> {
         self.disconnect_internal().await.map(|_| Policy::new(self.device))
     }
 }
 
-impl<'a> Policy<'a, ConnectedProvider> {
+impl<'a, const N: usize> Policy<'a, ConnectedProvider, N> {
     /// Disconnect this device
-    pub async fn disconnect_no_timeout(self) -> Result<Policy<'a, Idle>, Error> {
+    pub async fn disconnect_no_timeout(self) -> Result<Policy<'a, Idle, N>, Error> {
         if let Err(e) = self.disconnect_internal_no_timeout().await {
             error!("Error disconnecting device {}: {:?}", self.device.id().0, e);
             return Err(e);
@@ -175,7 +175,7 @@ impl<'a> Policy<'a, ConnectedProvider> {
     }
 
     /// Disconnect this device
-    pub async fn disconnect(self) -> Result<Policy<'a, Idle>, Error> {
+    pub async fn disconnect(self) -> Result<Policy<'a, Idle, N>, Error> {
         match with_timeout(DEFAULT_TIMEOUT, self.disconnect_no_timeout()).await {
             Ok(r) => r,
             Err(TimeoutError) => Err(Error::Timeout),
@@ -186,7 +186,7 @@ impl<'a> Policy<'a, ConnectedProvider> {
     pub async fn connect_as_consumer_no_timeout(
         self,
         capability: ConsumerPowerCapability,
-    ) -> Result<Policy<'a, ConnectedConsumer>, Error> {
+    ) -> Result<Policy<'a, ConnectedConsumer, N>, Error> {
         info!("Device {} connecting as consumer", self.device.id().0);
 
         self.device
@@ -204,7 +204,7 @@ impl<'a> Policy<'a, ConnectedProvider> {
     pub async fn connect_consumer(
         self,
         capability: ConsumerPowerCapability,
-    ) -> Result<Policy<'a, ConnectedConsumer>, Error> {
+    ) -> Result<Policy<'a, ConnectedConsumer, N>, Error> {
         match with_timeout(DEFAULT_TIMEOUT, self.connect_as_consumer_no_timeout(capability)).await {
             Ok(r) => r,
             Err(TimeoutError) => Err(Error::Timeout),
@@ -215,7 +215,7 @@ impl<'a> Policy<'a, ConnectedProvider> {
     pub async fn connect_provider_no_timeout(
         &self,
         capability: ProviderPowerCapability,
-    ) -> Result<Policy<'a, ConnectedProvider>, Error> {
+    ) -> Result<Policy<'a, ConnectedProvider, N>, Error> {
         self.connect_as_provider_internal_no_timeout(capability)
             .await
             .map(|_| Policy::new(self.device))
@@ -225,7 +225,7 @@ impl<'a> Policy<'a, ConnectedProvider> {
     pub async fn connect_provider(
         &self,
         capability: ProviderPowerCapability,
-    ) -> Result<Policy<'a, ConnectedProvider>, Error> {
+    ) -> Result<Policy<'a, ConnectedProvider, N>, Error> {
         self.connect_provider_internal(capability)
             .await
             .map(|_| Policy::new(self.device))

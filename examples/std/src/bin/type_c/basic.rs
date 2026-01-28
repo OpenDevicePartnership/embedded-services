@@ -1,6 +1,7 @@
 use embassy_executor::{Executor, Spawner};
 use embassy_sync::once_lock::OnceLock;
 use embassy_time::Timer;
+use embedded_services::power::policy::*;
 use embedded_services::type_c::{Cached, ControllerId, controller};
 use embedded_services::{IntrusiveList, power};
 use embedded_usb_pd::ucsi::lpm;
@@ -12,6 +13,7 @@ const CONTROLLER0_ID: ControllerId = ControllerId(0);
 const PORT0_ID: GlobalPortId = GlobalPortId(0);
 const PORT1_ID: GlobalPortId = GlobalPortId(1);
 const POWER0_ID: power::policy::DeviceId = power::policy::DeviceId(0);
+const POWER_POLICY_CHANNEL_SIZE: usize = 1;
 
 mod test_controller {
     use embedded_services::type_c::controller::{ControllerStatus, PortStatus};
@@ -21,7 +23,7 @@ mod test_controller {
 
     pub struct Controller<'a> {
         pub controller: controller::Device<'a>,
-        pub power_policy: power::policy::device::Device,
+        pub power_policy: power::policy::device::Device<POWER_POLICY_CHANNEL_SIZE>,
     }
 
     impl controller::DeviceContainer for Controller<'_> {
@@ -30,17 +32,22 @@ mod test_controller {
         }
     }
 
-    impl power::policy::device::DeviceContainer for Controller<'_> {
-        fn get_power_policy_device(&self) -> &power::policy::device::Device {
+    impl power::policy::device::DeviceContainer<POWER_POLICY_CHANNEL_SIZE> for Controller<'_> {
+        fn get_power_policy_device(&self) -> &power::policy::device::Device<POWER_POLICY_CHANNEL_SIZE> {
             &self.power_policy
         }
     }
 
     impl<'a> Controller<'a> {
-        pub fn new(id: ControllerId, power_id: power::policy::DeviceId, ports: &'a [GlobalPortId]) -> Self {
+        pub fn new(
+            id: ControllerId,
+            power_id: power::policy::DeviceId,
+            ports: &'a [GlobalPortId],
+            power_context: &'static crate::power::policy::policy::Context<POWER_POLICY_CHANNEL_SIZE>,
+        ) -> Self {
             Self {
                 controller: controller::Device::new(id, ports),
-                power_policy: power::policy::device::Device::new(power_id),
+                power_policy: power::policy::device::Device::new(power_id, power_context),
             }
         }
 
@@ -124,12 +131,16 @@ mod test_controller {
 }
 
 #[embassy_executor::task]
-async fn controller_task(controller_list: &'static IntrusiveList) {
+async fn controller_task(
+    controller_list: &'static IntrusiveList,
+    power_context: &'static policy::Context<POWER_POLICY_CHANNEL_SIZE>,
+) {
     static CONTROLLER: OnceLock<test_controller::Controller> = OnceLock::new();
 
     static PORTS: [GlobalPortId; 2] = [PORT0_ID, PORT1_ID];
 
-    let controller = CONTROLLER.get_or_init(|| test_controller::Controller::new(CONTROLLER0_ID, POWER0_ID, &PORTS));
+    let controller =
+        CONTROLLER.get_or_init(|| test_controller::Controller::new(CONTROLLER0_ID, POWER0_ID, &PORTS, power_context));
     controller::register_controller(controller_list, controller).unwrap();
 
     loop {
@@ -141,12 +152,14 @@ async fn controller_task(controller_list: &'static IntrusiveList) {
 async fn task(spawner: Spawner) {
     embedded_services::init().await;
 
+    static POWER_CONTEXT: StaticCell<policy::Context<POWER_POLICY_CHANNEL_SIZE>> = StaticCell::new();
     static CONTROLLER_LIST: StaticCell<IntrusiveList> = StaticCell::new();
 
+    let power_context = POWER_CONTEXT.init(policy::Context::new());
     let controller_list = CONTROLLER_LIST.init(IntrusiveList::new());
 
     info!("Starting controller task");
-    spawner.must_spawn(controller_task(controller_list));
+    spawner.must_spawn(controller_task(controller_list, power_context));
     // Wait for controller to be registered
     Timer::after_secs(1).await;
 

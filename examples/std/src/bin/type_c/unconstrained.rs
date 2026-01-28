@@ -35,6 +35,8 @@ const CFU2_ID: u8 = 0x02;
 
 const DELAY_MS: u64 = 1000;
 
+const POLICY_CHANNEL_SIZE: usize = 1;
+
 #[embassy_executor::task(pool_size = 3)]
 async fn controller_task(wrapper: &'static mock_controller::Wrapper<'static>) {
     loop {
@@ -98,10 +100,14 @@ async fn task(state: [&'static mock_controller::ControllerState; NUM_PD_CONTROLL
 }
 
 #[embassy_executor::task]
-async fn power_policy_service_task() {
-    power_policy_service::task::task(Default::default())
-        .await
-        .expect("Failed to start power policy service task");
+async fn power_policy_service_task(policy: &'static power_policy_service::PowerPolicy<POLICY_CHANNEL_SIZE>) {
+    power_policy_service::task::task(
+        policy,
+        None::<[&std_examples::type_c::DummyPowerDevice<POLICY_CHANNEL_SIZE>; 0]>,
+        None::<[&std_examples::type_c::DummyCharger; 0]>,
+    )
+    .await
+    .expect("Failed to start power policy service task");
 }
 
 #[embassy_executor::task]
@@ -109,6 +115,7 @@ async fn service_task(
     controller_context: &'static Context,
     controllers: &'static IntrusiveList,
     wrappers: [&'static Wrapper<'static>; NUM_PD_CONTROLLERS],
+    power_policy_context: &'static embedded_services::power::policy::policy::Context<POLICY_CHANNEL_SIZE>,
 ) -> ! {
     info!("Starting type-c task");
 
@@ -132,7 +139,7 @@ async fn service_task(
     static SERVICE: StaticCell<Service> = StaticCell::new();
     let service = SERVICE.init(service);
 
-    type_c_service::task::task(service, wrappers).await;
+    type_c_service::task::task(service, wrappers, power_policy_context).await;
     unreachable!()
 }
 
@@ -147,9 +154,20 @@ fn main() {
     static CONTROLLER_LIST: StaticCell<IntrusiveList> = StaticCell::new();
     let controller_list = CONTROLLER_LIST.init(IntrusiveList::new());
 
-    static STORAGE: StaticCell<Storage<1, GlobalRawMutex>> = StaticCell::new();
-    let storage = STORAGE.init(Storage::new(context, CONTROLLER0_ID, CFU0_ID, [(PORT0_ID, POWER0_ID)]));
-    static REFERENCED: StaticCell<ReferencedStorage<1, GlobalRawMutex>> = StaticCell::new();
+    static POWER_POLICY_SERVICE: StaticCell<power_policy_service::PowerPolicy<POLICY_CHANNEL_SIZE>> = StaticCell::new();
+    let power_service = POWER_POLICY_SERVICE.init(power_policy_service::PowerPolicy::new(
+        power_policy_service::Config::default(),
+    ));
+
+    static STORAGE: StaticCell<Storage<1, GlobalRawMutex, POLICY_CHANNEL_SIZE>> = StaticCell::new();
+    let storage = STORAGE.init(Storage::new(
+        context,
+        CONTROLLER0_ID,
+        CFU0_ID,
+        [(PORT0_ID, POWER0_ID)],
+        &power_service.context,
+    ));
+    static REFERENCED: StaticCell<ReferencedStorage<1, GlobalRawMutex, POLICY_CHANNEL_SIZE>> = StaticCell::new();
     let referenced = REFERENCED.init(
         storage
             .create_referenced()
@@ -171,9 +189,15 @@ fn main() {
         .expect("Failed to create wrapper"),
     );
 
-    static STORAGE1: StaticCell<Storage<1, GlobalRawMutex>> = StaticCell::new();
-    let storage1 = STORAGE1.init(Storage::new(context, CONTROLLER1_ID, CFU1_ID, [(PORT1_ID, POWER1_ID)]));
-    static REFERENCED1: StaticCell<ReferencedStorage<1, GlobalRawMutex>> = StaticCell::new();
+    static STORAGE1: StaticCell<Storage<1, GlobalRawMutex, POLICY_CHANNEL_SIZE>> = StaticCell::new();
+    let storage1 = STORAGE1.init(Storage::new(
+        context,
+        CONTROLLER1_ID,
+        CFU1_ID,
+        [(PORT1_ID, POWER1_ID)],
+        &power_service.context,
+    ));
+    static REFERENCED1: StaticCell<ReferencedStorage<1, GlobalRawMutex, POLICY_CHANNEL_SIZE>> = StaticCell::new();
     let referenced1 = REFERENCED1.init(
         storage1
             .create_referenced()
@@ -195,9 +219,15 @@ fn main() {
         .expect("Failed to create wrapper"),
     );
 
-    static STORAGE2: StaticCell<Storage<1, GlobalRawMutex>> = StaticCell::new();
-    let storage2 = STORAGE2.init(Storage::new(context, CONTROLLER2_ID, CFU2_ID, [(PORT2_ID, POWER2_ID)]));
-    static REFERENCED2: StaticCell<ReferencedStorage<1, GlobalRawMutex>> = StaticCell::new();
+    static STORAGE2: StaticCell<Storage<1, GlobalRawMutex, POLICY_CHANNEL_SIZE>> = StaticCell::new();
+    let storage2 = STORAGE2.init(Storage::new(
+        context,
+        CONTROLLER2_ID,
+        CFU2_ID,
+        [(PORT2_ID, POWER2_ID)],
+        &power_service.context,
+    ));
+    static REFERENCED2: StaticCell<ReferencedStorage<1, GlobalRawMutex, POLICY_CHANNEL_SIZE>> = StaticCell::new();
     let referenced2 = REFERENCED2.init(
         storage2
             .create_referenced()
@@ -220,8 +250,13 @@ fn main() {
     );
 
     executor.run(|spawner| {
-        spawner.must_spawn(power_policy_service_task());
-        spawner.must_spawn(service_task(context, controller_list, [wrapper0, wrapper1, wrapper2]));
+        spawner.must_spawn(power_policy_service_task(power_service));
+        spawner.must_spawn(service_task(
+            context,
+            controller_list,
+            [wrapper0, wrapper1, wrapper2],
+            &power_service.context,
+        ));
         spawner.must_spawn(task([state0, state1, state2]));
         info!("Starting controller tasks");
         spawner.must_spawn(controller_task(wrapper0));

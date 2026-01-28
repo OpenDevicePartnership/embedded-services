@@ -31,6 +31,8 @@ const POWER1_ID: policy::DeviceId = policy::DeviceId(1);
 const CFU0_ID: u8 = 0x00;
 const CFU1_ID: u8 = 0x01;
 
+const POLICY_CHANNEL_SIZE: usize = 1;
+
 #[embassy_executor::task]
 async fn opm_task(context: &'static Context, state: [&'static mock_controller::ControllerState; NUM_PD_CONTROLLERS]) {
     const CAPABILITY: PowerCapability = PowerCapability {
@@ -171,10 +173,14 @@ async fn wrapper_task(wrapper: &'static mock_controller::Wrapper<'static>) {
 }
 
 #[embassy_executor::task]
-async fn power_policy_service_task() {
-    power_policy_service::task::task(Default::default())
-        .await
-        .expect("Failed to start power policy service task");
+async fn power_policy_service_task(policy: &'static power_policy_service::PowerPolicy<POLICY_CHANNEL_SIZE>) {
+    power_policy_service::task::task(
+        policy,
+        None::<[&std_examples::type_c::DummyPowerDevice<POLICY_CHANNEL_SIZE>; 0]>,
+        None::<[&std_examples::type_c::DummyCharger; 0]>,
+    )
+    .await
+    .expect("Failed to start power policy service task");
 }
 
 #[embassy_executor::task]
@@ -183,6 +189,7 @@ async fn service_task(
     controller_context: &'static Context,
     controllers: &'static IntrusiveList,
     wrappers: [&'static Wrapper<'static>; NUM_PD_CONTROLLERS],
+    power_policy_context: &'static embedded_services::power::policy::policy::Context<POLICY_CHANNEL_SIZE>,
 ) -> ! {
     info!("Starting type-c task");
 
@@ -207,7 +214,7 @@ async fn service_task(
     static SERVICE: StaticCell<Service> = StaticCell::new();
     let service = SERVICE.init(service);
 
-    type_c_service::task::task(service, wrappers).await;
+    type_c_service::task::task(service, wrappers, power_policy_context).await;
     unreachable!()
 }
 
@@ -222,9 +229,20 @@ async fn type_c_service_task(spawner: Spawner) {
     static CONTEXT: StaticCell<embedded_services::type_c::controller::Context> = StaticCell::new();
     let context = CONTEXT.init(embedded_services::type_c::controller::Context::new());
 
-    static STORAGE0: StaticCell<Storage<1, GlobalRawMutex>> = StaticCell::new();
-    let storage0 = STORAGE0.init(Storage::new(context, CONTROLLER0_ID, CFU0_ID, [(PORT0_ID, POWER0_ID)]));
-    static REFERENCED0: StaticCell<ReferencedStorage<1, GlobalRawMutex>> = StaticCell::new();
+    static POWER_POLICY_SERVICE: StaticCell<power_policy_service::PowerPolicy<POLICY_CHANNEL_SIZE>> = StaticCell::new();
+    let power_service = POWER_POLICY_SERVICE.init(power_policy_service::PowerPolicy::new(
+        power_policy_service::Config::default(),
+    ));
+
+    static STORAGE0: StaticCell<Storage<1, GlobalRawMutex, POLICY_CHANNEL_SIZE>> = StaticCell::new();
+    let storage0 = STORAGE0.init(Storage::new(
+        context,
+        CONTROLLER0_ID,
+        CFU0_ID,
+        [(PORT0_ID, POWER0_ID)],
+        &power_service.context,
+    ));
+    static REFERENCED0: StaticCell<ReferencedStorage<1, GlobalRawMutex, POLICY_CHANNEL_SIZE>> = StaticCell::new();
     let referenced0 = REFERENCED0.init(
         storage0
             .create_referenced()
@@ -241,9 +259,15 @@ async fn type_c_service_task(spawner: Spawner) {
             .expect("Failed to create wrapper"),
     );
 
-    static STORAGE1: StaticCell<Storage<1, GlobalRawMutex>> = StaticCell::new();
-    let storage1 = STORAGE1.init(Storage::new(context, CONTROLLER1_ID, CFU1_ID, [(PORT1_ID, POWER1_ID)]));
-    static REFERENCED1: StaticCell<ReferencedStorage<1, GlobalRawMutex>> = StaticCell::new();
+    static STORAGE1: StaticCell<Storage<1, GlobalRawMutex, POLICY_CHANNEL_SIZE>> = StaticCell::new();
+    let storage1 = STORAGE1.init(Storage::new(
+        context,
+        CONTROLLER1_ID,
+        CFU1_ID,
+        [(PORT1_ID, POWER1_ID)],
+        &power_service.context,
+    ));
+    static REFERENCED1: StaticCell<ReferencedStorage<1, GlobalRawMutex, POLICY_CHANNEL_SIZE>> = StaticCell::new();
     let referenced1 = REFERENCED1.init(
         storage1
             .create_referenced()
@@ -260,7 +284,7 @@ async fn type_c_service_task(spawner: Spawner) {
             .expect("Failed to create wrapper"),
     );
 
-    spawner.must_spawn(power_policy_service_task());
+    spawner.must_spawn(power_policy_service_task(power_service));
     spawner.must_spawn(service_task(
         Config {
             ucsi_capabilities: UcsiCapabilities {
@@ -289,6 +313,7 @@ async fn type_c_service_task(spawner: Spawner) {
         context,
         controller_list,
         [wrapper0, wrapper1],
+        &power_service.context,
     ));
     spawner.must_spawn(wrapper_task(wrapper0));
     spawner.must_spawn(wrapper_task(wrapper1));

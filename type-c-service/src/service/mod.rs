@@ -252,8 +252,11 @@ impl<'a> Service<'a> {
     }
 
     /// Register the Type-C service with the power policy service
-    pub fn register_comms(&'static self) -> Result<(), intrusive_list::Error> {
-        power_policy::policy::register_message_receiver(&self.power_policy_event_publisher)
+    pub fn register_comms<const POLICY_CHANNEL_SIZE: usize>(
+        &'static self,
+        power_policy_context: &power_policy::policy::Context<POLICY_CHANNEL_SIZE>,
+    ) -> Result<(), intrusive_list::Error> {
+        power_policy_context.register_message_receiver(&self.power_policy_event_publisher)
     }
 
     pub(crate) fn controllers(&self) -> &'a intrusive_list::IntrusiveList {
