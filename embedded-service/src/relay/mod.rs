@@ -204,8 +204,7 @@ pub mod mctp {
             fn serialize<M: MctpMedium>(self, buffer: &mut [u8]) -> MctpPacketResult<usize, M> {
                 match self {
                     $(
-                        HostRequest::$service_name(request) => request
-                            .serialize(buffer)
+                        HostRequest::$service_name(request) => SerializableMessage::serialize(request, buffer)
                             .map_err(|_| mctp_rs::MctpPacketError::SerializeError(concat!("Failed to serialize ", stringify!($service_name), " request"))),
                     )+
                 }
@@ -215,7 +214,7 @@ pub mod mctp {
                 Ok(match header.service {
                     $(
                         OdpService::$service_name => Self::$service_name(
-                            <$request_type>::deserialize(header.message_id, buffer)
+                            <$request_type as SerializableMessage>::deserialize(header.message_id, buffer)
                                 .map_err(|_| MctpPacketError::CommandParseError(concat!("Could not parse ", stringify!($service_name), " request")))?,
                         ),
                     )+
