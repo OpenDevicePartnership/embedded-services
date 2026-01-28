@@ -1,3 +1,21 @@
+//! Pico-de-gallo battery example
+//!
+//! Runs the ODP battery service in a std environment, using the [pico-de-gallo](https://github.com/OpenDevicePartnership/pico-de-gallo)
+//! as a sensor bridge to a [Texas Instruments BQ40Z50-R5 battery fuel gauge EVK](https://github.com/OpenDevicePartnership/bq40z50).
+//!
+//! The hardware setup should be as follows:
+//!
+//!      ___________            ___________             ____________
+//!     |           |          |   pico-   | <--SDA--> | BQ40Z50-R5 |
+//!     |  Host PC  | <-USB--> |  de-gallo | <--SCL--> | Fuel Gauge |
+//!     |___________|          |___________| <--GND--> |____________|
+//!
+//! The host PC running the battery-service should be connected via USB to the pico-de-gallo. The BQ40Z50-R5 EVK should be connected
+//! to the pico-de-gallo's I2C lines (don't forget GND!). The BQ40Z50-R5 EVK should be connected to the appropriate power supply and
+//! battery cells, as outlined in its datasheet.
+//!
+//! The example can be run simply by typing `cargo run --bin battery`
+
 use battery_service as bs;
 use bq40z50_rx::{BQ40Z50Error, Bq40z50R5};
 use embedded_batteries_async::smart_battery::{BatteryModeFields, SmartBattery};
