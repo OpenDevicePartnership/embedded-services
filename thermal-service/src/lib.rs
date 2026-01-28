@@ -80,7 +80,10 @@ pub async fn init() -> Result<(), Error> {
 
 /// Used to send messages to other services from the Thermal service,
 /// such as notifying the Host of thresholds crossed or the Power service if CRT TEMP is reached.
-pub async fn send_service_msg(to: comms::EndpointID, data: &impl embedded_services::Any) -> Result<(), Error> {
+pub async fn send_service_msg(
+    to: comms::EndpointID,
+    data: &(impl embedded_services::Any + Send + Sync),
+) -> Result<(), Error> {
     // TODO: When this gets updated to return error, handle retrying send on failure
     SERVICE.get().await.endpoint.send(to, data).await.map_err(|_| Error)?;
     Ok(())

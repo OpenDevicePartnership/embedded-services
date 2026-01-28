@@ -237,3 +237,28 @@ jobs:
         working-directory: ${{ matrix.example_directory }}
         run: |
           cargo clippy --locked
+
+  check-pico-de-gallo-examples:
+    runs-on: ubuntu-latest
+    # we use a matrix here just because env can't be used in job names
+    # https://docs.github.com/en/actions/learn-github-actions/contexts#context-availability
+    strategy:
+      fail-fast: false
+      matrix:
+        example_directory: ["examples/pico-de-gallo"]
+    name: ubuntu / check-examples
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - name: Install stable
+        uses: dtolnay/rust-toolchain@stable
+      - name: Download Cargo.lock files
+        if: ${{ inputs.download-lockfiles }}
+        uses: actions/download-artifact@v4
+        with:
+          name: updated-lock-files
+      - name: cargo clippy
+        working-directory: ${{ matrix.example_directory }}
+        run: |
+          cargo clippy --locked

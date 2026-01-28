@@ -14,6 +14,7 @@
         "Cargo.toml",
         "examples/rt633/Cargo.toml",
         "examples/rt685s-evk/Cargo.toml",
-        "examples/std/Cargo.toml"
+        "examples/std/Cargo.toml",
+        "examples/pico-de-gallo/Cargo.toml"
     ]
 }

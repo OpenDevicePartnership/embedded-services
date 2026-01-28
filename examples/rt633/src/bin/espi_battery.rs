@@ -7,17 +7,13 @@ use battery_service::context::BatteryEvent;
 use core::slice::{self};
 use embassy_imxrt::dma::NoDma;
 use embassy_time::{Duration, Timer};
-use embedded_batteries_async::charger::MilliAmps;
-use embedded_batteries_async::smart_battery::{
-    BatteryModeFields, BatteryStatusFields, CapacityModeSignedValue, CapacityModeValue, Cycles, DeciKelvin,
-    ManufactureDate, MilliAmpsSigned, MilliVolts, Minutes, Percent, SmartBattery, SpecificationInfoFields,
-};
+use embedded_batteries_async::smart_battery::SmartBattery;
 use embedded_services::{error, info};
 
 use battery_service::controller::{Controller, ControllerEvent};
 use battery_service::device::{Device, DeviceId, DynamicBatteryMsgs, StaticBatteryMsgs};
 use battery_service::wrapper::Wrapper;
-use bq40z50_rx::Bq40z50;
+use bq40z50_rx::Bq40z50R5;
 use embassy_embedded_hal::shared_bus::asynch::i2c::I2cDevice;
 use embassy_executor::Spawner;
 use embassy_imxrt::bind_interrupts;
@@ -42,125 +38,16 @@ static FG_DEVICE: StaticCell<Device> = StaticCell::new();
 
 /// Wrapper struct for the fuel gauge driver
 struct Bq40z50Controller {
-    driver: Bq40z50<
+    driver: Bq40z50R5<
         I2cDevice<'static, NoopRawMutex, embassy_imxrt::i2c::master::I2cMaster<'static, embassy_imxrt::i2c::Async>>,
+        embassy_time::Delay,
     >,
 }
 
-impl embedded_batteries_async::smart_battery::ErrorType for Bq40z50Controller {
-    type Error = <Bq40z50<I2cDevice<'static, NoopRawMutex, I2cMaster<'static, Async>>> as embedded_batteries_async::smart_battery::ErrorType>::Error;
-}
-
-impl embedded_batteries_async::smart_battery::SmartBattery for Bq40z50Controller {
-    async fn absolute_state_of_charge(&mut self) -> Result<Percent, Self::Error> {
-        self.driver.absolute_state_of_charge().await
-    }
-    async fn at_rate(&mut self) -> Result<CapacityModeSignedValue, Self::Error> {
-        self.driver.at_rate().await
-    }
-    async fn at_rate_ok(&mut self) -> Result<bool, Self::Error> {
-        self.driver.at_rate_ok().await
-    }
-    async fn at_rate_time_to_empty(&mut self) -> Result<Minutes, Self::Error> {
-        self.driver.at_rate_time_to_empty().await
-    }
-    async fn at_rate_time_to_full(&mut self) -> Result<Minutes, Self::Error> {
-        self.driver.at_rate_time_to_full().await
-    }
-    async fn average_current(&mut self) -> Result<MilliAmpsSigned, Self::Error> {
-        self.driver.average_current().await
-    }
-    async fn average_time_to_empty(&mut self) -> Result<Minutes, Self::Error> {
-        self.driver.average_time_to_empty().await
-    }
-    async fn average_time_to_full(&mut self) -> Result<Minutes, Self::Error> {
-        self.driver.average_time_to_full().await
-    }
-    async fn battery_mode(&mut self) -> Result<BatteryModeFields, Self::Error> {
-        self.driver.battery_mode().await
-    }
-    async fn battery_status(&mut self) -> Result<BatteryStatusFields, Self::Error> {
-        self.driver.battery_status().await
-    }
-    async fn current(&mut self) -> Result<MilliAmpsSigned, Self::Error> {
-        self.driver.current().await
-    }
-    async fn cycle_count(&mut self) -> Result<Cycles, Self::Error> {
-        self.driver.cycle_count().await
-    }
-    async fn design_capacity(&mut self) -> Result<CapacityModeValue, Self::Error> {
-        self.driver.design_capacity().await
-    }
-    async fn design_voltage(&mut self) -> Result<MilliVolts, Self::Error> {
-        self.driver.design_voltage().await
-    }
-    async fn device_chemistry(&mut self, chemistry: &mut [u8]) -> Result<(), Self::Error> {
-        self.driver.device_chemistry(chemistry).await
-    }
-    async fn device_name(&mut self, name: &mut [u8]) -> Result<(), Self::Error> {
-        self.driver.device_name(name).await
-    }
-    async fn full_charge_capacity(&mut self) -> Result<CapacityModeValue, Self::Error> {
-        self.driver.full_charge_capacity().await
-    }
-    async fn manufacture_date(&mut self) -> Result<ManufactureDate, Self::Error> {
-        self.driver.manufacture_date().await
-    }
-    async fn manufacturer_name(&mut self, name: &mut [u8]) -> Result<(), Self::Error> {
-        self.driver.manufacturer_name(name).await
-    }
-    async fn max_error(&mut self) -> Result<Percent, Self::Error> {
-        self.driver.max_error().await
-    }
-    async fn relative_state_of_charge(&mut self) -> Result<Percent, Self::Error> {
-        self.driver.relative_state_of_charge().await
-    }
-    async fn remaining_capacity(&mut self) -> Result<CapacityModeValue, Self::Error> {
-        self.driver.remaining_capacity().await
-    }
-    async fn remaining_capacity_alarm(&mut self) -> Result<CapacityModeValue, Self::Error> {
-        self.driver.remaining_capacity_alarm().await
-    }
-    async fn remaining_time_alarm(&mut self) -> Result<Minutes, Self::Error> {
-        self.driver.remaining_time_alarm().await
-    }
-    async fn run_time_to_empty(&mut self) -> Result<Minutes, Self::Error> {
-        self.driver.run_time_to_empty().await
-    }
-    async fn serial_number(&mut self) -> Result<u16, Self::Error> {
-        self.driver.serial_number().await
-    }
-    async fn set_at_rate(&mut self, rate: CapacityModeSignedValue) -> Result<(), Self::Error> {
-        self.driver.set_at_rate(rate).await
-    }
-    async fn set_battery_mode(&mut self, flags: BatteryModeFields) -> Result<(), Self::Error> {
-        self.driver.set_battery_mode(flags).await
-    }
-    async fn set_remaining_capacity_alarm(&mut self, capacity: CapacityModeValue) -> Result<(), Self::Error> {
-        self.driver.set_remaining_capacity_alarm(capacity).await
-    }
-    async fn set_remaining_time_alarm(&mut self, time: Minutes) -> Result<(), Self::Error> {
-        self.driver.set_remaining_time_alarm(time).await
-    }
-    async fn specification_info(&mut self) -> Result<SpecificationInfoFields, Self::Error> {
-        self.driver.specification_info().await
-    }
-    async fn temperature(&mut self) -> Result<DeciKelvin, Self::Error> {
-        self.driver.temperature().await
-    }
-    async fn voltage(&mut self) -> Result<MilliVolts, Self::Error> {
-        self.driver.voltage().await
-    }
-    async fn charging_current(&mut self) -> Result<MilliAmps, Self::Error> {
-        self.driver.charging_current().await
-    }
-    async fn charging_voltage(&mut self) -> Result<MilliVolts, Self::Error> {
-        self.driver.charging_voltage().await
-    }
-}
+embedded_batteries_async::impl_smart_battery_for_wrapper_type!(Bq40z50Controller, driver, <Bq40z50R5<I2cDevice<'static, NoopRawMutex, I2cMaster<'static, Async>>, embassy_time::Delay> as embedded_batteries_async::smart_battery::ErrorType>::Error);
 
 impl Controller for Bq40z50Controller {
-    type ControllerError = <Bq40z50<I2cDevice<'static, NoopRawMutex, I2cMaster<'static, Async>>> as embedded_batteries_async::smart_battery::ErrorType>::Error;
+    type ControllerError = <Bq40z50R5<I2cDevice<'static, NoopRawMutex, I2cMaster<'static, Async>>, embassy_time::Delay> as embedded_batteries_async::smart_battery::ErrorType>::Error;
 
     async fn initialize(&mut self) -> Result<(), Self::ControllerError> {
         info!("Fuel gauge inited!");
@@ -327,7 +214,7 @@ async fn main(spawner: Spawner) {
     let wrap = Wrapper::new(
         fg,
         Bq40z50Controller {
-            driver: Bq40z50::new(fg_bus),
+            driver: Bq40z50R5::new(fg_bus, embassy_time::Delay),
         },
     );
 

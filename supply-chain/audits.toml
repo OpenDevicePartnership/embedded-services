@@ -26,6 +26,12 @@ who = "Robert Zieba <robertzieba@microsoft.com>"
 criteria = "safe-to-run"
 version = "0.3.75"
 
+[[audits.bitfield-struct]]
+who = "matteotullo <matteotullo@microsoft.com>"
+criteria = "safe-to-deploy"
+delta = "0.10.1 -> 0.12.1"
+notes = "Adds hash and bitenum derives, mostly parsing and refactoring changes. No code execution nor writing to the filesystem."
+
 [[audits.block-device-driver]]
 who = "jerrysxie <jerryxie@microsoft.com>"
 criteria = "safe-to-deploy"
@@ -54,6 +60,24 @@ criteria = "safe-to-deploy"
 version = "0.2.1"
 notes = "ODP crates are always trusted."
 
+[[audits.embedded-batteries]]
+who = "matteotullo <matteotullo@microsoft.com>"
+criteria = "safe-to-deploy"
+version = "0.2.1"
+notes = "ODP crates are always trusted."
+
+[[audits.embedded-batteries]]
+who = "matteotullo <matteotullo@microsoft.com>"
+criteria = "safe-to-deploy"
+version = "0.3.1"
+notes = "ODP crates are always trusted."
+
+[[audits.embedded-batteries]]
+who = "matteotullo <matteotullo@microsoft.com>"
+criteria = "safe-to-deploy"
+version = "0.3.4"
+notes = "ODP crates are always trusted."
+
 [[audits.embedded-batteries-async]]
 who = "Felipe Balbi <febalbi@microsoft.com>"
 criteria = "safe-to-deploy"
@@ -70,6 +94,29 @@ notes = "ODP crates are always trusted."
 who = "Matteo Tullo <matteotullo@microsoft.com>"
 criteria = "safe-to-deploy"
 version = "0.2.1"
+
+[[audits.embedded-batteries-async]]
+who = "Matteo Tullo <matteotullo@microsoft.com>"
+criteria = "safe-to-deploy"
+version = "0.3.0"
+
+[[audits.embedded-batteries-async]]
+who = "matteotullo <matteotullo@microsoft.com>"
+criteria = "safe-to-deploy"
+version = "0.3.0"
+notes = "ODP crates are always trusted."
+
+[[audits.embedded-batteries-async]]
+who = "matteotullo <matteotullo@microsoft.com>"
+criteria = "safe-to-deploy"
+version = "0.3.1"
+notes = "ODP crates are always trusted."
+
+[[audits.embedded-batteries-async]]
+who = "matteotullo <matteotullo@microsoft.com>"
+criteria = "safe-to-deploy"
+version = "0.3.4"
+notes = "ODP crates are always trusted."
 
 [[audits.embedded-crc-macros]]
 who = "Matteo Tullo <matteotullo@microsoft.com>"
@@ -492,7 +539,7 @@ end = "2026-09-03"
 
 [[trusted.smallvec]]
 criteria = "safe-to-deploy"
-user-id = 2017 # Matt Brubeck (mbrubeck)
+user-id = 2017
 start = "2019-10-28"
 end = "2026-09-03"
 

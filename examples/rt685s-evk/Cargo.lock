@@ -607,13 +607,25 @@ dependencies = [
 ]
 
 [[package]]
-name = "embedded-batteries-async"
-version = "0.2.1"
+name = "embedded-batteries"
+version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "98cb543f4eea7e2c57544f345a5cf40fd90e9d3593b96cb7515f6c1d62c7fc68"
+checksum = "3b8996d7168535579180a0eead82efaba718ebd598782f986bfd635458259df2"
 dependencies = [
  "bitfield-struct",
- "embedded-batteries",
+ "bitflags 2.9.4",
+ "embedded-hal 1.0.0",
+ "zerocopy",
+]
+
+[[package]]
+name = "embedded-batteries-async"
+version = "0.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6465f32edac01ccd4d55931896177b3a61a5286205c5269f30b91ce7dbf51b5e"
+dependencies = [
+ "bitfield-struct",
+ "embedded-batteries 0.3.1",
  "embedded-hal 1.0.0",
 ]
 
@@ -1004,7 +1016,7 @@ source = "git+https://github.com/dymk/mctp-rs#f3121512468e4776c4b1d2d648b54c7271
 dependencies = [
  "bit-register",
  "defmt 0.3.100",
- "embedded-batteries",
+ "embedded-batteries 0.2.1",
  "espi-device",
  "num_enum",
  "smbus-pec",
