@@ -1,11 +1,23 @@
 use embassy_executor::{Executor, Spawner};
-use embassy_sync::{blocking_mutex::raw::NoopRawMutex, once_lock::OnceLock, pubsub::PubSubChannel};
+use embassy_sync::{
+    blocking_mutex::raw::NoopRawMutex,
+    channel::{self, Channel},
+    mutex::Mutex,
+    pubsub::PubSubChannel,
+};
 use embassy_time::{self as _, Timer};
 use embedded_services::{
+    GlobalRawMutex,
     broadcaster::immediate as broadcaster,
-    power::policy::{self, ConsumerPowerCapability, PowerCapability, device, flags, policy::Context},
+    power::{
+        self,
+        policy::{
+            self, ConsumerPowerCapability, Error, PowerCapability, ProviderPowerCapability, device::DeviceTrait, flags,
+        },
+    },
 };
 use log::*;
+use power_policy_service::PowerPolicy;
 use static_cell::StaticCell;
 
 const LOW_POWER: PowerCapability = PowerCapability {
@@ -18,204 +30,254 @@ const HIGH_POWER: PowerCapability = PowerCapability {
     current_ma: 3000,
 };
 
-const POWER_POLICY_CHANNEL_SIZE: usize = 1;
-const NUM_POWER_DEVICES: usize = 2;
+const DEVICE0_ID: policy::DeviceId = policy::DeviceId(0);
+const DEVICE1_ID: policy::DeviceId = policy::DeviceId(1);
 
-struct ExampleDevice {
-    device: policy::device::Device<POWER_POLICY_CHANNEL_SIZE>,
+const PER_CALL_DELAY_MS: u64 = 1000;
+
+struct ExampleDevice<'a> {
+    sender: channel::DynamicSender<'a, policy::policy::RequestData>,
 }
 
-impl ExampleDevice {
-    fn new(id: policy::DeviceId, context_ref: &'static Context<POWER_POLICY_CHANNEL_SIZE>) -> Self {
-        Self {
-            device: policy::device::Device::new(id, context_ref),
-        }
+impl<'a> ExampleDevice<'a> {
+    fn new(sender: channel::DynamicSender<'a, policy::policy::RequestData>) -> Self {
+        Self { sender }
     }
 
-    async fn process_request(&self) -> Result<(), policy::Error> {
-        let request = self.device.receive().await;
-        match request.command {
-            device::CommandData::ConnectAsConsumer(capability) => {
-                info!(
-                    "Device {} received connect consumer at {:#?}",
-                    self.device.id().0,
-                    capability
-                );
-            }
-            device::CommandData::ConnectAsProvider(capability) => {
-                info!(
-                    "Device {} received connect provider at {:#?}",
-                    self.device.id().0,
-                    capability
-                );
-            }
-            device::CommandData::Disconnect => {
-                info!("Device {} received disconnect", self.device.id().0);
-            }
-        }
+    pub async fn simulate_attach(&mut self) {
+        self.sender.send(policy::policy::RequestData::Attached).await;
+    }
 
-        request.respond(Ok(policy::device::ResponseData::Complete));
+    pub async fn simulate_update_consumer_power_capability(&mut self, capability: Option<ConsumerPowerCapability>) {
+        self.sender
+            .send(policy::policy::RequestData::UpdatedConsumerCapability(capability))
+            .await;
+    }
+
+    pub async fn simulate_detach(&mut self) {
+        self.sender.send(policy::policy::RequestData::Detached).await;
+    }
+
+    pub async fn simulate_update_requested_provider_power_capability(
+        &mut self,
+        capability: Option<ProviderPowerCapability>,
+    ) {
+        self.sender
+            .send(policy::policy::RequestData::RequestedProviderCapability(capability))
+            .await
+    }
+}
+
+impl DeviceTrait for ExampleDevice<'_> {
+    async fn disconnect(&mut self) -> Result<(), Error> {
+        debug!("ExampleDevice disconnect");
+        Ok(())
+    }
+
+    async fn connect_provider(&mut self, capability: ProviderPowerCapability) -> Result<(), Error> {
+        debug!("ExampleDevice connect_provider with {capability:?}");
+        Ok(())
+    }
+
+    async fn connect_consumer(&mut self, capability: ConsumerPowerCapability) -> Result<(), Error> {
+        debug!("ExampleDevice connect_consumer with {capability:?}");
         Ok(())
     }
 }
 
-impl policy::device::DeviceContainer<POWER_POLICY_CHANNEL_SIZE> for ExampleDevice {
-    fn get_power_policy_device(&self) -> &policy::device::Device<POWER_POLICY_CHANNEL_SIZE> {
-        &self.device
-    }
-}
-
 #[embassy_executor::task]
-async fn device_task0(device: &'static ExampleDevice) {
-    loop {
-        if let Err(e) = device.process_request().await {
-            error!("Error processing request: {e:?}");
-        }
-    }
-}
-
-#[embassy_executor::task]
-async fn device_task1(device: &'static ExampleDevice) {
-    loop {
-        if let Err(e) = device.process_request().await {
-            error!("Error processing request: {e:?}");
-        }
-    }
-}
-
-#[embassy_executor::task]
-async fn run(spawner: Spawner, service: &'static power_policy_service::PowerPolicy<POWER_POLICY_CHANNEL_SIZE>) {
+async fn run(spawner: Spawner) {
     embedded_services::init().await;
 
-    spawner.must_spawn(receiver_task(service));
-
     info!("Creating device 0");
-    static DEVICE0: OnceLock<ExampleDevice> = OnceLock::new();
-    let device0_mock = DEVICE0.get_or_init(|| ExampleDevice::new(policy::DeviceId(0), &service.context));
-    spawner.must_spawn(device_task0(device0_mock));
-    let device0 = device0_mock.device.try_device_action().await.unwrap();
+    static DEVICE0_EVENT_CHANNEL: StaticCell<Channel<NoopRawMutex, policy::policy::RequestData, 4>> = StaticCell::new();
+    let device0_event_channel = DEVICE0_EVENT_CHANNEL.init(Channel::new());
+    static DEVICE0: StaticCell<Mutex<GlobalRawMutex, ExampleDevice>> = StaticCell::new();
+    let device0 = DEVICE0.init(Mutex::new(ExampleDevice::new(device0_event_channel.dyn_sender())));
+    static DEVICE0_REGISTRATION: StaticCell<
+        policy::device::Device<
+            'static,
+            Mutex<GlobalRawMutex, ExampleDevice>,
+            channel::DynamicReceiver<'static, policy::policy::RequestData>,
+        >,
+    > = StaticCell::new();
+    let device0_registration = DEVICE0_REGISTRATION.init(policy::device::Device::new(
+        DEVICE0_ID,
+        device0,
+        device0_event_channel.dyn_receiver(),
+    ));
 
     info!("Creating device 1");
-    static DEVICE1: OnceLock<ExampleDevice> = OnceLock::new();
-    let device1_mock = DEVICE1.get_or_init(|| ExampleDevice::new(policy::DeviceId(1), &service.context));
-    spawner.must_spawn(device_task1(device1_mock));
-    let device1 = device1_mock.device.try_device_action().await.unwrap();
+    static DEVICE1_EVENT_CHANNEL: StaticCell<Channel<NoopRawMutex, policy::policy::RequestData, 4>> = StaticCell::new();
+    let device1_event_channel = DEVICE1_EVENT_CHANNEL.init(Channel::new());
+    static DEVICE1: StaticCell<Mutex<GlobalRawMutex, ExampleDevice>> = StaticCell::new();
+    let device1 = DEVICE1.init(Mutex::new(ExampleDevice::new(device1_event_channel.dyn_sender())));
+    static DEVICE1_REGISTRATION: StaticCell<
+        policy::device::Device<
+            'static,
+            Mutex<GlobalRawMutex, ExampleDevice>,
+            channel::DynamicReceiver<'static, policy::policy::RequestData>,
+        >,
+    > = StaticCell::new();
+    let device1_registration = DEVICE1_REGISTRATION.init(policy::device::Device::new(
+        DEVICE1_ID,
+        device1,
+        device1_event_channel.dyn_receiver(),
+    ));
 
-    spawner.must_spawn(power_policy_service_task(service, [device0_mock, device1_mock]));
+    static SERVICE_CONTEXT: StaticCell<
+        power::policy::policy::Context<
+            Mutex<GlobalRawMutex, ExampleDevice<'static>>,
+            channel::DynamicReceiver<'static, policy::policy::RequestData>,
+        >,
+    > = StaticCell::new();
+    let service_context = SERVICE_CONTEXT.init(power::policy::policy::Context::new());
+
+    service_context.register_device(device0_registration).unwrap();
+    service_context.register_device(device1_registration).unwrap();
+
+    static SERVICE: StaticCell<
+        power_policy_service::PowerPolicy<
+            Mutex<GlobalRawMutex, ExampleDevice<'static>>,
+            channel::DynamicReceiver<'static, policy::policy::RequestData>,
+        >,
+    > = StaticCell::new();
+    let service = SERVICE.init(power_policy_service::PowerPolicy::new(
+        service_context,
+        power_policy_service::config::Config::default(),
+    ));
+
+    spawner.must_spawn(power_policy_task(service));
+    spawner.must_spawn(receiver_task(service));
 
     // Plug in device 0, should become current consumer
     info!("Connecting device 0");
-    let device0 = device0.attach().await.unwrap();
-    device0
-        .notify_consumer_power_capability(Some(ConsumerPowerCapability {
+    {
+        let mut dev0 = device0.lock().await;
+        dev0.simulate_attach().await;
+        dev0.simulate_update_consumer_power_capability(Some(ConsumerPowerCapability {
             capability: LOW_POWER,
             flags: flags::Consumer::none().with_unconstrained_power(),
         }))
-        .await
-        .unwrap();
+        .await;
+    }
+    Timer::after_millis(PER_CALL_DELAY_MS).await;
 
     // Plug in device 1, should become current consumer
     info!("Connecting device 1");
-    let device1 = device1.attach().await.unwrap();
-    device1
-        .notify_consumer_power_capability(Some(HIGH_POWER.into()))
-        .await
-        .unwrap();
+    {
+        let mut dev1 = device1.lock().await;
+        dev1.simulate_attach().await;
+        dev1.simulate_update_consumer_power_capability(Some(HIGH_POWER.into()))
+            .await;
+    }
+    Timer::after_millis(PER_CALL_DELAY_MS).await;
 
     // Unplug device 0, device 1 should remain current consumer
-    info!("Unpluging device 0");
-    let device0 = device0.detach().await.unwrap();
+    info!("Unplugging device 0");
+    {
+        let mut dev0 = device0.lock().await;
+        dev0.simulate_detach().await;
+    }
+    Timer::after_millis(PER_CALL_DELAY_MS).await;
 
     // Plug in device 0, device 1 should remain current consumer
     info!("Connecting device 0");
-    let device0 = device0.attach().await.unwrap();
-    device0
-        .notify_consumer_power_capability(Some(LOW_POWER.into()))
-        .await
-        .unwrap();
+    {
+        let mut dev0 = device0.lock().await;
+        dev0.simulate_attach().await;
+        dev0.simulate_update_consumer_power_capability(Some(LOW_POWER.into()))
+            .await;
+    }
+    Timer::after_millis(PER_CALL_DELAY_MS).await;
 
     // Unplug device 1, device 0 should become current consumer
     info!("Unplugging device 1");
-    let device1 = device1.detach().await.unwrap();
+    {
+        let mut dev1 = device1.lock().await;
+        dev1.simulate_detach().await;
+    }
+    Timer::after_millis(PER_CALL_DELAY_MS).await;
 
     // Replug device 1, device 1 becomes current consumer
     info!("Connecting device 1");
-    let device1 = device1.attach().await.unwrap();
-    device1
-        .notify_consumer_power_capability(Some(HIGH_POWER.into()))
-        .await
-        .unwrap();
+    {
+        let mut dev1 = device1.lock().await;
+        dev1.simulate_attach().await;
+        dev1.simulate_update_consumer_power_capability(Some(HIGH_POWER.into()))
+            .await;
+    }
+    Timer::after_millis(PER_CALL_DELAY_MS).await;
 
-    // Disconnect consumer device 0, device 1 should remain current consumer
+    // Detach consumer device 0, device 1 should remain current consumer
     // Device 0 should not be able to consume after device 1 is unplugged
-    info!("Disconnecting device 0");
-    device0.notify_consumer_power_capability(None).await.unwrap();
-    let device1 = device1.detach().await.unwrap();
+    info!("Detach device 0");
+    {
+        let mut dev0 = device0.lock().await;
+        dev0.simulate_update_consumer_power_capability(None).await;
+    }
+    Timer::after_millis(PER_CALL_DELAY_MS).await;
 
-    // Switch to provider on device0
-    info!("Device 0 requesting provider");
-    device0
-        .request_provider_power_capability(LOW_POWER.into())
-        .await
-        .unwrap();
-    Timer::after_millis(250).await;
-    info!(
-        "Total provider power: {} mW",
-        service.context.compute_total_provider_power_mw().await
-    );
+    {
+        let mut dev1 = device1.lock().await;
+        dev1.simulate_detach().await;
+    }
+    Timer::after_millis(PER_CALL_DELAY_MS).await;
 
+    // Switch device 0 to provider
+    info!("Device 0 switch to provider");
+    {
+        let mut dev0 = device0.lock().await;
+        dev0.simulate_update_requested_provider_power_capability(Some(HIGH_POWER.into()))
+            .await;
+    }
+    Timer::after_millis(PER_CALL_DELAY_MS).await;
+
+    // Attach device 1 and request provider
     info!("Device 1 attach and requesting provider");
-    let device1 = device1.attach().await.unwrap();
-    device1
-        .request_provider_power_capability(LOW_POWER.into())
-        .await
-        .unwrap();
-    // Wait for the provider to be connected
-    Timer::after_millis(250).await;
-    info!(
-        "Total provider power: {} mW",
-        service.context.compute_total_provider_power_mw().await
-    );
+    {
+        let mut dev1 = device1.lock().await;
+        dev1.simulate_attach().await;
+        dev1.simulate_update_requested_provider_power_capability(Some(LOW_POWER.into()))
+            .await;
+    }
+    Timer::after_millis(PER_CALL_DELAY_MS).await;
 
-    // Provider upgrade should fail because device 0 is already connected
+    // Provider upgrade should fail because device 0 is already connected at high power
     info!("Device 1 attempting provider upgrade");
-    device1
-        .request_provider_power_capability(HIGH_POWER.into())
-        .await
-        .unwrap();
-    // Wait for the upgrade flow to complete
-    Timer::after_millis(250).await;
-    info!(
-        "Total provider power: {} mW",
-        service.context.compute_total_provider_power_mw().await
-    );
+    {
+        let mut dev1 = device1.lock().await;
+        dev1.simulate_update_requested_provider_power_capability(Some(HIGH_POWER.into()))
+            .await;
+    }
+    Timer::after_millis(PER_CALL_DELAY_MS).await;
 
     // Disconnect device 0
     info!("Device 0 disconnecting");
-    device0.detach().await.unwrap();
-    // Wait for the detach flow to complete
-    Timer::after_millis(250).await;
-    info!(
-        "Total provider power: {} mW",
-        service.context.compute_total_provider_power_mw().await
-    );
+    {
+        let mut dev0 = device0.lock().await;
+        dev0.simulate_detach().await;
+    }
+    Timer::after_millis(PER_CALL_DELAY_MS).await;
 
     // Provider upgrade should succeed now
     info!("Device 1 attempting provider upgrade");
-    device1
-        .request_provider_power_capability(HIGH_POWER.into())
-        .await
-        .unwrap();
-    // Wait for the upgrade flow to complete
-    Timer::after_millis(250).await;
-    info!(
-        "Total provider power: {} mW",
-        service.context.compute_total_provider_power_mw().await
-    );
+    {
+        let mut dev1 = device1.lock().await;
+        dev1.simulate_update_requested_provider_power_capability(Some(HIGH_POWER.into()))
+            .await;
+    }
+    Timer::after_millis(PER_CALL_DELAY_MS).await;
 }
 
 #[embassy_executor::task]
-async fn receiver_task(service: &'static power_policy_service::PowerPolicy<POWER_POLICY_CHANNEL_SIZE>) {
+async fn receiver_task(
+    service: &'static power_policy_service::PowerPolicy<
+        'static,
+        Mutex<GlobalRawMutex, ExampleDevice<'static>>,
+        channel::DynamicReceiver<'static, policy::policy::RequestData>,
+    >,
+) {
     static CHANNEL: StaticCell<PubSubChannel<NoopRawMutex, policy::CommsMessage, 4, 1, 0>> = StaticCell::new();
     let channel = CHANNEL.init(PubSubChannel::new());
 
@@ -240,13 +302,14 @@ async fn receiver_task(service: &'static power_policy_service::PowerPolicy<POWER
 }
 
 #[embassy_executor::task]
-async fn power_policy_service_task(
-    service: &'static power_policy_service::PowerPolicy<POWER_POLICY_CHANNEL_SIZE>,
-    devices: [&'static ExampleDevice; NUM_POWER_DEVICES],
+async fn power_policy_task(
+    power_policy: &'static PowerPolicy<
+        'static,
+        Mutex<GlobalRawMutex, ExampleDevice<'static>>,
+        channel::DynamicReceiver<'static, policy::policy::RequestData>,
+    >,
 ) {
-    power_policy_service::task::task(service, Some(devices), None::<[&std_examples::type_c::DummyCharger; 0]>)
-        .await
-        .expect("Failed to start power policy service task");
+    power_policy_service::task::task(power_policy).await.unwrap();
 }
 
 fn main() {
@@ -255,12 +318,7 @@ fn main() {
     static EXECUTOR: StaticCell<Executor> = StaticCell::new();
     let executor = EXECUTOR.init(Executor::new());
 
-    static SERVICE: StaticCell<power_policy_service::PowerPolicy<POWER_POLICY_CHANNEL_SIZE>> = StaticCell::new();
-    let service = SERVICE.init(power_policy_service::PowerPolicy::new(
-        power_policy_service::config::Config::default(),
-    ));
-
     executor.run(|spawner| {
-        spawner.must_spawn(run(spawner, service));
+        spawner.must_spawn(run(spawner));
     });
 }
