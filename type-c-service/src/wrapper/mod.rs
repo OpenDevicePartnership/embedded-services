@@ -27,18 +27,18 @@ use embassy_sync::mutex::Mutex;
 use embassy_sync::signal::Signal;
 use embassy_time::Instant;
 use embedded_cfu_protocol::protocol_definitions::{FwUpdateOffer, FwUpdateOfferResponse, FwVersion};
-use embedded_services::power::policy::device::StateKind;
-use embedded_services::power::policy::{self, action};
+use embedded_services::power::policy::policy;
 use embedded_services::sync::Lockable;
 use embedded_services::type_c::controller::{self, Controller, PortStatus};
 use embedded_services::type_c::event::{PortEvent, PortNotificationSingle, PortPending, PortStatusChanged};
-use embedded_services::{GlobalRawMutex, intrusive_list};
 use embedded_services::{debug, error, info, trace, warn};
+use embedded_services::{event, intrusive_list};
 use embedded_usb_pd::ado::Ado;
 use embedded_usb_pd::{Error, LocalPortId, PdError};
 
-use crate::wrapper::backing::DynPortState;
+use crate::wrapper::backing::{DynPortState, PortPower};
 use crate::wrapper::message::*;
+use crate::wrapper::proxy::{PowerProxyDevice, PowerProxyReceiver};
 use crate::{PortEventStreamer, PortEventVariant};
 
 pub mod backing;
@@ -48,6 +48,7 @@ mod dp;
 pub mod message;
 mod pd;
 mod power;
+pub mod proxy;
 mod vdm;
 
 /// Base interval for checking for FW update timeouts and recovery attempts
@@ -68,35 +69,49 @@ pub trait FwOfferValidator {
 pub const MAX_SUPPORTED_PORTS: usize = 2;
 
 /// Common functionality implemented on top of [`embedded_services::type_c::controller::Controller`]
-pub struct ControllerWrapper<'device, M: RawMutex, C: Lockable, V: FwOfferValidator, const POLICY_CHANNEL_SIZE: usize>
-where
-    <C as Lockable>::Inner: Controller,
+pub struct ControllerWrapper<
+    'device,
+    M: RawMutex,
+    D: Lockable,
+    S: event::Sender<policy::RequestData>,
+    R: event::Receiver<policy::RequestData>,
+    V: FwOfferValidator,
+> where
+    D::Inner: Controller,
 {
-    controller: &'device C,
+    controller: &'device D,
     /// Trait object for validating firmware versions
     fw_version_validator: V,
     /// FW update ticker used to check for timeouts and recovery attempts
     fw_update_ticker: Mutex<M, embassy_time::Ticker>,
     /// Registration information for services
-    registration: backing::Registration<'device, POLICY_CHANNEL_SIZE>,
+    pub registration: backing::Registration<'device, M, R>,
     /// State
-    state: Mutex<M, RefMut<'device, dyn DynPortState<'device>>>,
+    state: Mutex<M, RefMut<'device, dyn DynPortState<'device, S>>>,
     /// SW port status event signal
     sw_status_event: Signal<M, ()>,
     /// General config
     config: config::Config,
+    /// Power proxy receivers
+    power_proxy_receivers: &'device [Mutex<M, PowerProxyReceiver<'device>>],
 }
 
-impl<'device, M: RawMutex, C: Lockable, V: FwOfferValidator, const POLICY_CHANNEL_SIZE: usize>
-    ControllerWrapper<'device, M, C, V, POLICY_CHANNEL_SIZE>
+impl<
+    'device,
+    M: RawMutex,
+    D: Lockable,
+    S: event::Sender<policy::RequestData>,
+    R: event::Receiver<policy::RequestData>,
+    V: FwOfferValidator,
+> ControllerWrapper<'device, M, D, S, R, V>
 where
-    <C as Lockable>::Inner: Controller,
+    D::Inner: Controller,
 {
     /// Create a new controller wrapper, returns `None` if the backing storage is already in use
     pub fn try_new<const N: usize>(
-        controller: &'device C,
+        controller: &'device D,
         config: config::Config,
-        storage: &'device backing::ReferencedStorage<'device, N, M, POLICY_CHANNEL_SIZE>,
+        storage: &'device backing::ReferencedStorage<'device, N, M, S, R>,
         fw_version_validator: V,
     ) -> Option<Self> {
         const {
@@ -114,12 +129,8 @@ where
             registration: backing.registration,
             state: Mutex::new(backing.state),
             sw_status_event: Signal::new(),
+            power_proxy_receivers: backing.power_receivers,
         })
-    }
-
-    /// Get the power policy devices for this controller.
-    pub fn power_policy_devices(&self) -> &[policy::device::Device<POLICY_CHANNEL_SIZE>] {
-        self.registration.power_devices
     }
 
     /// Get the cached port status, returns None if the port is invalid
@@ -133,7 +144,7 @@ where
     }
 
     /// Synchronize the state between the controller and the internal state
-    pub async fn sync_state(&self) -> Result<(), Error<<C::Inner as Controller>::BusError>> {
+    pub async fn sync_state(&self) -> Result<(), Error<<D::Inner as Controller>::BusError>> {
         let mut controller = self.controller.lock().await;
         let mut state = self.state.lock().await;
         self.sync_state_internal(&mut controller, state.deref_mut().deref_mut())
@@ -143,9 +154,9 @@ where
     /// Synchronize the state between the controller and the internal state
     async fn sync_state_internal(
         &self,
-        controller: &mut C::Inner,
-        state: &mut dyn DynPortState<'_>,
-    ) -> Result<(), Error<<C::Inner as Controller>::BusError>> {
+        controller: &mut D::Inner,
+        state: &mut dyn DynPortState<'_, S>,
+    ) -> Result<(), Error<<D::Inner as Controller>::BusError>> {
         // Sync the controller state with the PD controller
         for (i, port_state) in state.port_states_mut().iter_mut().enumerate() {
             let mut status_changed = port_state.sw_status_event;
@@ -180,11 +191,11 @@ where
     /// Handle a plug event
     async fn process_plug_event(
         &self,
-        _controller: &mut C::Inner,
-        power: &policy::device::Device<POLICY_CHANNEL_SIZE>,
+        _controller: &mut D::Inner,
+        power: &mut PortPower<S>,
         port: LocalPortId,
         status: &PortStatus,
-    ) -> Result<(), Error<<C::Inner as Controller>::BusError>> {
+    ) -> Result<(), Error<<D::Inner as Controller>::BusError>> {
         if port.0 as usize >= self.registration.num_ports() {
             error!("Invalid port {}", port.0);
             return PdError::InvalidPort.into();
@@ -193,32 +204,10 @@ where
         info!("Plug event");
         if status.is_connected() {
             info!("Plug inserted");
-
-            // Recover if we're not in the correct state
-            if power.state().await.kind() != StateKind::Detached {
-                warn!("Power device not in detached state, recovering");
-                if let Err(e) = power.detach().await {
-                    error!("Error detaching power device: {:?}", e);
-                    return PdError::Failed.into();
-                }
-            }
-
-            if let Ok(state) = power.try_device_action::<action::Detached>().await {
-                if let Err(e) = state.attach().await {
-                    error!("Error attaching power device: {:?}", e);
-                    return PdError::Failed.into();
-                }
-            } else {
-                // This should never happen
-                error!("Power device not in detached state");
-                return PdError::InvalidMode.into();
-            }
+            power.sender.send(policy::RequestData::Attached).await;
         } else {
             info!("Plug removed");
-            if let Err(e) = power.detach().await {
-                error!("Error detaching power device: {:?}", e);
-                return PdError::Failed.into();
-            };
+            power.sender.send(policy::RequestData::Detached).await;
         }
 
         Ok(())
@@ -227,11 +216,11 @@ where
     /// Process port status changed events
     async fn process_port_status_changed<'b>(
         &self,
-        controller: &mut C::Inner,
-        state: &mut dyn DynPortState<'_>,
+        controller: &mut D::Inner,
+        state: &mut dyn DynPortState<'_, S>,
         local_port_id: LocalPortId,
         status_event: PortStatusChanged,
-    ) -> Result<Output<'b>, Error<<C::Inner as Controller>::BusError>> {
+    ) -> Result<Output<'b>, Error<<D::Inner as Controller>::BusError>> {
         let global_port_id = self
             .registration
             .pd_controller
@@ -240,11 +229,12 @@ where
 
         let status = controller.get_port_status(local_port_id).await?;
         trace!("Port{} status: {:#?}", global_port_id.0, status);
-
-        let power = self
-            .get_power_device(local_port_id)
-            .ok_or(Error::Pd(PdError::InvalidPort))?;
         trace!("Port{} status events: {:#?}", global_port_id.0, status_event);
+
+        let power = state
+            .port_power_mut()
+            .get_mut(local_port_id.0 as usize)
+            .ok_or(PdError::InvalidPort)?;
         if status_event.plug_inserted_or_removed() {
             self.process_plug_event(controller, power, local_port_id, &status)
                 .await?;
@@ -277,11 +267,11 @@ where
     /// Finalize a port status change output
     fn finalize_port_status_change(
         &self,
-        state: &mut dyn DynPortState<'_>,
+        state: &mut dyn DynPortState<'_, S>,
         local_port: LocalPortId,
         status_event: PortStatusChanged,
         status: PortStatus,
-    ) -> Result<(), Error<<C::Inner as Controller>::BusError>> {
+    ) -> Result<(), Error<<D::Inner as Controller>::BusError>> {
         let port_index = local_port.0 as usize;
         let global_port_id = self
             .registration
@@ -315,10 +305,10 @@ where
     /// Finalize a PD alert output
     fn finalize_pd_alert(
         &self,
-        state: &mut dyn DynPortState<'_>,
+        state: &mut dyn DynPortState<'_, S>,
         local_port: LocalPortId,
         alert: Ado,
-    ) -> Result<(), Error<<C::Inner as Controller>::BusError>> {
+    ) -> Result<(), Error<<D::Inner as Controller>::BusError>> {
         let port_index = local_port.0 as usize;
         let global_port_id = self
             .registration
@@ -352,8 +342,8 @@ where
     /// DROP SAFETY: No state that needs to be restored
     async fn wait_port_pending(
         &self,
-        controller: &mut C::Inner,
-    ) -> Result<PortEventStreamer, Error<<C::Inner as Controller>::BusError>> {
+        controller: &mut D::Inner,
+    ) -> Result<PortEventStreamer, Error<<D::Inner as Controller>::BusError>> {
         if self.state.lock().await.controller_state().fw_update_state.in_progress() {
             // Don't process events while firmware update is in progress
             debug!("Firmware update in progress, ignoring port events");
@@ -370,7 +360,7 @@ where
             // DROP SAFETY: Safe as long as `wait_port_event` is drop safe
             match select(controller.wait_port_event(), async {
                 self.sw_status_event.wait().await;
-                Ok::<_, Error<<C::Inner as Controller>::BusError>>(())
+                Ok::<_, Error<<D::Inner as Controller>::BusError>>(())
             })
             .await
             {
@@ -383,7 +373,7 @@ where
     }
 
     /// Wait for the next event
-    pub async fn wait_next(&self) -> Result<Event<'_>, Error<<C::Inner as Controller>::BusError>> {
+    pub async fn wait_next(&self) -> Result<Event<'_>, Error<<D::Inner as Controller>::BusError>> {
         // This loop is to ensure that if we finish streaming events we go back to waiting for the next port event
         loop {
             let event = {
@@ -402,7 +392,7 @@ where
                 Either5::First(stream) => {
                     let mut stream = stream?;
                     if let Some((port_index, event)) = stream
-                        .next::<Error<<C::Inner as Controller>::BusError>, _, _>(async |port_index| {
+                        .next::<Error<<D::Inner as Controller>::BusError>, _, _>(async |port_index| {
                             // Combine the event read from the controller with any software generated events
                             // Acquire the locks first to centralize the awaits here
                             let mut controller = self.controller.lock().await;
@@ -474,10 +464,10 @@ where
     /// Process a port notification
     async fn process_port_notification<'b>(
         &self,
-        controller: &mut C::Inner,
+        controller: &mut D::Inner,
         port: LocalPortId,
         notification: PortNotificationSingle,
-    ) -> Result<Output<'b>, Error<<C::Inner as Controller>::BusError>> {
+    ) -> Result<Output<'b>, Error<<D::Inner as Controller>::BusError>> {
         match notification {
             PortNotificationSingle::Alert => {
                 let ado = controller.get_pd_alert(port).await?;
@@ -509,7 +499,7 @@ where
     pub async fn process_event<'b>(
         &self,
         event: Event<'b>,
-    ) -> Result<Output<'b>, Error<<C::Inner as Controller>::BusError>> {
+    ) -> Result<Output<'b>, Error<<D::Inner as Controller>::BusError>> {
         let mut controller = self.controller.lock().await;
         let mut state = self.state.lock().await;
         match event {
@@ -519,13 +509,9 @@ where
             }
             Event::PowerPolicyCommand(EventPowerPolicyCommand { port, request }) => {
                 let response = self
-                    .process_power_command(&mut controller, state.deref_mut().deref_mut(), port, &request.command)
+                    .process_power_command(&mut controller, state.deref_mut().deref_mut(), port, &request)
                     .await;
-                Ok(Output::PowerPolicyCommand(OutputPowerPolicyCommand {
-                    port,
-                    request,
-                    response,
-                }))
+                Ok(Output::PowerPolicyCommand(OutputPowerPolicyCommand { port, response }))
             }
             Event::ControllerCommand(request) => {
                 let response = self
@@ -555,7 +541,7 @@ where
     }
 
     /// Event loop finalize
-    pub async fn finalize<'b>(&self, output: Output<'b>) -> Result<(), Error<<C::Inner as Controller>::BusError>> {
+    pub async fn finalize<'b>(&self, output: Output<'b>) -> Result<(), Error<<D::Inner as Controller>::BusError>> {
         let mut state = self.state.lock().await;
 
         match output {
@@ -568,9 +554,18 @@ where
             Output::PdAlert(OutputPdAlert { port, ado }) => {
                 self.finalize_pd_alert(state.deref_mut().deref_mut(), port, ado)
             }
-            Output::Vdm(vdm) => self.finalize_vdm(state.deref_mut().deref_mut(), vdm).map_err(Error::Pd),
-            Output::PowerPolicyCommand(OutputPowerPolicyCommand { request, response, .. }) => {
-                request.respond(response);
+            Output::Vdm(vdm) => self
+                .finalize_vdm(state.deref_mut().deref_mut(), vdm)
+                .await
+                .map_err(Error::Pd),
+            Output::PowerPolicyCommand(OutputPowerPolicyCommand { port, response }) => {
+                self.power_proxy_receivers
+                    .get(port.0 as usize)
+                    .ok_or(Error::Pd(PdError::InvalidPort))?
+                    .lock()
+                    .await
+                    .send(response)
+                    .await;
                 Ok(())
             }
             Output::ControllerCommand(OutputControllerCommand { request, response }) => {
@@ -596,13 +591,13 @@ where
     pub async fn process_and_finalize_event<'b>(
         &self,
         event: Event<'b>,
-    ) -> Result<(), Error<<C::Inner as Controller>::BusError>> {
+    ) -> Result<(), Error<<D::Inner as Controller>::BusError>> {
         let output = self.process_event(event).await?;
         self.finalize(output).await
     }
 
     /// Combined processing function
-    pub async fn process_next_event(&self) -> Result<(), Error<<C::Inner as Controller>::BusError>> {
+    pub async fn process_next_event(&self) -> Result<(), Error<<D::Inner as Controller>::BusError>> {
         let event = self.wait_next().await?;
         self.process_and_finalize_event(event).await
     }
@@ -611,9 +606,11 @@ where
     pub async fn register(
         &'static self,
         controllers: &intrusive_list::IntrusiveList,
-        power_policy_context: &embedded_services::power::policy::policy::Context<POLICY_CHANNEL_SIZE>,
-    ) -> Result<(), Error<<C::Inner as Controller>::BusError>> {
-        // TODO: Unify these devices?
+        power_policy_context: &embedded_services::power::policy::policy::Context<
+            Mutex<M, PowerProxyDevice<'static>>,
+            R,
+        >,
+    ) -> Result<(), Error<<D::Inner as Controller>::BusError>> {
         for device in self.registration.power_devices {
             power_policy_context.register_device(device).map_err(|_| {
                 error!(
@@ -647,8 +644,14 @@ where
     }
 }
 
-impl<'device, M: RawMutex, C: Lockable, V: FwOfferValidator, const POLICY_CHANNEL_SIZE: usize> Lockable
-    for ControllerWrapper<'device, M, C, V, POLICY_CHANNEL_SIZE>
+impl<
+    'device,
+    M: RawMutex,
+    C: Lockable,
+    S: event::Sender<policy::RequestData>,
+    R: event::Receiver<policy::RequestData>,
+    V: FwOfferValidator,
+> Lockable for ControllerWrapper<'device, M, C, S, R, V>
 where
     <C as Lockable>::Inner: Controller,
 {

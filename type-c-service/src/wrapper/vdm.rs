@@ -1,5 +1,7 @@
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use embedded_services::{
+    event,
+    power::policy::policy,
     sync::Lockable,
     trace,
     type_c::{
@@ -13,18 +15,24 @@ use crate::wrapper::{DynPortState, message::vdm::OutputKind};
 
 use super::{ControllerWrapper, FwOfferValidator, message::vdm::Output};
 
-impl<'device, M: RawMutex, C: Lockable, V: FwOfferValidator, const POLICY_CHANNEL_SIZE: usize>
-    ControllerWrapper<'device, M, C, V, POLICY_CHANNEL_SIZE>
+impl<
+    'device,
+    M: RawMutex,
+    D: Lockable,
+    S: event::Sender<policy::RequestData>,
+    R: event::Receiver<policy::RequestData>,
+    V: FwOfferValidator,
+> ControllerWrapper<'device, M, D, S, R, V>
 where
-    <C as Lockable>::Inner: Controller,
+    D::Inner: Controller,
 {
     /// Process a VDM event by retrieving the relevant VDM data from the `controller` for the appropriate `port`.
     pub(super) async fn process_vdm_event(
         &self,
-        controller: &mut C::Inner,
+        controller: &mut D::Inner,
         port: LocalPortId,
         event: VdmNotification,
-    ) -> Result<Output, Error<<C::Inner as Controller>::BusError>> {
+    ) -> Result<Output, Error<<D::Inner as Controller>::BusError>> {
         trace!("Processing VDM event: {:?} on port {}", event, port.0);
         let kind = match event {
             VdmNotification::Entered => OutputKind::Entered(controller.get_other_vdm(port).await?),
@@ -37,7 +45,11 @@ where
     }
 
     /// Finalize a VDM output by notifying the service.
-    pub(super) fn finalize_vdm(&self, state: &mut dyn DynPortState<'_>, output: Output) -> Result<(), PdError> {
+    pub(super) async fn finalize_vdm(
+        &self,
+        state: &mut dyn DynPortState<'_, S>,
+        output: Output,
+    ) -> Result<(), PdError> {
         trace!("Finalizing VDM output: {:?}", output);
         let Output { port, kind } = output;
         let global_port_id = self.registration.pd_controller.lookup_global_port(port)?;

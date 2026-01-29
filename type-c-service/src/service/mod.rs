@@ -4,8 +4,12 @@ use embassy_sync::{
     pubsub::{DynImmediatePublisher, DynSubscriber},
 };
 use embedded_services::{
-    GlobalRawMutex, debug, error, info, intrusive_list,
+    GlobalRawMutex, debug, error,
+    event::Receiver,
+    info, intrusive_list,
     ipc::deferred,
+    power::policy::policy,
+    sync::Lockable,
     trace,
     type_c::{
         self, comms,
@@ -252,10 +256,13 @@ impl<'a> Service<'a> {
     }
 
     /// Register the Type-C service with the power policy service
-    pub fn register_comms<const POLICY_CHANNEL_SIZE: usize>(
+    pub fn register_comms<PD: Lockable + 'static, PR: Receiver<policy::RequestData> + 'static>(
         &'static self,
-        power_policy_context: &power_policy::policy::Context<POLICY_CHANNEL_SIZE>,
-    ) -> Result<(), intrusive_list::Error> {
+        power_policy_context: &power_policy::policy::Context<PD, PR>,
+    ) -> Result<(), intrusive_list::Error>
+    where
+        PD::Inner: embedded_services::power::policy::device::DeviceTrait,
+    {
         power_policy_context.register_message_receiver(&self.power_policy_event_publisher)
     }
 

@@ -1,5 +1,4 @@
 //! Power policy related data structures and messages
-pub mod action;
 pub mod charger;
 pub mod device;
 pub mod flags;
@@ -20,7 +19,7 @@ pub enum Error {
     /// The consume request was denied, contains maximum available power
     CannotConsume(Option<PowerCapability>),
     /// The device is not in the correct state (expected, actual)
-    InvalidState(device::StateKind, device::StateKind),
+    InvalidState(&'static [device::StateKind], device::StateKind),
     /// Invalid response
     InvalidResponse,
     /// Busy, the device cannot respond to the request at this time
