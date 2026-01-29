@@ -25,7 +25,7 @@ pub(super) struct State {
     state: PowerState,
 }
 
-impl<D: Lockable + 'static, R: Receiver<RequestData> + 'static> PowerPolicy<D, R>
+impl<D: Lockable + 'static, R: Receiver<RequestData> + 'static> PowerPolicy<'_, D, R>
 where
     D::Inner: DeviceTrait,
 {

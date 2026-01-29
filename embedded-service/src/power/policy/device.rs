@@ -294,7 +294,6 @@ where
                 consumer_capability: None,
                 requested_provider_capability: None,
             }),
-            context_ref,
             device,
             receiver: Mutex::new(receiver),
         }

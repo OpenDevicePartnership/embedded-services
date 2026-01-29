@@ -1,20 +1,25 @@
 use core::future::Future;
-use embedded_services::{error, event, info, power::policy::policy};
+use embassy_sync::mutex::Mutex;
+use embedded_services::{error, event, info, power::policy::policy, sync::Lockable};
 
-use crate::{service::Service, wrapper::ControllerWrapper};
+use crate::{
+    service::Service,
+    wrapper::{ControllerWrapper, proxy::PowerProxyDevice},
+};
 
 /// Task to run the Type-C service, takes a closure to customize the event loop
 pub async fn task_closure<'a, M, D, S, R, V, Fut: Future<Output = ()>, F: Fn(&'a Service) -> Fut, const N: usize>(
     service: &'static Service<'a>,
     wrappers: [&'a ControllerWrapper<'a, M, D, S, R, V>; N],
+    power_policy_context: &policy::Context<Mutex<M, PowerProxyDevice<'static>>, R>,
     f: F,
 ) where
     M: embassy_sync::blocking_mutex::raw::RawMutex,
-    D: embedded_services::sync::Lockable,
+    D: Lockable,
     S: event::Sender<policy::RequestData>,
     R: event::Receiver<policy::RequestData>,
     V: crate::wrapper::FwOfferValidator,
-    <D as embedded_services::sync::Lockable>::Inner: embedded_services::type_c::controller::Controller,
+    D::Inner: embedded_services::type_c::controller::Controller,
 {
     info!("Starting type-c task");
 
@@ -43,6 +48,7 @@ pub async fn task_closure<'a, M, D, S, R, V, Fut: Future<Output = ()>, F: Fn(&'a
 pub async fn task<'a, M, D, S, R, V, const N: usize>(
     service: &'static Service<'a>,
     wrappers: [&'a ControllerWrapper<'a, M, D, S, R, V>; N],
+    power_policy_context: &policy::Context<Mutex<M, PowerProxyDevice<'static>>, R>,
 ) where
     M: embassy_sync::blocking_mutex::raw::RawMutex,
     D: embedded_services::sync::Lockable,

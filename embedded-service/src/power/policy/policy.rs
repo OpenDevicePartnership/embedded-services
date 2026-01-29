@@ -1,7 +1,6 @@
 //! Context for any power policy implementations
 use core::marker::PhantomData;
 use core::pin::pin;
-use core::sync::atomic::{AtomicBool, Ordering};
 
 use crate::broadcaster::immediate as broadcaster;
 use crate::event::Receiver;
@@ -70,79 +69,53 @@ pub struct Response {
 }
 
 /// Power policy context
-pub struct Context {
+pub struct Context<D: Lockable, R: Receiver<RequestData>>
+where
+    D::Inner: DeviceTrait,
+{
     /// Registered devices
     power_devices: intrusive_list::IntrusiveList,
     /// Registered chargers
     charger_devices: intrusive_list::IntrusiveList,
     /// Message broadcaster
     broadcaster: broadcaster::Immediate<CommsMessage>,
+    _phantom: PhantomData<(D, R)>,
 }
 
-impl<const POLICY_CHANNEL_SIZE: usize> Default for Context<POLICY_CHANNEL_SIZE> {
+impl<D: Lockable + 'static, R: Receiver<RequestData> + 'static> Default for Context<D, R>
+where
+    D::Inner: DeviceTrait,
+{
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<const POLICY_CHANNEL_SIZE: usize> Context<POLICY_CHANNEL_SIZE> {
+impl<D: Lockable + 'static, R: Receiver<RequestData> + 'static> Context<D, R>
+where
+    D::Inner: DeviceTrait,
+{
     /// Construct a new power policy Context
     pub const fn new() -> Self {
         Self {
-            devices: intrusive_list::IntrusiveList::new(),
-            chargers: intrusive_list::IntrusiveList::new(),
+            power_devices: intrusive_list::IntrusiveList::new(),
+            charger_devices: intrusive_list::IntrusiveList::new(),
             broadcaster: broadcaster::Immediate::new(),
+            _phantom: PhantomData,
         }
     }
 
-
-/// Init power policy service
-pub fn init() {}
-
-/// Register a device with the power policy service
-pub fn register_device<D: Lockable + 'static, R: Receiver<RequestData> + 'static>(
-    device: &'static impl device::DeviceContainer<D, R>,
-) -> Result<(), intrusive_list::Error>
-where
-    D::Inner: DeviceTrait,
-{
-    let device = device.get_power_policy_device();
-    if get_device::<D, R>(device.id()).is_some() {
-        return Err(intrusive_list::Error::NodeAlreadyInList);
-    }
-
-    CONTEXT.devices.push(device)
-}
-
-/// Register a charger with the power policy service
-pub fn register_charger(device: &'static impl charger::ChargerContainer) -> Result<(), intrusive_list::Error> {
-    let device = device.get_charger();
-    if get_charger(device.id()).is_some() {
-        return Err(intrusive_list::Error::NodeAlreadyInList);
-    }
-
-    CONTEXT.chargers.push(device)
-}
-
-/// Find a device by its ID
-fn get_device<D: Lockable + 'static, R: Receiver<RequestData> + 'static>(
-    id: DeviceId,
-) -> Option<&'static device::Device<'static, D, R>>
-where
-    D::Inner: DeviceTrait,
-{
-    for device in &CONTEXT.devices {
-        if let Some(data) = device.data::<device::Device<'static, D, R>>() {
-            if data.id() == id {
-                return Some(data);
-            }
-        } else {
-            error!("Non-device located in devices list");
+    /// Register a power device with the service
+    pub fn register_device(
+        &self,
+        device: &'static impl device::DeviceContainer<D, R>,
+    ) -> Result<(), intrusive_list::Error> {
+        let device = device.get_power_policy_device();
+        if self.get_device(device.id()).is_ok() {
+            return Err(intrusive_list::Error::NodeAlreadyInList);
         }
-
         self.power_devices.push(device)
     }
-}
 
     /// Register a charger with the power policy service
     pub fn register_charger(
@@ -158,9 +131,12 @@ where
     }
 
     /// Get a device by its ID
-    pub fn get_device(&self, id: DeviceId) -> Result<&'static device::Device<POLICY_CHANNEL_SIZE>, Error> {
+    pub fn get_device(&self, id: DeviceId) -> Result<&'static device::Device<'static, D, R>, Error>
+    where
+        D::Inner: DeviceTrait,
+    {
         for device in &self.power_devices {
-            if let Some(data) = device.data::<device::Device<POLICY_CHANNEL_SIZE>>() {
+            if let Some(data) = device.data::<device::Device<'static, D, R>>() {
                 if data.id() == id {
                     return Ok(data);
                 }
@@ -173,21 +149,21 @@ where
     }
 
     /// Returns the total amount of power that is being supplied to external devices
-pub async fn compute_total_provider_power_mw<D: Lockable + 'static, R: Receiver<RequestData> + 'static>() -> u32
-where
-    D::Inner: DeviceTrait,
-{
-    let mut total = 0;
-    for device in CONTEXT.devices.iter_only::<device::Device<'static, D, R>>() {
-        if let Some(capability) = device.provider_capability().await {
-            if device.is_provider().await {
-                total += capability.capability.max_power_mw();
+    pub async fn compute_total_provider_power_mw(&self) -> u32
+    where
+        D::Inner: DeviceTrait,
+    {
+        let mut total = 0;
+        for device in self.power_devices.iter_only::<device::Device<'static, D, R>>() {
+            if let Some(capability) = device.provider_capability().await {
+                if device.is_provider().await {
+                    total += capability.capability.max_power_mw();
+                }
             }
         }
-    }
 
-    total
-}
+        total
+    }
 
     /// Get a charger by its ID
     pub fn get_charger(&self, id: charger::ChargerId) -> Result<&'static charger::Device, Error> {
@@ -199,31 +175,8 @@ where
             } else {
                 error!("Non-device located in charger list");
             }
-    None
-}
-
-/// Initialize chargers in hardware
-pub async fn init_chargers() -> ChargerResponse {
-    for charger in &CONTEXT.chargers {
-        if let Some(data) = charger.data::<charger::Device>() {
-            data.execute_command(charger::PolicyEvent::InitRequest)
-                .await
-                .inspect_err(|e| error!("Charger {:?} failed InitRequest: {:?}", data.id(), e))?;
         }
-
         Err(Error::InvalidDevice)
-    }
-}
-
-    /// Convenience function to send a request to the power policy service
-    pub(super) async fn send_request(&self, from: DeviceId, request: RequestData) -> Result<ResponseData, Error> {
-        self.policy_request
-            .send(Request {
-                id: from,
-                data: request,
-            })
-            .await;
-        self.policy_response.receive().await
     }
 
     /// Initialize chargers in hardware
@@ -236,35 +189,6 @@ pub async fn init_chargers() -> ChargerResponse {
             }
         }
 
-        Ok(Ack)
-    }
-}
-
-/// Register a message receiver for power policy messages
-pub fn register_message_receiver(
-    receiver: &'static broadcaster::Receiver<'_, CommsMessage>,
-) -> intrusive_list::Result<()> {
-    CONTEXT.broadcaster.register_receiver(receiver)
-}
-
-/// Singleton struct to give access to the power policy context
-pub struct ContextToken<D: Lockable, R: Receiver<RequestData>>
-where
-    D::Inner: DeviceTrait,
-{
-    _phantom: PhantomData<(D, R)>,
-}
-
-impl<D: Lockable + 'static, R: Receiver<RequestData> + 'static> ContextToken<D, R>
-where
-    D::Inner: DeviceTrait,
-{
-    /// Create a new context token, returning None if this function has been called before
-    pub fn create() -> Option<Self> {
-        static INIT: AtomicBool = AtomicBool::new(false);
-        if INIT.load(Ordering::SeqCst) {
-            return None;
-        }
         Ok(Ack)
     }
 
@@ -286,7 +210,6 @@ where
         receiver: &'static broadcaster::Receiver<'_, CommsMessage>,
     ) -> intrusive_list::Result<()> {
         self.broadcaster.register_receiver(receiver)
-        Some(ContextToken { _phantom: PhantomData })
     }
 
     /// Initialize Policy charger devices
@@ -297,21 +220,6 @@ where
         self.init_chargers().await?;
 
         Ok(())
-    }
-
-    /// Wait for a power policy request
-    pub async fn wait_request(&self) -> Request {
-        self.policy_request.receive().await
-    }
-
-    /// Send a response to a power policy request
-    pub async fn send_response(&self, response: Result<ResponseData, Error>) {
-        CONTEXT.policy_response.send(response).await
-    }
-
-    /// Get a device by its ID
-    pub fn get_device(&self, id: DeviceId) -> Result<&'static device::Device<'static, D, R>, Error> {
-        get_device(id).ok_or(Error::InvalidDevice)
     }
 
     /// Provides access to the device list

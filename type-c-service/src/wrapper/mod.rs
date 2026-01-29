@@ -38,7 +38,7 @@ use embedded_usb_pd::{Error, LocalPortId, PdError};
 
 use crate::wrapper::backing::{DynPortState, PortPower};
 use crate::wrapper::message::*;
-use crate::wrapper::proxy::PowerProxyReceiver;
+use crate::wrapper::proxy::{PowerProxyDevice, PowerProxyReceiver};
 use crate::{PortEventStreamer, PortEventVariant};
 
 pub mod backing;
@@ -85,7 +85,7 @@ pub struct ControllerWrapper<
     /// FW update ticker used to check for timeouts and recovery attempts
     fw_update_ticker: Mutex<M, embassy_time::Ticker>,
     /// Registration information for services
-    registration: backing::Registration<'device, M, R>,
+    pub registration: backing::Registration<'device, M, R>,
     /// State
     state: Mutex<M, RefMut<'device, dyn DynPortState<'device, S>>>,
     /// SW port status event signal
@@ -131,15 +131,6 @@ where
             sw_status_event: Signal::new(),
             power_proxy_receivers: backing.power_receivers,
         })
-    }
-
-    /// Get the power policy devices for this controller.
-    pub fn power_policy_devices(&self) -> &[policy::device::Device<POLICY_CHANNEL_SIZE>] {
-        self.registration.power_devices
-    }
-
-    pub fn power_policy_senders(&self) -> &[S] {
-        self.registration.power_event_senders
     }
 
     /// Get the cached port status, returns None if the port is invalid
@@ -612,33 +603,16 @@ where
     }
 
     /// Register all devices with their respective services
-<<<<<<< HEAD
-<<<<<<< HEAD
     pub async fn register(
         &'static self,
         controllers: &intrusive_list::IntrusiveList,
-        power_policy_context: &embedded_services::power::policy::policy::Context<POLICY_CHANNEL_SIZE>,
-    ) -> Result<(), Error<<C::Inner as Controller>::BusError>> {
-        // TODO: Unify these devices?
-        for device in self.registration.power_devices {
-            power_policy_context.register_device(device).map_err(|_| {
-=======
-    pub async fn register(&'static self, controllers: &intrusive_list::IntrusiveList,) -> Result<(), Error<<C::Inner as Controller>::BusError>> {
-=======
-    pub async fn register(
-        &'static self,
-        controllers: &intrusive_list::IntrusiveList,
-<<<<<<< HEAD
-    ) -> Result<(), Error<<C::Inner as Controller>::BusError>> {
->>>>>>> 41b14c1 (WIP: More type-c refactoring)
-        for device in self.registration.power_event_senders {
-            policy::register_device(device).await.map_err(|_| {
->>>>>>> a10cc63 (WIP: Migrate type-C service over)
-=======
+        power_policy_context: &embedded_services::power::policy::policy::Context<
+            Mutex<M, PowerProxyDevice<'static>>,
+            R,
+        >,
     ) -> Result<(), Error<<D::Inner as Controller>::BusError>> {
         for device in self.registration.power_devices {
-            policy::register_device(device).map_err(|_| {
->>>>>>> daa1cc7 (Rebase onto upstream type-C changes)
+            power_policy_context.register_device(device).map_err(|_| {
                 error!(
                     "Controller{}: Failed to register power device {}",
                     self.registration.pd_controller.id().0,
@@ -670,10 +644,6 @@ where
     }
 }
 
-<<<<<<< HEAD
-impl<'device, M: RawMutex, C: Lockable, V: FwOfferValidator, const POLICY_CHANNEL_SIZE: usize> Lockable
-    for ControllerWrapper<'device, M, C, V, POLICY_CHANNEL_SIZE>
-=======
 impl<
     'device,
     M: RawMutex,
@@ -682,7 +652,6 @@ impl<
     R: event::Receiver<policy::RequestData>,
     V: FwOfferValidator,
 > Lockable for ControllerWrapper<'device, M, C, S, R, V>
->>>>>>> 41b14c1 (WIP: More type-c refactoring)
 where
     <C as Lockable>::Inner: Controller,
 {

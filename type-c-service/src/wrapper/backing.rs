@@ -247,7 +247,6 @@ impl<'a, const N: usize, M: RawMutex> Storage<'a, N, M> {
         context: &'a embedded_services::type_c::controller::Context,
         controller_id: ControllerId,
         cfu_id: ComponentId,
-        power_policy_context: &'static embedded_services::power::policy::policy::Context<POLICY_CHANNEL_SIZE>,
         pd_ports: [GlobalPortId; N],
     ) -> Self {
         Self {

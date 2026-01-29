@@ -17,8 +17,6 @@ use embedded_usb_pd::{PowerRole, type_c::Current};
 use embedded_usb_pd::{type_c::ConnectionState, ucsi::lpm};
 use log::{debug, info, trace};
 
-const POWER_POLICY_CHANNEL_SIZE: usize = 1;
-
 pub struct ControllerState {
     events: Signal<GlobalRawMutex, PortEvent>,
     status: Mutex<GlobalRawMutex, PortStatus>,

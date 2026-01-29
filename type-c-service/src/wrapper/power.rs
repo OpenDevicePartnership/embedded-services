@@ -48,10 +48,12 @@ where
             c
         });
 
+        info!("RPZ sending event");
         power
             .sender
             .send(policy::RequestData::UpdatedConsumerCapability(available_sink_contract))
             .await;
+        info!("RPZ event sent");
         Ok(())
     }
 

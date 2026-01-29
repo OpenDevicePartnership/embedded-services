@@ -115,10 +115,7 @@ mod test_controller {
 }
 
 #[embassy_executor::task]
-async fn controller_task(
-    controller_list: &'static IntrusiveList,
-    power_context: &'static policy::Context<POWER_POLICY_CHANNEL_SIZE>,
-) {
+async fn controller_task(controller_list: &'static IntrusiveList) {
     static CONTROLLER: OnceLock<test_controller::Controller> = OnceLock::new();
 
     static PORTS: [GlobalPortId; 2] = [PORT0_ID, PORT1_ID];
@@ -135,14 +132,11 @@ async fn controller_task(
 async fn task(spawner: Spawner) {
     embedded_services::init().await;
 
-    static POWER_CONTEXT: StaticCell<policy::Context<POWER_POLICY_CHANNEL_SIZE>> = StaticCell::new();
     static CONTROLLER_LIST: StaticCell<IntrusiveList> = StaticCell::new();
-
-    let power_context = POWER_CONTEXT.init(policy::Context::new());
     let controller_list = CONTROLLER_LIST.init(IntrusiveList::new());
 
     info!("Starting controller task");
-    spawner.must_spawn(controller_task(controller_list, power_context));
+    spawner.must_spawn(controller_task(controller_list));
     // Wait for controller to be registered
     Timer::after_secs(1).await;
 

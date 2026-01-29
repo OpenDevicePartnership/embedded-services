@@ -9,8 +9,11 @@ use embassy_time::{self as _, Timer};
 use embedded_services::{
     GlobalRawMutex,
     broadcaster::immediate as broadcaster,
-    power::policy::{
-        self, ConsumerPowerCapability, Error, PowerCapability, ProviderPowerCapability, device::DeviceTrait, flags,
+    power::{
+        self,
+        policy::{
+            self, ConsumerPowerCapability, Error, PowerCapability, ProviderPowerCapability, device::DeviceTrait, flags,
+        },
     },
 };
 use log::*;
@@ -83,10 +86,8 @@ impl DeviceTrait for ExampleDevice<'_> {
 }
 
 #[embassy_executor::task]
-async fn run(_spawner: Spawner) {
+async fn run(spawner: Spawner) {
     embedded_services::init().await;
-
-    spawner.must_spawn(receiver_task(service));
 
     info!("Creating device 0");
     static DEVICE0_EVENT_CHANNEL: StaticCell<Channel<NoopRawMutex, policy::policy::RequestData, 4>> = StaticCell::new();
@@ -105,7 +106,6 @@ async fn run(_spawner: Spawner) {
         device0,
         device0_event_channel.dyn_receiver(),
     ));
-    policy::register_device(device0_registration).unwrap();
 
     info!("Creating device 1");
     static DEVICE1_EVENT_CHANNEL: StaticCell<Channel<NoopRawMutex, policy::policy::RequestData, 4>> = StaticCell::new();
@@ -124,9 +124,31 @@ async fn run(_spawner: Spawner) {
         device1,
         device1_event_channel.dyn_receiver(),
     ));
-    policy::register_device(device1_registration).unwrap();
 
-    spawner.must_spawn(power_policy_service_task(service, [device0_mock, device1_mock]));
+    static SERVICE_CONTEXT: StaticCell<
+        power::policy::policy::Context<
+            Mutex<GlobalRawMutex, ExampleDevice<'static>>,
+            channel::DynamicReceiver<'static, policy::policy::RequestData>,
+        >,
+    > = StaticCell::new();
+    let service_context = SERVICE_CONTEXT.init(power::policy::policy::Context::new());
+
+    service_context.register_device(device0_registration).unwrap();
+    service_context.register_device(device1_registration).unwrap();
+
+    static SERVICE: StaticCell<
+        power_policy_service::PowerPolicy<
+            Mutex<GlobalRawMutex, ExampleDevice<'static>>,
+            channel::DynamicReceiver<'static, policy::policy::RequestData>,
+        >,
+    > = StaticCell::new();
+    let service = SERVICE.init(power_policy_service::PowerPolicy::new(
+        service_context,
+        power_policy_service::config::Config::default(),
+    ));
+
+    spawner.must_spawn(power_policy_task(service));
+    spawner.must_spawn(receiver_task(service));
 
     // Plug in device 0, should become current consumer
     info!("Connecting device 0");
@@ -249,7 +271,13 @@ async fn run(_spawner: Spawner) {
 }
 
 #[embassy_executor::task]
-async fn receiver_task(service: &'static power_policy_service::PowerPolicy<POWER_POLICY_CHANNEL_SIZE>) {
+async fn receiver_task(
+    service: &'static power_policy_service::PowerPolicy<
+        'static,
+        Mutex<GlobalRawMutex, ExampleDevice<'static>>,
+        channel::DynamicReceiver<'static, policy::policy::RequestData>,
+    >,
+) {
     static CHANNEL: StaticCell<PubSubChannel<NoopRawMutex, policy::CommsMessage, 4, 1, 0>> = StaticCell::new();
     let channel = CHANNEL.init(PubSubChannel::new());
 
@@ -274,17 +302,14 @@ async fn receiver_task(service: &'static power_policy_service::PowerPolicy<POWER
 }
 
 #[embassy_executor::task]
-async fn power_policy_task() {
-    static POWER_POLICY: StaticCell<
-        PowerPolicy<
-            Mutex<GlobalRawMutex, ExampleDevice<'static>>,
-            channel::DynamicReceiver<'static, policy::policy::RequestData>,
-        >,
-    > = StaticCell::new();
-    let power_policy = POWER_POLICY.init(PowerPolicy::create(Default::default()).unwrap());
-    loop {
-        power_policy.process().await.unwrap();
-    }
+async fn power_policy_task(
+    power_policy: &'static PowerPolicy<
+        'static,
+        Mutex<GlobalRawMutex, ExampleDevice<'static>>,
+        channel::DynamicReceiver<'static, policy::policy::RequestData>,
+    >,
+) {
+    power_policy_service::task::task(power_policy).await.unwrap();
 }
 
 fn main() {
@@ -293,14 +318,7 @@ fn main() {
     static EXECUTOR: StaticCell<Executor> = StaticCell::new();
     let executor = EXECUTOR.init(Executor::new());
 
-    static SERVICE: StaticCell<power_policy_service::PowerPolicy<POWER_POLICY_CHANNEL_SIZE>> = StaticCell::new();
-    let service = SERVICE.init(power_policy_service::PowerPolicy::new(
-        power_policy_service::config::Config::default(),
-    ));
-
     executor.run(|spawner| {
-        spawner.must_spawn(power_policy_task());
         spawner.must_spawn(run(spawner));
-        spawner.must_spawn(receiver_task());
     });
 }

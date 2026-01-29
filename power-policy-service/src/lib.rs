@@ -32,12 +32,12 @@ struct InternalState {
 }
 
 /// Power policy state
-pub struct PowerPolicy<D: Lockable, R: Receiver<RequestData>>
+pub struct PowerPolicy<'a, D: Lockable, R: Receiver<RequestData>>
 where
     D::Inner: DeviceTrait,
 {
     /// Power policy context
-    context: policy::ContextToken<D, R>,
+    pub context: &'a policy::Context<D, R>,
     /// State
     state: Mutex<GlobalRawMutex, InternalState>,
     /// Comms endpoint
@@ -46,14 +46,14 @@ where
     config: config::Config,
 }
 
-impl<D: Lockable + 'static, R: Receiver<RequestData> + 'static> PowerPolicy<D, R>
+impl<'a, D: Lockable + 'static, R: Receiver<RequestData> + 'static> PowerPolicy<'a, D, R>
 where
     D::Inner: DeviceTrait,
 {
     /// Create a new power policy
-    pub fn new(config: config::Config) -> Self {
+    pub fn new(context: &'a policy::Context<D, R>, config: config::Config) -> Self {
         Self {
-            context: policy::Context::new(),
+            context,
             state: Mutex::new(InternalState::default()),
             tp: comms::Endpoint::uninit(comms::EndpointID::Internal(comms::Internal::Power)),
             config,
@@ -205,12 +205,16 @@ where
 
     /// Top-level event loop function
     pub async fn process(&self) -> Result<(), Error> {
+        info!("RPZ waiting for request");
         let request = self.wait_request().await;
-        self.process_request(request).await
+        info!("RPZ got request");
+        let result = self.process_request(request).await;
+        info!("RPZ processed request");
+        result
     }
 }
 
-impl<D: Lockable + 'static, R: Receiver<RequestData> + 'static> comms::MailboxDelegate for PowerPolicy<D, R> where
+impl<D: Lockable + 'static, R: Receiver<RequestData> + 'static> comms::MailboxDelegate for PowerPolicy<'_, D, R> where
     D::Inner: DeviceTrait
 {
 }

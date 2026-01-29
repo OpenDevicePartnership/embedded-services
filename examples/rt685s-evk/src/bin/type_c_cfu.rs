@@ -17,9 +17,8 @@ use embedded_cfu_protocol::protocol_definitions::*;
 use embedded_cfu_protocol::protocol_definitions::{FwUpdateOffer, FwUpdateOfferResponse, FwVersion};
 use embedded_services::cfu::component::InternalResponseData;
 use embedded_services::cfu::component::RequestData;
-use embedded_services::power::policy::{CommsMessage, DeviceId as PowerId, policy};
+use embedded_services::power::policy::{DeviceId as PowerId, policy};
 use embedded_services::type_c::ControllerId;
-use embedded_services::type_c::controller::Context;
 use embedded_services::{GlobalRawMutex, IntrusiveList, cfu};
 use embedded_services::{error, info};
 use embedded_usb_pd::GlobalPortId;
@@ -68,8 +67,6 @@ const PORT0_ID: GlobalPortId = GlobalPortId(0);
 const PORT1_ID: GlobalPortId = GlobalPortId(1);
 const PORT0_PWR_ID: PowerId = PowerId(0);
 const PORT1_PWR_ID: PowerId = PowerId(1);
-
-const POLICY_CHANNEL_SIZE: usize = 1;
 
 #[embassy_executor::task]
 async fn pd_controller_task(controller: &'static Wrapper<'static>) {
@@ -166,50 +163,30 @@ async fn fw_update_task() {
 }
 
 #[embassy_executor::task]
-async fn power_policy_service_task() {
-    static POWER_POLICY: static_cell::StaticCell<
-        PowerPolicy<Mutex<GlobalRawMutex, PowerProxyDevice<'static>>, DynamicReceiver<'static, policy::RequestData>>,
-    > = static_cell::StaticCell::new();
-    let power_policy =
-        POWER_POLICY.init(PowerPolicy::create(Default::default()).expect("Failed to create power policy"));
-
-    // TODO: remove once power policy task accepts context
-    Timer::after_millis(100).await;
-    power_policy_service::task::task(power_policy)
+async fn power_policy_service_task(
+    service: &'static PowerPolicy<
+        'static,
+        Mutex<GlobalRawMutex, PowerProxyDevice<'static>>,
+        DynamicReceiver<'static, policy::RequestData>,
+    >,
+) {
+    Timer::after_millis(100).await; // Give some time for other tasks to start
+    power_policy_service::task::task(service)
         .await
         .expect("Failed to start power policy service task");
 }
 
 #[embassy_executor::task]
-async fn service_task(
-    controller_context: &'static Context,
-    controllers: &'static IntrusiveList,
+async fn type_c_service_task(
+    service: &'static Service<'static>,
     wrappers: [&'static Wrapper<'static>; NUM_PD_CONTROLLERS],
-    power_policy_context: &'static embedded_services::power::policy::policy::Context<POLICY_CHANNEL_SIZE>,
-) -> ! {
+    power_policy_context: &'static policy::Context<
+        Mutex<GlobalRawMutex, PowerProxyDevice<'static>>,
+        DynamicReceiver<'static, policy::RequestData>,
+    >,
+) {
     info!("Starting type-c task");
-
-    // The service is the only receiver and we only use a DynImmediatePublisher, which doesn't take a publisher slot
-    static POWER_POLICY_CHANNEL: StaticCell<PubSubChannel<GlobalRawMutex, CommsMessage, 4, 1, 0>> = StaticCell::new();
-
-    let power_policy_channel = POWER_POLICY_CHANNEL.init(PubSubChannel::new());
-    let power_policy_publisher = power_policy_channel.dyn_immediate_publisher();
-    // Guaranteed to not panic since we initialized the channel above
-    let power_policy_subscriber = power_policy_channel.dyn_subscriber().unwrap();
-
-    let service = Service::create(
-        type_c_service::service::config::Config::default(),
-        controller_context,
-        controllers,
-        power_policy_publisher,
-        power_policy_subscriber,
-    );
-
-    static SERVICE: StaticCell<Service> = StaticCell::new();
-    let service = SERVICE.init(service);
-
     type_c_service::task::task(service, wrappers, power_policy_context).await;
-    unreachable!()
 }
 
 #[embassy_executor::main]
@@ -218,20 +195,6 @@ async fn main(spawner: Spawner) {
 
     info!("Embedded service init");
     embedded_services::init().await;
-
-    info!("Spawining power policy task");
-
-    static POWER_POLICY_SERVICE: StaticCell<power_policy_service::PowerPolicy<POLICY_CHANNEL_SIZE>> = StaticCell::new();
-    let power_service = POWER_POLICY_SERVICE.init(power_policy_service::PowerPolicy::new(
-        power_policy_service::Config::default(),
-    ));
-
-    spawner.must_spawn(power_policy_service_task(power_service));
-
-    static CONTROLLER_LIST: StaticCell<IntrusiveList> = StaticCell::new();
-    let controllers = CONTROLLER_LIST.init(IntrusiveList::new());
-    static CONTEXT: StaticCell<embedded_services::type_c::controller::Context> = StaticCell::new();
-    let controller_context = CONTEXT.init(embedded_services::type_c::controller::Context::new());
 
     let int_in = Input::new(p.PIO1_7, Pull::Up, Inverter::Disabled);
     static BUS: StaticCell<Mutex<GlobalRawMutex, BusMaster<'static>>> = StaticCell::new();
@@ -260,12 +223,39 @@ async fn main(spawner: Spawner) {
             mask.set_intel_vid_status_updated(true);
             mask.set_usb_status_updated(true);
             mask.set_power_path_switch_changed(true);
+            mask.set_sink_ready(true);
             *mask
         })
         .await
         .unwrap();
 
-    static STORAGE: StaticCell<Storage<TPS66994_NUM_PORTS, GlobalRawMutex, POLICY_CHANNEL_SIZE>> = StaticCell::new();
+    // Create power policy service
+    static POWER_SERVICE_CONTEXT: StaticCell<
+        policy::Context<
+            Mutex<GlobalRawMutex, PowerProxyDevice<'static>>,
+            DynamicReceiver<'static, policy::RequestData>,
+        >,
+    > = StaticCell::new();
+    let power_service_context = POWER_SERVICE_CONTEXT.init(policy::Context::new());
+
+    static POWER_SERVICE: StaticCell<
+        power_policy_service::PowerPolicy<
+            Mutex<GlobalRawMutex, PowerProxyDevice<'static>>,
+            DynamicReceiver<'static, policy::RequestData>,
+        >,
+    > = StaticCell::new();
+    let power_service = POWER_SERVICE.init(power_policy_service::PowerPolicy::new(
+        power_service_context,
+        power_policy_service::config::Config::default(),
+    ));
+
+    static CONTROLLER_CONTEXT: StaticCell<embedded_services::type_c::controller::Context> = StaticCell::new();
+    let controller_context = CONTROLLER_CONTEXT.init(embedded_services::type_c::controller::Context::new());
+
+    static CONTROLLER_LIST: StaticCell<IntrusiveList> = StaticCell::new();
+    let controller_list = CONTROLLER_LIST.init(IntrusiveList::new());
+
+    static STORAGE: StaticCell<Storage<TPS66994_NUM_PORTS, GlobalRawMutex>> = StaticCell::new();
     let storage = STORAGE.init(Storage::new(
         controller_context,
         CONTROLLER0_ID,
@@ -315,13 +305,30 @@ async fn main(spawner: Spawner) {
     let wrapper =
         WRAPPER.init(ControllerWrapper::try_new(controller_mutex, Default::default(), referenced, Validator).unwrap());
 
-    info!("Spawning type-c service task");
-    spawner.must_spawn(service_task(
+    // The service is the only receiver and we only use a DynImmediatePublisher, which doesn't take a publisher slot
+    static POWER_POLICY_CHANNEL: StaticCell<
+        PubSubChannel<GlobalRawMutex, embedded_services::power::policy::CommsMessage, 4, 1, 0>,
+    > = StaticCell::new();
+
+    let power_policy_channel = POWER_POLICY_CHANNEL.init(PubSubChannel::new());
+    let power_policy_publisher = power_policy_channel.dyn_immediate_publisher();
+    // Guaranteed to not panic since we initialized the channel above
+    let power_policy_subscriber = power_policy_channel.dyn_subscriber().unwrap();
+
+    static TYPE_C_SERVICE: StaticCell<Service<'static>> = StaticCell::new();
+    let type_c_service = TYPE_C_SERVICE.init(Service::create(
+        Default::default(),
         controller_context,
-        controllers,
-        [wrapper],
-        &power_service.context,
+        controller_list,
+        power_policy_publisher,
+        power_policy_subscriber,
     ));
+
+    info!("Spawining type-c service task");
+    spawner.must_spawn(type_c_service_task(type_c_service, [wrapper], power_service_context));
+
+    info!("Spawining power policy task");
+    spawner.must_spawn(power_policy_service_task(power_service));
 
     spawner.must_spawn(pd_controller_task(wrapper));
 

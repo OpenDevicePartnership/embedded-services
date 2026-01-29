@@ -40,6 +40,7 @@ const EVENT_CHANNEL_SIZE: usize = 4;
 async fn power_policy_task(
     completion_signal: &'static Signal<GlobalRawMutex, ()>,
     power_policy: &'static PowerPolicy<
+        'static,
         Mutex<GlobalRawMutex, Mock<'static, DynamicSender<'static, RequestData>>>,
         DynamicReceiver<'static, RequestData>,
     >,
@@ -81,8 +82,6 @@ pub async fn run_test<F: Future<Output = ()>>(
     > = StaticCell::new();
     let device0_registration = DEVICE0_REGISTRATION.init(device::Device::new(DeviceId(0), device0, device0_receiver));
 
-    policy::register_device(device0_registration).unwrap();
-
     static DEVICE1_EVENT_CHANNEL: StaticCell<Channel<GlobalRawMutex, RequestData, EVENT_CHANNEL_SIZE>> =
         StaticCell::new();
     let device1_event_channel = DEVICE1_EVENT_CHANNEL.init(Channel::new());
@@ -103,7 +102,16 @@ pub async fn run_test<F: Future<Output = ()>>(
     > = StaticCell::new();
     let device1_registration = DEVICE1_REGISTRATION.init(device::Device::new(DeviceId(1), device1, device1_receiver));
 
-    policy::register_device(device1_registration).unwrap();
+    static SERVICE_CONTEXT: StaticCell<
+        policy::policy::Context<
+            Mutex<GlobalRawMutex, Mock<DynamicSender<'static, RequestData>>>,
+            DynamicReceiver<'static, RequestData>,
+        >,
+    > = StaticCell::new();
+    let service_context = SERVICE_CONTEXT.init(policy::policy::Context::new());
+
+    service_context.register_device(device0_registration).unwrap();
+    service_context.register_device(device1_registration).unwrap();
 
     static POWER_POLICY: StaticCell<
         PowerPolicy<
@@ -111,7 +119,10 @@ pub async fn run_test<F: Future<Output = ()>>(
             DynamicReceiver<'static, RequestData>,
         >,
     > = StaticCell::new();
-    let power_policy = POWER_POLICY.init(power_policy_service::PowerPolicy::create(Default::default()).unwrap());
+    let power_policy = POWER_POLICY.init(power_policy_service::PowerPolicy::new(
+        service_context,
+        Default::default(),
+    ));
 
     static COMPLETION_SIGNAL: StaticCell<Signal<GlobalRawMutex, ()>> = StaticCell::new();
     let completion_signal = COMPLETION_SIGNAL.init(Signal::new());

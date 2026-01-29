@@ -2,8 +2,6 @@ use core::cmp::Ordering;
 use embedded_services::debug;
 use embedded_services::power::policy::charger::Device as ChargerDevice;
 use embedded_services::power::policy::charger::PolicyEvent;
-use embedded_services::power::policy::policy::check_chargers_ready;
-use embedded_services::power::policy::policy::init_chargers;
 
 use super::*;
 
@@ -31,7 +29,7 @@ fn cmp_consumer_capability(
     (a.capability, a_is_current).cmp(&(b.capability, b_is_current))
 }
 
-impl<D: Lockable + 'static, R: Receiver<RequestData> + 'static> PowerPolicy<D, R>
+impl<D: Lockable + 'static, R: Receiver<RequestData> + 'static> PowerPolicy<'_, D, R>
 where
     D::Inner: DeviceTrait,
 {
