@@ -4,24 +4,24 @@ use crate::power::policy::{ConsumerPowerCapability, Error, ProviderPowerCapabili
 use crate::{info, trace};
 
 /// Device state machine control
-pub struct Device<'a, S: Kind> {
-    device: &'a device::Device,
+pub struct Device<'a, S: Kind, const N: usize> {
+    device: &'a device::Device<N>,
     _state: core::marker::PhantomData<S>,
 }
 
 /// Enum to contain any state
-pub enum AnyState<'a> {
+pub enum AnyState<'a, const N: usize> {
     /// Detached
-    Detached(Device<'a, Detached>),
+    Detached(Device<'a, Detached, N>),
     /// Idle
-    Idle(Device<'a, Idle>),
+    Idle(Device<'a, Idle, N>),
     /// Connected Consumer
-    ConnectedConsumer(Device<'a, ConnectedConsumer>),
+    ConnectedConsumer(Device<'a, ConnectedConsumer, N>),
     /// Connected Provider
-    ConnectedProvider(Device<'a, ConnectedProvider>),
+    ConnectedProvider(Device<'a, ConnectedProvider, N>),
 }
 
-impl AnyState<'_> {
+impl<const N: usize> AnyState<'_, N> {
     /// Return the kind of the contained state
     pub fn kind(&self) -> StateKind {
         match self {
@@ -33,9 +33,9 @@ impl AnyState<'_> {
     }
 }
 
-impl<'a, S: Kind> Device<'a, S> {
+impl<'a, S: Kind, const N: usize> Device<'a, S, N> {
     /// Create a new state machine
-    pub(crate) fn new(device: &'a device::Device) -> Self {
+    pub(crate) fn new(device: &'a device::Device<N>) -> Self {
         Self {
             device,
             _state: core::marker::PhantomData,
@@ -43,12 +43,14 @@ impl<'a, S: Kind> Device<'a, S> {
     }
 
     /// Detach the device
-    pub async fn detach(self) -> Result<Device<'a, Detached>, Error> {
+    pub async fn detach(self) -> Result<Device<'a, Detached, N>, Error> {
         info!("Received detach from device {}", self.device.id().0);
         self.device.set_state(device::State::Detached).await;
         self.device.update_consumer_capability(None).await;
         self.device.update_requested_provider_capability(None).await;
-        policy::send_request(self.device.id(), policy::RequestData::NotifyDetached)
+        self.device
+            .context_ref
+            .send_request(self.device.id(), policy::RequestData::NotifyDetached)
             .await?
             .complete_or_err()?;
         Ok(Device::new(self.device))
@@ -60,7 +62,9 @@ impl<'a, S: Kind> Device<'a, S> {
         self.device.update_consumer_capability(None).await;
         self.device.update_requested_provider_capability(None).await;
         self.device.set_state(device::State::Idle).await;
-        policy::send_request(self.device.id(), policy::RequestData::NotifyDisconnect)
+        self.device
+            .context_ref
+            .send_request(self.device.id(), policy::RequestData::NotifyDisconnect)
             .await?
             .complete_or_err()
     }
@@ -76,12 +80,14 @@ impl<'a, S: Kind> Device<'a, S> {
             capability
         );
         self.device.update_consumer_capability(capability).await;
-        policy::send_request(
-            self.device.id(),
-            policy::RequestData::NotifyConsumerCapability(capability),
-        )
-        .await?
-        .complete_or_err()
+        self.device
+            .context_ref
+            .send_request(
+                self.device.id(),
+                policy::RequestData::NotifyConsumerCapability(capability),
+            )
+            .await?
+            .complete_or_err()
     }
 
     /// Request the given power from the power policy service
@@ -97,29 +103,33 @@ impl<'a, S: Kind> Device<'a, S> {
 
         info!("Request provide from device {}, {:#?}", self.device.id().0, capability);
         self.device.update_requested_provider_capability(Some(capability)).await;
-        policy::send_request(
-            self.device.id(),
-            policy::RequestData::RequestProviderCapability(capability),
-        )
-        .await?
-        .complete_or_err()?;
+        self.device
+            .context_ref
+            .send_request(
+                self.device.id(),
+                policy::RequestData::RequestProviderCapability(capability),
+            )
+            .await?
+            .complete_or_err()?;
         Ok(())
     }
 }
 
-impl<'a> Device<'a, Detached> {
+impl<'a, const N: usize> Device<'a, Detached, N> {
     /// Attach the device
-    pub async fn attach(self) -> Result<Device<'a, Idle>, Error> {
+    pub async fn attach(self) -> Result<Device<'a, Idle, N>, Error> {
         info!("Received attach from device {}", self.device.id().0);
         self.device.set_state(device::State::Idle).await;
-        policy::send_request(self.device.id(), policy::RequestData::NotifyAttached)
+        self.device
+            .context_ref
+            .send_request(self.device.id(), policy::RequestData::NotifyAttached)
             .await?
             .complete_or_err()?;
         Ok(Device::new(self.device))
     }
 }
 
-impl Device<'_, Idle> {
+impl<const N: usize> Device<'_, Idle, N> {
     /// Notify the power policy service of an updated consumer power capability
     pub async fn notify_consumer_power_capability(
         &self,
@@ -134,9 +144,9 @@ impl Device<'_, Idle> {
     }
 }
 
-impl<'a> Device<'a, ConnectedConsumer> {
+impl<'a, const N: usize> Device<'a, ConnectedConsumer, N> {
     /// Disconnect this device
-    pub async fn disconnect(self) -> Result<Device<'a, Idle>, Error> {
+    pub async fn disconnect(self) -> Result<Device<'a, Idle, N>, Error> {
         self.disconnect_internal().await?;
         Ok(Device::new(self.device))
     }
@@ -144,15 +154,16 @@ impl<'a> Device<'a, ConnectedConsumer> {
     /// Notify the power policy service of an updated consumer power capability
     pub async fn notify_consumer_power_capability(
         &self,
+
         capability: Option<ConsumerPowerCapability>,
     ) -> Result<(), Error> {
         self.notify_consumer_power_capability_internal(capability).await
     }
 }
 
-impl<'a> Device<'a, ConnectedProvider> {
+impl<'a, const N: usize> Device<'a, ConnectedProvider, N> {
     /// Disconnect this device
-    pub async fn disconnect(self) -> Result<Device<'a, Idle>, Error> {
+    pub async fn disconnect(self) -> Result<Device<'a, Idle, N>, Error> {
         self.disconnect_internal().await?;
         Ok(Device::new(self.device))
     }
@@ -165,6 +176,7 @@ impl<'a> Device<'a, ConnectedProvider> {
     /// Notify the power policy service of an updated consumer power capability
     pub async fn notify_consumer_power_capability(
         &self,
+
         capability: Option<ConsumerPowerCapability>,
     ) -> Result<(), Error> {
         self.notify_consumer_power_capability_internal(capability).await

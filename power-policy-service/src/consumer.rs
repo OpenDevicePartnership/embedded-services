@@ -2,8 +2,6 @@ use core::cmp::Ordering;
 use embedded_services::debug;
 use embedded_services::power::policy::charger::Device as ChargerDevice;
 use embedded_services::power::policy::charger::PolicyEvent;
-use embedded_services::power::policy::policy::check_chargers_ready;
-use embedded_services::power::policy::policy::init_chargers;
 
 use super::*;
 
@@ -31,14 +29,14 @@ fn cmp_consumer_capability(
     (a.capability, a_is_current).cmp(&(b.capability, b_is_current))
 }
 
-impl PowerPolicy {
+impl<const POLICY_CHANNEL_SIZE: usize> PowerPolicy<POLICY_CHANNEL_SIZE> {
     /// Iterate over all devices to determine what is best power port provides the highest power
     async fn find_best_consumer(&self, state: &InternalState) -> Result<Option<AvailableConsumer>, Error> {
         let mut best_consumer = None;
         let current_consumer_id = state.current_consumer_state.map(|f| f.device_id);
 
         for node in self.context.devices() {
-            let device = node.data::<Device>().ok_or(Error::InvalidDevice)?;
+            let device = node.data::<Device<POLICY_CHANNEL_SIZE>>().ok_or(Error::InvalidDevice)?;
 
             let consumer_capability = device.consumer_capability().await;
             // Don't consider consumers below minimum threshold
@@ -92,7 +90,7 @@ impl PowerPolicy {
         // Count how many available unconstrained devices we have
         let mut unconstrained_new = UnconstrainedState::default();
         for node in self.context.devices() {
-            let device = node.data::<Device>().ok_or(Error::InvalidDevice)?;
+            let device = node.data::<Device<POLICY_CHANNEL_SIZE>>().ok_or(Error::InvalidDevice)?;
             if let Some(capability) = device.consumer_capability().await {
                 if capability.flags.unconstrained_power() {
                     unconstrained_new.available += 1;
@@ -139,8 +137,8 @@ impl PowerPolicy {
                 // Force charger CheckReady and InitRequest to get it into an initialized state.
                 // This condition can get hit if we did not have a previous consumer and the charger is unpowered.
                 info!("Charger is unpowered, forcing charger CheckReady and Init sequence");
-                check_chargers_ready().await?;
-                init_chargers().await?;
+                self.context.check_chargers_ready().await?;
+                self.context.init_chargers().await?;
                 device
                     .execute_command(PolicyEvent::PolicyConfiguration(
                         connected_consumer.consumer_power_capability,

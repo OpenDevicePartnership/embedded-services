@@ -68,7 +68,7 @@ pub trait FwOfferValidator {
 pub const MAX_SUPPORTED_PORTS: usize = 2;
 
 /// Common functionality implemented on top of [`embedded_services::type_c::controller::Controller`]
-pub struct ControllerWrapper<'device, M: RawMutex, C: Lockable, V: FwOfferValidator>
+pub struct ControllerWrapper<'device, M: RawMutex, C: Lockable, V: FwOfferValidator, const POLICY_CHANNEL_SIZE: usize>
 where
     <C as Lockable>::Inner: Controller,
 {
@@ -78,7 +78,7 @@ where
     /// FW update ticker used to check for timeouts and recovery attempts
     fw_update_ticker: Mutex<M, embassy_time::Ticker>,
     /// Registration information for services
-    registration: backing::Registration<'device>,
+    registration: backing::Registration<'device, POLICY_CHANNEL_SIZE>,
     /// State
     state: Mutex<M, RefMut<'device, dyn DynPortState<'device>>>,
     /// SW port status event signal
@@ -87,7 +87,8 @@ where
     config: config::Config,
 }
 
-impl<'device, M: RawMutex, C: Lockable, V: FwOfferValidator> ControllerWrapper<'device, M, C, V>
+impl<'device, M: RawMutex, C: Lockable, V: FwOfferValidator, const POLICY_CHANNEL_SIZE: usize>
+    ControllerWrapper<'device, M, C, V, POLICY_CHANNEL_SIZE>
 where
     <C as Lockable>::Inner: Controller,
 {
@@ -95,7 +96,7 @@ where
     pub fn try_new<const N: usize>(
         controller: &'device C,
         config: config::Config,
-        storage: &'device backing::ReferencedStorage<'device, N, M>,
+        storage: &'device backing::ReferencedStorage<'device, N, M, POLICY_CHANNEL_SIZE>,
         fw_version_validator: V,
     ) -> Option<Self> {
         const {
@@ -117,7 +118,7 @@ where
     }
 
     /// Get the power policy devices for this controller.
-    pub fn power_policy_devices(&self) -> &[policy::device::Device] {
+    pub fn power_policy_devices(&self) -> &[policy::device::Device<POLICY_CHANNEL_SIZE>] {
         self.registration.power_devices
     }
 
@@ -180,7 +181,7 @@ where
     async fn process_plug_event(
         &self,
         _controller: &mut C::Inner,
-        power: &policy::device::Device,
+        power: &policy::device::Device<POLICY_CHANNEL_SIZE>,
         port: LocalPortId,
         status: &PortStatus,
     ) -> Result<(), Error<<C::Inner as Controller>::BusError>> {
@@ -610,10 +611,11 @@ where
     pub async fn register(
         &'static self,
         controllers: &intrusive_list::IntrusiveList,
+        power_policy_context: &embedded_services::power::policy::policy::Context<POLICY_CHANNEL_SIZE>,
     ) -> Result<(), Error<<C::Inner as Controller>::BusError>> {
         // TODO: Unify these devices?
         for device in self.registration.power_devices {
-            policy::register_device(device).map_err(|_| {
+            power_policy_context.register_device(device).map_err(|_| {
                 error!(
                     "Controller{}: Failed to register power device {}",
                     self.registration.pd_controller.id().0,
@@ -645,7 +647,8 @@ where
     }
 }
 
-impl<'device, M: RawMutex, C: Lockable, V: FwOfferValidator> Lockable for ControllerWrapper<'device, M, C, V>
+impl<'device, M: RawMutex, C: Lockable, V: FwOfferValidator, const POLICY_CHANNEL_SIZE: usize> Lockable
+    for ControllerWrapper<'device, M, C, V, POLICY_CHANNEL_SIZE>
 where
     <C as Lockable>::Inner: Controller,
 {

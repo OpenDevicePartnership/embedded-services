@@ -15,19 +15,20 @@ use crate::wrapper::config::UnconstrainedSink;
 
 use super::*;
 
-impl<'device, M: RawMutex, C: Lockable, V: FwOfferValidator> ControllerWrapper<'device, M, C, V>
+impl<'device, M: RawMutex, C: Lockable, V: FwOfferValidator, const POLICY_CHANNEL_SIZE: usize>
+    ControllerWrapper<'device, M, C, V, POLICY_CHANNEL_SIZE>
 where
     <C as Lockable>::Inner: Controller,
 {
     /// Return the power device for the given port
-    pub fn get_power_device(&self, port: LocalPortId) -> Option<&policy::device::Device> {
+    pub fn get_power_device(&self, port: LocalPortId) -> Option<&policy::device::Device<POLICY_CHANNEL_SIZE>> {
         self.registration.power_devices.get(port.0 as usize)
     }
 
     /// Handle a new contract as consumer
     pub(super) async fn process_new_consumer_contract(
         &self,
-        power: &policy::device::Device,
+        power: &policy::device::Device<POLICY_CHANNEL_SIZE>,
         status: &PortStatus,
     ) -> Result<(), Error<<C::Inner as Controller>::BusError>> {
         info!("Process new consumer contract");
@@ -84,7 +85,7 @@ where
     /// Handle a new contract as provider
     pub(super) async fn process_new_provider_contract(
         &self,
-        power: &policy::device::Device,
+        power: &policy::device::Device<POLICY_CHANNEL_SIZE>,
         status: &PortStatus,
     ) -> Result<(), Error<<C::Inner as Controller>::BusError>> {
         info!("Process New provider contract");
@@ -149,7 +150,7 @@ where
         &self,
         port: LocalPortId,
         controller: &mut C::Inner,
-        power: &policy::device::Device,
+        power: &policy::device::Device<POLICY_CHANNEL_SIZE>,
     ) -> Result<(), Error<<C::Inner as Controller>::BusError>> {
         let state = power.state().await.kind();
         if state == StateKind::ConnectedConsumer {

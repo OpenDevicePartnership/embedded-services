@@ -114,7 +114,6 @@ impl Service<'_> {
             })?;
             // Last byte is PEC, ignore for now
             let packet = &packet[..packet.len() - 1];
-            #[cfg(feature = "defmt")]
             trace!("Sending MCTP response: {:?}", packet);
 
             self.write_to_hw(espi, packet).map_err(|e| {
@@ -228,7 +227,7 @@ pub(crate) async fn process_controller_event(
                 with_pec[src_slice.len()] = 0;
                 let with_pec = &with_pec[..=src_slice.len()];
 
-                #[cfg(feature = "defmt")]
+                #[cfg(feature = "defmt")] // Required because without defmt, there is no implementation of UpperHex for [u8]
                 debug!("OOB message: {:02X}", &src_slice[0..]);
 
                 let mut assembly_access = espi_service
@@ -240,13 +239,11 @@ pub(crate) async fn process_controller_event(
 
                 match mctp_ctx.deserialize_packet(with_pec) {
                     Ok(Some(message)) => {
-                        #[cfg(feature = "defmt")]
                         trace!("MCTP packet successfully deserialized");
 
                         match message.parse_as::<HostRequest>() {
                             Ok((header, body)) => {
                                 let target_endpoint = header.service.get_endpoint_id();
-                                #[cfg(feature = "defmt")]
                                 trace!(
                                     "Host Request: Service {:?}, Command {:?}",
                                     target_endpoint, header.message_id,
@@ -261,9 +258,8 @@ pub(crate) async fn process_controller_event(
                                     .expect("result error type is infallible");
                                 info!("MCTP packet forwarded to service: {:?}", target_endpoint);
                             }
-                            Err(_e) => {
-                                #[cfg(feature = "defmt")]
-                                error!("MCTP ODP type malformed: {}", _e);
+                            Err(e) => {
+                                error!("MCTP ODP type malformed: {:?}", e);
 
                                 espi.complete_port(port_event.port);
 
@@ -282,7 +278,6 @@ pub(crate) async fn process_controller_event(
                         // Handle protocol or medium error
                         error!("MCTP packet malformed");
 
-                        #[cfg(feature = "defmt")]
                         error!("error code: {:?}", _e);
                         espi.complete_port(OOB_PORT_ID);
 

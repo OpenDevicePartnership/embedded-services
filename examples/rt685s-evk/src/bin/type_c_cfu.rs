@@ -47,7 +47,7 @@ impl type_c_service::wrapper::FwOfferValidator for Validator {
 type BusMaster<'a> = I2cMaster<'a, Async>;
 type BusDevice<'a> = I2cDevice<'a, GlobalRawMutex, BusMaster<'a>>;
 type Tps6699xMutex<'a> = Mutex<GlobalRawMutex, tps6699x_drv::Tps6699x<'a, GlobalRawMutex, BusDevice<'a>>>;
-type Wrapper<'a> = ControllerWrapper<'a, GlobalRawMutex, Tps6699xMutex<'a>, Validator>;
+type Wrapper<'a> = ControllerWrapper<'a, GlobalRawMutex, Tps6699xMutex<'a>, Validator, POLICY_CHANNEL_SIZE>;
 type Controller<'a> = tps6699x::controller::Controller<GlobalRawMutex, BusDevice<'a>>;
 type Interrupt<'a> = tps6699x::Interrupt<'a, GlobalRawMutex, BusDevice<'a>>;
 
@@ -58,6 +58,8 @@ const PORT0_ID: GlobalPortId = GlobalPortId(0);
 const PORT1_ID: GlobalPortId = GlobalPortId(1);
 const PORT0_PWR_ID: PowerId = PowerId(0);
 const PORT1_PWR_ID: PowerId = PowerId(1);
+
+const POLICY_CHANNEL_SIZE: usize = 1;
 
 #[embassy_executor::task]
 async fn pd_controller_task(controller: &'static Wrapper<'static>) {
@@ -154,10 +156,14 @@ async fn fw_update_task() {
 }
 
 #[embassy_executor::task]
-async fn power_policy_service_task() {
-    power_policy_service::task::task(Default::default())
-        .await
-        .expect("Failed to start power policy service task");
+async fn power_policy_service_task(policy: &'static power_policy_service::PowerPolicy<POLICY_CHANNEL_SIZE>) {
+    power_policy_service::task::task(
+        policy,
+        None::<[&rt685s_evk_example::DummyPowerDevice<POLICY_CHANNEL_SIZE>; 0]>,
+        None::<[&rt685s_evk_example::DummyCharger; 0]>,
+    )
+    .await
+    .expect("Failed to start power policy service task");
 }
 
 #[embassy_executor::task]
@@ -165,6 +171,7 @@ async fn service_task(
     controller_context: &'static Context,
     controllers: &'static IntrusiveList,
     wrappers: [&'static Wrapper<'static>; NUM_PD_CONTROLLERS],
+    power_policy_context: &'static embedded_services::power::policy::policy::Context<POLICY_CHANNEL_SIZE>,
 ) -> ! {
     info!("Starting type-c task");
 
@@ -187,7 +194,7 @@ async fn service_task(
     static SERVICE: StaticCell<Service> = StaticCell::new();
     let service = SERVICE.init(service);
 
-    type_c_service::task::task(service, wrappers).await;
+    type_c_service::task::task(service, wrappers, power_policy_context).await;
     unreachable!()
 }
 
@@ -199,7 +206,13 @@ async fn main(spawner: Spawner) {
     embedded_services::init().await;
 
     info!("Spawining power policy task");
-    spawner.must_spawn(power_policy_service_task());
+
+    static POWER_POLICY_SERVICE: StaticCell<power_policy_service::PowerPolicy<POLICY_CHANNEL_SIZE>> = StaticCell::new();
+    let power_service = POWER_POLICY_SERVICE.init(power_policy_service::PowerPolicy::new(
+        power_policy_service::Config::default(),
+    ));
+
+    spawner.must_spawn(power_policy_service_task(power_service));
 
     static CONTROLLER_LIST: StaticCell<IntrusiveList> = StaticCell::new();
     let controllers = CONTROLLER_LIST.init(IntrusiveList::new());
@@ -238,15 +251,17 @@ async fn main(spawner: Spawner) {
         .await
         .unwrap();
 
-    static STORAGE: StaticCell<Storage<TPS66994_NUM_PORTS, GlobalRawMutex>> = StaticCell::new();
+    static STORAGE: StaticCell<Storage<TPS66994_NUM_PORTS, GlobalRawMutex, POLICY_CHANNEL_SIZE>> = StaticCell::new();
     let storage = STORAGE.init(Storage::new(
         controller_context,
         CONTROLLER0_ID,
         CONTROLLER0_CFU_ID,
         [(PORT0_ID, PORT0_PWR_ID), (PORT1_ID, PORT1_PWR_ID)],
+        &power_service.context,
     ));
 
-    static REFERENCED: StaticCell<ReferencedStorage<TPS66994_NUM_PORTS, GlobalRawMutex>> = StaticCell::new();
+    static REFERENCED: StaticCell<ReferencedStorage<TPS66994_NUM_PORTS, GlobalRawMutex, POLICY_CHANNEL_SIZE>> =
+        StaticCell::new();
     let referenced = REFERENCED.init(
         storage
             .create_referenced()
@@ -262,7 +277,12 @@ async fn main(spawner: Spawner) {
         WRAPPER.init(ControllerWrapper::try_new(controller_mutex, Default::default(), referenced, Validator).unwrap());
 
     info!("Spawning type-c service task");
-    spawner.must_spawn(service_task(controller_context, controllers, [wrapper]));
+    spawner.must_spawn(service_task(
+        controller_context,
+        controllers,
+        [wrapper],
+        &power_service.context,
+    ));
 
     spawner.must_spawn(pd_controller_task(wrapper));
 

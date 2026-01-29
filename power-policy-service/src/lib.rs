@@ -29,9 +29,9 @@ struct InternalState {
 }
 
 /// Power policy state
-pub struct PowerPolicy {
+pub struct PowerPolicy<const POLICY_CHANNEL_SIZE: usize> {
     /// Power policy context
-    context: policy::ContextToken,
+    pub context: policy::Context<POLICY_CHANNEL_SIZE>,
     /// State
     state: Mutex<GlobalRawMutex, InternalState>,
     /// Comms endpoint
@@ -40,15 +40,15 @@ pub struct PowerPolicy {
     config: config::Config,
 }
 
-impl PowerPolicy {
+impl<const POLICY_CHANNEL_SIZE: usize> PowerPolicy<POLICY_CHANNEL_SIZE> {
     /// Create a new power policy
-    pub fn create(config: config::Config) -> Option<Self> {
-        Some(Self {
-            context: policy::ContextToken::create()?,
+    pub fn new(config: config::Config) -> Self {
+        Self {
+            context: policy::Context::new(),
             state: Mutex::new(InternalState::default()),
             tp: comms::Endpoint::uninit(comms::EndpointID::Internal(comms::Internal::Power)),
             config,
-        })
+        }
     }
 
     async fn process_notify_attach(&self) -> Result<(), Error> {
@@ -56,7 +56,7 @@ impl PowerPolicy {
         Ok(())
     }
 
-    async fn process_notify_detach(&self, device: &device::Device) -> Result<(), Error> {
+    async fn process_notify_detach(&self, device: &device::Device<POLICY_CHANNEL_SIZE>) -> Result<(), Error> {
         self.context.send_response(Ok(policy::ResponseData::Complete)).await;
         self.remove_connected_provider(device.id()).await;
         self.update_current_consumer().await?;
@@ -75,7 +75,7 @@ impl PowerPolicy {
         Ok(())
     }
 
-    async fn process_notify_disconnect(&self, device: &device::Device) -> Result<(), Error> {
+    async fn process_notify_disconnect(&self, device: &device::Device<POLICY_CHANNEL_SIZE>) -> Result<(), Error> {
         self.context.send_response(Ok(policy::ResponseData::Complete)).await;
         if let Some(consumer) = self.state.lock().await.current_consumer_state.take() {
             info!("Device{}: Connected consumer disconnected", consumer.device_id.0);
@@ -162,4 +162,4 @@ impl PowerPolicy {
     }
 }
 
-impl comms::MailboxDelegate for PowerPolicy {}
+impl<const POLICY_CHANNEL_SIZE: usize> comms::MailboxDelegate for PowerPolicy<POLICY_CHANNEL_SIZE> {}

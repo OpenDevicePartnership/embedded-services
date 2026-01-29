@@ -3,6 +3,7 @@ use embassy_sync::mutex::Mutex;
 use embassy_sync::once_lock::OnceLock;
 use embassy_sync::pubsub::PubSubChannel;
 use embassy_time::Timer;
+use embedded_services::power::policy::policy;
 use embedded_services::power::{self};
 use embedded_services::type_c::ControllerId;
 use embedded_services::type_c::controller::Context;
@@ -24,6 +25,8 @@ const CONTROLLER0_ID: ControllerId = ControllerId(0);
 const PORT0_ID: GlobalPortId = GlobalPortId(0);
 const POWER0_ID: power::policy::DeviceId = power::policy::DeviceId(0);
 const DELAY_MS: u64 = 1000;
+
+const POLICY_CHANNEL_SIZE: usize = 1;
 
 mod debug {
     use embedded_services::{
@@ -129,10 +132,14 @@ async fn task(
 }
 
 #[embassy_executor::task]
-async fn power_policy_service_task() {
-    power_policy_service::task::task(Default::default())
-        .await
-        .expect("Failed to start power policy service task");
+async fn power_policy_service_task(policy: &'static power_policy_service::PowerPolicy<POLICY_CHANNEL_SIZE>) {
+    power_policy_service::task::task(
+        policy,
+        None::<[&std_examples::type_c::DummyPowerDevice<POLICY_CHANNEL_SIZE>; 0]>,
+        None::<[&std_examples::type_c::DummyCharger; 0]>,
+    )
+    .await
+    .expect("Failed to start power policy service task");
 }
 
 #[embassy_executor::task]
@@ -140,6 +147,7 @@ async fn service_task(
     controller_context: &'static Context,
     controllers: &'static IntrusiveList,
     wrappers: [&'static Wrapper<'static>; NUM_PD_CONTROLLERS],
+    power_policy_context: &'static policy::Context<POLICY_CHANNEL_SIZE>,
 ) {
     info!("Starting type-c task");
 
@@ -163,11 +171,12 @@ async fn service_task(
     static SERVICE: StaticCell<Service> = StaticCell::new();
     let service = SERVICE.init(service);
 
-    type_c_service::task::task(service, wrappers).await;
+    type_c_service::task::task(service, wrappers, power_policy_context).await;
 }
 
 fn create_wrapper(
     context: &'static Context,
+    power_policy_context: &'static policy::Context<POLICY_CHANNEL_SIZE>,
 ) -> (
     &'static mut Wrapper<'static>,
     &'static Mutex<GlobalRawMutex, mock_controller::Controller<'static>>,
@@ -176,14 +185,15 @@ fn create_wrapper(
     static STATE: StaticCell<mock_controller::ControllerState> = StaticCell::new();
     let state = STATE.init(mock_controller::ControllerState::new());
 
-    static STORAGE: StaticCell<Storage<1, GlobalRawMutex>> = StaticCell::new();
+    static STORAGE: StaticCell<Storage<1, GlobalRawMutex, POLICY_CHANNEL_SIZE>> = StaticCell::new();
     let storage = STORAGE.init(Storage::new(
         context,
         CONTROLLER0_ID,
         0, // CFU component ID (unused)
         [(PORT0_ID, POWER0_ID)],
+        power_policy_context,
     ));
-    static REFERENCED: StaticCell<ReferencedStorage<1, GlobalRawMutex>> = StaticCell::new();
+    static REFERENCED: StaticCell<ReferencedStorage<1, GlobalRawMutex, POLICY_CHANNEL_SIZE>> = StaticCell::new();
     let referenced = REFERENCED.init(
         storage
             .create_referenced()
@@ -220,11 +230,21 @@ fn main() {
     static CONTEXT: StaticCell<embedded_services::type_c::controller::Context> = StaticCell::new();
     let controller_context = CONTEXT.init(embedded_services::type_c::controller::Context::new());
 
-    let (wrapper, controller, state) = create_wrapper(controller_context);
+    static POWER_POLICY_SERVICE: StaticCell<power_policy_service::PowerPolicy<POLICY_CHANNEL_SIZE>> = StaticCell::new();
+    let power_policy_service = POWER_POLICY_SERVICE.init(power_policy_service::PowerPolicy::new(
+        power_policy_service::Config::default(),
+    ));
+
+    let (wrapper, controller, state) = create_wrapper(controller_context, &power_policy_service.context);
 
     executor.run(|spawner| {
-        spawner.must_spawn(power_policy_service_task());
-        spawner.must_spawn(service_task(controller_context, controller_list, [wrapper]));
+        spawner.must_spawn(power_policy_service_task(power_policy_service));
+        spawner.must_spawn(service_task(
+            controller_context,
+            controller_list,
+            [wrapper],
+            &power_policy_service.context,
+        ));
         spawner.must_spawn(task(spawner, wrapper, controller, state));
     });
 }
