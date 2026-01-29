@@ -109,12 +109,20 @@ mod mock {
                         OfferStatus::Reject,
                     ))
                 }
+                RequestData::AbortUpdate => {
+                    trace!("Got AbortUpdate");
+                    InternalResponseData::OfferResponse(FwUpdateOfferResponse::new_with_failure(
+                        HostToken::Driver,
+                        OfferRejectReason::InvalidComponent,
+                        OfferStatus::Reject,
+                    ))
+                }
             }
         }
 
         pub async fn send_response(&self, response: InternalResponseData) {
             self.cfu_device.send_response(response).await;
-            trace!("Sent response: {:?}", response);
+            trace!("Sent response: {response:?}");
         }
     }
 
@@ -288,6 +296,11 @@ async fn buffer_task(buffer: &'static mock::BufferWaitComplete<'static>) {
 }
 
 #[embassy_executor::task]
+async fn cfu_task() {
+    cfu_service::task::task().await;
+}
+
+#[embassy_executor::task]
 async fn run(spawner: Spawner) {
     embedded_services::init().await;
 
@@ -329,12 +342,12 @@ async fn run(spawner: Spawner) {
         .unwrap();
     let prev_version = match response {
         InternalResponseData::FwVersionResponse(response) => {
-            info!("Got version response: {:#?}", response);
+            info!("Got version response: {response:#?}");
             Into::<u32>::into(response.component_info[0].fw_version)
         }
         _ => panic!("Unexpected response"),
     };
-    info!("Got version: {:#x}", prev_version);
+    info!("Got version: {prev_version:#x}");
 
     info!("Giving offer");
     let offer = route_request(
@@ -349,7 +362,7 @@ async fn run(spawner: Spawner) {
     )
     .await
     .unwrap();
-    info!("Got response: {:?}", offer);
+    info!("Got response: {offer:?}");
 
     for i in 0..10 {
         let header = FwUpdateContentHeader {
@@ -399,7 +412,7 @@ fn main() {
     static EXECUTOR: StaticCell<Executor> = StaticCell::new();
     let executor = EXECUTOR.init(Executor::new());
     executor.run(|spawner| {
-        spawner.must_spawn(cfu_service::task());
+        spawner.must_spawn(cfu_task());
         spawner.must_spawn(run(spawner));
     });
 }

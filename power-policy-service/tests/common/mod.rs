@@ -90,13 +90,7 @@ pub async fn run_test<F: Future<Output = ()>>(
     static DEVICE0: StaticCell<Mutex<GlobalRawMutex, Mock<DynamicSender<'static, RequestData>>>> = StaticCell::new();
     let device0 = DEVICE0.init(Mutex::new(Mock::new(device0_sender, device0_signal)));
 
-    static DEVICE0_REGISTRATION: StaticCell<
-        device::Device<
-            'static,
-            Mutex<GlobalRawMutex, Mock<DynamicSender<'static, RequestData>>>,
-            DynamicReceiver<'static, RequestData>,
-        >,
-    > = StaticCell::new();
+    static DEVICE0_REGISTRATION: StaticCell<RegistrationType> = StaticCell::new();
     let device0_registration = DEVICE0_REGISTRATION.init(device::Device::new(DeviceId(0), device0, device0_receiver));
 
     static DEVICE1_EVENT_CHANNEL: StaticCell<Channel<GlobalRawMutex, RequestData, EVENT_CHANNEL_SIZE>> =
@@ -110,13 +104,7 @@ pub async fn run_test<F: Future<Output = ()>>(
     static DEVICE1: StaticCell<Mutex<GlobalRawMutex, Mock<DynamicSender<'static, RequestData>>>> = StaticCell::new();
     let device1 = DEVICE1.init(Mutex::new(Mock::new(device1_sender, device1_signal)));
 
-    static DEVICE1_REGISTRATION: StaticCell<
-        device::Device<
-            'static,
-            Mutex<GlobalRawMutex, Mock<DynamicSender<'static, RequestData>>>,
-            DynamicReceiver<'static, RequestData>,
-        >,
-    > = StaticCell::new();
+    static DEVICE1_REGISTRATION: StaticCell<RegistrationType> = StaticCell::new();
     let device1_registration = DEVICE1_REGISTRATION.init(device::Device::new(DeviceId(1), device1, device1_receiver));
 
     static SERVICE_CONTEXT: StaticCell<ServiceContext> = StaticCell::new();
@@ -125,12 +113,7 @@ pub async fn run_test<F: Future<Output = ()>>(
     service_context.register_device(device0_registration).unwrap();
     service_context.register_device(device1_registration).unwrap();
 
-    static POWER_POLICY: StaticCell<
-        PowerPolicy<
-            Mutex<GlobalRawMutex, Mock<DynamicSender<'static, RequestData>>>,
-            DynamicReceiver<'static, RequestData>,
-        >,
-    > = StaticCell::new();
+    static POWER_POLICY: StaticCell<ServiceType> = StaticCell::new();
     let power_policy = POWER_POLICY.init(power_policy_service::PowerPolicy::new(
         service_context,
         Default::default(),
