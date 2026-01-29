@@ -11,6 +11,26 @@ who = "jerrysxie <jerryxie@microsoft.com>"
 criteria = "safe-to-deploy"
 version = "0.4.2"
 
+[[audits.anstream]]
+who = "Robert Zieba <robertzieba@microsoft.com>"
+criteria = "safe-to-run"
+version = "0.6.21"
+
+[[audits.anstyle-parse]]
+who = "Robert Zieba <robertzieba@microsoft.com>"
+criteria = "safe-to-run"
+version = "0.2.7"
+
+[[audits.anstyle-query]]
+who = "Robert Zieba <robertzieba@microsoft.com>"
+criteria = "safe-to-run"
+version = "1.1.5"
+
+[[audits.anstyle-wincon]]
+who = "Robert Zieba <robertzieba@microsoft.com>"
+criteria = "safe-to-run"
+version = "3.0.11"
+
 [[audits.aquamarine]]
 who = "Robert Zieba <robertzieba@microsoft.com>"
 criteria = "safe-to-deploy"
@@ -41,6 +61,11 @@ notes = "Adds hash and bitenum derives, mostly parsing and refactoring changes. 
 who = "jerrysxie <jerryxie@microsoft.com>"
 criteria = "safe-to-deploy"
 version = "0.2.0"
+
+[[audits.colorchoice]]
+who = "Robert Zieba <robertzieba@microsoft.com>"
+criteria = "safe-to-run"
+version = "1.0.3"
 
 [[audits.const-init]]
 who = "Jerry Xie <jerryxie@microsoft.com>"
@@ -152,6 +177,16 @@ criteria = "safe-to-deploy"
 version = "0.3.0"
 notes = "ODP crates are always trusted."
 
+[[audits.env_filter]]
+who = "Robert Zieba <robertzieba@microsoft.com>"
+criteria = "safe-to-run"
+version = "0.1.4"
+
+[[audits.env_logger]]
+who = "Robert Zieba <robertzieba@microsoft.com>"
+criteria = "safe-to-run"
+version = "0.11.8"
+
 [[audits.futures-task]]
 who = "Jerry Xie <jerryxie@microsoft.com>"
 criteria = "safe-to-deploy"
@@ -198,6 +233,11 @@ who = "jerrysxie <jerryxie@microsoft.com>"
 criteria = "safe-to-deploy"
 version = "2.9.0"
 
+[[audits.is_terminal_polyfill]]
+who = "Robert Zieba <robertzieba@microsoft.com>"
+criteria = "safe-to-run"
+version = "1.70.2"
+
 [[audits.itertools]]
 who = "Robert Zieba <robertzieba@microsoft.com>"
 criteria = "safe-to-deploy"
@@ -208,6 +248,16 @@ who = "Felipe Balbi <febalbi@microsoft.com>"
 criteria = "safe-to-deploy"
 version = "0.11.0"
 notes = "Used as a dependency for embassy-imxrt."
+
+[[audits.jiff]]
+who = "Robert Zieba <robertzieba@microsoft.com>"
+criteria = "safe-to-run"
+version = "0.2.18"
+
+[[audits.jiff-static]]
+who = "Robert Zieba <robertzieba@microsoft.com>"
+criteria = "safe-to-run"
+version = "0.2.18"
 
 [[audits.libc]]
 who = "Robert Zieba <robertzieba@microsoft.com>"
@@ -291,6 +341,11 @@ who = "Robert Zieba <robertzieba@microsoft.com>"
 criteria = "safe-to-run"
 version = "0.36.7"
 
+[[audits.once_cell_polyfill]]
+who = "Robert Zieba <robertzieba@microsoft.com>"
+criteria = "safe-to-run"
+version = "1.70.2"
+
 [[audits.portable-atomic]]
 who = "Robert Zieba <robertzieba@microsoft.com>"
 criteria = "safe-to-deploy"
@@ -300,6 +355,11 @@ version = "1.11.1"
 who = "Robert Zieba <robertzieba@microsoft.com>"
 criteria = "safe-to-run"
 version = "1.11.1"
+
+[[audits.portable-atomic-util]]
+who = "Robert Zieba <robertzieba@microsoft.com>"
+criteria = "safe-to-run"
+version = "0.2.4"
 
 [[audits.proc-macro-error]]
 who = "Jerry Xie <jerryxie@microsoft.com>"
@@ -335,6 +395,23 @@ version = "0.6.1"
 who = "Billy Price <williamp@microsoft.com>"
 criteria = "safe-to-run"
 delta = "1.0.26 -> 1.0.27"
+
+[[audits.serde]]
+who = "Robert Zieba <robertzieba@microsoft.com>"
+criteria = "safe-to-deploy"
+version = "1.0.228"
+notes = "Changes are mostly a reorganization of the internal module structure"
+
+[[audits.serde_core]]
+who = "Robert Zieba <robertzieba@microsoft.com>"
+criteria = "safe-to-deploy"
+version = "1.0.226"
+
+[[audits.serde_derive]]
+who = "Robert Zieba <robertzieba@microsoft.com>"
+criteria = "safe-to-deploy"
+version = "1.0.228"
+notes = "Diff is clean-up in proc macros"
 
 [[audits.serde_spanned]]
 who = "jerrysxie <jerryxie@microsoft.com>"

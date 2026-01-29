@@ -188,6 +188,13 @@ user-id = 64539
 user-login = "kennykerr"
 user-name = "Kenny Kerr"
 
+[[publisher.windows-link]]
+version = "0.2.1"
+when = "2025-10-06"
+user-id = 64539
+user-login = "kennykerr"
+user-name = "Kenny Kerr"
+
 [[publisher.windows-numerics]]
 version = "0.2.0"
 when = "2025-03-18"
@@ -293,7 +300,11 @@ user-id = 64539
 user-login = "kennykerr"
 user-name = "Kenny Kerr"
 
-[audits.OpenDevicePartnership.audits]
+[[audits.OpenDevicePartnership.audits.windows-sys]]
+who = "Felipe Balbi <febalbi@microsoft.com>"
+criteria = "safe-to-run"
+version = "0.61.2"
+aggregated-from = "https://raw.githubusercontent.com/OpenDevicePartnership/embedded-mcu/refs/heads/main/supply-chain/audits.toml"
 
 [[audits.bytecode-alliance.audits.adler2]]
 who = "Alex Crichton <alex@alexcrichton.com>"
@@ -521,11 +532,56 @@ criteria = "safe-to-deploy"
 version = "1.0.1"
 notes = "No unsafe usage or ambient capabilities"
 
+[[audits.embark-studios.audits.utf8parse]]
+who = "Johan Andersson <opensource@embark-studios.com>"
+criteria = "safe-to-deploy"
+version = "0.2.1"
+notes = "Single unsafe usage that looks sound, no ambient capabilities"
+
 [[audits.embark-studios.audits.valuable]]
 who = "Johan Andersson <opensource@embark-studios.com>"
 criteria = "safe-to-deploy"
 version = "0.1.0"
 notes = "No unsafe usage or ambient capabilities, sane build script"
+
+[[audits.google.audits.anstyle]]
+who = "Yu-An Wang <wyuang@google.com>"
+criteria = "safe-to-run"
+version = "1.0.4"
+aggregated-from = "https://chromium.googlesource.com/chromiumos/third_party/rust_crates/+/refs/heads/main/cargo-vet/audits.toml?format=TEXT"
+
+[[audits.google.audits.anstyle]]
+who = "Lukasz Anforowicz <lukasza@chromium.org>"
+criteria = "safe-to-run"
+delta = "1.0.4 -> 1.0.6"
+aggregated-from = "https://chromium.googlesource.com/chromium/src/+/main/third_party/rust/chromium_crates_io/supply-chain/audits.toml?format=TEXT"
+
+[[audits.google.audits.anstyle]]
+who = "danakj <danakj@chromium.org>"
+criteria = "safe-to-run"
+delta = "1.0.6 -> 1.0.7"
+aggregated-from = "https://chromium.googlesource.com/chromium/src/+/main/third_party/rust/chromium_crates_io/supply-chain/audits.toml?format=TEXT"
+
+[[audits.google.audits.anstyle]]
+who = "Lukasz Anforowicz <lukasza@chromium.org>"
+criteria = "safe-to-run"
+delta = "1.0.7 -> 1.0.8"
+notes = "Only Cargo.toml changes in the 1.0.7 => 1.0.8 delta."
+aggregated-from = "https://chromium.googlesource.com/chromium/src/+/main/third_party/rust/chromium_crates_io/supply-chain/audits.toml?format=TEXT"
+
+[[audits.google.audits.anstyle]]
+who = "Dustin J. Mitchell <djmitche@chromium.org>"
+criteria = "safe-to-run"
+delta = "1.0.8 -> 1.0.9"
+notes = "No changes"
+aggregated-from = "https://chromium.googlesource.com/chromium/src/+/main/third_party/rust/chromium_crates_io/supply-chain/audits.toml?format=TEXT"
+
+[[audits.google.audits.anstyle]]
+who = "Lukasz Anforowicz <lukasza@chromium.org>"
+criteria = "safe-to-run"
+delta = "1.0.9 -> 1.0.10"
+notes = "Minor changes related to `write_str`."
+aggregated-from = "https://chromium.googlesource.com/chromium/src/+/main/third_party/rust/chromium_crates_io/supply-chain/audits.toml?format=TEXT"
 
 [[audits.google.audits.autocfg]]
 who = "Manish Goregaokar <manishearth@google.com>"
@@ -1474,6 +1530,18 @@ criteria = "safe-to-deploy"
 delta = "1.0.17 -> 1.0.25"
 aggregated-from = "https://raw.githubusercontent.com/mozilla/glean/main/supply-chain/audits.toml"
 
+[[audits.mozilla.audits.serde_core]]
+who = "Erich Gubler <erichdongubler@gmail.com>"
+criteria = "safe-to-deploy"
+delta = "1.0.226 -> 1.0.227"
+aggregated-from = "https://hg.mozilla.org/mozilla-central/raw-file/tip/supply-chain/audits.toml"
+
+[[audits.mozilla.audits.serde_core]]
+who = "Jan-Erik Rediger <jrediger@mozilla.com>"
+criteria = "safe-to-deploy"
+delta = "1.0.227 -> 1.0.228"
+aggregated-from = "https://raw.githubusercontent.com/mozilla/glean/main/supply-chain/audits.toml"
+
 [[audits.mozilla.audits.sharded-slab]]
 who = "Mark Hammond <mhammond@skippinet.com.au>"
 criteria = "safe-to-deploy"
@@ -1557,6 +1625,12 @@ criteria = "safe-to-deploy"
 delta = "0.3.19 -> 0.3.20"
 aggregated-from = "https://hg.mozilla.org/mozilla-central/raw-file/tip/supply-chain/audits.toml"
 
+[[audits.mozilla.audits.utf8parse]]
+who = "Nika Layzell <nika@thelayzells.com>"
+criteria = "safe-to-deploy"
+delta = "0.2.1 -> 0.2.2"
+aggregated-from = "https://raw.githubusercontent.com/mozilla/cargo-vet/main/supply-chain/audits.toml"
+
 [[audits.mozilla.audits.windows-link]]
 who = "Mark Hammond <mhammond@skippinet.com.au>"
 criteria = "safe-to-deploy"
@@ -1570,12 +1644,24 @@ criteria = "safe-to-deploy"
 delta = "2.0.0 -> 2.0.1"
 aggregated-from = "https://raw.githubusercontent.com/zcash/zcash/master/qa/supply-chain/audits.toml"
 
+[[audits.zcash.audits.anstyle]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "1.0.10 -> 1.0.13"
+aggregated-from = "https://raw.githubusercontent.com/zcash/wallet/main/supply-chain/audits.toml"
+
 [[audits.zcash.audits.autocfg]]
 who = "Jack Grigg <jack@electriccoin.co>"
 criteria = "safe-to-deploy"
 delta = "1.4.0 -> 1.5.0"
 notes = "Filesystem change is to remove the generated LLVM IR output file after probing."
 aggregated-from = "https://raw.githubusercontent.com/zcash/zcash/master/qa/supply-chain/audits.toml"
+
+[[audits.zcash.audits.colorchoice]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "1.0.3 -> 1.0.4"
+aggregated-from = "https://raw.githubusercontent.com/zcash/wallet/main/supply-chain/audits.toml"
 
 [[audits.zcash.audits.crunchy]]
 who = "Jack Grigg <jack@electriccoin.co>"
