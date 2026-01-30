@@ -111,6 +111,7 @@ dependencies = [
  "embedded-hal 1.0.0",
  "embedded-hal-async",
  "embedded-services",
+ "heapless",
  "mctp-rs",
  "zerocopy",
 ]

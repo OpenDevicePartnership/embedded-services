@@ -100,19 +100,20 @@ unsafe extern "C" {
 }
 
 #[embassy_executor::task]
-async fn battery_publish_task(fg_device: &'static Device) {
+async fn battery_publish_task(battery_service: &'static battery_service::Service, fg_device: &'static Device) {
     loop {
         Timer::after_secs(1).await;
         // Get dynamic cache
         let cache = fg_device.get_dynamic_battery_cache().await;
 
         // Send cache data to eSpi service
-        battery_service::comms_send(
-            embedded_services::comms::EndpointID::External(embedded_services::comms::External::Host),
-            &embedded_services::ec_type::message::BatteryMessage::CycleCount(cache.cycle_count.into()),
-        )
-        .await
-        .unwrap();
+        battery_service
+            .comms_send(
+                embedded_services::comms::EndpointID::External(embedded_services::comms::External::Host),
+                &embedded_services::ec_type::message::BatteryMessage::CycleCount(cache.cycle_count.into()),
+            )
+            .await
+            .unwrap();
     }
 }
 
@@ -131,9 +132,13 @@ async fn espi_service_task(espi: embassy_imxrt::espi::Espi<'static>, memory_map_
 }
 
 #[embassy_executor::task]
-async fn battery_service_task() -> ! {
-    battery_service::task::task().await;
-    unreachable!()
+async fn battery_service_task(
+    service: &'static battery_service::Service,
+    device: [&'static battery_service::device::Device; 1],
+) {
+    if let Err(_) = battery_service::task::task(service, device).await {
+        error!("Failed to start battery service")
+    }
 }
 
 #[embassy_executor::main]
@@ -210,6 +215,8 @@ async fn main(spawner: Spawner) {
 
     let fg_bus = I2cDevice::new(i2c_bus_fg);
 
+    static BATTERY_SERVICE: battery_service::Service = battery_service::Service::new();
+
     let fg = FG_DEVICE.init(Device::new(DeviceId(0)));
 
     let wrap = Wrapper::new(
@@ -220,17 +227,16 @@ async fn main(spawner: Spawner) {
     );
 
     spawner.must_spawn(wrapper_task(wrap));
-    spawner.must_spawn(battery_service_task());
+    spawner.must_spawn(battery_service_task(&BATTERY_SERVICE, [fg]));
 
-    battery_service::register_fuel_gauge(fg).unwrap();
+    spawner.must_spawn(battery_publish_task(&BATTERY_SERVICE, fg));
 
-    spawner.must_spawn(battery_publish_task(fg));
-
-    if let Err(e) = battery_service::execute_event(BatteryEvent {
-        device_id: DeviceId(0),
-        event: battery_service::context::BatteryEventInner::DoInit,
-    })
-    .await
+    if let Err(e) = BATTERY_SERVICE
+        .execute_event(BatteryEvent {
+            device_id: DeviceId(0),
+            event: battery_service::context::BatteryEventInner::DoInit,
+        })
+        .await
     {
         error!("Error initializing fuel gauge, error: {:?}", e);
     }
@@ -249,11 +255,12 @@ async fn main(spawner: Spawner) {
 
         info!("Memory map contents: {:?}", data[..64]);
 
-        if let Err(e) = battery_service::execute_event(BatteryEvent {
-            device_id: DeviceId(0),
-            event: battery_service::context::BatteryEventInner::PollDynamicData,
-        })
-        .await
+        if let Err(e) = BATTERY_SERVICE
+            .execute_event(BatteryEvent {
+                device_id: DeviceId(0),
+                event: battery_service::context::BatteryEventInner::PollDynamicData,
+            })
+            .await
         {
             error!("Error getting dynamic fuel gauge data, error: {:?}", e);
         }

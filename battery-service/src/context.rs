@@ -402,8 +402,11 @@ impl Context {
         }
     }
 
-    pub(super) async fn process_acpi_cmd(&self, acpi_msg: &AcpiBatteryRequest) {
-        let response: Result<AcpiBatteryResponse, AcpiBatteryError> = match *acpi_msg {
+    pub(super) async fn process_acpi_cmd(
+        &self,
+        acpi_msg: &AcpiBatteryRequest,
+    ) -> Result<AcpiBatteryResponse, AcpiBatteryError> {
+        match *acpi_msg {
             AcpiBatteryRequest::BatteryGetBixRequest { battery_id } => self.bix_handler(DeviceId(battery_id)).await,
             AcpiBatteryRequest::BatteryGetBstRequest { battery_id } => self.bst_handler(DeviceId(battery_id)).await,
             AcpiBatteryRequest::BatteryGetPsrRequest { battery_id } => self.psr_handler(DeviceId(battery_id)).await,
@@ -434,19 +437,7 @@ impl Context {
                 self.bma_handler(DeviceId(battery_id), bma).await
             }
             AcpiBatteryRequest::BatteryGetStaRequest { battery_id } => self.sta_handler(DeviceId(battery_id)).await,
-        };
-
-        if let Err(e) = response {
-            error!("Battery service command failed: {:?}", e);
         }
-
-        // TODO We should probably be responding to the requestor rather than just assuming the request came from the host
-        super::comms_send(
-            crate::EndpointID::External(embedded_services::comms::External::Host),
-            &response,
-        )
-        .await
-        .expect("comms_send is infallible");
     }
 
     pub(crate) fn get_fuel_gauge(&self, id: DeviceId) -> Option<&'static Device> {
