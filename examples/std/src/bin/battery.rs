@@ -12,7 +12,7 @@ use embedded_batteries_async::smart_battery::{
     ManufactureDate, MilliAmpsSigned, Minutes, Percent, SmartBattery, SpecificationInfoFields,
 };
 use embedded_hal_mock::eh1::i2c::Mock;
-use embedded_services::info;
+use embedded_services::{error, info};
 
 mod espi_service {
     use battery_service::context::{BatteryEvent, BatteryEventInner};
@@ -67,7 +67,7 @@ mod espi_service {
     }
 
     #[embassy_executor::task]
-    pub async fn task() {
+    pub async fn task(battery_service: &'static battery_service::Service) {
         let espi_service = ESPI_SERVICE.get().await;
 
         espi_service
@@ -81,14 +81,9 @@ mod espi_service {
             )
             .await
             .unwrap();
-        info!("Sent init request");
-        match battery_service::wait_for_battery_response().await {
-            Ok(_) => {
-                info!("Init request succeeded!")
-            }
-            Err(e) => {
-                error!("Init request failed with {:?}", e);
-            }
+
+        if let Err(e) = battery_service.wait_for_battery_response().await {
+            error!("Init request failed with {:?}", e);
         }
         Timer::after_secs(5).await;
 
@@ -104,6 +99,10 @@ mod espi_service {
             .await
             .unwrap();
 
+        if let Err(e) = battery_service.wait_for_battery_response().await {
+            error!("static data request failed with {:?}", e);
+        }
+
         loop {
             espi_service
                 .endpoint
@@ -116,14 +115,9 @@ mod espi_service {
                 )
                 .await
                 .unwrap();
-            info!("Sent dynamic data request");
-            match battery_service::wait_for_battery_response().await {
-                Ok(_) => {
-                    info!("dynamic data request succeeded!")
-                }
-                Err(e) => {
-                    error!("dynamic data request failed with {:?}", e);
-                }
+
+            if let Err(e) = battery_service.wait_for_battery_response().await {
+                error!("dynamic data request failed with {:?}", e);
             }
             Timer::after_secs(5).await;
         }
@@ -470,20 +464,26 @@ async fn wrapper_task(wrapper: Wrapper<'static, FuelGaugeController>) {
 }
 
 #[embassy_executor::task]
-async fn battery_service_task() -> ! {
-    battery_service::task::task().await;
-    unreachable!()
+async fn battery_service_task(
+    service: &'static battery_service::Service,
+    device: [&'static battery_service::device::Device; 1],
+) {
+    if let Err(e) = battery_service::task::task(service, device).await {
+        error!("Failed to start battery service with error {:?}", e)
+    }
 }
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
-    env_logger::builder().filter_level(log::LevelFilter::Trace).init();
+    env_logger::builder().filter_level(log::LevelFilter::Info).init();
 
     let expectations = vec![];
 
     static DEV: OnceLock<Device> = OnceLock::new();
 
     let dev = DEV.get_or_init(|| Device::new(DeviceId(0)));
+
+    static SERVICE: battery_service::Service = battery_service::Service::new();
 
     let wrap = Wrapper::new(
         dev,
@@ -498,9 +498,7 @@ async fn main(spawner: Spawner) {
     espi_service::init().await;
     info!("espi service init'd");
 
-    battery_service::register_fuel_gauge(dev).unwrap();
-
-    spawner.must_spawn(espi_service::task());
+    spawner.must_spawn(espi_service::task(&SERVICE));
     spawner.must_spawn(wrapper_task(wrap));
-    spawner.must_spawn(battery_service_task());
+    spawner.must_spawn(battery_service_task(&SERVICE, [dev]));
 }

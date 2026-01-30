@@ -7,7 +7,7 @@ use context::BatteryEvent;
 use embassy_futures::select::select;
 use embedded_services::{
     comms::{self, EndpointID},
-    trace,
+    error, trace,
 };
 
 mod acpi;
@@ -30,7 +30,7 @@ impl Service {
     }
 
     /// Create a new battery service instance with context configuration.
-    pub fn new_with_ctx_config(config: context::Config) -> Self {
+    pub const fn new_with_ctx_config(config: context::Config) -> Self {
         Self::new_inner(config)
     }
 
@@ -42,13 +42,13 @@ impl Service {
     }
 
     /// Main battery service processing function.
-    pub async fn process_next(&self) {
+    async fn process_next(&self) {
         let event = self.wait_next().await;
         self.process_event(event).await
     }
 
     /// Wait for next event.
-    pub async fn wait_next(&self) -> Event {
+    async fn wait_next(&self) -> Event {
         match select(self.context.wait_event(), self.context.wait_acpi_cmd()).await {
             embassy_futures::select::Either::First(event) => Event::StateMachine(event),
             embassy_futures::select::Either::Second(acpi_msg) => Event::AcpiRequest(acpi_msg),
@@ -56,7 +56,7 @@ impl Service {
     }
 
     /// Process battery service event.
-    pub async fn process_event(&self, event: Event) {
+    async fn process_event(&self, event: Event) {
         match event {
             Event::StateMachine(event) => {
                 trace!("Battery service: state machine event recvd {:?}", event);
@@ -64,9 +64,58 @@ impl Service {
             }
             Event::AcpiRequest(acpi_msg) => {
                 trace!("Battery service: ACPI cmd recvd");
-                self.context.process_acpi_cmd(&acpi_msg).await
+                match self.context.process_acpi_cmd(&acpi_msg).await {
+                    Ok(response) => {
+                        // TODO We should probably be responding to the requestor rather than just assuming the request came from the host
+                        self.comms_send(
+                            crate::EndpointID::External(embedded_services::comms::External::Host),
+                            &response,
+                        )
+                        .await
+                        .expect("comms_send is infallible")
+                    }
+                    Err(e) => error!("Battery service command failed: {:?}", e),
+                }
             }
         }
+    }
+
+    /// Register fuel gauge device with the battery service.
+    ///
+    /// Must be done before sending the battery service commands so that hardware device is visible
+    /// to the battery service.
+    pub(crate) fn register_fuel_gauge(
+        &self,
+        device: &'static device::Device,
+    ) -> Result<(), embedded_services::intrusive_list::Error> {
+        self.context.register_fuel_gauge(device)?;
+
+        Ok(())
+    }
+
+    /// Use the battery service endpoint to send data to other subsystems and services.
+    pub async fn comms_send(&self, endpoint_id: EndpointID, data: &(impl Any + Send + Sync)) -> Result<(), Infallible> {
+        self.endpoint.send(endpoint_id, data).await
+    }
+
+    /// Send the battery service state machine an event and await a response.
+    ///
+    /// This is an alternative method of interacting with the battery service (instead of using the comms service),
+    /// and is a useful fn if you want to send an event and await a response sequentially.
+    pub async fn execute_event(&self, event: BatteryEvent) -> context::BatteryResponse {
+        self.context.execute_event(event).await
+    }
+
+    /// Wait for a response from the battery service.
+    ///
+    /// Use this function after sending the battery service a message via the comms system.
+    pub async fn wait_for_battery_response(&self) -> context::BatteryResponse {
+        self.context.wait_response().await
+    }
+
+    /// Asynchronously query the state from the state machine.
+    pub async fn get_state(&self) -> context::State {
+        self.context.get_state().await
     }
 }
 
@@ -97,41 +146,4 @@ impl comms::MailboxDelegate for Service {
 
         Ok(())
     }
-}
-
-static SERVICE: Service = Service::new();
-
-/// Register fuel gauge device with the battery service.
-///
-/// Must be done before sending the battery service commands so that hardware device is visible
-/// to the battery service.
-pub fn register_fuel_gauge(device: &'static device::Device) -> Result<(), embedded_services::intrusive_list::Error> {
-    SERVICE.context.register_fuel_gauge(device)?;
-
-    Ok(())
-}
-
-/// Use the battery service endpoint to send data to other subsystems and services.
-pub async fn comms_send(endpoint_id: EndpointID, data: &(impl Any + Send + Sync)) -> Result<(), Infallible> {
-    SERVICE.endpoint.send(endpoint_id, data).await
-}
-
-/// Send the battery service state machine an event and await a response.
-///
-/// This is an alternative method of interacting with the battery service (instead of using the comms service),
-/// and is a useful fn if you want to send an event and await a response sequentially.
-pub async fn execute_event(event: BatteryEvent) -> context::BatteryResponse {
-    SERVICE.context.execute_event(event).await
-}
-
-/// Wait for a response from the battery service.
-///
-/// Use this function after sending the battery service a message via the comms system.
-pub async fn wait_for_battery_response() -> context::BatteryResponse {
-    SERVICE.context.wait_response().await
-}
-
-/// Asynchronously query the state from the state machine.
-pub async fn get_state() -> context::State {
-    SERVICE.context.get_state().await
 }

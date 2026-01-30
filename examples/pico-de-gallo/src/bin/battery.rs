@@ -151,15 +151,17 @@ impl bs::controller::Controller for Battery {
     }
 }
 
-async fn init_and_run_service(i2c: pico_de_gallo_hal::I2c, delay: pico_de_gallo_hal::Delay) -> ! {
+async fn init_and_run_service(
+    battery_service: &'static battery_service::Service,
+    i2c: pico_de_gallo_hal::I2c,
+    delay: pico_de_gallo_hal::Delay,
+) -> ! {
     embedded_services::debug!("Initializing battery service");
     embedded_services::init().await;
 
     static BATTERY_DEVICE: StaticCell<bs::device::Device> = StaticCell::new();
     static BATTERY_WRAPPER: StaticCell<bs::wrapper::Wrapper<'static, Battery>> = StaticCell::new();
     let device = BATTERY_DEVICE.init(bs::device::Device::new(bs::device::DeviceId(0)));
-
-    battery_service::register_fuel_gauge(device).expect("Failed to register fuel gauge");
 
     let wrapper = BATTERY_WRAPPER.init(bs::wrapper::Wrapper::new(
         device,
@@ -170,45 +172,49 @@ async fn init_and_run_service(i2c: pico_de_gallo_hal::I2c, delay: pico_de_gallo_
 
     // Run battery service
     let _ = embassy_futures::join::join(
-        tokio::spawn(battery_service::task::task()),
+        tokio::spawn(battery_service::task::task(battery_service, [device])),
         tokio::spawn(wrapper.process()),
     )
     .await;
     unreachable!()
 }
 
-async fn init_state_machine() -> Result<(), bs::context::ContextError> {
-    battery_service::execute_event(battery_service::context::BatteryEvent {
-        event: battery_service::context::BatteryEventInner::DoInit,
-        device_id: bs::device::DeviceId(0),
-    })
-    .await
-    .inspect_err(|f| embedded_services::debug!("Fuel gauge init error: {:?}", f))?;
+async fn init_state_machine(battery_service: &'static bs::Service) -> Result<(), bs::context::ContextError> {
+    battery_service
+        .execute_event(battery_service::context::BatteryEvent {
+            event: battery_service::context::BatteryEventInner::DoInit,
+            device_id: bs::device::DeviceId(0),
+        })
+        .await
+        .inspect_err(|f| embedded_services::debug!("Fuel gauge init error: {:?}", f))?;
 
-    battery_service::execute_event(battery_service::context::BatteryEvent {
-        event: battery_service::context::BatteryEventInner::PollStaticData,
-        device_id: bs::device::DeviceId(0),
-    })
-    .await
-    .inspect_err(|f| embedded_services::debug!("Fuel gauge static data error: {:?}", f))?;
+    battery_service
+        .execute_event(battery_service::context::BatteryEvent {
+            event: battery_service::context::BatteryEventInner::PollStaticData,
+            device_id: bs::device::DeviceId(0),
+        })
+        .await
+        .inspect_err(|f| embedded_services::debug!("Fuel gauge static data error: {:?}", f))?;
 
-    battery_service::execute_event(battery_service::context::BatteryEvent {
-        event: battery_service::context::BatteryEventInner::PollDynamicData,
-        device_id: bs::device::DeviceId(0),
-    })
-    .await
-    .inspect_err(|f| embedded_services::debug!("Fuel gauge dynamic data error: {:?}", f))?;
+    battery_service
+        .execute_event(battery_service::context::BatteryEvent {
+            event: battery_service::context::BatteryEventInner::PollDynamicData,
+            device_id: bs::device::DeviceId(0),
+        })
+        .await
+        .inspect_err(|f| embedded_services::debug!("Fuel gauge dynamic data error: {:?}", f))?;
 
     Ok(())
 }
 
-async fn recover_state_machine() -> Result<(), ()> {
+async fn recover_state_machine(battery_service: &'static battery_service::Service) -> Result<(), ()> {
     loop {
-        match battery_service::execute_event(battery_service::context::BatteryEvent {
-            event: battery_service::context::BatteryEventInner::Timeout,
-            device_id: bs::device::DeviceId(0),
-        })
-        .await
+        match battery_service
+            .execute_event(battery_service::context::BatteryEvent {
+                event: battery_service::context::BatteryEventInner::Timeout,
+                device_id: bs::device::DeviceId(0),
+            })
+            .await
         {
             Ok(_) => {
                 embedded_services::info!("FG recovered!");
@@ -232,10 +238,10 @@ async fn recover_state_machine() -> Result<(), ()> {
     }
 }
 
-pub async fn run_app() {
+pub async fn run_app(battery_service: &'static battery_service::Service) {
     // Initialize battery state machine.
     let mut retries = 5;
-    while let Err(e) = init_state_machine().await {
+    while let Err(e) = init_state_machine(battery_service).await {
         retries -= 1;
         if retries <= 0 {
             embedded_services::error!("Failed to initialize Battery: {:?}", e);
@@ -249,21 +255,23 @@ pub async fn run_app() {
     loop {
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
         if count.is_multiple_of(const { 60 * 60 * 60 }) {
-            if let Err(e) = battery_service::execute_event(battery_service::context::BatteryEvent {
-                event: battery_service::context::BatteryEventInner::PollStaticData,
-                device_id: bs::device::DeviceId(0),
-            })
-            .await
+            if let Err(e) = battery_service
+                .execute_event(battery_service::context::BatteryEvent {
+                    event: battery_service::context::BatteryEventInner::PollStaticData,
+                    device_id: bs::device::DeviceId(0),
+                })
+                .await
             {
                 failures += 1;
                 embedded_services::error!("Fuel gauge static data error: {:#?}", e);
             }
         }
-        if let Err(e) = battery_service::execute_event(battery_service::context::BatteryEvent {
-            event: battery_service::context::BatteryEventInner::PollDynamicData,
-            device_id: bs::device::DeviceId(0),
-        })
-        .await
+        if let Err(e) = battery_service
+            .execute_event(battery_service::context::BatteryEvent {
+                event: battery_service::context::BatteryEventInner::PollDynamicData,
+                device_id: bs::device::DeviceId(0),
+            })
+            .await
         {
             failures += 1;
             embedded_services::error!("Fuel gauge dynamic data error: {:#?}", e);
@@ -273,7 +281,7 @@ pub async fn run_app() {
             failures = 0;
             count = 0;
             embedded_services::error!("FG: Too many errors, timing out and starting recovery...");
-            if recover_state_machine().await.is_err() {
+            if recover_state_machine(battery_service).await.is_err() {
                 embedded_services::error!("FG: Fatal error");
                 return;
             }
@@ -288,11 +296,13 @@ async fn main() {
     env_logger::builder().filter_level(log::LevelFilter::Info).init();
     embedded_services::info!("host: battery example started");
 
+    static BATTERY_SERVICE: bs::Service = bs::Service::new();
+
     let p = pico_de_gallo_hal::Hal::new();
 
     let _ = embassy_futures::join::join(
-        tokio::spawn(run_app()),
-        tokio::spawn(init_and_run_service(p.i2c(), p.delay())),
+        tokio::spawn(run_app(&BATTERY_SERVICE)),
+        tokio::spawn(init_and_run_service(&BATTERY_SERVICE, p.i2c(), p.delay())),
     )
     .await;
 }

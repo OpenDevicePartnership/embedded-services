@@ -23,6 +23,7 @@ embedded-services.workspace = true
 log = { workspace = true, optional = true }
 zerocopy.workspace = true
 mctp-rs = { workspace = true, features = ["espi"] }
+heapless.workspace = true
 
 [features]
 default = []
