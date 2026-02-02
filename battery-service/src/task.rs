@@ -12,7 +12,7 @@ pub enum InitError<const N: usize> {
 }
 
 /// Battery service task.
-pub async fn task<'a, const N: usize>(
+pub async fn task<const N: usize>(
     service: &'static Service,
     devices: [&'static Device; N],
 ) -> Result<(), InitError<N>> {
@@ -22,14 +22,12 @@ pub async fn task<'a, const N: usize>(
     for device in devices {
         if service.register_fuel_gauge(device).is_err() {
             error!("Failed to register battery device with DeviceId {:?}", device.id());
-            // Panics: Infallible as the Vec is as large as the list of devices passed in.
-            failed_devices
-                .push(device.id())
-                .expect("Infallible as the Vec is as large as the list of devices passed in");
+            // Infallible as the Vec is as large as the list of devices passed in.
+            let _ = failed_devices.push(device.id());
         }
     }
 
-    if failed_devices.is_empty() == false {
+    if !failed_devices.is_empty() {
         return Err(InitError::DeviceRegistrationFailed(failed_devices));
     }
 

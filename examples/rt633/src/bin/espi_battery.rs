@@ -136,7 +136,7 @@ async fn battery_service_task(
     service: &'static battery_service::Service,
     device: [&'static battery_service::device::Device; 1],
 ) {
-    if let Err(_) = battery_service::task::task(service, device).await {
+    if battery_service::task::task(service, device).await.is_err() {
         error!("Failed to start battery service")
     }
 }

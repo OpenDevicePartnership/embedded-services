@@ -42,13 +42,13 @@ impl Service {
     }
 
     /// Main battery service processing function.
-    async fn process_next(&self) {
+    pub async fn process_next(&self) {
         let event = self.wait_next().await;
         self.process_event(event).await
     }
 
     /// Wait for next event.
-    async fn wait_next(&self) -> Event {
+    pub async fn wait_next(&self) -> Event {
         match select(self.context.wait_event(), self.context.wait_acpi_cmd()).await {
             embassy_futures::select::Either::First(event) => Event::StateMachine(event),
             embassy_futures::select::Either::Second(acpi_msg) => Event::AcpiRequest(acpi_msg),
@@ -56,7 +56,7 @@ impl Service {
     }
 
     /// Process battery service event.
-    async fn process_event(&self, event: Event) {
+    pub async fn process_event(&self, event: Event) {
         match event {
             Event::StateMachine(event) => {
                 trace!("Battery service: state machine event recvd {:?}", event);
