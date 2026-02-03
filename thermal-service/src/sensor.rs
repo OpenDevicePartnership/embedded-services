@@ -1,6 +1,6 @@
 //! Sensor Device
+use crate::Event;
 use crate::utils::SampleBuf;
-use crate::{Event, send_event};
 use embassy_sync::mutex::Mutex;
 use embassy_sync::signal::Signal;
 use embassy_time::Timer;
@@ -396,45 +396,61 @@ impl<T: Controller, const SAMPLE_BUF_LEN: usize> Sensor<T, SAMPLE_BUF_LEN> {
         }
     }
 
-    async fn check_thresholds(&self, temp: DegreesCelsius) {
+    async fn check_thresholds(&self, temp: DegreesCelsius, thermal_service: &'static crate::Service) {
         let profile = self.profile.lock().await;
         let mut state = self.state.lock().await;
 
         if temp >= profile.warn_high_threshold && !state.is_warn_high {
-            send_event(Event::ThresholdExceeded(self.device.id, ThresholdType::WarnHigh, temp)).await;
+            thermal_service
+                .send_event(Event::ThresholdExceeded(self.device.id, ThresholdType::WarnHigh, temp))
+                .await;
             state.is_warn_high = true;
         } else if temp < (profile.warn_high_threshold - profile.hysteresis) && state.is_warn_high {
-            send_event(Event::ThresholdCleared(self.device.id, ThresholdType::WarnHigh)).await;
+            thermal_service
+                .send_event(Event::ThresholdCleared(self.device.id, ThresholdType::WarnHigh))
+                .await;
             state.is_warn_high = false;
         }
 
         if temp <= profile.warn_low_threshold && !state.is_warn_low {
-            send_event(Event::ThresholdExceeded(self.device.id, ThresholdType::WarnLow, temp)).await;
+            thermal_service
+                .send_event(Event::ThresholdExceeded(self.device.id, ThresholdType::WarnLow, temp))
+                .await;
             state.is_warn_low = true;
         } else if temp > (profile.warn_low_threshold + profile.hysteresis) && state.is_warn_low {
-            send_event(Event::ThresholdCleared(self.device.id, ThresholdType::WarnLow)).await;
+            thermal_service
+                .send_event(Event::ThresholdCleared(self.device.id, ThresholdType::WarnLow))
+                .await;
             state.is_warn_low = false;
         }
 
         if temp >= profile.prochot_threshold && !state.is_prochot {
-            send_event(Event::ThresholdExceeded(self.device.id, ThresholdType::Prochot, temp)).await;
+            thermal_service
+                .send_event(Event::ThresholdExceeded(self.device.id, ThresholdType::Prochot, temp))
+                .await;
             state.is_prochot = true;
         } else if temp < (profile.prochot_threshold - profile.hysteresis) && state.is_prochot {
-            send_event(Event::ThresholdCleared(self.device.id, ThresholdType::Prochot)).await;
+            thermal_service
+                .send_event(Event::ThresholdCleared(self.device.id, ThresholdType::Prochot))
+                .await;
             state.is_prochot = false;
         }
 
         if temp >= profile.crt_threshold && !state.is_critical {
-            send_event(Event::ThresholdExceeded(self.device.id, ThresholdType::Critical, temp)).await;
+            thermal_service
+                .send_event(Event::ThresholdExceeded(self.device.id, ThresholdType::Critical, temp))
+                .await;
             state.is_critical = true;
         } else if temp < (profile.crt_threshold - profile.hysteresis) && state.is_critical {
-            send_event(Event::ThresholdCleared(self.device.id, ThresholdType::Critical)).await;
+            thermal_service
+                .send_event(Event::ThresholdCleared(self.device.id, ThresholdType::Critical))
+                .await;
             state.is_critical = false;
         }
     }
 
     /// Periodically samples temperature from physical sensor and caches it
-    pub async fn handle_sampling(&self) {
+    pub async fn handle_sampling(&self, thermal_service: &'static crate::Service) {
         loop {
             // Only sample temperature if enabled
             if self.profile.lock().await.sampling_enabled {
@@ -442,7 +458,9 @@ impl<T: Controller, const SAMPLE_BUF_LEN: usize> Sensor<T, SAMPLE_BUF_LEN> {
                     Ok(temp) => temp,
                     _ => {
                         self.profile.lock().await.sampling_enabled = false;
-                        send_event(Event::SensorFailure(self.device.id, Error::Hardware)).await;
+                        thermal_service
+                            .send_event(Event::SensorFailure(self.device.id, Error::Hardware))
+                            .await;
                         error!("Error sampling sensor {}, disabling sampling", self.device.id.0);
                         continue;
                     }
@@ -455,7 +473,7 @@ impl<T: Controller, const SAMPLE_BUF_LEN: usize> Sensor<T, SAMPLE_BUF_LEN> {
                 self.samples.lock().await.push(temp);
 
                 // Check thresholds
-                self.check_thresholds(temp).await;
+                self.check_thresholds(temp, thermal_service).await;
 
                 // Adjust sampling rate based on how hot we are getting
                 let profile = self.profile.lock().await;

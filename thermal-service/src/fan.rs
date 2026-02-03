@@ -1,6 +1,6 @@
 //! Fan Device
+use crate::Event;
 use crate::utils::SampleBuf;
-use crate::{Event, send_event};
 use embassy_sync::mutex::Mutex;
 use embassy_sync::signal::Signal;
 use embassy_time::Timer;
@@ -394,14 +394,12 @@ impl<T: Controller, const SAMPLE_BUF_LEN: usize> Fan<T, SAMPLE_BUF_LEN> {
         }
     }
 
-    pub async fn handle_auto_control(&self) {
+    pub async fn handle_auto_control(&self, thermal_service: &'static crate::Service) {
         loop {
             if self.profile.lock().await.auto_control {
-                let temp = match crate::execute_sensor_request(
-                    self.profile.lock().await.sensor_id,
-                    crate::sensor::Request::GetTemp,
-                )
-                .await
+                let temp = match thermal_service
+                    .execute_sensor_request(self.profile.lock().await.sensor_id, crate::sensor::Request::GetTemp)
+                    .await
                 {
                     Ok(crate::sensor::ResponseData::Temp(temp)) => temp,
                     _ => {
@@ -415,13 +413,15 @@ impl<T: Controller, const SAMPLE_BUF_LEN: usize> Fan<T, SAMPLE_BUF_LEN> {
                             error!("Fan {} failed to set speed to max!", self.device.id.0);
                         }
 
-                        send_event(Event::FanFailure(self.device.id, Error::Hardware)).await;
+                        thermal_service
+                            .send_event(Event::FanFailure(self.device.id, Error::Hardware))
+                            .await;
                         continue;
                     }
                 };
 
                 if let Err(e) = self.handle_fan_state(temp).await {
-                    send_event(Event::FanFailure(self.device.id, e)).await;
+                    thermal_service.send_event(Event::FanFailure(self.device.id, e)).await;
                     error!("Fan {} error handling fan state transition: {:?}", self.device.id.0, e);
                 }
 

@@ -15,6 +15,8 @@ use thermal_service as ts;
 use thermal_service_messages::ThermalRequest;
 use ts::mptf;
 
+const SAMPLE_BUF_LEN: usize = 16;
+
 // Mock host service
 mod host {
     use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, signal::Signal};
@@ -303,14 +305,14 @@ async fn host() {
     }
 }
 
-async fn init_sensor(spawner: Spawner) {
+async fn create_sensor() -> &'static ts::sensor::Sensor<MockSensor, SAMPLE_BUF_LEN> {
     info!("Initializing mock bus");
     static BUS: OnceLock<MockBus> = OnceLock::new();
     let bus = BUS.get_or_init(MockBus::new);
 
     info!("Initializing mock sensor");
     let mock_sensor = MockSensor::new(bus);
-    static SENSOR: OnceLock<ts::sensor::Sensor<MockSensor, 16>> = OnceLock::new();
+    static SENSOR: OnceLock<ts::sensor::Sensor<MockSensor, SAMPLE_BUF_LEN>> = OnceLock::new();
 
     let profile = ts::sensor::Profile {
         warn_high_threshold: 40.0,
@@ -318,57 +320,63 @@ async fn init_sensor(spawner: Spawner) {
         crt_threshold: 80.0,
         ..Default::default()
     };
-    let sensor = SENSOR.get_or_init(|| ts::sensor::Sensor::new(ts::sensor::DeviceId(0), mock_sensor, profile));
-
-    ts::register_sensor(sensor.device()).await.unwrap();
-    spawner.must_spawn(mock_sensor_task(sensor));
+    SENSOR.get_or_init(|| ts::sensor::Sensor::new(ts::sensor::DeviceId(0), mock_sensor, profile))
 }
 
-async fn init_fan(spawner: Spawner) {
+async fn create_fan() -> &'static ts::fan::Fan<MockFan, SAMPLE_BUF_LEN> {
     info!("Initializing mock fan");
     let mock_fan = MockFan::new();
-    static FAN: OnceLock<ts::fan::Fan<MockFan, 16>> = OnceLock::new();
-    let fan = FAN.get_or_init(|| ts::fan::Fan::new(ts::fan::DeviceId(0), mock_fan, ts::fan::Profile::default()));
-
-    ts::register_fan(fan.device()).await.unwrap();
-    spawner.must_spawn(mock_fan_task(fan));
+    static FAN: OnceLock<ts::fan::Fan<MockFan, SAMPLE_BUF_LEN>> = OnceLock::new();
+    FAN.get_or_init(|| ts::fan::Fan::new(ts::fan::DeviceId(0), mock_fan, ts::fan::Profile::default()))
 }
 
 async fn init_thermal(spawner: Spawner) {
     info!("Initializing thermal service");
-    ts::init().await.unwrap();
 
-    init_sensor(spawner).await;
-    init_fan(spawner).await;
+    static SERVICE: OnceLock<ts::Service> = OnceLock::new();
+    let sensor = create_sensor().await;
+    let fan = create_fan().await;
+
+    if let Ok(service) = ts::Service::new(&SERVICE, &[sensor.device()], &[fan.device()]).await {
+        spawner.must_spawn(mock_sensor_task(sensor, service));
+        spawner.must_spawn(mock_fan_task(fan, service));
+        spawner.must_spawn(handle_requests(service));
+        spawner.must_spawn(handle_alerts(service));
+    } else {
+        panic!("Failed to initialize thermal service!")
+    }
 }
 
 #[embassy_executor::task]
-async fn handle_alerts() {
+async fn handle_alerts(service: &'static ts::Service) {
     loop {
-        match ts::wait_event().await {
+        match service.wait_event().await {
             ts::Event::ThresholdExceeded(ts::sensor::DeviceId(sensor_id), ts::sensor::ThresholdType::WarnHigh, _) => {
                 warn!("Sensor {sensor_id} exceeded WARN threshold");
-                ts::send_service_msg(comms::EndpointID::External(comms::External::Host), &mptf::Notify::Warn)
+                service
+                    .send_service_msg(comms::EndpointID::External(comms::External::Host), &mptf::Notify::Warn)
                     .await
                     .unwrap()
             }
             ts::Event::ThresholdExceeded(ts::sensor::DeviceId(sensor_id), ts::sensor::ThresholdType::Prochot, _) => {
                 warn!("Sensor {sensor_id} exceeded PROCHOT threshold");
-                ts::send_service_msg(
-                    comms::EndpointID::External(comms::External::Host),
-                    &mptf::Notify::ProcHot,
-                )
-                .await
-                .unwrap()
+                service
+                    .send_service_msg(
+                        comms::EndpointID::External(comms::External::Host),
+                        &mptf::Notify::ProcHot,
+                    )
+                    .await
+                    .unwrap()
             }
             ts::Event::ThresholdExceeded(ts::sensor::DeviceId(sensor_id), ts::sensor::ThresholdType::Critical, _) => {
                 warn!("Sensor {sensor_id} exceeded CRITICAL threshold");
-                ts::send_service_msg(
-                    comms::EndpointID::External(comms::External::Host),
-                    &mptf::Notify::Critical,
-                )
-                .await
-                .unwrap()
+                service
+                    .send_service_msg(
+                        comms::EndpointID::External(comms::External::Host),
+                        &mptf::Notify::Critical,
+                    )
+                    .await
+                    .unwrap()
             }
             event => warn!("Event: {event:?}"),
         }
@@ -376,8 +384,8 @@ async fn handle_alerts() {
 }
 
 #[embassy_executor::task]
-async fn handle_requests() -> ! {
-    ts::task::handle_requests().await;
+async fn handle_requests(service: &'static ts::Service) -> ! {
+    ts::task::handle_requests(service).await;
     unreachable!()
 }
 
@@ -386,8 +394,6 @@ async fn run(spawner: Spawner) {
     embedded_services::init().await;
     init_thermal(spawner).await;
     spawner.must_spawn(host());
-    spawner.must_spawn(handle_alerts());
-    spawner.must_spawn(handle_requests());
 }
 
 fn main() {
@@ -401,13 +407,16 @@ fn main() {
 }
 
 #[embassy_executor::task]
-async fn mock_sensor_task(sensor: &'static ts::sensor::Sensor<MockSensor, 16>) -> ! {
-    ts::task::sensor_task(sensor).await;
+async fn mock_sensor_task(
+    sensor: &'static ts::sensor::Sensor<MockSensor, SAMPLE_BUF_LEN>,
+    service: &'static ts::Service,
+) -> ! {
+    ts::task::sensor_task(sensor, service).await;
     unreachable!()
 }
 
 #[embassy_executor::task]
-async fn mock_fan_task(fan: &'static ts::fan::Fan<MockFan, 16>) -> ! {
-    ts::task::fan_task(fan).await;
+async fn mock_fan_task(fan: &'static ts::fan::Fan<MockFan, SAMPLE_BUF_LEN>, service: &'static ts::Service) -> ! {
+    ts::task::fan_task(fan, service).await;
     unreachable!()
 }

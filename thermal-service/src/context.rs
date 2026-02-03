@@ -16,7 +16,7 @@ pub(crate) struct Context {
 }
 
 impl Context {
-    pub(crate) fn new() -> Self {
+    pub(crate) const fn new() -> Self {
         Self {
             sensors: intrusive_list::IntrusiveList::new(),
             fans: intrusive_list::IntrusiveList::new(),
