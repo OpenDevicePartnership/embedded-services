@@ -80,6 +80,8 @@ platform-service = { path = "../../platform-service", features = [
 ] }
 embedded-mcu-hal = { git = "https://github.com/OpenDevicePartnership/embedded-mcu" }
 
+cfu-service = { path = "../../cfu-service", features = ["defmt"] }
+
 # Needed otherwise cargo will pull from git
 [patch."https://github.com/OpenDevicePartnership/embedded-services"]
 embedded-services = { path = "../../embedded-service" }

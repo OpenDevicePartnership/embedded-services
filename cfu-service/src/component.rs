@@ -9,9 +9,8 @@ use embedded_cfu_protocol::writer::{CfuWriterAsync, CfuWriterError};
 use heapless::Vec;
 
 use super::CfuError;
-use crate::GlobalRawMutex;
-use crate::cfu::route_request;
-use crate::intrusive_list;
+use embedded_services::GlobalRawMutex;
+use embedded_services::intrusive_list;
 
 /// Component internal update state
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -222,7 +221,7 @@ impl<W: CfuWriterAsync> CfuComponentDefault<W> {
         }
     }
     /// wait for a request and process it
-    pub async fn process_request(&self) -> Result<(), CfuError> {
+    pub async fn process_request(&self, cfu_client: &'static crate::CfuClient) -> Result<(), CfuError> {
         match self.device.wait_request().await {
             RequestData::FwVersionRequest => {
                 let fwv = self.get_fw_version().await.map_err(CfuError::ProtocolError)?;
@@ -247,8 +246,10 @@ impl<W: CfuWriterAsync> CfuComponentDefault<W> {
                     // panic safety: adding 1 here is safe because MAX_CMPT_COUNT is 1 more than MAX_SUBCMPT_COUNT
                     for (index, id) in arr.iter().enumerate() {
                         //info!("Forwarding GetFwVersion command to sub-component: {}", id);
-                        if let InternalResponseData::FwVersionResponse(fwv) =
-                            route_request(*id, RequestData::FwVersionRequest).await?
+                        if let InternalResponseData::FwVersionResponse(fwv) = cfu_client
+                            .context
+                            .route_request(*id, RequestData::FwVersionRequest)
+                            .await?
                         {
                             comp_info[index + 1] = fwv
                                 .component_info

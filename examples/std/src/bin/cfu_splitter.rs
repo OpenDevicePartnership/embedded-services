@@ -3,12 +3,10 @@ use embassy_sync::once_lock::OnceLock;
 use log::*;
 use static_cell::StaticCell;
 
+use cfu_service::component::{InternalResponseData, RequestData};
 use embedded_cfu_protocol::protocol_definitions::*;
-use embedded_services::cfu::{self, component::InternalResponseData, route_request};
 
-use cfu_service::splitter;
-
-use crate::cfu::component::RequestData;
+use cfu_service::{CfuClient, splitter};
 
 /// Component ID for the CFU Splitter
 const CFU_SPLITTER_ID: ComponentId = 0x06;
@@ -19,7 +17,7 @@ const CFU_COMPONENT0_ID: ComponentId = 0x20;
 const CFU_COMPONENT1_ID: ComponentId = 0x21;
 
 mod mock {
-    use embedded_services::cfu::component::{CfuDevice, CfuDeviceContainer, InternalResponseData};
+    use cfu_service::component::{CfuDevice, CfuDeviceContainer, InternalResponseData};
 
     use super::*;
 
@@ -166,10 +164,13 @@ async fn device_task(device: &'static mock::Device) {
 }
 
 #[embassy_executor::task]
-async fn splitter_task(splitter: &'static splitter::Splitter<'static, mock::Customization>) {
+async fn splitter_task(
+    splitter: &'static splitter::Splitter<'static, mock::Customization>,
+    cfu_client: &'static CfuClient,
+) {
     loop {
         let request = splitter.wait_request().await;
-        let response = splitter.process_request(request).await;
+        let response = splitter.process_request(request, cfu_client).await;
         splitter.send_response(response).await;
     }
 }
@@ -177,6 +178,11 @@ async fn splitter_task(splitter: &'static splitter::Splitter<'static, mock::Cust
 #[embassy_executor::task]
 async fn run(spawner: Spawner) {
     embedded_services::init().await;
+
+    static CFU_CLIENT: OnceLock<CfuClient> = OnceLock::new();
+    let cfu_client = CfuClient::new(&CFU_CLIENT).await;
+
+    spawner.must_spawn(cfu_service_task(cfu_client));
 
     info!("Creating device 0");
     static DEVICE0: OnceLock<mock::Device> = OnceLock::new();
@@ -190,7 +196,7 @@ async fn run(spawner: Spawner) {
             },
         )
     });
-    cfu::register_device(device0).await.unwrap();
+    cfu_client.register_device(device0).unwrap();
     spawner.must_spawn(device_task(device0));
 
     info!("Creating device 1");
@@ -205,7 +211,7 @@ async fn run(spawner: Spawner) {
             },
         )
     });
-    cfu::register_device(device1).await.unwrap();
+    cfu_client.register_device(device1).unwrap();
     spawner.must_spawn(device_task(device1));
 
     info!("Creating splitter");
@@ -213,11 +219,12 @@ async fn run(spawner: Spawner) {
     static DEVICES: [ComponentId; 2] = [CFU_COMPONENT0_ID, CFU_COMPONENT1_ID];
     let customization = mock::Customization {};
     let splitter = SPLITTER.get_or_init(|| splitter::Splitter::new(CFU_SPLITTER_ID, &DEVICES, customization).unwrap());
-    splitter.register().await.unwrap();
-    spawner.must_spawn(splitter_task(splitter));
+    splitter.register(cfu_client).unwrap();
+    spawner.must_spawn(splitter_task(splitter, cfu_client));
 
     info!("Getting FW version");
-    let response = route_request(CFU_SPLITTER_ID, RequestData::FwVersionRequest)
+    let response = cfu_client
+        .route_request(CFU_SPLITTER_ID, RequestData::FwVersionRequest)
         .await
         .unwrap();
     let prev_version = match response {
@@ -230,18 +237,19 @@ async fn run(spawner: Spawner) {
     info!("Got version: {prev_version:#x}");
 
     info!("Giving offer");
-    let offer = route_request(
-        CFU_SPLITTER_ID,
-        RequestData::GiveOffer(FwUpdateOffer::new(
-            HostToken::Driver,
+    let offer = cfu_client
+        .route_request(
             CFU_SPLITTER_ID,
-            FwVersion::new(0x211),
-            0,
-            0,
-        )),
-    )
-    .await
-    .unwrap();
+            RequestData::GiveOffer(FwUpdateOffer::new(
+                HostToken::Driver,
+                CFU_SPLITTER_ID,
+                FwVersion::new(0x211),
+                0,
+                0,
+            )),
+        )
+        .await
+        .unwrap();
     info!("Got response: {offer:?}");
 
     let header = FwUpdateContentHeader {
@@ -256,15 +264,16 @@ async fn run(spawner: Spawner) {
         data: [0u8; DEFAULT_DATA_LENGTH],
     };
 
-    let response = route_request(CFU_SPLITTER_ID, RequestData::GiveContent(request))
+    let response = cfu_client
+        .route_request(CFU_SPLITTER_ID, RequestData::GiveContent(request))
         .await
         .unwrap();
     info!("Got response: {response:?}");
 }
 
 #[embassy_executor::task]
-async fn cfu_service_task() -> ! {
-    cfu_service::task::task().await;
+async fn cfu_service_task(cfu_client: &'static CfuClient) -> ! {
+    cfu_service::task::task(cfu_client).await;
     unreachable!()
 }
 
@@ -274,7 +283,6 @@ fn main() {
     static EXECUTOR: StaticCell<Executor> = StaticCell::new();
     let executor = EXECUTOR.init(Executor::new());
     executor.run(|spawner| {
-        spawner.must_spawn(cfu_service_task());
         spawner.must_spawn(run(spawner));
     });
 }

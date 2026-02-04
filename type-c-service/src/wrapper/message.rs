@@ -44,7 +44,7 @@ pub struct EventPowerPolicyCommand<'a> {
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum EventCfu {
     /// CFU request
-    Request(embedded_services::cfu::component::RequestData),
+    Request(cfu_service::component::RequestData),
     /// Recovery tick
     ///
     /// Occurs when the FW update has timed out to abort the update and return hardware to its normal state
@@ -164,7 +164,7 @@ pub enum Output<'a> {
     /// CFU recovery tick
     CfuRecovery,
     /// CFU response
-    CfuResponse(embedded_services::cfu::component::InternalResponseData),
+    CfuResponse(cfu_service::component::InternalResponseData),
     /// Dp status update
     DpStatusUpdate(OutputDpStatusChanged),
 }

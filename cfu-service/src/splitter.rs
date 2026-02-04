@@ -3,15 +3,10 @@
 
 use core::{future::Future, iter::zip};
 
+use crate::component;
 use embassy_futures::join::{join, join3, join4};
 use embedded_cfu_protocol::protocol_definitions::*;
-use embedded_services::{
-    cfu::{
-        self,
-        component::{CfuDevice, InternalResponseData, RequestData},
-    },
-    error, intrusive_list, trace,
-};
+use embedded_services::{error, intrusive_list, trace};
 
 /// Trait containing customization functionality for [`Splitter`]
 pub trait Customization {
@@ -28,7 +23,7 @@ pub trait Customization {
 /// Splitter struct
 pub struct Splitter<'a, C: Customization> {
     /// CFU device
-    cfu_device: CfuDevice,
+    cfu_device: component::CfuDevice,
     /// Component ID for each individual device
     devices: &'a [ComponentId],
     /// Customization for the Splitter
@@ -45,7 +40,7 @@ impl<'a, C: Customization> Splitter<'a, C> {
             None
         } else {
             Some(Self {
-                cfu_device: CfuDevice::new(component_id),
+                cfu_device: component::CfuDevice::new(component_id),
                 devices,
                 customization,
             })
@@ -53,33 +48,35 @@ impl<'a, C: Customization> Splitter<'a, C> {
     }
 
     /// Create a new invalid FW version response
-    fn create_invalid_fw_version_response(&self) -> InternalResponseData {
+    fn create_invalid_fw_version_response(&self) -> component::InternalResponseData {
         let dev_inf = FwVerComponentInfo::new(FwVersion::new(0xffffffff), self.cfu_device.component_id());
         let comp_info: [FwVerComponentInfo; MAX_CMPT_COUNT] = [dev_inf; MAX_CMPT_COUNT];
-        InternalResponseData::FwVersionResponse(GetFwVersionResponse {
+        component::InternalResponseData::FwVersionResponse(GetFwVersionResponse {
             header: GetFwVersionResponseHeader::new(1, GetFwVerRespHeaderByte3::NoSpecialFlags),
             component_info: comp_info,
         })
     }
 
     /// Create a content rejection response
-    fn create_content_rejection(sequence: u16) -> InternalResponseData {
-        InternalResponseData::ContentResponse(FwUpdateContentResponse::new(
+    fn create_content_rejection(sequence: u16) -> component::InternalResponseData {
+        component::InternalResponseData::ContentResponse(FwUpdateContentResponse::new(
             sequence,
             CfuUpdateContentResponseStatus::ErrorInvalid,
         ))
     }
 
     /// Process a fw version request
-    async fn process_get_fw_version(&self) -> InternalResponseData {
+    async fn process_get_fw_version(&self, cfu_client: &crate::CfuClient) -> component::InternalResponseData {
         let mut versions = [GetFwVersionResponse {
             header: Default::default(),
             component_info: Default::default(),
         }; MAX_SUPPORTED_DEVICES];
 
         let success = map_slice_join(self.devices, &mut versions, |device_id| async move {
-            if let Ok(InternalResponseData::FwVersionResponse(version_info)) =
-                cfu::route_request(*device_id, RequestData::FwVersionRequest).await
+            if let Ok(component::InternalResponseData::FwVersionResponse(version_info)) = cfu_client
+                .context
+                .route_request(*device_id, component::RequestData::FwVersionRequest)
+                .await
             {
                 Some(version_info)
             } else {
@@ -94,14 +91,18 @@ impl<'a, C: Customization> Splitter<'a, C> {
 
             // The overall component version comes first
             overall_version.component_info[0].component_id = self.cfu_device.component_id();
-            InternalResponseData::FwVersionResponse(overall_version)
+            component::InternalResponseData::FwVersionResponse(overall_version)
         } else {
             self.create_invalid_fw_version_response()
         }
     }
 
     /// Process a give offer request
-    async fn process_give_offer(&self, offer: &FwUpdateOffer) -> InternalResponseData {
+    async fn process_give_offer(
+        &self,
+        offer: &FwUpdateOffer,
+        cfu_client: &crate::CfuClient,
+    ) -> component::InternalResponseData {
         let mut offer_responses = [FwUpdateOfferResponse::default(); MAX_SUPPORTED_DEVICES];
 
         let success = map_slice_join(self.devices, &mut offer_responses, |device_id| async move {
@@ -109,8 +110,10 @@ impl<'a, C: Customization> Splitter<'a, C> {
 
             // Override with the correct component ID for the device
             offer.component_info.component_id = *device_id;
-            if let Ok(InternalResponseData::OfferResponse(response)) =
-                cfu::route_request(*device_id, RequestData::GiveOffer(offer)).await
+            if let Ok(component::InternalResponseData::OfferResponse(response)) = cfu_client
+                .context
+                .route_request(*device_id, component::RequestData::GiveOffer(offer))
+                .await
             {
                 Some(response)
             } else {
@@ -121,19 +124,27 @@ impl<'a, C: Customization> Splitter<'a, C> {
         .await;
 
         if success && let Some(offer_responses_slice) = offer_responses.get(..self.devices.len()) {
-            InternalResponseData::OfferResponse(self.customization.resolve_offer_response(offer_responses_slice))
+            component::InternalResponseData::OfferResponse(
+                self.customization.resolve_offer_response(offer_responses_slice),
+            )
         } else {
             self.create_invalid_fw_version_response()
         }
     }
 
     /// Process update content
-    async fn process_give_content(&self, content: &FwUpdateContentCommand) -> InternalResponseData {
+    async fn process_give_content(
+        &self,
+        content: &FwUpdateContentCommand,
+        cfu_client: &crate::CfuClient,
+    ) -> component::InternalResponseData {
         let mut content_responses = [FwUpdateContentResponse::default(); MAX_SUPPORTED_DEVICES];
 
         let success = map_slice_join(self.devices, &mut content_responses, |device_id| async move {
-            if let Ok(InternalResponseData::ContentResponse(response)) =
-                cfu::route_request(*device_id, RequestData::GiveContent(*content)).await
+            if let Ok(component::InternalResponseData::ContentResponse(response)) = cfu_client
+                .context
+                .route_request(*device_id, component::RequestData::GiveContent(*content))
+                .await
             {
                 Some(response)
             } else {
@@ -144,57 +155,63 @@ impl<'a, C: Customization> Splitter<'a, C> {
         .await;
 
         if success && let Some(content_responses_slice) = content_responses.get(..self.devices.len()) {
-            InternalResponseData::ContentResponse(self.customization.resolve_content_response(content_responses_slice))
+            component::InternalResponseData::ContentResponse(
+                self.customization.resolve_content_response(content_responses_slice),
+            )
         } else {
             Self::create_content_rejection(content.header.sequence_num)
         }
     }
 
     /// Wait for a CFU message
-    pub async fn wait_request(&self) -> RequestData {
+    pub async fn wait_request(&self) -> component::RequestData {
         self.cfu_device.wait_request().await
     }
 
     /// Process a CFU message and produce a response
-    pub async fn process_request(&self, request: RequestData) -> InternalResponseData {
+    pub async fn process_request(
+        &self,
+        request: component::RequestData,
+        cfu_client: &crate::CfuClient,
+    ) -> component::InternalResponseData {
         match request {
-            RequestData::FwVersionRequest => {
+            component::RequestData::FwVersionRequest => {
                 trace!("Got FwVersionRequest");
-                self.process_get_fw_version().await
+                self.process_get_fw_version(cfu_client).await
             }
-            RequestData::GiveOffer(offer) => {
+            component::RequestData::GiveOffer(offer) => {
                 trace!("Got GiveOffer");
-                self.process_give_offer(&offer).await
+                self.process_give_offer(&offer, cfu_client).await
             }
-            RequestData::GiveContent(content) => {
+            component::RequestData::GiveContent(content) => {
                 trace!("Got GiveContent");
-                self.process_give_content(&content).await
+                self.process_give_content(&content, cfu_client).await
             }
-            RequestData::AbortUpdate => {
+            component::RequestData::AbortUpdate => {
                 trace!("Got AbortUpdate");
-                InternalResponseData::ComponentPrepared
+                component::InternalResponseData::ComponentPrepared
             }
-            RequestData::FinalizeUpdate => {
+            component::RequestData::FinalizeUpdate => {
                 trace!("Got FinalizeUpdate");
-                InternalResponseData::ComponentPrepared
+                component::InternalResponseData::ComponentPrepared
             }
-            RequestData::PrepareComponentForUpdate => {
+            component::RequestData::PrepareComponentForUpdate => {
                 trace!("Got PrepareComponentForUpdate");
-                InternalResponseData::ComponentPrepared
+                component::InternalResponseData::ComponentPrepared
             }
-            RequestData::GiveOfferExtended(_) => {
+            component::RequestData::GiveOfferExtended(_) => {
                 trace!("Got GiveExtendedOffer");
                 // Extended offers are not currently supported
-                InternalResponseData::OfferResponse(FwUpdateOfferResponse::new_with_failure(
+                component::InternalResponseData::OfferResponse(FwUpdateOfferResponse::new_with_failure(
                     HostToken::Driver,
                     OfferRejectReason::InvalidComponent,
                     OfferStatus::Reject,
                 ))
             }
-            RequestData::GiveOfferInformation(_) => {
+            component::RequestData::GiveOfferInformation(_) => {
                 trace!("Got GiveOfferInformation");
                 // Offer information is not currently supported
-                InternalResponseData::OfferResponse(FwUpdateOfferResponse::new_with_failure(
+                component::InternalResponseData::OfferResponse(FwUpdateOfferResponse::new_with_failure(
                     HostToken::Driver,
                     OfferRejectReason::InvalidComponent,
                     OfferStatus::Reject,
@@ -204,12 +221,12 @@ impl<'a, C: Customization> Splitter<'a, C> {
     }
 
     /// Send a response to the CFU message
-    pub async fn send_response(&self, response: InternalResponseData) {
+    pub async fn send_response(&self, response: component::InternalResponseData) {
         self.cfu_device.send_response(response).await;
     }
 
-    pub async fn register(&'static self) -> Result<(), intrusive_list::Error> {
-        cfu::register_device(&self.cfu_device).await
+    pub fn register(&'static self, cfu_client: &crate::CfuClient) -> Result<(), intrusive_list::Error> {
+        cfu_client.context.register_device(&self.cfu_device)
     }
 }
 

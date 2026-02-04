@@ -4,15 +4,12 @@ use embassy_time::{Duration, Timer};
 use log::*;
 use static_cell::StaticCell;
 
+use cfu_service::component::{InternalResponseData, RequestData};
 use embedded_cfu_protocol::protocol_definitions::*;
-use embedded_services::{
-    GlobalRawMutex,
-    cfu::{self, component::InternalResponseData, route_request},
-};
+use embedded_services::GlobalRawMutex;
 
+use cfu_service::CfuClient;
 use cfu_service::buffer;
-
-use crate::cfu::component::RequestData;
 
 /// Component ID for the CFU buffer
 const CFU_BUFFER_ID: ComponentId = 0x06;
@@ -23,7 +20,7 @@ const CFU_COMPONENT0_ID: ComponentId = 0x20;
 mod mock {
     use std::sync::atomic::AtomicBool;
 
-    use embedded_services::cfu::component::{CfuDevice, CfuDeviceContainer, InternalResponseData};
+    use cfu_service::component::{CfuDevice, CfuDeviceContainer, InternalResponseData};
 
     use super::*;
 
@@ -147,10 +144,10 @@ async fn device_task(device: &'static mock::Device) {
 }
 
 #[embassy_executor::task]
-async fn buffer_task(buffer: &'static buffer::Buffer<'static>) {
+async fn buffer_task(buffer: &'static buffer::Buffer<'static>, cfu_client: &'static CfuClient) {
     loop {
-        let request = buffer.wait_event().await;
-        if let Some(response) = buffer.process(request).await {
+        let request = buffer.wait_event(cfu_client).await;
+        if let Some(response) = buffer.process(request, cfu_client).await {
             buffer.send_response(response).await;
         }
     }
@@ -159,6 +156,11 @@ async fn buffer_task(buffer: &'static buffer::Buffer<'static>) {
 #[embassy_executor::task]
 async fn run(spawner: Spawner) {
     embedded_services::init().await;
+
+    static CFU_CLIENT: OnceLock<CfuClient> = OnceLock::new();
+    let cfu_client = CfuClient::new(&CFU_CLIENT).await;
+
+    spawner.must_spawn(cfu_service_task(cfu_client));
 
     info!("Creating device 0");
     static DEVICE0: OnceLock<mock::Device> = OnceLock::new();
@@ -172,7 +174,7 @@ async fn run(spawner: Spawner) {
             },
         )
     });
-    cfu::register_device(device0).await.unwrap();
+    cfu_client.register_device(device0).unwrap();
     spawner.must_spawn(device_task(device0));
 
     info!("Creating buffer");
@@ -189,11 +191,12 @@ async fn run(spawner: Spawner) {
             buffer::Config::with_timeout(Duration::from_millis(75)),
         )
     });
-    buffer.register().await.unwrap();
-    spawner.must_spawn(buffer_task(buffer));
+    buffer.register(cfu_client).unwrap();
+    spawner.must_spawn(buffer_task(buffer, cfu_client));
 
     info!("Getting FW version");
-    let response = route_request(CFU_BUFFER_ID, RequestData::FwVersionRequest)
+    let response = cfu_client
+        .route_request(CFU_BUFFER_ID, RequestData::FwVersionRequest)
         .await
         .unwrap();
     let prev_version = match response {
@@ -206,18 +209,19 @@ async fn run(spawner: Spawner) {
     info!("Got version: {prev_version:#x}");
 
     info!("Giving offer");
-    let offer = route_request(
-        CFU_BUFFER_ID,
-        RequestData::GiveOffer(FwUpdateOffer::new(
-            HostToken::Driver,
+    let offer = cfu_client
+        .route_request(
             CFU_BUFFER_ID,
-            FwVersion::new(0x211),
-            0,
-            0,
-        )),
-    )
-    .await
-    .unwrap();
+            RequestData::GiveOffer(FwUpdateOffer::new(
+                HostToken::Driver,
+                CFU_BUFFER_ID,
+                FwVersion::new(0x211),
+                0,
+                0,
+            )),
+        )
+        .await
+        .unwrap();
     info!("Got response: {offer:?}");
 
     for i in 0..10 {
@@ -235,7 +239,8 @@ async fn run(spawner: Spawner) {
 
         info!("Giving content");
         let now = embassy_time::Instant::now();
-        let response = route_request(CFU_BUFFER_ID, RequestData::GiveContent(request))
+        let response = cfu_client
+            .route_request(CFU_BUFFER_ID, RequestData::GiveContent(request))
             .await
             .unwrap();
         info!("Got response in {:?} ms: {:?}", now.elapsed().as_millis(), response);
@@ -246,8 +251,8 @@ async fn run(spawner: Spawner) {
 }
 
 #[embassy_executor::task]
-async fn cfu_service_task() -> ! {
-    cfu_service::task::task().await;
+async fn cfu_service_task(cfu_client: &'static CfuClient) -> ! {
+    cfu_service::task::task(cfu_client).await;
     unreachable!()
 }
 
@@ -256,7 +261,6 @@ fn main() {
     static EXECUTOR: StaticCell<Executor> = StaticCell::new();
     let executor = EXECUTOR.init(Executor::new());
     executor.run(|spawner| {
-        spawner.must_spawn(cfu_service_task());
         spawner.must_spawn(run(spawner));
     });
 }

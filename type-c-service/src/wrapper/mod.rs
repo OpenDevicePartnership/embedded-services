@@ -4,7 +4,7 @@
 //! This struct current currently supports messages from the following services:
 //! * Type-C: [`embedded_services::type_c::controller::Command`]
 //! * Power policy: [`embedded_services::power::policy::device::Command`]
-//! * CFU: [`embedded_services::cfu::Request`]
+//! * CFU: [`cfu_service::Request`]
 //! # Event loop
 //! This struct follows a standard wait/process/finalize event loop.
 //!
@@ -608,10 +608,11 @@ where
     }
 
     /// Register all devices with their respective services
-    pub async fn register(
+    pub fn register(
         &'static self,
         controllers: &intrusive_list::IntrusiveList,
         power_policy_context: &embedded_services::power::policy::policy::Context<POLICY_CHANNEL_SIZE>,
+        cfu_client: &cfu_service::CfuClient,
     ) -> Result<(), Error<<C::Inner as Controller>::BusError>> {
         // TODO: Unify these devices?
         for device in self.registration.power_devices {
@@ -634,15 +635,13 @@ where
         })?;
 
         //TODO: Remove when we have a more general framework in place
-        embedded_services::cfu::register_device(self.registration.cfu_device)
-            .await
-            .map_err(|_| {
-                error!(
-                    "Controller{}: Failed to register CFU device",
-                    self.registration.pd_controller.id().0
-                );
-                Error::Pd(PdError::Failed)
-            })?;
+        cfu_client.register_device(self.registration.cfu_device).map_err(|_| {
+            error!(
+                "Controller{}: Failed to register CFU device",
+                self.registration.pd_controller.id().0
+            );
+            Error::Pd(PdError::Failed)
+        })?;
         Ok(())
     }
 }

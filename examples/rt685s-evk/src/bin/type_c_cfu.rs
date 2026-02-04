@@ -2,6 +2,8 @@
 #![no_main]
 
 use ::tps6699x::{ADDR1, TPS66994_NUM_PORTS};
+use cfu_service::CfuClient;
+use cfu_service::component::{InternalResponseData, RequestData};
 use embassy_embedded_hal::shared_bus::asynch::i2c::I2cDevice;
 use embassy_executor::Spawner;
 use embassy_imxrt::gpio::{Input, Inverter, Pull};
@@ -9,17 +11,16 @@ use embassy_imxrt::i2c::Async;
 use embassy_imxrt::i2c::master::{Config, I2cMaster};
 use embassy_imxrt::{bind_interrupts, peripherals};
 use embassy_sync::mutex::Mutex;
+use embassy_sync::once_lock::OnceLock;
 use embassy_sync::pubsub::PubSubChannel;
 use embassy_time::Timer;
 use embassy_time::{self as _, Delay};
 use embedded_cfu_protocol::protocol_definitions::*;
 use embedded_cfu_protocol::protocol_definitions::{FwUpdateOffer, FwUpdateOfferResponse, FwVersion};
-use embedded_services::cfu::component::InternalResponseData;
-use embedded_services::cfu::component::RequestData;
 use embedded_services::power::policy::{CommsMessage, DeviceId as PowerId};
 use embedded_services::type_c::ControllerId;
 use embedded_services::type_c::controller::Context;
-use embedded_services::{GlobalRawMutex, IntrusiveList, cfu};
+use embedded_services::{GlobalRawMutex, IntrusiveList};
 use embedded_services::{error, info};
 use embedded_usb_pd::GlobalPortId;
 use static_cell::StaticCell;
@@ -78,8 +79,8 @@ async fn interrupt_task(mut int_in: Input<'static>, mut interrupt: Interrupt<'st
 #[embassy_executor::task]
 async fn fw_update_task() {
     Timer::after_millis(1000).await;
-    let context = cfu::ContextToken::create().unwrap();
-    let device = context.get_device(CONTROLLER0_CFU_ID).await.unwrap();
+    let context = cfu_service::ClientContext::new();
+    let device = context.get_device(CONTROLLER0_CFU_ID).unwrap();
 
     info!("Getting FW version");
     let response = device
@@ -175,6 +176,10 @@ async fn service_task(
 ) -> ! {
     info!("Starting type-c task");
 
+    // Spin up CFU service
+    static CFU_CLIENT: OnceLock<CfuClient> = OnceLock::new();
+    let cfu_client = CfuClient::new(&CFU_CLIENT).await;
+
     // The service is the only receiver and we only use a DynImmediatePublisher, which doesn't take a publisher slot
     static POWER_POLICY_CHANNEL: StaticCell<PubSubChannel<GlobalRawMutex, CommsMessage, 4, 1, 0>> = StaticCell::new();
 
@@ -194,7 +199,7 @@ async fn service_task(
     static SERVICE: StaticCell<Service> = StaticCell::new();
     let service = SERVICE.init(service);
 
-    type_c_service::task::task(service, wrappers, power_policy_context).await;
+    type_c_service::task::task(service, wrappers, power_policy_context, cfu_client).await;
     unreachable!()
 }
 
