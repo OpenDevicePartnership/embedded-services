@@ -1,13 +1,17 @@
 //! Context for any power policy implementations
+use core::marker::PhantomData;
+use core::pin::pin;
 
-use crate::GlobalRawMutex;
 use crate::broadcaster::immediate as broadcaster;
+use crate::event::Receiver;
+use crate::power::policy::device::DeviceTrait;
 use crate::power::policy::{CommsMessage, ConsumerPowerCapability, ProviderPowerCapability};
-use embassy_sync::channel::Channel;
+use crate::sync::Lockable;
+use embassy_futures::select::select_slice;
 
 use super::charger::ChargerResponse;
 use super::device::{self};
-use super::{DeviceId, Error, action, charger};
+use super::{DeviceId, Error, charger};
 use crate::power::policy::charger::ChargerResponseData::Ack;
 use crate::{error, intrusive_list};
 
@@ -16,15 +20,15 @@ use crate::{error, intrusive_list};
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum RequestData {
     /// Notify that a device has attached
-    NotifyAttached,
+    Attached,
     /// Notify that available power for consumption has changed
-    NotifyConsumerCapability(Option<ConsumerPowerCapability>),
+    UpdatedConsumerCapability(Option<ConsumerPowerCapability>),
     /// Request the given amount of power to provider
-    RequestProviderCapability(ProviderPowerCapability),
+    RequestedProviderCapability(Option<ProviderPowerCapability>),
     /// Notify that a device cannot consume or provide power anymore
-    NotifyDisconnect,
+    Disconnected,
     /// Notify that a device has detached
-    NotifyDetached,
+    Detached,
 }
 
 /// Request to the power policy service
@@ -64,51 +68,52 @@ pub struct Response {
     pub data: ResponseData,
 }
 
-/// Wrapper type to make code cleaner
-type InternalResponseData = Result<ResponseData, Error>;
-
 /// Power policy context
-pub struct Context<const POLICY_CHANNEL_SIZE: usize> {
+pub struct Context<D: Lockable, R: Receiver<RequestData>>
+where
+    D::Inner: DeviceTrait,
+{
     /// Registered devices
     power_devices: intrusive_list::IntrusiveList,
-    /// Policy request
-    policy_request: Channel<GlobalRawMutex, Request, POLICY_CHANNEL_SIZE>,
-    /// Policy response
-    policy_response: Channel<GlobalRawMutex, InternalResponseData, POLICY_CHANNEL_SIZE>,
     /// Registered chargers
     charger_devices: intrusive_list::IntrusiveList,
     /// Message broadcaster
     broadcaster: broadcaster::Immediate<CommsMessage>,
+    _phantom: PhantomData<(D, R)>,
 }
 
-impl<const POLICY_CHANNEL_SIZE: usize> Default for Context<POLICY_CHANNEL_SIZE> {
+impl<D: Lockable + 'static, R: Receiver<RequestData> + 'static> Default for Context<D, R>
+where
+    D::Inner: DeviceTrait,
+{
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<const POLICY_CHANNEL_SIZE: usize> Context<POLICY_CHANNEL_SIZE> {
+impl<D: Lockable + 'static, R: Receiver<RequestData> + 'static> Context<D, R>
+where
+    D::Inner: DeviceTrait,
+{
     /// Construct a new power policy Context
     pub const fn new() -> Self {
         Self {
             power_devices: intrusive_list::IntrusiveList::new(),
             charger_devices: intrusive_list::IntrusiveList::new(),
-            policy_request: Channel::new(),
-            policy_response: Channel::new(),
             broadcaster: broadcaster::Immediate::new(),
+            _phantom: PhantomData,
         }
     }
 
-    /// Register a device with the power policy service
+    /// Register a power device with the service
     pub fn register_device(
         &self,
-        device: &'static impl device::DeviceContainer<POLICY_CHANNEL_SIZE>,
+        device: &'static impl device::DeviceContainer<D, R>,
     ) -> Result<(), intrusive_list::Error> {
         let device = device.get_power_policy_device();
         if self.get_device(device.id()).is_ok() {
             return Err(intrusive_list::Error::NodeAlreadyInList);
         }
-
         self.power_devices.push(device)
     }
 
@@ -126,9 +131,9 @@ impl<const POLICY_CHANNEL_SIZE: usize> Context<POLICY_CHANNEL_SIZE> {
     }
 
     /// Get a device by its ID
-    pub fn get_device(&self, id: DeviceId) -> Result<&'static device::Device<POLICY_CHANNEL_SIZE>, Error> {
+    pub fn get_device(&self, id: DeviceId) -> Result<&'static device::Device<'static, D, R>, Error> {
         for device in &self.power_devices {
-            if let Some(data) = device.data::<device::Device<POLICY_CHANNEL_SIZE>>() {
+            if let Some(data) = device.data::<device::Device<'static, D, R>>() {
                 if data.id() == id {
                     return Ok(data);
                 }
@@ -143,13 +148,14 @@ impl<const POLICY_CHANNEL_SIZE: usize> Context<POLICY_CHANNEL_SIZE> {
     /// Returns the total amount of power that is being supplied to external devices
     pub async fn compute_total_provider_power_mw(&self) -> u32 {
         let mut total = 0;
-        for device in self.power_devices.iter_only::<device::Device<POLICY_CHANNEL_SIZE>>() {
+        for device in self.power_devices.iter_only::<device::Device<'static, D, R>>() {
             if let Some(capability) = device.provider_capability().await {
                 if device.is_provider().await {
                     total += capability.capability.max_power_mw();
                 }
             }
         }
+
         total
     }
 
@@ -164,19 +170,7 @@ impl<const POLICY_CHANNEL_SIZE: usize> Context<POLICY_CHANNEL_SIZE> {
                 error!("Non-device located in charger list");
             }
         }
-
         Err(Error::InvalidDevice)
-    }
-
-    /// Convenience function to send a request to the power policy service
-    pub(super) async fn send_request(&self, from: DeviceId, request: RequestData) -> Result<ResponseData, Error> {
-        self.policy_request
-            .send(Request {
-                id: from,
-                data: request,
-            })
-            .await;
-        self.policy_response.receive().await
     }
 
     /// Initialize chargers in hardware
@@ -188,6 +182,7 @@ impl<const POLICY_CHANNEL_SIZE: usize> Context<POLICY_CHANNEL_SIZE> {
                     .inspect_err(|e| error!("Charger {:?} failed InitRequest: {:?}", data.id(), e))?;
             }
         }
+
         Ok(Ack)
     }
 
@@ -221,16 +216,6 @@ impl<const POLICY_CHANNEL_SIZE: usize> Context<POLICY_CHANNEL_SIZE> {
         Ok(())
     }
 
-    /// Wait for a power policy request
-    pub async fn wait_request(&self) -> Request {
-        self.policy_request.receive().await
-    }
-
-    /// Send a response to a power policy request
-    pub async fn send_response(&self, response: Result<ResponseData, Error>) {
-        self.policy_response.send(response).await
-    }
-
     /// Provides access to the device list
     pub fn devices(&self) -> &intrusive_list::IntrusiveList {
         &self.power_devices
@@ -241,25 +226,36 @@ impl<const POLICY_CHANNEL_SIZE: usize> Context<POLICY_CHANNEL_SIZE> {
         &self.charger_devices
     }
 
-    /// Try to provide access to the actions available to the policy for the given state and device
-    pub async fn try_policy_action<S: action::Kind>(
-        &self,
-        id: DeviceId,
-    ) -> Result<action::policy::Policy<'_, S, POLICY_CHANNEL_SIZE>, Error> {
-        self.get_device(id)?.try_policy_action().await
-    }
-
-    /// Provide access to current policy actions
-    pub async fn policy_action(
-        &self,
-        id: DeviceId,
-    ) -> Result<action::policy::AnyState<'_, POLICY_CHANNEL_SIZE>, Error> {
-        Ok(self.get_device(id)?.policy_action().await)
-    }
-
     /// Broadcast a power policy message to all subscribers
     pub async fn broadcast_message(&self, message: CommsMessage) {
         self.broadcaster.broadcast(message).await;
+    }
+
+    /// Get the next pending device event
+    pub async fn wait_request(&self) -> Request {
+        let mut futures = heapless::Vec::<_, 16>::new();
+        for device in self.devices().iter_only::<device::Device<'static, D, R>>() {
+            // TODO: check this at compile time
+            if futures
+                .push(async { device.receiver.lock().await.wait_next().await })
+                .is_err()
+            {
+                error!("Futures vec overflow");
+            }
+        }
+
+        let (event, index) = select_slice(pin!(&mut futures)).await;
+        // Panic safety: The index is guaranteed to be within bounds since it comes from the select_slice result
+        #[allow(clippy::unwrap_used)]
+        let device = self
+            .devices()
+            .iter_only::<device::Device<'static, D, R>>()
+            .nth(index)
+            .unwrap();
+        Request {
+            id: device.id(),
+            data: event,
+        }
     }
 }
 

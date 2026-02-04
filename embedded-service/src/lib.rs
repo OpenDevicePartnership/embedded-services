@@ -17,6 +17,7 @@ pub mod buffer;
 pub mod cfu;
 pub mod comms;
 pub mod ec_type;
+pub mod event;
 pub mod fmt;
 pub mod hid;
 pub mod init;
