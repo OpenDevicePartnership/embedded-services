@@ -17,6 +17,7 @@ pub async fn task_closure<
     service: &'static Service<'a>,
     wrappers: [&'a ControllerWrapper<'a, M, C, V, POLICY_CHANNEL_SIZE>; N],
     power_policy_context: &'a embedded_services::power::policy::policy::Context<POLICY_CHANNEL_SIZE>,
+    cfu_client: &'a cfu_service::CfuClient,
     f: F,
 ) where
     M: embassy_sync::blocking_mutex::raw::RawMutex,
@@ -33,8 +34,7 @@ pub async fn task_closure<
 
     for controller_wrapper in wrappers {
         if controller_wrapper
-            .register(service.controllers(), power_policy_context)
-            .await
+            .register(service.controllers(), power_policy_context, cfu_client)
             .is_err()
         {
             error!("Failed to register a controller");
@@ -52,16 +52,23 @@ pub async fn task<'a, M, C, V, const N: usize, const POLICY_CHANNEL_SIZE: usize>
     service: &'static Service<'a>,
     wrappers: [&'a ControllerWrapper<'a, M, C, V, POLICY_CHANNEL_SIZE>; N],
     power_policy_context: &'a embedded_services::power::policy::policy::Context<POLICY_CHANNEL_SIZE>,
+    cfu_client: &'a cfu_service::CfuClient,
 ) where
     M: embassy_sync::blocking_mutex::raw::RawMutex,
     C: embedded_services::sync::Lockable,
     V: crate::wrapper::FwOfferValidator,
     <C as embedded_services::sync::Lockable>::Inner: embedded_services::type_c::controller::Controller,
 {
-    task_closure(service, wrappers, power_policy_context, |service: &Service| async {
-        if let Err(e) = service.process_next_event().await {
-            error!("Type-C service processing error: {:#?}", e);
-        }
-    })
+    task_closure(
+        service,
+        wrappers,
+        power_policy_context,
+        cfu_client,
+        |service: &Service| async {
+            if let Err(e) = service.process_next_event().await {
+                error!("Type-C service processing error: {:#?}", e);
+            }
+        },
+    )
     .await;
 }

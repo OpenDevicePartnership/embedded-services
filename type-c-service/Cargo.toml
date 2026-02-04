@@ -26,6 +26,7 @@ embedded-usb-pd.workspace = true
 heapless.workspace = true
 log = { workspace = true, optional = true }
 tps6699x = { workspace = true, features = ["embassy"] }
+cfu-service.workspace = true
 
 [dev-dependencies]
 embassy-time = { workspace = true, features = ["std", "generic-queue-8"] }
@@ -45,6 +46,7 @@ defmt = [
     "embassy-sync/defmt",
     "tps6699x/defmt",
     "embedded-usb-pd/defmt",
+    "cfu-service/defmt",
 ]
 log = [
     "dep:log",
@@ -52,4 +54,5 @@ log = [
     "embassy-time/log",
     "embassy-sync/log",
     "tps6699x/log",
+    "cfu-service/log",
 ]
