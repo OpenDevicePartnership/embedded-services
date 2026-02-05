@@ -9,7 +9,7 @@ pub async fn espi_service(
 ) -> Result<embedded_services::Never, crate::espi_service::Error> {
     espi.wait_for_plat_reset().await;
 
-    let espi_service = ESPI_SERVICE.get_or_init(|| Service::new());
+    let espi_service = ESPI_SERVICE.get_or_init(Service::new);
     comms::register_endpoint(espi_service, espi_service.endpoint())
         .await
         .unwrap();

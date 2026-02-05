@@ -43,6 +43,7 @@ pub struct Service<'a> {
 }
 
 impl Service<'_> {
+    #[allow(clippy::new_without_default)] // When we break the dependency on embassy-imxrt, we'll need to take an eSPI trait implementation as an argument, so it doesn't make sense to provide a default implementation
     pub fn new() -> Self {
         Service {
             endpoint: comms::Endpoint::uninit(EndpointID::External(External::Host)),
