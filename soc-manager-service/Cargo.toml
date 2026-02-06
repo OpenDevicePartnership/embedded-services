@@ -1,0 +1,19 @@
+[package]
+name = "soc-manager-service"
+version = "0.1.0"
+edition = "2024"
+description = "SoC manager embedded service implementation"
+repository = "https://github.com/OpenDevicePartnership/embedded-services"
+rust-version = "1.88"
+license = "MIT"
+
+[lints]
+workspace = true
+
+[dependencies]
+heapless = { workspace = true }
+defmt = { workspace = true, optional = true }
+embedded-services = { workspace = true }
+embassy-sync = { workspace = true }
+embedded-power-sequence = { git = "https://github.com/OpenDevicePartnership/embedded-power-sequence" }
+embedded-regulator = { git = "https://github.com/OpenDevicePartnership/embedded-regulator" }
