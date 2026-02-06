@@ -2350,6 +2350,7 @@ version = "0.1.0"
 dependencies = [
  "bitfield 0.17.0",
  "bitflags 2.9.4",
+ "cfu-service",
  "critical-section",
  "defmt 0.3.100",
  "embassy-futures",

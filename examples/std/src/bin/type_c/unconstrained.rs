@@ -1,6 +1,8 @@
 use crate::mock_controller::Wrapper;
+use cfu_service::CfuClient;
 use embassy_executor::Executor;
 use embassy_sync::mutex::Mutex;
+use embassy_sync::once_lock::OnceLock;
 use embassy_sync::pubsub::PubSubChannel;
 use embassy_time::Timer;
 use embedded_services::power::policy::PowerCapability;
@@ -119,6 +121,10 @@ async fn service_task(
 ) -> ! {
     info!("Starting type-c task");
 
+    // Spin up CFU service
+    static CFU_CLIENT: OnceLock<CfuClient> = OnceLock::new();
+    let cfu_client = CfuClient::new(&CFU_CLIENT).await;
+
     // The service is the only receiver and we only use a DynImmediatePublisher, which doesn't take a publisher slot
     static POWER_POLICY_CHANNEL: StaticCell<PubSubChannel<GlobalRawMutex, power::policy::CommsMessage, 4, 1, 0>> =
         StaticCell::new();
@@ -139,7 +145,7 @@ async fn service_task(
     static SERVICE: StaticCell<Service> = StaticCell::new();
     let service = SERVICE.init(service);
 
-    type_c_service::task::task(service, wrappers, power_policy_context).await;
+    type_c_service::task::task(service, wrappers, power_policy_context, cfu_client).await;
     unreachable!()
 }
 

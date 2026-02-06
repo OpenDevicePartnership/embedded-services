@@ -46,6 +46,7 @@
 //! ```
 use core::cell::{RefCell, RefMut};
 
+use cfu_service::component::CfuDevice;
 use embassy_sync::{
     blocking_mutex::raw::RawMutex,
     pubsub::{DynImmediatePublisher, DynSubscriber, PubSubChannel},
@@ -168,7 +169,7 @@ pub trait DynPortState<'a> {
 pub struct Registration<'a, const POLICY_CHANNEL_SIZE: usize> {
     pub context: &'a embedded_services::type_c::controller::Context,
     pub pd_controller: &'a embedded_services::type_c::controller::Device<'a>,
-    pub cfu_device: &'a embedded_services::cfu::component::CfuDevice,
+    pub cfu_device: &'a CfuDevice,
     pub power_devices: &'a [embedded_services::power::policy::device::Device<POLICY_CHANNEL_SIZE>],
 }
 
@@ -187,7 +188,7 @@ pub struct Storage<'a, const N: usize, M: RawMutex, const POLICY_CHANNEL_SIZE: u
     context: &'a embedded_services::type_c::controller::Context,
     controller_id: ControllerId,
     pd_ports: [GlobalPortId; N],
-    cfu_device: embedded_services::cfu::component::CfuDevice,
+    cfu_device: CfuDevice,
     power_devices: [embedded_services::power::policy::device::Device<POLICY_CHANNEL_SIZE>; N],
 
     // State-related
@@ -206,7 +207,7 @@ impl<'a, const N: usize, M: RawMutex, const POLICY_CHANNEL_SIZE: usize> Storage<
             context,
             controller_id,
             pd_ports: ports.map(|(port, _)| port),
-            cfu_device: embedded_services::cfu::component::CfuDevice::new(cfu_id),
+            cfu_device: CfuDevice::new(cfu_id),
             power_devices: ports
                 .map(|(_, device)| embedded_services::power::policy::device::Device::new(device, power_policy_context)),
             pd_alerts: [const { PubSubChannel::new() }; N],
