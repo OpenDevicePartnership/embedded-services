@@ -95,7 +95,7 @@ impl Service {
     }
 
     /// Send a thermal event
-    pub(crate) async fn send_event(&self, event: Event) {
+    pub async fn send_event(&self, event: Event) {
         self.context.send_event(event).await
     }
 
@@ -120,11 +120,7 @@ impl Service {
     }
 
     /// Send a request to a sensor through the thermal service instead of directly.
-    pub(crate) async fn execute_sensor_request(
-        &self,
-        id: sensor::DeviceId,
-        request: sensor::Request,
-    ) -> sensor::Response {
+    pub async fn execute_sensor_request(&self, id: sensor::DeviceId, request: sensor::Request) -> sensor::Response {
         self.context.execute_sensor_request(id, request).await
     }
 
@@ -144,7 +140,7 @@ impl Service {
     }
 
     /// Send a request to a fan through the thermal service instead of directly.
-    pub(crate) async fn execute_fan_request(&self, id: fan::DeviceId, request: fan::Request) -> fan::Response {
+    pub async fn execute_fan_request(&self, id: fan::DeviceId, request: fan::Request) -> fan::Response {
         self.context.execute_fan_request(id, request).await
     }
 }
