@@ -144,6 +144,7 @@ impl crate::controller::Controller for MockBatteryDriver {
         Ok(new_msgs)
     }
 
+    #[allow(clippy::indexing_slicing)]
     async fn get_static_data(&mut self) -> Result<crate::device::StaticBatteryMsgs, Self::ControllerError> {
         let design_capacity: u32 = match self.design_capacity().await? {
             smart_battery::CapacityModeValue::CentiWattUnsigned(design_capacity) => design_capacity.into(),
@@ -291,6 +292,7 @@ impl smart_battery::SmartBattery for MockBatteryDriver {
         Ok(12000)
     }
 
+    #[allow(clippy::indexing_slicing)]
     async fn device_chemistry(&mut self, chemistry: &mut [u8]) -> Result<(), Self::Error> {
         let bytes = [b'L', b'i', b'P', b'o', 0];
         let bytes_to_copy = core::cmp::min(bytes.len(), chemistry.len());
@@ -298,6 +300,7 @@ impl smart_battery::SmartBattery for MockBatteryDriver {
         Ok(())
     }
 
+    #[allow(clippy::indexing_slicing)]
     async fn device_name(&mut self, name: &mut [u8]) -> Result<(), Self::Error> {
         let bytes = [b'O', b'd', b'p', b'B', b'a', b't', b't', 0];
         let bytes_to_copy = core::cmp::min(bytes.len(), name.len());
@@ -313,6 +316,7 @@ impl smart_battery::SmartBattery for MockBatteryDriver {
         Ok(smart_battery::ManufactureDate::new())
     }
 
+    #[allow(clippy::indexing_slicing)]
     async fn manufacturer_name(&mut self, name: &mut [u8]) -> Result<(), Self::Error> {
         let bytes = [b'B', b'a', b't', b'B', b'r', b'o', b's', 0];
         let bytes_to_copy = core::cmp::min(bytes.len(), name.len());
