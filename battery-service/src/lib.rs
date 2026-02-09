@@ -14,6 +14,8 @@ mod acpi;
 pub mod context;
 pub mod controller;
 pub mod device;
+#[cfg(feature = "mock")]
+pub mod mock;
 pub mod task;
 pub mod wrapper;
 
