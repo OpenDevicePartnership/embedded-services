@@ -38,7 +38,7 @@ type-c-service = { path = "../../type-c-service", features = ["log"] }
 
 embedded-sensors-hal-async = "0.3.0"
 embedded-fans-async = "0.2.0"
-thermal-service = { path = "../../thermal-service", features = ["log"] }
+thermal-service = { path = "../../thermal-service", features = ["log", "mock"] }
 thermal-service-messages = { path = "../../thermal-service-messages" }
 
 env_logger = "0.9.0"

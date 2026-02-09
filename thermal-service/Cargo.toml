@@ -41,6 +41,7 @@ log = [
     "embassy-time/log",
     "embassy-sync/log",
 ]
+mock = []
 
 [lints]
 workspace = true
