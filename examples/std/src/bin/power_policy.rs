@@ -139,12 +139,12 @@ async fn run(spawner: Spawner) {
     service_context.register_device(device1_registration).unwrap();
 
     static SERVICE: StaticCell<
-        power_policy_service::service::PowerPolicy<
+        power_policy_service::service::Service<
             Mutex<GlobalRawMutex, ExampleDevice<'static>>,
             channel::DynamicReceiver<'static, power_policy_service::device::event::RequestData>,
         >,
     > = StaticCell::new();
-    let service = SERVICE.init(power_policy_service::service::PowerPolicy::new(
+    let service = SERVICE.init(power_policy_service::service::Service::new(
         service_context,
         power_policy_service::service::config::Config::default(),
     ));
@@ -274,7 +274,7 @@ async fn run(spawner: Spawner) {
 
 #[embassy_executor::task]
 async fn receiver_task(
-    service: &'static power_policy_service::service::PowerPolicy<
+    service: &'static power_policy_service::service::Service<
         'static,
         Mutex<GlobalRawMutex, ExampleDevice<'static>>,
         channel::DynamicReceiver<'static, power_policy_service::device::event::RequestData>,
@@ -308,7 +308,7 @@ async fn receiver_task(
 
 #[embassy_executor::task]
 async fn power_policy_task(
-    power_policy: &'static power_policy_service::service::PowerPolicy<
+    power_policy: &'static power_policy_service::service::Service<
         'static,
         Mutex<GlobalRawMutex, ExampleDevice<'static>>,
         channel::DynamicReceiver<'static, power_policy_service::device::event::RequestData>,

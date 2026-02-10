@@ -12,7 +12,7 @@ use embedded_services::{GlobalRawMutex, IntrusiveList};
 use embedded_usb_pd::GlobalPortId;
 use log::*;
 use power_policy_service::capability::PowerCapability;
-use power_policy_service::service::PowerPolicy;
+use power_policy_service::service::Service as PowerPolicyService;
 use static_cell::StaticCell;
 use std_examples::type_c::mock_controller;
 use type_c_service::service::Service;
@@ -65,12 +65,12 @@ async fn task(spawner: Spawner) {
     let controller_context = CONTROLLER_CONTEXT.init(type_c_service::type_c::controller::Context::new());
 
     static POWER_SERVICE: StaticCell<
-        power_policy_service::service::PowerPolicy<
+        power_policy_service::service::Service<
             Mutex<GlobalRawMutex, PowerProxyDevice<'static>>,
             DynamicReceiver<'static, power_policy_service::device::event::RequestData>,
         >,
     > = StaticCell::new();
-    let power_service = POWER_SERVICE.init(power_policy_service::service::PowerPolicy::new(
+    let power_service = POWER_SERVICE.init(power_policy_service::service::Service::new(
         power_service_context,
         power_policy_service::service::config::Config::default(),
     ));
@@ -299,7 +299,7 @@ async fn task(spawner: Spawner) {
 
 #[embassy_executor::task]
 async fn power_policy_service_task(
-    service: &'static PowerPolicy<
+    service: &'static PowerPolicyService<
         'static,
         Mutex<GlobalRawMutex, PowerProxyDevice<'static>>,
         DynamicReceiver<'static, power_policy_service::device::event::RequestData>,

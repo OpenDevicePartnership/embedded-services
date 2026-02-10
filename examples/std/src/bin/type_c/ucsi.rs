@@ -15,7 +15,7 @@ use embedded_usb_pd::ucsi::ppm::set_notification_enable::NotificationEnable;
 use embedded_usb_pd::ucsi::{Command, lpm, ppm};
 use log::*;
 use power_policy_service::capability::PowerCapability;
-use power_policy_service::service::PowerPolicy;
+use power_policy_service::service::Service as PowerPolicyService;
 use static_cell::StaticCell;
 use std_examples::type_c::mock_controller;
 use type_c_service::service::Service;
@@ -177,7 +177,7 @@ async fn wrapper_task(wrapper: &'static mock_controller::Wrapper<'static>) {
 
 #[embassy_executor::task]
 async fn power_policy_service_task(
-    service: &'static PowerPolicy<
+    service: &'static PowerPolicyService<
         'static,
         Mutex<GlobalRawMutex, PowerProxyDevice<'static>>,
         DynamicReceiver<'static, power_policy_service::device::event::RequestData>,
@@ -218,12 +218,12 @@ async fn task(spawner: Spawner) {
     let power_service_context = POWER_SERVICE_CONTEXT.init(power_policy_service::service::context::Context::new());
 
     static POWER_SERVICE: StaticCell<
-        power_policy_service::service::PowerPolicy<
+        power_policy_service::service::Service<
             Mutex<GlobalRawMutex, PowerProxyDevice<'static>>,
             DynamicReceiver<'static, power_policy_service::device::event::RequestData>,
         >,
     > = StaticCell::new();
-    let power_service = POWER_SERVICE.init(power_policy_service::service::PowerPolicy::new(
+    let power_service = POWER_SERVICE.init(power_policy_service::service::Service::new(
         power_service_context,
         power_policy_service::service::config::Config::default(),
     ));

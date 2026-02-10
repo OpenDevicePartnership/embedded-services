@@ -53,8 +53,8 @@ struct InternalState {
     connected_providers: heapless::FnvIndexSet<DeviceId, MAX_CONNECTED_PROVIDERS>,
 }
 
-/// Power policy state
-pub struct PowerPolicy<'a, D: Lockable, R: Receiver<RequestData>>
+/// Power policy service
+pub struct Service<'a, D: Lockable, R: Receiver<RequestData>>
 where
     D::Inner: DeviceTrait,
 {
@@ -68,7 +68,7 @@ where
     config: config::Config,
 }
 
-impl<'a, D: Lockable + 'static, R: Receiver<RequestData> + 'static> PowerPolicy<'a, D, R>
+impl<'a, D: Lockable + 'static, R: Receiver<RequestData> + 'static> Service<'a, D, R>
 where
     D::Inner: DeviceTrait,
 {
@@ -232,7 +232,7 @@ where
     }
 }
 
-impl<D: Lockable + 'static, R: Receiver<RequestData> + 'static> comms::MailboxDelegate for PowerPolicy<'_, D, R> where
+impl<D: Lockable + 'static, R: Receiver<RequestData> + 'static> comms::MailboxDelegate for Service<'_, D, R> where
     D::Inner: DeviceTrait
 {
 }

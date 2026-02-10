@@ -2,7 +2,7 @@ use embedded_services::{comms, error, event::Receiver, info, sync::Lockable};
 
 use crate::device::{DeviceTrait, event::RequestData};
 
-use super::PowerPolicy;
+use super::Service;
 
 #[derive(Debug, Clone, Copy)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
@@ -17,7 +17,7 @@ pub enum InitError {
 
 /// Runs the power policy task.
 pub async fn task<D: Lockable + 'static, R: Receiver<RequestData> + 'static>(
-    policy: &'static PowerPolicy<'static, D, R>,
+    policy: &'static Service<'static, D, R>,
 ) -> Result<embedded_services::Never, InitError>
 where
     D::Inner: DeviceTrait,
