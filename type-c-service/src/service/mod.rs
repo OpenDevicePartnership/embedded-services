@@ -254,13 +254,13 @@ impl<'a> Service<'a> {
     /// Register the Type-C service with the power policy service
     pub fn register_comms<
         PD: Lockable + 'static,
-        PR: Receiver<power_policy_service::device::event::RequestData> + 'static,
+        PR: Receiver<power_policy_service::psu::event::RequestData> + 'static,
     >(
         &'static self,
         power_policy_context: &power_policy_service::service::context::Context<PD, PR>,
     ) -> Result<(), intrusive_list::Error>
     where
-        PD::Inner: power_policy_service::device::DeviceTrait,
+        PD::Inner: power_policy_service::psu::Psu,
     {
         power_policy_context.register_message_receiver(&self.power_policy_event_publisher)
     }

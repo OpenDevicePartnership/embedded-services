@@ -3,7 +3,7 @@ use embassy_sync::signal::Signal;
 use embedded_services::{GlobalRawMutex, event, info};
 use power_policy_service::{
     capability::{ConsumerFlags, ConsumerPowerCapability, PowerCapability, ProviderPowerCapability},
-    device::{DeviceTrait, Error, InternalState, event::RequestData},
+    psu::{Error, InternalState, Psu, event::RequestData},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -61,7 +61,7 @@ impl<'a, S: event::Sender<RequestData>> Mock<'a, S> {
     }
 }
 
-impl<'a, S: event::Sender<RequestData>> DeviceTrait for Mock<'a, S> {
+impl<'a, S: event::Sender<RequestData>> Psu for Mock<'a, S> {
     async fn connect_consumer(&mut self, capability: ConsumerPowerCapability) -> Result<(), Error> {
         info!("Connect consumer {:#?}", capability);
         self.record_fn_call(FnCall::ConnectConsumer(capability));

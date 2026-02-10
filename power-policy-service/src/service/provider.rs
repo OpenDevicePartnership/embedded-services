@@ -6,7 +6,7 @@
 use embedded_services::error;
 use embedded_services::{debug, event::Receiver, trace};
 
-use crate::device;
+use crate::psu;
 
 use super::*;
 
@@ -30,12 +30,12 @@ pub(super) struct State {
 
 impl<D: Lockable + 'static, R: Receiver<RequestData> + 'static> Service<'_, D, R>
 where
-    D::Inner: DeviceTrait,
+    D::Inner: Psu,
 {
     /// Attempt to connect the requester as a provider
     pub(super) async fn connect_provider(&self, requester_id: DeviceId) -> Result<(), Error> {
         trace!("Device{}: Attempting to connect as provider", requester_id.0);
-        let requester = self.context.get_device(requester_id)?;
+        let requester = self.context.get_psu(requester_id)?;
         let requested_power_capability = match requester.requested_provider_capability().await {
             Some(cap) => cap,
             // Requester is no longer requesting power
@@ -48,14 +48,18 @@ where
         let mut total_power_mw = 0;
 
         // Determine total requested power draw
-        for device in self.context.devices().iter_only::<device::Device<'_, D, R>>() {
-            let target_provider_cap = if device.id() == requester_id {
+        for psu in self
+            .context
+            .psu_devices()
+            .iter_only::<psu::RegistrationEntry<'_, D, R>>()
+        {
+            let target_provider_cap = if psu.id() == requester_id {
                 // Use the requester's requested power capability
                 // this handles both new connections and upgrade requests
                 Some(requested_power_capability)
             } else {
                 // Use the device's current working provider capability
-                device.provider_capability().await
+                psu.provider_capability().await
             };
             total_power_mw += target_provider_cap.map_or(0, |cap| cap.capability.max_power_mw());
         }
@@ -87,14 +91,14 @@ where
             }
         };
 
-        let device = self.context.get_device(requester_id)?;
-        let mut locked_state = device.state.lock().await;
-        let mut locked_device = device.device.lock().await;
+        let psu = self.context.get_psu(requester_id)?;
+        let mut locked_state = psu.state.lock().await;
+        let mut locked_device = psu.device.lock().await;
 
         if let e @ Err(_) = locked_state.connect_provider(target_power) {
             error!(
                 "Device{}: Cannot provide, device is in state {:#?}",
-                device.id().0,
+                psu.id().0,
                 locked_state.state()
             );
             e

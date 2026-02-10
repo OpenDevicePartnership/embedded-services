@@ -5,9 +5,9 @@ use embassy_futures::select::select_slice;
 use embedded_services::debug;
 
 use power_policy_service::capability::{ConsumerPowerCapability, ProviderPowerCapability, PsuType};
-use power_policy_service::device::CommandData as PowerCommand;
-use power_policy_service::device::Error as PowerError;
-use power_policy_service::device::{CommandData, InternalResponseData, ResponseData};
+use power_policy_service::psu::CommandData as PowerCommand;
+use power_policy_service::psu::Error as PowerError;
+use power_policy_service::psu::{CommandData, InternalResponseData, ResponseData};
 
 use crate::wrapper::config::UnconstrainedSink;
 
@@ -17,8 +17,8 @@ impl<
     'device,
     M: RawMutex,
     D: Lockable,
-    S: event::Sender<power_policy_service::device::event::RequestData>,
-    R: event::Receiver<power_policy_service::device::event::RequestData>,
+    S: event::Sender<power_policy_service::psu::event::RequestData>,
+    R: event::Receiver<power_policy_service::psu::event::RequestData>,
     V: FwOfferValidator,
 > ControllerWrapper<'device, M, D, S, R, V>
 where
@@ -45,7 +45,7 @@ where
 
         power
             .sender
-            .send(power_policy_service::device::event::RequestData::UpdatedConsumerCapability(available_sink_contract))
+            .send(power_policy_service::psu::event::RequestData::UpdatedConsumerCapability(available_sink_contract))
             .await;
         Ok(())
     }
@@ -60,7 +60,7 @@ where
         power
             .sender
             .send(
-                power_policy_service::device::event::RequestData::RequestedProviderCapability(
+                power_policy_service::psu::event::RequestData::RequestedProviderCapability(
                     status.available_source_contract.map(|caps| {
                         let mut caps = ProviderPowerCapability::from(caps);
                         caps.flags.set_psu_type(PsuType::TypeC);

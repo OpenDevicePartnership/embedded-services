@@ -89,7 +89,7 @@ pub enum ChargerError {
     BusError,
 }
 
-impl From<ChargerError> for crate::device::Error {
+impl From<ChargerError> for crate::psu::Error {
     fn from(value: ChargerError) -> Self {
         Self::Charger(value)
     }

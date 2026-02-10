@@ -32,8 +32,8 @@ impl<
     'device,
     M: RawMutex,
     D: Lockable,
-    S: event::Sender<power_policy_service::device::event::RequestData>,
-    R: event::Receiver<power_policy_service::device::event::RequestData>,
+    S: event::Sender<power_policy_service::psu::event::RequestData>,
+    R: event::Receiver<power_policy_service::psu::event::RequestData>,
     V: FwOfferValidator,
 > ControllerWrapper<'device, M, D, S, R, V>
 where
@@ -149,11 +149,11 @@ where
             let controller_id = self.registration.pd_controller.id();
             for power in state.port_power_mut() {
                 info!("Controller{}: checking power device", controller_id.0);
-                if power.state.state() != power_policy_service::device::State::Detached {
+                if power.state.state() != power_policy_service::psu::State::Detached {
                     info!("Controller{}: Detaching power device", controller_id.0);
                     power
                         .sender
-                        .send(power_policy_service::device::event::RequestData::Detached)
+                        .send(power_policy_service::psu::event::RequestData::Detached)
                         .await;
                 }
             }

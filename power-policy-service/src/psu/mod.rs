@@ -285,7 +285,7 @@ pub struct Response {
 }
 
 /// Trait for PSU devices
-pub trait DeviceTrait {
+pub trait Psu {
     /// Disconnect power from this device
     fn disconnect(&mut self) -> impl Future<Output = Result<(), Error>>;
     /// Connect this device to provide power to an external connection
@@ -295,9 +295,9 @@ pub trait DeviceTrait {
 }
 
 /// PSU registration struct
-pub struct Device<'a, D: Lockable, R: Receiver<event::RequestData>>
+pub struct RegistrationEntry<'a, D: Lockable, R: Receiver<event::RequestData>>
 where
-    D::Inner: DeviceTrait,
+    D::Inner: Psu,
 {
     /// Intrusive list node
     node: intrusive_list::Node,
@@ -311,9 +311,9 @@ where
     pub receiver: Mutex<GlobalRawMutex, R>,
 }
 
-impl<'a, D: Lockable, R: Receiver<event::RequestData>> Device<'a, D, R>
+impl<'a, D: Lockable, R: Receiver<event::RequestData>> RegistrationEntry<'a, D, R>
 where
-    D::Inner: DeviceTrait,
+    D::Inner: Psu,
 {
     /// Create a new device
     pub fn new(id: DeviceId, device: &'a D, receiver: R) -> Self {
@@ -364,9 +364,10 @@ where
     }
 }
 
-impl<D: Lockable, R: Receiver<event::RequestData> + 'static> intrusive_list::NodeContainer for Device<'static, D, R>
+impl<D: Lockable, R: Receiver<event::RequestData> + 'static> intrusive_list::NodeContainer
+    for RegistrationEntry<'static, D, R>
 where
-    D::Inner: DeviceTrait,
+    D::Inner: Psu,
 {
     fn get_node(&self) -> &intrusive_list::Node {
         &self.node
@@ -374,19 +375,19 @@ where
 }
 
 /// Trait for any container that holds a device
-pub trait DeviceContainer<D: Lockable, R: Receiver<event::RequestData>>
+pub trait PsuContainer<D: Lockable, R: Receiver<event::RequestData>>
 where
-    D::Inner: DeviceTrait,
+    D::Inner: Psu,
 {
     /// Get the underlying device struct
-    fn get_power_policy_device(&self) -> &Device<'_, D, R>;
+    fn get_power_policy_device(&self) -> &RegistrationEntry<'_, D, R>;
 }
 
-impl<D: Lockable, R: Receiver<event::RequestData>> DeviceContainer<D, R> for Device<'_, D, R>
+impl<D: Lockable, R: Receiver<event::RequestData>> PsuContainer<D, R> for RegistrationEntry<'_, D, R>
 where
-    D::Inner: DeviceTrait,
+    D::Inner: Psu,
 {
-    fn get_power_policy_device(&self) -> &Device<'_, D, R> {
+    fn get_power_policy_device(&self) -> &RegistrationEntry<'_, D, R> {
         self
     }
 }

@@ -16,7 +16,7 @@ use type_c_service::wrapper::backing::Storage;
 const NUM_PD_CONTROLLERS: usize = 1;
 const CONTROLLER0_ID: ControllerId = ControllerId(0);
 const PORT0_ID: GlobalPortId = GlobalPortId(0);
-const POWER0_ID: power_policy_service::device::DeviceId = power_policy_service::device::DeviceId(0);
+const POWER0_ID: power_policy_service::psu::DeviceId = power_policy_service::psu::DeviceId(0);
 
 #[embassy_executor::task]
 async fn controller_task(wrapper: &'static Wrapper<'static>) {
@@ -150,7 +150,7 @@ fn create_wrapper(controller_context: &'static Context) -> &'static mut Wrapper<
             .expect("Failed to create intermediate storage"),
     );
 
-    static POLICY_CHANNEL: StaticCell<Channel<GlobalRawMutex, power_policy_service::device::event::RequestData, 1>> =
+    static POLICY_CHANNEL: StaticCell<Channel<GlobalRawMutex, power_policy_service::psu::event::RequestData, 1>> =
         StaticCell::new();
     let policy_channel = POLICY_CHANNEL.init(Channel::new());
 
@@ -161,8 +161,8 @@ fn create_wrapper(controller_context: &'static Context) -> &'static mut Wrapper<
         type_c_service::wrapper::backing::ReferencedStorage<
             1,
             GlobalRawMutex,
-            DynamicSender<'_, power_policy_service::device::event::RequestData>,
-            DynamicReceiver<'_, power_policy_service::device::event::RequestData>,
+            DynamicSender<'_, power_policy_service::psu::event::RequestData>,
+            DynamicReceiver<'_, power_policy_service::psu::event::RequestData>,
         >,
     > = StaticCell::new();
     let referenced = REFERENCED.init(

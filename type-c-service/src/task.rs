@@ -19,8 +19,8 @@ pub async fn task_closure<'a, M, D, S, R, V, Fut: Future<Output = ()>, F: Fn(&'a
 ) where
     M: embassy_sync::blocking_mutex::raw::RawMutex,
     D: Lockable,
-    S: event::Sender<power_policy_service::device::event::RequestData>,
-    R: event::Receiver<power_policy_service::device::event::RequestData>,
+    S: event::Sender<power_policy_service::psu::event::RequestData>,
+    R: event::Receiver<power_policy_service::psu::event::RequestData>,
     V: crate::wrapper::FwOfferValidator,
     D::Inner: crate::type_c::controller::Controller,
 {
@@ -55,8 +55,8 @@ pub async fn task<'a, M, D, S, R, V, const N: usize>(
 ) where
     M: embassy_sync::blocking_mutex::raw::RawMutex,
     D: embedded_services::sync::Lockable,
-    S: event::Sender<power_policy_service::device::event::RequestData>,
-    R: event::Receiver<power_policy_service::device::event::RequestData>,
+    S: event::Sender<power_policy_service::psu::event::RequestData>,
+    R: event::Receiver<power_policy_service::psu::event::RequestData>,
     V: crate::wrapper::FwOfferValidator,
     <D as embedded_services::sync::Lockable>::Inner: crate::type_c::controller::Controller,
 {
