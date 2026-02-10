@@ -9,7 +9,7 @@ use battery_service_messages::{
     STD_BIX_OEM_SIZE, STD_BIX_SERIAL_SIZE, STD_PIF_MODEL_SIZE, STD_PIF_OEM_SIZE, STD_PIF_SERIAL_SIZE,
 };
 
-use power_policy_service::policy::PowerCapability;
+use power_policy_service::capability::PowerCapability;
 
 use crate::{
     AcpiBatteryError,

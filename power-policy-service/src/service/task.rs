@@ -1,8 +1,8 @@
 use embedded_services::{comms, error, event::Receiver, info, sync::Lockable};
 
-use crate::policy::{device::DeviceTrait, policy::RequestData};
+use crate::device::{DeviceTrait, event::RequestData};
 
-use crate::PowerPolicy;
+use super::PowerPolicy;
 
 #[derive(Debug, Clone, Copy)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]

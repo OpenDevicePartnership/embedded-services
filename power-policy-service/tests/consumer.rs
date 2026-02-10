@@ -1,10 +1,9 @@
 #![allow(clippy::unwrap_used)]
 use embassy_sync::{channel::DynamicSender, mutex::Mutex, signal::Signal};
 use embassy_time::{Duration, TimeoutError, with_timeout};
-use embedded_services::{
-    GlobalRawMutex,
-    power::policy::{ConsumerPowerCapability, flags::Consumer, policy::RequestData},
-};
+use embedded_services::GlobalRawMutex;
+use power_policy_service::capability::{ConsumerFlags, ConsumerPowerCapability};
+use power_policy_service::device::event::RequestData;
 
 mod common;
 
@@ -33,7 +32,7 @@ async fn test_single(
                 1,
                 FnCall::ConnectConsumer(ConsumerPowerCapability {
                     capability: LOW_POWER,
-                    flags: Consumer::none(),
+                    flags: ConsumerFlags::none(),
                 })
             )
         );
@@ -69,7 +68,7 @@ async fn test_swap_higher(
                 1,
                 FnCall::ConnectConsumer(ConsumerPowerCapability {
                     capability: LOW_POWER,
-                    flags: Consumer::none(),
+                    flags: ConsumerFlags::none(),
                 })
             )
         );
@@ -91,7 +90,7 @@ async fn test_swap_higher(
                 1,
                 FnCall::ConnectConsumer(ConsumerPowerCapability {
                     capability: HIGH_POWER,
-                    flags: Consumer::none(),
+                    flags: ConsumerFlags::none(),
                 })
             )
         );
@@ -113,7 +112,7 @@ async fn test_swap_higher(
                 1,
                 FnCall::ConnectConsumer(ConsumerPowerCapability {
                     capability: LOW_POWER,
-                    flags: Consumer::none(),
+                    flags: ConsumerFlags::none(),
                 })
             )
         );

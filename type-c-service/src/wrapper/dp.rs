@@ -4,14 +4,13 @@ use crate::wrapper::message::OutputDpStatusChanged;
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use embedded_services::{event, sync::Lockable, trace};
 use embedded_usb_pd::{Error, LocalPortId};
-use power_policy_service::policy::policy;
 
 impl<
     'device,
     M: RawMutex,
     D: Lockable,
-    S: event::Sender<policy::RequestData>,
-    R: event::Receiver<policy::RequestData>,
+    S: event::Sender<power_policy_service::device::event::RequestData>,
+    R: event::Receiver<power_policy_service::device::event::RequestData>,
     V: FwOfferValidator,
 > ControllerWrapper<'device, M, D, S, R, V>
 where

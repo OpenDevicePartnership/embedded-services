@@ -21,9 +21,9 @@ use core::cell::RefMut;
 use core::future::pending;
 use core::ops::DerefMut;
 
-use cfu_service::CfuClient;
 use crate::type_c::controller::{self, Controller, PortStatus};
 use crate::type_c::event::{PortEvent, PortNotificationSingle, PortPending, PortStatusChanged};
+use cfu_service::CfuClient;
 use embassy_futures::select::{Either, Either5, select, select_array, select5};
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use embassy_sync::mutex::Mutex;
@@ -35,7 +35,6 @@ use embedded_services::{debug, error, info, trace, warn};
 use embedded_services::{event, intrusive_list};
 use embedded_usb_pd::ado::Ado;
 use embedded_usb_pd::{Error, LocalPortId, PdError};
-use power_policy_service::policy::policy;
 
 use crate::wrapper::backing::{DynPortState, PortPower};
 use crate::wrapper::message::*;
@@ -74,8 +73,8 @@ pub struct ControllerWrapper<
     'device,
     M: RawMutex,
     D: Lockable,
-    S: event::Sender<policy::RequestData>,
-    R: event::Receiver<policy::RequestData>,
+    S: event::Sender<power_policy_service::device::event::RequestData>,
+    R: event::Receiver<power_policy_service::device::event::RequestData>,
     V: FwOfferValidator,
 > where
     D::Inner: Controller,
@@ -101,8 +100,8 @@ impl<
     'device,
     M: RawMutex,
     D: Lockable,
-    S: event::Sender<policy::RequestData>,
-    R: event::Receiver<policy::RequestData>,
+    S: event::Sender<power_policy_service::device::event::RequestData>,
+    R: event::Receiver<power_policy_service::device::event::RequestData>,
     V: FwOfferValidator,
 > ControllerWrapper<'device, M, D, S, R, V>
 where
@@ -205,10 +204,16 @@ where
         info!("Plug event");
         if status.is_connected() {
             info!("Plug inserted");
-            power.sender.send(policy::RequestData::Attached).await;
+            power
+                .sender
+                .send(power_policy_service::device::event::RequestData::Attached)
+                .await;
         } else {
             info!("Plug removed");
-            power.sender.send(policy::RequestData::Detached).await;
+            power
+                .sender
+                .send(power_policy_service::device::event::RequestData::Detached)
+                .await;
         }
 
         Ok(())
@@ -607,15 +612,8 @@ where
     pub fn register(
         &'static self,
         controllers: &intrusive_list::IntrusiveList,
-<<<<<<< HEAD
-        power_policy_context: &embedded_services::power::policy::policy::Context<
-            Mutex<M, PowerProxyDevice<'static>>,
-            R,
-        >,
+        power_policy_context: &power_policy_service::service::context::Context<Mutex<M, PowerProxyDevice<'static>>, R>,
         cfu_client: &'static CfuClient,
-=======
-        power_policy_context: &power_policy_service::policy::policy::Context<Mutex<M, PowerProxyDevice<'static>>, R>,
->>>>>>> 3ae2283 (Move power policy and type-C code out of `embedded-services`)
     ) -> Result<(), Error<<D::Inner as Controller>::BusError>> {
         for device in self.registration.power_devices {
             power_policy_context.register_device(device).map_err(|_| {
@@ -652,8 +650,8 @@ impl<
     'device,
     M: RawMutex,
     C: Lockable,
-    S: event::Sender<policy::RequestData>,
-    R: event::Receiver<policy::RequestData>,
+    S: event::Sender<power_policy_service::device::event::RequestData>,
+    R: event::Receiver<power_policy_service::device::event::RequestData>,
     V: FwOfferValidator,
 > Lockable for ControllerWrapper<'device, M, C, S, R, V>
 where

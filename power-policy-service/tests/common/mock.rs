@@ -1,10 +1,10 @@
 #![allow(clippy::unwrap_used)]
 use embassy_sync::signal::Signal;
 use embedded_services::{GlobalRawMutex, event, info};
-use power_policy_service::policy::device::{DeviceTrait, InternalState};
-use power_policy_service::policy::flags::Consumer;
-use power_policy_service::policy::policy::RequestData;
-use power_policy_service::policy::{ConsumerPowerCapability, Error, PowerCapability, ProviderPowerCapability};
+use power_policy_service::{
+    capability::{ConsumerFlags, ConsumerPowerCapability, PowerCapability, ProviderPowerCapability},
+    device::{DeviceTrait, Error, InternalState, event::RequestData},
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[allow(dead_code)]
@@ -47,7 +47,7 @@ impl<'a, S: event::Sender<RequestData>> Mock<'a, S> {
 
         let capability = Some(ConsumerPowerCapability {
             capability,
-            flags: Consumer::none(),
+            flags: ConsumerFlags::none(),
         });
         self.state.update_consumer_power_capability(capability).unwrap();
         self.sender

@@ -1,12 +1,12 @@
-use crate::policy::PowerCapability;
-use crate::policy::charger::Device as ChargerDevice;
-use crate::policy::charger::PolicyEvent;
-use crate::policy::flags;
-use crate::policy::{CommsData, Error};
 use core::cmp::Ordering;
-use embedded_services::debug;
+use core::ops::DerefMut;
+use embedded_services::{debug, error};
 
 use super::*;
+
+use crate::capability::ConsumerFlags;
+use crate::charger::Device as ChargerDevice;
+use crate::{capability::ConsumerPowerCapability, charger::PolicyEvent, device::State};
 
 /// State of the current consumer
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -134,7 +134,7 @@ where
         for node in self.context.chargers() {
             let device = node.data::<ChargerDevice>().ok_or(Error::InvalidDevice)?;
             // Chargers should be powered at this point, but in case they are not...
-            if let crate::policy::charger::ChargerResponseData::UnpoweredAck = device
+            if let crate::charger::ChargerResponseData::UnpoweredAck = device
                 .execute_command(PolicyEvent::PolicyConfiguration(
                     connected_consumer.consumer_power_capability,
                 ))
@@ -167,13 +167,13 @@ where
     pub(super) async fn disconnect_chargers(&self) -> Result<(), Error> {
         for node in self.context.chargers() {
             let device = node.data::<ChargerDevice>().ok_or(Error::InvalidDevice)?;
-            if let crate::policy::charger::ChargerResponseData::UnpoweredAck = device
+            if let crate::charger::ChargerResponseData::UnpoweredAck = device
                 .execute_command(PolicyEvent::PolicyConfiguration(ConsumerPowerCapability {
                     capability: PowerCapability {
                         voltage_mv: 0,
                         current_ma: 0,
                     },
-                    flags: flags::Consumer::none(),
+                    flags: ConsumerFlags::none(),
                 }))
                 .await?
             {

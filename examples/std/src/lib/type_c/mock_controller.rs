@@ -7,7 +7,7 @@ use embedded_usb_pd::{PowerRole, type_c::Current};
 use embedded_usb_pd::{type_c::ConnectionState, ucsi::lpm};
 use log::{debug, info, trace};
 
-use power_policy_service::policy::{PowerCapability, policy};
+use power_policy_service::capability::PowerCapability;
 use type_c_service::type_c::{
     controller::{
         AttnVdm, ControllerStatus, DpConfig, DpPinConfig, DpStatus, OtherVdm, PdStateMachineConfig, PortStatus,
@@ -342,7 +342,7 @@ pub type Wrapper<'a> = type_c_service::wrapper::ControllerWrapper<
     'a,
     GlobalRawMutex,
     Mutex<GlobalRawMutex, Controller<'a>>,
-    channel::DynamicSender<'a, policy::RequestData>,
-    channel::DynamicReceiver<'a, policy::RequestData>,
+    channel::DynamicSender<'a, power_policy_service::device::event::RequestData>,
+    channel::DynamicReceiver<'a, power_policy_service::device::event::RequestData>,
     Validator,
 >;
