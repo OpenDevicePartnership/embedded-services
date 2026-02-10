@@ -12,8 +12,8 @@ use embedded_services::{GlobalRawMutex, comms, error, event::Receiver, info, syn
 
 use crate::{
     capability::{ConsumerPowerCapability, PowerCapability, ProviderPowerCapability},
-    device::{
-        Device, DeviceId, DeviceTrait, Error,
+    psu::{
+        DeviceId, Error, Psu, RegistrationEntry,
         event::{Request, RequestData},
     },
     service::event::{CommsData, CommsMessage},
@@ -56,7 +56,7 @@ struct InternalState {
 /// Power policy service
 pub struct Service<'a, D: Lockable, R: Receiver<RequestData>>
 where
-    D::Inner: DeviceTrait,
+    D::Inner: Psu,
 {
     /// Power policy context
     pub context: &'a context::Context<D, R>,
@@ -70,7 +70,7 @@ where
 
 impl<'a, D: Lockable + 'static, R: Receiver<RequestData> + 'static> Service<'a, D, R>
 where
-    D::Inner: DeviceTrait,
+    D::Inner: Psu,
 {
     /// Create a new power policy
     pub fn new(context: &'a context::Context<D, R>, config: config::Config) -> Self {
@@ -82,20 +82,20 @@ where
         }
     }
 
-    async fn process_notify_attach(&self, device: &Device<'_, D, R>) {
+    async fn process_notify_attach(&self, device: &RegistrationEntry<'_, D, R>) {
         if let Err(e) = device.state.lock().await.attach() {
             error!("Device{}: Invalid state for attach: {:#?}", device.id().0, e);
         }
     }
 
-    async fn process_notify_detach(&self, device: &Device<'_, D, R>) -> Result<(), Error> {
+    async fn process_notify_detach(&self, device: &RegistrationEntry<'_, D, R>) -> Result<(), Error> {
         device.state.lock().await.detach();
         self.update_current_consumer().await
     }
 
     async fn process_notify_consumer_power_capability(
         &self,
-        device: &Device<'_, D, R>,
+        device: &RegistrationEntry<'_, D, R>,
         capability: Option<ConsumerPowerCapability>,
     ) -> Result<(), Error> {
         if let Err(e) = device.state.lock().await.update_consumer_power_capability(capability) {
@@ -111,7 +111,7 @@ where
 
     async fn process_request_provider_power_capabilities(
         &self,
-        device: &Device<'_, D, R>,
+        device: &RegistrationEntry<'_, D, R>,
         capability: Option<ProviderPowerCapability>,
     ) -> Result<(), Error> {
         if let Err(e) = device
@@ -130,7 +130,7 @@ where
         self.connect_provider(device.id()).await
     }
 
-    async fn process_notify_disconnect(&self, device: &Device<'_, D, R>) -> Result<(), Error> {
+    async fn process_notify_disconnect(&self, device: &RegistrationEntry<'_, D, R>) -> Result<(), Error> {
         if let Err(e) = device.state.lock().await.disconnect(true) {
             error!(
                 "Device{}: Invalid state for notify disconnect, catching up: {:#?}",
@@ -189,7 +189,7 @@ where
     }
 
     async fn process_request(&self, request: Request) -> Result<(), Error> {
-        let device = self.context.get_device(request.id)?;
+        let device = self.context.get_psu(request.id)?;
 
         match request.data {
             RequestData::Attached => {
@@ -233,6 +233,6 @@ where
 }
 
 impl<D: Lockable + 'static, R: Receiver<RequestData> + 'static> comms::MailboxDelegate for Service<'_, D, R> where
-    D::Inner: DeviceTrait
+    D::Inner: Psu
 {
 }

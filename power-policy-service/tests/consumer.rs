@@ -3,7 +3,7 @@ use embassy_sync::{channel::DynamicSender, mutex::Mutex, signal::Signal};
 use embassy_time::{Duration, TimeoutError, with_timeout};
 use embedded_services::GlobalRawMutex;
 use power_policy_service::capability::{ConsumerFlags, ConsumerPowerCapability};
-use power_policy_service::device::event::RequestData;
+use power_policy_service::psu::event::RequestData;
 
 mod common;
 

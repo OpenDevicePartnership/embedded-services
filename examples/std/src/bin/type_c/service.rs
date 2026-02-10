@@ -25,7 +25,7 @@ use type_c_service::wrapper::proxy::PowerProxyDevice;
 const NUM_PD_CONTROLLERS: usize = 1;
 const CONTROLLER0_ID: ControllerId = ControllerId(0);
 const PORT0_ID: GlobalPortId = GlobalPortId(0);
-const POWER0_ID: power_policy_service::device::DeviceId = power_policy_service::device::DeviceId(0);
+const POWER0_ID: power_policy_service::psu::DeviceId = power_policy_service::psu::DeviceId(0);
 const DELAY_MS: u64 = 1000;
 
 #[embassy_executor::task]
@@ -65,7 +65,7 @@ async fn task(spawner: Spawner) {
     static POWER_SERVICE_CONTEXT: StaticCell<
         power_policy_service::service::context::Context<
             Mutex<GlobalRawMutex, PowerProxyDevice<'static>>,
-            DynamicReceiver<'static, power_policy_service::device::event::RequestData>,
+            DynamicReceiver<'static, power_policy_service::psu::event::RequestData>,
         >,
     > = StaticCell::new();
     let power_service_context = POWER_SERVICE_CONTEXT.init(power_policy_service::service::context::Context::new());
@@ -78,7 +78,7 @@ async fn task(spawner: Spawner) {
     static POWER_SERVICE: StaticCell<
         power_policy_service::service::Service<
             Mutex<GlobalRawMutex, PowerProxyDevice<'static>>,
-            DynamicReceiver<'static, power_policy_service::device::event::RequestData>,
+            DynamicReceiver<'static, power_policy_service::psu::event::RequestData>,
         >,
     > = StaticCell::new();
     let power_service = POWER_SERVICE.init(power_policy_service::service::Service::new(
@@ -151,7 +151,7 @@ async fn power_policy_service_task(
     service: &'static PowerPolicyService<
         'static,
         Mutex<GlobalRawMutex, PowerProxyDevice<'static>>,
-        DynamicReceiver<'static, power_policy_service::device::event::RequestData>,
+        DynamicReceiver<'static, power_policy_service::psu::event::RequestData>,
     >,
 ) {
     power_policy_service::service::task::task(service)
@@ -165,7 +165,7 @@ async fn type_c_service_task(
     wrappers: [&'static Wrapper<'static>; NUM_PD_CONTROLLERS],
     power_policy_context: &'static power_policy_service::service::context::Context<
         Mutex<GlobalRawMutex, PowerProxyDevice<'static>>,
-        DynamicReceiver<'static, power_policy_service::device::event::RequestData>,
+        DynamicReceiver<'static, power_policy_service::psu::event::RequestData>,
     >,
     cfu_client: &'static CfuClient,
 ) {
@@ -199,7 +199,7 @@ fn create_wrapper(
             .expect("Failed to create intermediate storage"),
     );
 
-    static POLICY_CHANNEL: StaticCell<Channel<GlobalRawMutex, power_policy_service::device::event::RequestData, 1>> =
+    static POLICY_CHANNEL: StaticCell<Channel<GlobalRawMutex, power_policy_service::psu::event::RequestData, 1>> =
         StaticCell::new();
     let policy_channel = POLICY_CHANNEL.init(Channel::new());
 
@@ -210,8 +210,8 @@ fn create_wrapper(
         type_c_service::wrapper::backing::ReferencedStorage<
             1,
             GlobalRawMutex,
-            DynamicSender<'_, power_policy_service::device::event::RequestData>,
-            DynamicReceiver<'_, power_policy_service::device::event::RequestData>,
+            DynamicSender<'_, power_policy_service::psu::event::RequestData>,
+            DynamicReceiver<'_, power_policy_service::psu::event::RequestData>,
         >,
     > = StaticCell::new();
     let referenced = REFERENCED.init(

@@ -73,8 +73,8 @@ pub struct ControllerWrapper<
     'device,
     M: RawMutex,
     D: Lockable,
-    S: event::Sender<power_policy_service::device::event::RequestData>,
-    R: event::Receiver<power_policy_service::device::event::RequestData>,
+    S: event::Sender<power_policy_service::psu::event::RequestData>,
+    R: event::Receiver<power_policy_service::psu::event::RequestData>,
     V: FwOfferValidator,
 > where
     D::Inner: Controller,
@@ -100,8 +100,8 @@ impl<
     'device,
     M: RawMutex,
     D: Lockable,
-    S: event::Sender<power_policy_service::device::event::RequestData>,
-    R: event::Receiver<power_policy_service::device::event::RequestData>,
+    S: event::Sender<power_policy_service::psu::event::RequestData>,
+    R: event::Receiver<power_policy_service::psu::event::RequestData>,
     V: FwOfferValidator,
 > ControllerWrapper<'device, M, D, S, R, V>
 where
@@ -206,13 +206,13 @@ where
             info!("Plug inserted");
             power
                 .sender
-                .send(power_policy_service::device::event::RequestData::Attached)
+                .send(power_policy_service::psu::event::RequestData::Attached)
                 .await;
         } else {
             info!("Plug removed");
             power
                 .sender
-                .send(power_policy_service::device::event::RequestData::Detached)
+                .send(power_policy_service::psu::event::RequestData::Detached)
                 .await;
         }
 
@@ -616,7 +616,7 @@ where
         cfu_client: &'static CfuClient,
     ) -> Result<(), Error<<D::Inner as Controller>::BusError>> {
         for device in self.registration.power_devices {
-            power_policy_context.register_device(device).map_err(|_| {
+            power_policy_context.register_psu(device).map_err(|_| {
                 error!(
                     "Controller{}: Failed to register power device {}",
                     self.registration.pd_controller.id().0,
@@ -650,8 +650,8 @@ impl<
     'device,
     M: RawMutex,
     C: Lockable,
-    S: event::Sender<power_policy_service::device::event::RequestData>,
-    R: event::Receiver<power_policy_service::device::event::RequestData>,
+    S: event::Sender<power_policy_service::psu::event::RequestData>,
+    R: event::Receiver<power_policy_service::psu::event::RequestData>,
     V: FwOfferValidator,
 > Lockable for ControllerWrapper<'device, M, C, S, R, V>
 where

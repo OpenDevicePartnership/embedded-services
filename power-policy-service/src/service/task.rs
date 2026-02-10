@@ -1,6 +1,6 @@
 use embedded_services::{comms, error, event::Receiver, info, sync::Lockable};
 
-use crate::device::{DeviceTrait, event::RequestData};
+use crate::psu::{Psu, event::RequestData};
 
 use super::Service;
 
@@ -20,7 +20,7 @@ pub async fn task<D: Lockable + 'static, R: Receiver<RequestData> + 'static>(
     policy: &'static Service<'static, D, R>,
 ) -> Result<embedded_services::Never, InitError>
 where
-    D::Inner: DeviceTrait,
+    D::Inner: Psu,
 {
     info!("Starting power policy task");
     if comms::register_endpoint(policy, &policy.tp).await.is_err() {

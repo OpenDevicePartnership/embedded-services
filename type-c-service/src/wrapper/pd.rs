@@ -6,7 +6,7 @@ use embassy_time::{Duration, Timer};
 use embedded_services::debug;
 use embedded_usb_pd::constants::{T_PS_TRANSITION_EPR_MS, T_PS_TRANSITION_SPR_MS};
 use embedded_usb_pd::ucsi::{self, lpm};
-use power_policy_service::device::State;
+use power_policy_service::psu::State;
 
 use super::*;
 
@@ -14,8 +14,8 @@ impl<
     'device,
     M: RawMutex,
     D: Lockable,
-    S: event::Sender<power_policy_service::device::event::RequestData>,
-    R: event::Receiver<power_policy_service::device::event::RequestData>,
+    S: event::Sender<power_policy_service::psu::event::RequestData>,
+    R: event::Receiver<power_policy_service::psu::event::RequestData>,
     V: FwOfferValidator,
 > ControllerWrapper<'device, M, D, S, R, V>
 where
@@ -150,7 +150,7 @@ where
                 );
                 port_power
                     .sender
-                    .send(power_policy_service::device::event::RequestData::Disconnected)
+                    .send(power_policy_service::psu::event::RequestData::Disconnected)
                     .await;
             }
         }

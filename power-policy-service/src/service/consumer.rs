@@ -6,7 +6,7 @@ use super::*;
 
 use crate::capability::ConsumerFlags;
 use crate::charger::Device as ChargerDevice;
-use crate::{capability::ConsumerPowerCapability, charger::PolicyEvent, device::State};
+use crate::{capability::ConsumerPowerCapability, charger::PolicyEvent, psu::State};
 
 /// State of the current consumer
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -34,15 +34,15 @@ fn cmp_consumer_capability(
 
 impl<D: Lockable + 'static, R: Receiver<RequestData> + 'static> Service<'_, D, R>
 where
-    D::Inner: DeviceTrait,
+    D::Inner: Psu,
 {
     /// Iterate over all devices to determine what is best power port provides the highest power
     async fn find_best_consumer(&self, state: &InternalState) -> Result<Option<AvailableConsumer>, Error> {
         let mut best_consumer = None;
         let current_consumer_id = state.current_consumer_state.map(|f| f.device_id);
 
-        for node in self.context.devices() {
-            let device = node.data::<Device<'_, D, R>>().ok_or(Error::InvalidDevice)?;
+        for node in self.context.psu_devices() {
+            let device = node.data::<RegistrationEntry<'_, D, R>>().ok_or(Error::InvalidDevice)?;
 
             let consumer_capability = device.consumer_capability().await;
             // Don't consider consumers below minimum threshold
@@ -95,8 +95,8 @@ where
     async fn update_unconstrained_state(&self, state: &mut InternalState) -> Result<(), Error> {
         // Count how many available unconstrained devices we have
         let mut unconstrained_new = UnconstrainedState::default();
-        for node in self.context.devices() {
-            let device = node.data::<Device<'_, D, R>>().ok_or(Error::InvalidDevice)?;
+        for node in self.context.psu_devices() {
+            let device = node.data::<RegistrationEntry<'_, D, R>>().ok_or(Error::InvalidDevice)?;
             if let Some(capability) = device.consumer_capability().await {
                 if capability.flags.unconstrained_power() {
                     unconstrained_new.available += 1;
@@ -131,7 +131,7 @@ where
         embassy_time::Timer::after_millis(800).await;
 
         // If no chargers are registered, they won't receive the new power capability.
-        for node in self.context.chargers() {
+        for node in self.context.charger_devices() {
             let device = node.data::<ChargerDevice>().ok_or(Error::InvalidDevice)?;
             // Chargers should be powered at this point, but in case they are not...
             if let crate::charger::ChargerResponseData::UnpoweredAck = device
@@ -165,7 +165,7 @@ where
 
     /// Disconnect all chargers
     pub(super) async fn disconnect_chargers(&self) -> Result<(), Error> {
-        for node in self.context.chargers() {
+        for node in self.context.charger_devices() {
             let device = node.data::<ChargerDevice>().ok_or(Error::InvalidDevice)?;
             if let crate::charger::ChargerResponseData::UnpoweredAck = device
                 .execute_command(PolicyEvent::PolicyConfiguration(ConsumerPowerCapability {
@@ -201,7 +201,7 @@ where
             }
 
             state.current_consumer_state = None;
-            let consumer_device = self.context.get_device(current_consumer.device_id)?;
+            let consumer_device = self.context.get_psu(current_consumer.device_id)?;
             let mut locked_state = consumer_device.state.lock().await;
             let mut locked_device = consumer_device.device.lock().await;
 
@@ -234,7 +234,7 @@ where
         }
 
         info!("Device {}, connecting new consumer", new_consumer.device_id.0);
-        let device = self.context.get_device(new_consumer.device_id)?;
+        let device = self.context.get_psu(new_consumer.device_id)?;
         let mut locked_device = device.device.lock().await;
         let mut locked_state = device.state.lock().await;
 

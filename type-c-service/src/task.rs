@@ -2,7 +2,7 @@ use core::future::Future;
 use embassy_sync::mutex::Mutex;
 use embedded_services::{error, event, info, sync::Lockable};
 
-use power_policy_service::service::context;
+use power_policy_service::service::context::Context as PowerPolicyContext;
 
 use crate::{
     service::Service,
@@ -13,14 +13,14 @@ use crate::{
 pub async fn task_closure<'a, M, D, S, R, V, Fut: Future<Output = ()>, F: Fn(&'a Service) -> Fut, const N: usize>(
     service: &'static Service<'a>,
     wrappers: [&'a ControllerWrapper<'a, M, D, S, R, V>; N],
-    power_policy_context: &policy::Context<Mutex<M, PowerProxyDevice<'static>>, R>,
+    power_policy_context: &PowerPolicyContext<Mutex<M, PowerProxyDevice<'static>>, R>,
     cfu_client: &'a cfu_service::CfuClient,
     f: F,
 ) where
     M: embassy_sync::blocking_mutex::raw::RawMutex,
     D: Lockable,
-    S: event::Sender<power_policy_service::device::event::RequestData>,
-    R: event::Receiver<power_policy_service::device::event::RequestData>,
+    S: event::Sender<power_policy_service::psu::event::RequestData>,
+    R: event::Receiver<power_policy_service::psu::event::RequestData>,
     V: crate::wrapper::FwOfferValidator,
     D::Inner: crate::type_c::controller::Controller,
 {
@@ -50,13 +50,13 @@ pub async fn task_closure<'a, M, D, S, R, V, Fut: Future<Output = ()>, F: Fn(&'a
 pub async fn task<'a, M, D, S, R, V, const N: usize>(
     service: &'static Service<'a>,
     wrappers: [&'a ControllerWrapper<'a, M, D, S, R, V>; N],
-    power_policy_context: &policy::Context<Mutex<M, PowerProxyDevice<'static>>, R>,
+    power_policy_context: &PowerPolicyContext<Mutex<M, PowerProxyDevice<'static>>, R>,
     cfu_client: &'a cfu_service::CfuClient,
 ) where
     M: embassy_sync::blocking_mutex::raw::RawMutex,
     D: embedded_services::sync::Lockable,
-    S: event::Sender<power_policy_service::device::event::RequestData>,
-    R: event::Receiver<power_policy_service::device::event::RequestData>,
+    S: event::Sender<power_policy_service::psu::event::RequestData>,
+    R: event::Receiver<power_policy_service::psu::event::RequestData>,
     V: crate::wrapper::FwOfferValidator,
     <D as embedded_services::sync::Lockable>::Inner: crate::type_c::controller::Controller,
 {

@@ -1,6 +1,6 @@
 use crate::{
     capability::{ConsumerPowerCapability, ProviderPowerCapability},
-    device::DeviceId,
+    psu::DeviceId,
     service::UnconstrainedState,
 };
 
