@@ -2,12 +2,9 @@
 use core::{future::Future, ops::DerefMut};
 
 use embassy_sync::{channel::Channel, mutex::Mutex};
+use embedded_services::{GlobalRawMutex, intrusive_list};
 
-use crate::{
-    GlobalRawMutex, intrusive_list,
-    power::{self, policy::ConsumerPowerCapability},
-};
-
+use super::ConsumerPowerCapability;
 use super::PowerCapability;
 
 /// Charger controller trait that device drivers may use to integrate with internal messaging system
@@ -92,7 +89,7 @@ pub enum ChargerError {
     BusError,
 }
 
-impl From<ChargerError> for power::policy::Error {
+impl From<ChargerError> for crate::policy::Error {
     fn from(value: ChargerError) -> Self {
         Self::Charger(value)
     }
@@ -228,7 +225,7 @@ impl Device {
 }
 
 impl intrusive_list::NodeContainer for Device {
-    fn get_node(&self) -> &crate::Node {
+    fn get_node(&self) -> &intrusive_list::Node {
         &self.node
     }
 }

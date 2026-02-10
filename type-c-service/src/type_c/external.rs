@@ -1,17 +1,16 @@
 //! Message definitions for external type-C commands
 use embedded_usb_pd::{GlobalPortId, LocalPortId, PdError, ucsi};
 
-use crate::{
-    intrusive_list,
-    type_c::{
-        Cached,
-        controller::{Context, PdStateMachineConfig, TbtConfig, TypeCStateMachineState, UsbControlConfig},
-    },
-};
+use embedded_services::intrusive_list;
 
 use super::{
     ControllerId,
     controller::{ControllerStatus, DpConfig, DpStatus, PortStatus, RetimerFwUpdateState, SendVdm, lookup_controller},
+};
+
+use crate::type_c::{
+    Cached,
+    controller::{Context, PdStateMachineConfig, TbtConfig, TypeCStateMachineState, UsbControlConfig},
 };
 
 /// Data for controller-specific commands

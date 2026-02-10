@@ -1,3 +1,10 @@
+use crate::type_c;
+use crate::type_c::ATTN_VDM_LEN;
+use crate::type_c::controller::{
+    self, AttnVdm, Controller, ControllerStatus, DpPinConfig, OtherVdm, PortStatus, SendVdm, TbtConfig,
+    TypeCStateMachineState, UsbControlConfig,
+};
+use crate::type_c::event::PortEvent;
 use ::tps6699x::registers::field_sets::IntEventBus1;
 use ::tps6699x::registers::{PdCcPullUp, PpExtVbusSw, PpIntVbusSw};
 use ::tps6699x::{PORT0, PORT1, TPS66993_NUM_PORTS, TPS66994_NUM_PORTS};
@@ -9,14 +16,7 @@ use core::iter::zip;
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use embassy_time::Delay;
 use embedded_hal_async::i2c::I2c;
-use embedded_services::power::policy::PowerCapability;
-use embedded_services::type_c::ATTN_VDM_LEN;
-use embedded_services::type_c::controller::{
-    self, AttnVdm, Controller, ControllerStatus, DpPinConfig, OtherVdm, PortStatus, SendVdm, TbtConfig,
-    TypeCStateMachineState, UsbControlConfig,
-};
-use embedded_services::type_c::event::PortEvent;
-use embedded_services::{debug, error, trace, type_c, warn};
+use embedded_services::{debug, error, trace, warn};
 use embedded_usb_pd::ado::Ado;
 use embedded_usb_pd::pdinfo::PowerPathStatus;
 use embedded_usb_pd::pdo::{Common, Contract, Rdo, sink, source};
@@ -35,6 +35,9 @@ use tps6699x::command::{
 };
 use tps6699x::fw_update::UpdateConfig as FwUpdateConfig;
 use tps6699x::registers::port_config::TypeCStateMachine;
+
+use crate::type_c::power_capability_from_current;
+use crate::type_c::power_capability_try_from_contract;
 
 type Updater<'a, M, B> = BorrowedUpdaterInProgress<tps6699x_drv::Tps6699x<'a, M, B>>;
 
@@ -314,7 +317,8 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
                     let rdo = Rdo::for_pdo(rdo_raw, pdo).ok_or(Error::Pd(PdError::InvalidParams))?;
                     debug!("PDO: {:#?}", pdo);
                     debug!("RDO: {:#?}", rdo);
-                    port_status.available_source_contract = Contract::from_source(pdo, rdo).try_into().ok();
+                    port_status.available_source_contract =
+                        power_capability_try_from_contract(Contract::from_source(pdo, rdo));
                     port_status.dual_power = pdo.dual_role_power();
                 } else {
                     // active_rdo_contract doesn't contain the full picture
@@ -337,7 +341,8 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
                     let rdo = Rdo::for_pdo(rdo_raw, pdo).ok_or(Error::Pd(PdError::InvalidParams))?;
                     debug!("PDO: {:#?}", pdo);
                     debug!("RDO: {:#?}", rdo);
-                    port_status.available_sink_contract = Contract::from_sink(pdo, rdo).try_into().ok();
+                    port_status.available_sink_contract =
+                        power_capability_try_from_contract(Contract::from_sink(pdo, rdo));
                     port_status.dual_power = source_pdos[0].dual_role_power();
                     port_status.unconstrained_power = source_pdos[0].unconstrained_power();
                 }
@@ -345,8 +350,7 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
                 // Implicit source contract
                 let current = TypecCurrent::try_from(port_control.typec_current()).map_err(Error::Pd)?;
                 debug!("Port{} type-C source current: {:#?}", port.0, current);
-                let new_contract = Some(PowerCapability::from(current));
-                port_status.available_source_contract = new_contract;
+                port_status.available_source_contract = Some(power_capability_from_current(current));
             } else {
                 // Implicit sink contract
                 let pull = pd_status.cc_pull_up();
@@ -357,7 +361,7 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
                 } else {
                     let current = TypecCurrent::try_from(pd_status.cc_pull_up()).map_err(Error::Pd)?;
                     debug!("Port{} type-C sink current: {:#?}", port.0, current);
-                    Some(PowerCapability::from(current))
+                    Some(power_capability_from_current(current))
                 };
                 port_status.available_sink_contract = new_contract;
             }

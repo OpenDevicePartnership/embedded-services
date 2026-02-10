@@ -4,23 +4,19 @@ use embassy_sync::{
     pubsub::{DynImmediatePublisher, DynSubscriber},
 };
 use embedded_services::{
-    GlobalRawMutex, debug, error,
-    event::Receiver,
-    info, intrusive_list,
-    ipc::deferred,
-    power::policy::policy,
-    sync::Lockable,
-    trace,
-    type_c::{
-        self, comms,
-        controller::PortStatus,
-        event::{PortNotificationSingle, PortStatusChanged},
-        external,
-    },
+    GlobalRawMutex, debug, error, event::Receiver, info, intrusive_list, ipc::deferred, sync::Lockable, trace,
 };
-use embedded_services::{power::policy as power_policy, type_c::Cached};
 use embedded_usb_pd::GlobalPortId;
 use embedded_usb_pd::PdError as Error;
+
+use crate::type_c::{
+    self, Cached, comms,
+    controller::PortStatus,
+    event::{PortNotificationSingle, PortStatusChanged},
+    external,
+};
+use power_policy_service::policy as power_policy;
+use power_policy_service::policy::policy;
 
 use crate::{PortEventStreamer, PortEventVariant};
 
@@ -99,7 +95,7 @@ impl<'a> Service<'a> {
     /// Create a new service the given configuration
     pub fn create(
         config: config::Config,
-        context: &'a embedded_services::type_c::controller::Context,
+        context: &'a crate::type_c::controller::Context,
         controller_list: &'a intrusive_list::IntrusiveList,
         power_policy_publisher: DynImmediatePublisher<'a, power_policy::CommsMessage>,
         power_policy_subscriber: DynSubscriber<'a, power_policy::CommsMessage>,
@@ -261,7 +257,7 @@ impl<'a> Service<'a> {
         power_policy_context: &power_policy::policy::Context<PD, PR>,
     ) -> Result<(), intrusive_list::Error>
     where
-        PD::Inner: embedded_services::power::policy::device::DeviceTrait,
+        PD::Inner: power_policy_service::policy::device::DeviceTrait,
     {
         power_policy_context.register_message_receiver(&self.power_policy_event_publisher)
     }

@@ -4,9 +4,9 @@
 //! Processing these events typically requires acessing similar registers so they are grouped together.
 //! [`PortNotification`] contains events that are typically more message-like (PD alerts, VDMs, etc) and can be processed independently.
 //! Consequently [`PortNotification`] implements iterator traits to allow for processing these events as a stream.
-use super::error;
 use bitfield::bitfield;
 use bitvec::BitArr;
+use embedded_services::error;
 
 bitfield! {
     /// Raw bitfield of possible port status events

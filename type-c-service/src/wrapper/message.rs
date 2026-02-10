@@ -1,14 +1,12 @@
 //! [`crate::wrapper::ControllerWrapper`] message types
-use embedded_services::{
-    GlobalRawMutex,
-    ipc::deferred,
-    power::policy,
-    type_c::{
-        controller::{self, DpStatus, PortStatus},
-        event::{PortNotificationSingle, PortStatusChanged},
-    },
-};
+use embedded_services::{GlobalRawMutex, ipc::deferred};
 use embedded_usb_pd::{LocalPortId, ado::Ado};
+
+use crate::type_c::{
+    controller::{self, DpStatus, PortStatus},
+    event::{PortNotificationSingle, PortStatusChanged},
+};
+use power_policy_service::policy;
 
 /// Port status changed event data
 #[derive(Copy, Clone, Debug)]
@@ -105,7 +103,7 @@ pub struct OutputControllerCommand<'a> {
 pub mod vdm {
     //! Events and output for vendor-defined messaging.
     use super::LocalPortId;
-    use embedded_services::type_c::controller::{AttnVdm, OtherVdm};
+    use crate::type_c::controller::{AttnVdm, OtherVdm};
 
     /// The kind of output from processing a vendor-defined message.
     #[derive(Copy, Clone, Debug)]

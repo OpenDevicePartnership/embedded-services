@@ -2,11 +2,11 @@
 use embassy_sync::mutex::Mutex;
 
 use super::{DeviceId, Error};
-use crate::event::Receiver;
-use crate::power::policy::policy::RequestData;
-use crate::power::policy::{ConsumerPowerCapability, ProviderPowerCapability};
-use crate::sync::Lockable;
-use crate::{GlobalRawMutex, intrusive_list};
+use crate::policy::policy::RequestData;
+use crate::policy::{ConsumerPowerCapability, ProviderPowerCapability};
+use embedded_services::event::Receiver;
+use embedded_services::sync::Lockable;
+use embedded_services::{GlobalRawMutex, intrusive_list};
 
 /// Most basic device states
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -337,7 +337,7 @@ impl<D: Lockable, R: Receiver<RequestData> + 'static> intrusive_list::NodeContai
 where
     D::Inner: DeviceTrait,
 {
-    fn get_node(&self) -> &crate::Node {
+    fn get_node(&self) -> &intrusive_list::Node {
         &self.node
     }
 }

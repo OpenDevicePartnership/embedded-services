@@ -2,13 +2,12 @@
 pub mod driver;
 pub mod service;
 pub mod task;
+pub mod type_c;
 pub mod wrapper;
 
 use core::future::Future;
 
-use embedded_services::type_c::event::{
-    PortEvent, PortNotification, PortNotificationSingle, PortPendingIter, PortStatusChanged,
-};
+use type_c::event::{PortEvent, PortNotification, PortNotificationSingle, PortPendingIter, PortStatusChanged};
 
 /// Enum to contain all port event variants
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -123,7 +122,7 @@ impl PortEventStreamer {
 mod tests {
     use core::sync::atomic::AtomicBool;
 
-    use embedded_services::type_c::event::PortPending;
+    use crate::type_c::event::PortPending;
 
     use super::*;
 

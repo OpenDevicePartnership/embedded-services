@@ -27,6 +27,8 @@ heapless.workspace = true
 log = { workspace = true, optional = true }
 tps6699x = { workspace = true, features = ["embassy"] }
 cfu-service.workspace = true
+power-policy-service = { path = "../power-policy-service" }
+bitvec.workspace = true
 
 [dev-dependencies]
 embassy-time = { workspace = true, features = ["std", "generic-queue-8"] }

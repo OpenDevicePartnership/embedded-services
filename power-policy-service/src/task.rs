@@ -1,10 +1,6 @@
-use embedded_services::{
-    comms, error,
-    event::Receiver,
-    info,
-    power::policy::{device::DeviceTrait, policy::RequestData},
-    sync::Lockable,
-};
+use embedded_services::{comms, error, event::Receiver, info, sync::Lockable};
+
+use crate::policy::{device::DeviceTrait, policy::RequestData};
 
 use crate::PowerPolicy;
 

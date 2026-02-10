@@ -1,16 +1,14 @@
-use embedded_services::{
-    debug, error,
-    type_c::{
-        controller::{DpConfig, PdStateMachineConfig, TbtConfig, TypeCStateMachineState, UsbControlConfig},
-        external,
-    },
-};
+use embedded_services::{debug, error};
 use embedded_usb_pd::GlobalPortId;
 
 use super::*;
 use crate::PortEventStreamer;
 
-use embedded_services::type_c::controller::SendVdm;
+use crate::type_c::controller::SendVdm;
+use crate::type_c::{
+    controller::{DpConfig, PdStateMachineConfig, TbtConfig, TypeCStateMachineState, UsbControlConfig},
+    external,
+};
 
 impl<'a> Service<'a> {
     /// Wait for port flags

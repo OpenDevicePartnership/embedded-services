@@ -4,23 +4,20 @@ use embassy_sync::channel::{Channel, DynamicReceiver, DynamicSender};
 use embassy_sync::mutex::Mutex;
 use embassy_sync::pubsub::PubSubChannel;
 use embassy_time::Timer;
-use embedded_services::power::policy::policy;
-use embedded_services::type_c::controller;
-use embedded_services::{
-    GlobalRawMutex, IntrusiveList, power,
-    type_c::{Cached, ControllerId, controller::Context},
-};
+use embedded_services::{GlobalRawMutex, IntrusiveList};
 use embedded_usb_pd::GlobalPortId;
 use log::*;
+use power_policy_service::policy::policy;
 use static_cell::StaticCell;
 use std_examples::type_c::mock_controller::{self, Wrapper};
 use type_c_service::service::{Service, config::Config};
+use type_c_service::type_c::{Cached, ControllerId, controller, controller::Context};
 use type_c_service::wrapper::backing::Storage;
 
 const NUM_PD_CONTROLLERS: usize = 1;
 const CONTROLLER0_ID: ControllerId = ControllerId(0);
 const PORT0_ID: GlobalPortId = GlobalPortId(0);
-const POWER0_ID: power::policy::DeviceId = power::policy::DeviceId(0);
+const POWER0_ID: power_policy_service::policy::DeviceId = power_policy_service::policy::DeviceId(0);
 
 #[embassy_executor::task]
 async fn controller_task(wrapper: &'static Wrapper<'static>) {
@@ -105,8 +102,9 @@ async fn service_task(
     info!("Starting type-c task");
 
     // The service is the only receiver and we only use a DynImmediatePublisher, which doesn't take a publisher slot
-    static POWER_POLICY_CHANNEL: StaticCell<PubSubChannel<GlobalRawMutex, power::policy::CommsMessage, 4, 1, 0>> =
-        StaticCell::new();
+    static POWER_POLICY_CHANNEL: StaticCell<
+        PubSubChannel<GlobalRawMutex, power_policy_service::policy::CommsMessage, 4, 1, 0>,
+    > = StaticCell::new();
 
     let power_policy_channel = POWER_POLICY_CHANNEL.init(PubSubChannel::new());
     let power_policy_publisher = power_policy_channel.dyn_immediate_publisher();
@@ -193,8 +191,8 @@ fn main() {
 
     static CONTROLLER_LIST: StaticCell<IntrusiveList> = StaticCell::new();
     let controller_list = CONTROLLER_LIST.init(IntrusiveList::new());
-    static CONTEXT: StaticCell<embedded_services::type_c::controller::Context> = StaticCell::new();
-    let context = CONTEXT.init(embedded_services::type_c::controller::Context::new());
+    static CONTEXT: StaticCell<type_c_service::type_c::controller::Context> = StaticCell::new();
+    let context = CONTEXT.init(type_c_service::type_c::controller::Context::new());
 
     let wrapper = create_wrapper(context);
 

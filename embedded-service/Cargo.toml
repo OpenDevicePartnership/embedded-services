@@ -22,7 +22,6 @@ document-features.workspace = true
 embassy-sync.workspace = true
 embassy-time.workspace = true
 embassy-futures.workspace = true
-embedded-batteries-async.workspace = true
 embedded-cfu-protocol.workspace = true
 embedded-hal-async.workspace = true
 embedded-io-async.workspace = true

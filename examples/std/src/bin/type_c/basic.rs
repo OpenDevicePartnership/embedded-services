@@ -2,19 +2,19 @@ use embassy_executor::{Executor, Spawner};
 use embassy_sync::once_lock::OnceLock;
 use embassy_time::Timer;
 use embedded_services::IntrusiveList;
-use embedded_services::type_c::{Cached, ControllerId, controller};
 use embedded_usb_pd::ucsi::lpm;
 use embedded_usb_pd::{GlobalPortId, PdError as Error};
 use log::*;
 use static_cell::StaticCell;
+use type_c_service::type_c::{Cached, ControllerId, controller};
 
 const CONTROLLER0_ID: ControllerId = ControllerId(0);
 const PORT0_ID: GlobalPortId = GlobalPortId(0);
 const PORT1_ID: GlobalPortId = GlobalPortId(1);
 
 mod test_controller {
-    use embedded_services::type_c::controller::{ControllerStatus, PortStatus};
     use embedded_usb_pd::ucsi;
+    use type_c_service::type_c::controller::{ControllerStatus, PortStatus};
 
     use super::*;
 

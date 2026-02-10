@@ -21,10 +21,8 @@ pub mod hid;
 pub mod init;
 pub mod ipc;
 pub mod keyboard;
-pub mod power;
 pub mod relay;
 pub mod sync;
-pub mod type_c;
 
 /// Hidden re-exports used by macros defined in this crate.
 /// Not part of the public API — do not depend on these directly.
@@ -85,5 +83,4 @@ pub async fn init() {
     comms::init();
     activity::init();
     keyboard::init();
-    power::policy::init();
 }

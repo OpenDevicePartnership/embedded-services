@@ -6,7 +6,7 @@ pub mod policy;
 
 pub use policy::init;
 
-use crate::power::policy::charger::ChargerError;
+use charger::ChargerError;
 
 /// Error type
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
