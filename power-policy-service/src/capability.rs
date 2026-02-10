@@ -1,7 +1,83 @@
-//! Consumer and provider flags, these are used to signal additional information about a consumer/provider request
-
+//! Power capability definitions and related flags
 use bitfield::bitfield;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
+
+/// Amount of power that a device can provider or consume
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct PowerCapability {
+    /// Available voltage in mV
+    pub voltage_mv: u16,
+    /// Max available current in mA
+    pub current_ma: u16,
+}
+
+impl PowerCapability {
+    /// Calculate maximum power
+    pub fn max_power_mw(&self) -> u32 {
+        self.voltage_mv as u32 * self.current_ma as u32 / 1000
+    }
+}
+
+impl PartialOrd for PowerCapability {
+    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for PowerCapability {
+    fn cmp(&self, other: &Self) -> core::cmp::Ordering {
+        self.max_power_mw().cmp(&other.max_power_mw())
+    }
+}
+
+/// Power capability with consumer flags
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct ConsumerPowerCapability {
+    /// Power capability
+    pub capability: PowerCapability,
+    /// Consumer flags
+    pub flags: ConsumerFlags,
+}
+
+impl From<PowerCapability> for ConsumerPowerCapability {
+    fn from(capability: PowerCapability) -> Self {
+        Self {
+            capability,
+            flags: ConsumerFlags::none(),
+        }
+    }
+}
+
+/// Power capability with provider flags
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct ProviderPowerCapability {
+    /// Power capability
+    pub capability: PowerCapability,
+    /// Provider flags
+    pub flags: ProviderFlags,
+}
+
+impl From<PowerCapability> for ProviderPowerCapability {
+    fn from(capability: PowerCapability) -> Self {
+        Self {
+            capability,
+            flags: ProviderFlags::none(),
+        }
+    }
+}
+
+/// Combined power capability with flags enum
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum PowerCapabilityFlags {
+    /// Consumer flags
+    Consumer(ConsumerPowerCapability),
+    /// Provider flags
+    Provider(ProviderPowerCapability),
+}
 
 /// PSU type
 #[derive(Copy, Clone, Debug, PartialEq, Eq, IntoPrimitive, TryFromPrimitive)]
@@ -37,7 +113,7 @@ bitfield! {
     /// Raw consumer flags bit field
     #[derive(Copy, Clone, PartialEq, Eq)]
     #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-    struct ConsumerRaw(u32);
+    struct ConsumerFlagsRaw(u32);
     impl Debug;
     /// Unconstrained power, indicates that we are drawing power from something like an outlet and not a limited source like a battery
     pub bool, unconstrained_power, set_unconstrained_power: 0;
@@ -48,12 +124,12 @@ bitfield! {
 /// Type safe wrapper for consumer flags
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct Consumer(ConsumerRaw);
+pub struct ConsumerFlags(ConsumerFlagsRaw);
 
-impl Consumer {
+impl ConsumerFlags {
     /// Create a new consumer with no flags set
     pub const fn none() -> Self {
-        Self(ConsumerRaw(0))
+        Self(ConsumerFlagsRaw(0))
     }
 
     /// Builder method to set the unconstrained power flag
@@ -102,9 +178,9 @@ bitfield! {
 /// Type safe wrapper for provider flags
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct Provider(ProviderRaw);
+pub struct ProviderFlags(ProviderRaw);
 
-impl Provider {
+impl ProviderFlags {
     /// Create a new provider with no flags set
     pub const fn none() -> Self {
         Self(ProviderRaw(0))
@@ -158,24 +234,24 @@ mod tests {
     }
 
     #[test]
-    fn test_consumer_unconstrained() {
-        let mut consumer = Consumer::none().with_unconstrained_power();
+    fn test_consumer_flags_unconstrained() {
+        let mut consumer = ConsumerFlags::none().with_unconstrained_power();
         assert_eq!(consumer.0.0, 0x1);
         consumer.set_unconstrained_power(false);
         assert_eq!(consumer.0.0, 0x0);
     }
 
     #[test]
-    fn test_consumer_psu_type() {
-        let mut consumer = Consumer::none().with_psu_type(PsuType::TypeC);
+    fn test_consumer_flags_psu_type() {
+        let mut consumer = ConsumerFlags::none().with_psu_type(PsuType::TypeC);
         assert_eq!(consumer.0.0, 0x100);
         consumer.set_psu_type(PsuType::Unknown);
         assert_eq!(consumer.0.0, 0x0);
     }
 
     #[test]
-    fn test_provider_psu_type() {
-        let mut provider = Provider::none().with_psu_type(PsuType::TypeC);
+    fn test_provider_flags_psu_type() {
+        let mut provider = ProviderFlags::none().with_psu_type(PsuType::TypeC);
         assert_eq!(provider.0.0, 0x100);
         provider.set_psu_type(PsuType::Unknown);
         assert_eq!(provider.0.0, 0x0);

@@ -8,7 +8,6 @@ use crate::type_c::{
     controller::Controller,
     event::{PortPending, VdmNotification},
 };
-use power_policy_service::policy::policy;
 
 use super::{ControllerWrapper, FwOfferValidator, message::vdm::Output};
 
@@ -16,8 +15,8 @@ impl<
     'device,
     M: RawMutex,
     D: Lockable,
-    S: event::Sender<policy::RequestData>,
-    R: event::Receiver<policy::RequestData>,
+    S: event::Sender<power_policy_service::device::event::RequestData>,
+    R: event::Receiver<power_policy_service::device::event::RequestData>,
     V: FwOfferValidator,
 > ControllerWrapper<'device, M, D, S, R, V>
 where

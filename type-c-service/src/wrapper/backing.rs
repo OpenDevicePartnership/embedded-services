@@ -80,7 +80,7 @@ use crate::type_c::{
     controller::PortStatus,
     event::{PortEvent, PortStatusChanged},
 };
-use power_policy_service::policy::{DeviceId, policy};
+use power_policy_service::device::DeviceId;
 
 use crate::{
     PortEventStreamer,
@@ -125,13 +125,13 @@ impl Default for ControllerState {
 }
 
 /// Internal state containing all per-port and per-controller state
-struct InternalState<'a, const N: usize, S: event::Sender<policy::RequestData>> {
+struct InternalState<'a, const N: usize, S: event::Sender<power_policy_service::device::event::RequestData>> {
     controller_state: ControllerState,
     port_states: [PortState<'a>; N],
     port_power: [PortPower<S>; N],
 }
 
-impl<'a, const N: usize, S: event::Sender<policy::RequestData>> InternalState<'a, N, S> {
+impl<'a, const N: usize, S: event::Sender<power_policy_service::device::event::RequestData>> InternalState<'a, N, S> {
     fn try_new<M: RawMutex>(storage: &'a Storage<N, M>, power_events: [S; N]) -> Option<Self> {
         let port_states = storage.pd_alerts.each_ref().map(|pd_alert| {
             Some(PortState {
@@ -160,7 +160,9 @@ impl<'a, const N: usize, S: event::Sender<policy::RequestData>> InternalState<'a
     }
 }
 
-impl<'a, const N: usize, S: event::Sender<policy::RequestData>> DynPortState<'a, S> for InternalState<'a, N, S> {
+impl<'a, const N: usize, S: event::Sender<power_policy_service::device::event::RequestData>> DynPortState<'a, S>
+    for InternalState<'a, N, S>
+{
     fn num_ports(&self) -> usize {
         self.port_states.len()
     }
@@ -191,7 +193,7 @@ impl<'a, const N: usize, S: event::Sender<policy::RequestData>> DynPortState<'a,
 }
 
 /// Trait to erase the generic port count argument
-pub trait DynPortState<'a, S: event::Sender<policy::RequestData>> {
+pub trait DynPortState<'a, S: event::Sender<power_policy_service::device::event::RequestData>> {
     fn num_ports(&self) -> usize;
 
     fn port_states(&self) -> &[PortState<'a>];
@@ -205,14 +207,14 @@ pub trait DynPortState<'a, S: event::Sender<policy::RequestData>> {
 }
 
 /// Service registration objects
-pub struct Registration<'a, M: RawMutex, R: event::Receiver<policy::RequestData>> {
+pub struct Registration<'a, M: RawMutex, R: event::Receiver<power_policy_service::device::event::RequestData>> {
     pub context: &'a crate::type_c::controller::Context,
     pub pd_controller: &'a crate::type_c::controller::Device<'a>,
     pub cfu_device: &'a CfuDevice,
     pub power_devices: &'a [power_policy_service::policy::device::Device<'a, Mutex<M, PowerProxyDevice<'a>>, R>],
 }
 
-impl<'a, M: RawMutex, R: event::Receiver<policy::RequestData>> Registration<'a, M, R> {
+impl<'a, M: RawMutex, R: event::Receiver<power_policy_service::device::event::RequestData>> Registration<'a, M, R> {
     pub fn num_ports(&self) -> usize {
         self.power_devices.len()
     }
@@ -221,9 +223,9 @@ impl<'a, M: RawMutex, R: event::Receiver<policy::RequestData>> Registration<'a, 
 /// PD alerts should be fairly uncommon, four seems like a reasonable number to start with.
 const MAX_BUFFERED_PD_ALERTS: usize = 4;
 
-pub struct PortPower<S: event::Sender<policy::RequestData>> {
+pub struct PortPower<S: event::Sender<power_policy_service::device::event::RequestData>> {
     pub sender: S,
-    pub state: power_policy_service::policy::device::InternalState,
+    pub state: power_policy_service::device::InternalState,
 }
 
 /// Base storage
@@ -291,7 +293,11 @@ impl<'a, const N: usize, M: RawMutex> IntermediateStorage<'a, N, M> {
     }
 
     /// Create referenced storage from this intermediate storage
-    pub fn try_create_referenced<'b, S: event::Sender<policy::RequestData>, R: event::Receiver<policy::RequestData>>(
+    pub fn try_create_referenced<
+        'b,
+        S: event::Sender<power_policy_service::device::event::RequestData>,
+        R: event::Receiver<power_policy_service::device::event::RequestData>,
+    >(
         &'b self,
         policy_args: [(DeviceId, S, R); N],
     ) -> Option<ReferencedStorage<'b, N, M, S, R>>
@@ -310,17 +316,22 @@ pub struct ReferencedStorage<
     'a,
     const N: usize,
     M: RawMutex,
-    S: event::Sender<policy::RequestData>,
-    R: event::Receiver<policy::RequestData>,
+    S: event::Sender<power_policy_service::device::event::RequestData>,
+    R: event::Receiver<power_policy_service::device::event::RequestData>,
 > {
     intermediate: &'a IntermediateStorage<'a, N, M>,
     state: RefCell<InternalState<'a, N, S>>,
     pd_controller: crate::type_c::controller::Device<'a>,
-    power_devices: [power_policy_service::policy::device::Device<'a, Mutex<M, PowerProxyDevice<'a>>, R>; N],
+    power_devices: [power_policy_service::device::Device<'a, Mutex<M, PowerProxyDevice<'a>>, R>; N],
 }
 
-impl<'a, const N: usize, M: RawMutex, S: event::Sender<policy::RequestData>, R: event::Receiver<policy::RequestData>>
-    ReferencedStorage<'a, N, M, S, R>
+impl<
+    'a,
+    const N: usize,
+    M: RawMutex,
+    S: event::Sender<power_policy_service::device::event::RequestData>,
+    R: event::Receiver<power_policy_service::device::event::RequestData>,
+> ReferencedStorage<'a, N, M, S, R>
 {
     /// Create a new referenced storage from the given intermediate storage
     fn try_from_intermediate(
@@ -333,7 +344,7 @@ impl<'a, const N: usize, M: RawMutex, S: event::Sender<policy::RequestData>, R: 
         for (i, (device_id, policy_sender, policy_receiver)) in policy_args.into_iter().enumerate() {
             power_senders.push(policy_sender).ok()?;
             power_devices
-                .push(power_policy_service::policy::device::Device::new(
+                .push(power_policy_service::device::Device::new(
                     device_id,
                     intermediate.power_proxy_devices.get(i)?,
                     policy_receiver,
@@ -375,7 +386,12 @@ impl<'a, const N: usize, M: RawMutex, S: event::Sender<policy::RequestData>, R: 
 }
 
 /// Wrapper around registration and type-erased state
-pub struct Backing<'a, M: RawMutex, S: event::Sender<policy::RequestData>, R: event::Receiver<policy::RequestData>> {
+pub struct Backing<
+    'a,
+    M: RawMutex,
+    S: event::Sender<power_policy_service::device::event::RequestData>,
+    R: event::Receiver<power_policy_service::device::event::RequestData>,
+> {
     pub(crate) registration: Registration<'a, M, R>,
     pub(crate) state: RefMut<'a, dyn DynPortState<'a, S>>,
     pub(crate) power_receivers: &'a [Mutex<M, PowerProxyReceiver<'a>>],

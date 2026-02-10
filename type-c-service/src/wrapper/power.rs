@@ -4,13 +4,10 @@ use core::pin::pin;
 use embassy_futures::select::select_slice;
 use embedded_services::debug;
 
-use power_policy_service::policy::Error as PowerError;
-use power_policy_service::policy::device::CommandData as PowerCommand;
-use power_policy_service::policy::{
-    ConsumerPowerCapability, ProviderPowerCapability,
-    device::{CommandData, InternalResponseData, ResponseData},
-    flags::PsuType,
-};
+use power_policy_service::capability::{ConsumerPowerCapability, ProviderPowerCapability, PsuType};
+use power_policy_service::device::CommandData as PowerCommand;
+use power_policy_service::device::Error as PowerError;
+use power_policy_service::device::{CommandData, InternalResponseData, ResponseData};
 
 use crate::wrapper::config::UnconstrainedSink;
 
@@ -20,8 +17,8 @@ impl<
     'device,
     M: RawMutex,
     D: Lockable,
-    S: event::Sender<policy::RequestData>,
-    R: event::Receiver<policy::RequestData>,
+    S: event::Sender<power_policy_service::device::event::RequestData>,
+    R: event::Receiver<power_policy_service::device::event::RequestData>,
     V: FwOfferValidator,
 > ControllerWrapper<'device, M, D, S, R, V>
 where
@@ -48,7 +45,7 @@ where
 
         power
             .sender
-            .send(policy::RequestData::UpdatedConsumerCapability(available_sink_contract))
+            .send(power_policy_service::device::event::RequestData::UpdatedConsumerCapability(available_sink_contract))
             .await;
         Ok(())
     }
@@ -62,13 +59,15 @@ where
         info!("Process New provider contract");
         power
             .sender
-            .send(policy::RequestData::RequestedProviderCapability(
-                status.available_source_contract.map(|caps| {
-                    let mut caps = ProviderPowerCapability::from(caps);
-                    caps.flags.set_psu_type(PsuType::TypeC);
-                    caps
-                }),
-            ))
+            .send(
+                power_policy_service::device::event::RequestData::RequestedProviderCapability(
+                    status.available_source_contract.map(|caps| {
+                        let mut caps = ProviderPowerCapability::from(caps);
+                        caps.flags.set_psu_type(PsuType::TypeC);
+                        caps
+                    }),
+                ),
+            )
             .await;
         Ok(())
     }

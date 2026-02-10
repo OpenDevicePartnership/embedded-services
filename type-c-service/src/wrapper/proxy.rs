@@ -1,6 +1,6 @@
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use embassy_sync::channel::{Channel, DynamicReceiver, DynamicSender};
-use power_policy_service::policy::device::{
+use power_policy_service::device::{
     CommandData as PolicyCommandData, DeviceTrait, InternalResponseData as PolicyResponseData,
 };
 
@@ -74,14 +74,14 @@ impl<'a> PowerProxyDevice<'a> {
 }
 
 impl<'a> DeviceTrait for PowerProxyDevice<'a> {
-    async fn disconnect(&mut self) -> Result<(), power_policy_service::policy::Error> {
+    async fn disconnect(&mut self) -> Result<(), power_policy_service::device::Error> {
         self.execute(PolicyCommandData::Disconnect).await?.complete_or_err()
     }
 
     async fn connect_provider(
         &mut self,
-        capability: power_policy_service::policy::ProviderPowerCapability,
-    ) -> Result<(), power_policy_service::policy::Error> {
+        capability: power_policy_service::capability::ProviderPowerCapability,
+    ) -> Result<(), power_policy_service::device::Error> {
         self.execute(PolicyCommandData::ConnectAsProvider(capability))
             .await?
             .complete_or_err()
@@ -89,8 +89,8 @@ impl<'a> DeviceTrait for PowerProxyDevice<'a> {
 
     async fn connect_consumer(
         &mut self,
-        capability: power_policy_service::policy::ConsumerPowerCapability,
-    ) -> Result<(), power_policy_service::policy::Error> {
+        capability: power_policy_service::capability::ConsumerPowerCapability,
+    ) -> Result<(), power_policy_service::device::Error> {
         self.execute(PolicyCommandData::ConnectAsConsumer(capability))
             .await?
             .complete_or_err()

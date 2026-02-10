@@ -6,7 +6,6 @@ use crate::type_c::{
     controller::{self, DpStatus, PortStatus},
     event::{PortNotificationSingle, PortStatusChanged},
 };
-use power_policy_service::policy;
 
 /// Port status changed event data
 #[derive(Copy, Clone, Debug)]
@@ -33,7 +32,7 @@ pub struct EventPowerPolicyCommand {
     /// Port ID
     pub port: LocalPortId,
     /// Power policy request
-    pub request: policy::device::CommandData,
+    pub request: power_policy_service::device::CommandData,
 }
 
 /// CFU events
@@ -89,7 +88,7 @@ pub struct OutputPowerPolicyCommand {
     /// Port ID
     pub port: LocalPortId,
     /// Response
-    pub response: policy::device::InternalResponseData,
+    pub response: power_policy_service::device::InternalResponseData,
 }
 
 /// Controller command output data

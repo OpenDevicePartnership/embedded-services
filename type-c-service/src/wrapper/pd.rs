@@ -6,7 +6,7 @@ use embassy_time::{Duration, Timer};
 use embedded_services::debug;
 use embedded_usb_pd::constants::{T_PS_TRANSITION_EPR_MS, T_PS_TRANSITION_SPR_MS};
 use embedded_usb_pd::ucsi::{self, lpm};
-use power_policy_service::policy::device::State;
+use power_policy_service::device::State;
 
 use super::*;
 
@@ -14,8 +14,8 @@ impl<
     'device,
     M: RawMutex,
     D: Lockable,
-    S: event::Sender<policy::RequestData>,
-    R: event::Receiver<policy::RequestData>,
+    S: event::Sender<power_policy_service::device::event::RequestData>,
+    R: event::Receiver<power_policy_service::device::event::RequestData>,
     V: FwOfferValidator,
 > ControllerWrapper<'device, M, D, S, R, V>
 where
@@ -148,7 +148,10 @@ where
                     "Port{}: Disconnecting consumer before setting max sink voltage",
                     local_port.0
                 );
-                port_power.sender.send(policy::RequestData::Disconnected).await;
+                port_power
+                    .sender
+                    .send(power_policy_service::device::event::RequestData::Disconnected)
+                    .await;
             }
         }
 
