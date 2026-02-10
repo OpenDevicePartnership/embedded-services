@@ -19,7 +19,7 @@ use embedded_services::{GlobalRawMutex, IntrusiveList};
 use embedded_services::{error, info};
 use embedded_usb_pd::GlobalPortId;
 use power_policy_service::device::DeviceId as PowerId;
-use power_policy_service::service::PowerPolicy;
+use power_policy_service::service::Service as PowerPolicyService;
 use static_cell::StaticCell;
 use tps6699x::asynchronous::embassy as tps6699x;
 use type_c_service::driver::tps6699x::{self as tps6699x_drv};
@@ -81,7 +81,7 @@ async fn interrupt_task(mut int_in: Input<'static>, mut interrupt: Interrupt<'st
 
 #[embassy_executor::task]
 async fn power_policy_service_task(
-    service: &'static PowerPolicy<
+    service: &'static PowerPolicyService<
         'static,
         Mutex<GlobalRawMutex, PowerProxyDevice<'static>>,
         DynamicReceiver<'static, power_policy_service::device::event::RequestData>,
@@ -157,12 +157,12 @@ async fn main(spawner: Spawner) {
     let power_service_context = POWER_SERVICE_CONTEXT.init(power_policy_service::service::context::Context::new());
 
     static POWER_SERVICE: StaticCell<
-        power_policy_service::service::PowerPolicy<
+        power_policy_service::service::Service<
             Mutex<GlobalRawMutex, PowerProxyDevice<'static>>,
             DynamicReceiver<'static, power_policy_service::device::event::RequestData>,
         >,
     > = StaticCell::new();
-    let power_service = POWER_SERVICE.init(power_policy_service::service::PowerPolicy::new(
+    let power_service = POWER_SERVICE.init(power_policy_service::service::Service::new(
         power_service_context,
         power_policy_service::service::config::Config::default(),
     ));

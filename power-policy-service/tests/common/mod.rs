@@ -14,7 +14,7 @@ use power_policy_service::capability::PowerCapability;
 use power_policy_service::device;
 use power_policy_service::device::DeviceId;
 use power_policy_service::device::event::RequestData;
-use power_policy_service::service::PowerPolicy;
+use power_policy_service::service::Service;
 
 pub mod mock;
 
@@ -40,7 +40,7 @@ const EVENT_CHANNEL_SIZE: usize = 4;
 
 async fn power_policy_task(
     completion_signal: &'static Signal<GlobalRawMutex, ()>,
-    power_policy: &'static PowerPolicy<
+    power_policy: &'static Service<
         'static,
         Mutex<GlobalRawMutex, Mock<'static, DynamicSender<'static, RequestData>>>,
         DynamicReceiver<'static, RequestData>,
@@ -57,7 +57,7 @@ pub type RegistrationType = device::Device<
     DynamicReceiver<'static, RequestData>,
 >;
 
-pub type ServiceType = PowerPolicy<
+pub type ServiceType = Service<
     'static,
     Mutex<GlobalRawMutex, Mock<'static, DynamicSender<'static, RequestData>>>,
     DynamicReceiver<'static, RequestData>,
@@ -115,7 +115,7 @@ pub async fn run_test<F: Future<Output = ()>>(
     service_context.register_device(device1_registration).unwrap();
 
     static POWER_POLICY: StaticCell<ServiceType> = StaticCell::new();
-    let power_policy = POWER_POLICY.init(power_policy_service::service::PowerPolicy::new(
+    let power_policy = POWER_POLICY.init(power_policy_service::service::Service::new(
         service_context,
         Default::default(),
     ));

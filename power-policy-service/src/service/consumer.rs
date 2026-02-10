@@ -32,7 +32,7 @@ fn cmp_consumer_capability(
     (a.capability, a_is_current).cmp(&(b.capability, b_is_current))
 }
 
-impl<D: Lockable + 'static, R: Receiver<RequestData> + 'static> PowerPolicy<'_, D, R>
+impl<D: Lockable + 'static, R: Receiver<RequestData> + 'static> Service<'_, D, R>
 where
     D::Inner: DeviceTrait,
 {
