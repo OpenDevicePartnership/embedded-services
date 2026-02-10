@@ -16,6 +16,9 @@ embassy-futures.workspace = true
 embassy-sync.workspace = true
 embassy-time.workspace = true
 embedded-services.workspace = true
+embedded-batteries-async.workspace = true
+num_enum.workspace = true
+bitfield.workspace = true
 log = { workspace = true, optional = true }
 heapless.workspace = true
 

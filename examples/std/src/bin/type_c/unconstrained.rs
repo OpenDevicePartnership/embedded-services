@@ -8,17 +8,16 @@ use embassy_sync::mutex::Mutex;
 use embassy_sync::once_lock::OnceLock;
 use embassy_sync::pubsub::PubSubChannel;
 use embassy_time::Timer;
-use embedded_services::power::policy::PowerCapability;
-use embedded_services::power::policy::policy;
-use embedded_services::power::{self};
-use embedded_services::type_c::ControllerId;
 use embedded_services::{GlobalRawMutex, IntrusiveList};
 use embedded_usb_pd::GlobalPortId;
 use log::*;
 use power_policy_service::PowerPolicy;
+use power_policy_service::policy::PowerCapability;
+use power_policy_service::policy::policy;
 use static_cell::StaticCell;
 use std_examples::type_c::mock_controller;
 use type_c_service::service::Service;
+use type_c_service::type_c::ControllerId;
 
 const NUM_PD_CONTROLLERS: usize = 3;
 use type_c_service::wrapper::backing::{IntermediateStorage, ReferencedStorage, Storage};
@@ -26,17 +25,17 @@ use type_c_service::wrapper::proxy::PowerProxyDevice;
 
 const CONTROLLER0_ID: ControllerId = ControllerId(0);
 const PORT0_ID: GlobalPortId = GlobalPortId(0);
-const POWER0_ID: power::policy::DeviceId = power::policy::DeviceId(0);
+const POWER0_ID: power_policy_service::policy::DeviceId = power_policy_service::policy::DeviceId(0);
 const CFU0_ID: u8 = 0x00;
 
 const CONTROLLER1_ID: ControllerId = ControllerId(1);
 const PORT1_ID: GlobalPortId = GlobalPortId(1);
-const POWER1_ID: power::policy::DeviceId = power::policy::DeviceId(1);
+const POWER1_ID: power_policy_service::policy::DeviceId = power_policy_service::policy::DeviceId(1);
 const CFU1_ID: u8 = 0x01;
 
 const CONTROLLER2_ID: ControllerId = ControllerId(2);
 const PORT2_ID: GlobalPortId = GlobalPortId(2);
-const POWER2_ID: power::policy::DeviceId = power::policy::DeviceId(2);
+const POWER2_ID: power_policy_service::policy::DeviceId = power_policy_service::policy::DeviceId(2);
 const CFU2_ID: u8 = 0x02;
 
 const DELAY_MS: u64 = 1000;
@@ -63,8 +62,8 @@ async fn task(spawner: Spawner) {
     > = StaticCell::new();
     let power_service_context = POWER_SERVICE_CONTEXT.init(policy::Context::new());
 
-    static CONTROLLER_CONTEXT: StaticCell<embedded_services::type_c::controller::Context> = StaticCell::new();
-    let controller_context = CONTROLLER_CONTEXT.init(embedded_services::type_c::controller::Context::new());
+    static CONTROLLER_CONTEXT: StaticCell<type_c_service::type_c::controller::Context> = StaticCell::new();
+    let controller_context = CONTROLLER_CONTEXT.init(type_c_service::type_c::controller::Context::new());
 
     static POWER_SERVICE: StaticCell<
         power_policy_service::PowerPolicy<
@@ -77,8 +76,8 @@ async fn task(spawner: Spawner) {
         power_policy_service::config::Config::default(),
     ));
 
-    static CONTEXT: StaticCell<embedded_services::type_c::controller::Context> = StaticCell::new();
-    let context = CONTEXT.init(embedded_services::type_c::controller::Context::new());
+    static CONTEXT: StaticCell<type_c_service::type_c::controller::Context> = StaticCell::new();
+    let context = CONTEXT.init(type_c_service::type_c::controller::Context::new());
     static CONTROLLER_LIST: StaticCell<IntrusiveList> = StaticCell::new();
     let controller_list = CONTROLLER_LIST.init(IntrusiveList::new());
 
@@ -214,7 +213,7 @@ async fn task(spawner: Spawner) {
     // Create type-c service
     // The service is the only receiver and we only use a DynImmediatePublisher, which doesn't take a publisher slot
     static POWER_POLICY_CHANNEL: StaticCell<
-        PubSubChannel<GlobalRawMutex, embedded_services::power::policy::CommsMessage, 4, 1, 0>,
+        PubSubChannel<GlobalRawMutex, power_policy_service::policy::CommsMessage, 4, 1, 0>,
     > = StaticCell::new();
 
     let power_policy_channel = POWER_POLICY_CHANNEL.init(PubSubChannel::new());

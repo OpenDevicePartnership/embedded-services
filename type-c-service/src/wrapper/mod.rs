@@ -1,9 +1,9 @@
 //! This module contains the [`ControllerWrapper`] struct. This struct serves as a bridge between various service messages
-//! and the actual controller functions provided by [`embedded_services::type_c::controller::Controller`].
+//! and the actual controller functions provided by [`crate::type_c::controller::Controller`].
 //! # Supported service messaging
 //! This struct current currently supports messages from the following services:
-//! * Type-C: [`embedded_services::type_c::controller::Command`]
-//! * Power policy: [`embedded_services::power::policy::device::Command`]
+//! * Type-C: [`crate::type_c::controller::Command`]
+//! * Power policy: [`power_policy_service::policy::device::Command`]
 //! * CFU: [`cfu_service::Request`]
 //! # Event loop
 //! This struct follows a standard wait/process/finalize event loop.
@@ -22,20 +22,20 @@ use core::future::pending;
 use core::ops::DerefMut;
 
 use cfu_service::CfuClient;
+use crate::type_c::controller::{self, Controller, PortStatus};
+use crate::type_c::event::{PortEvent, PortNotificationSingle, PortPending, PortStatusChanged};
 use embassy_futures::select::{Either, Either5, select, select_array, select5};
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use embassy_sync::mutex::Mutex;
 use embassy_sync::signal::Signal;
 use embassy_time::Instant;
 use embedded_cfu_protocol::protocol_definitions::{FwUpdateOffer, FwUpdateOfferResponse, FwVersion};
-use embedded_services::power::policy::policy;
 use embedded_services::sync::Lockable;
-use embedded_services::type_c::controller::{self, Controller, PortStatus};
-use embedded_services::type_c::event::{PortEvent, PortNotificationSingle, PortPending, PortStatusChanged};
 use embedded_services::{debug, error, info, trace, warn};
 use embedded_services::{event, intrusive_list};
 use embedded_usb_pd::ado::Ado;
 use embedded_usb_pd::{Error, LocalPortId, PdError};
+use power_policy_service::policy::policy;
 
 use crate::wrapper::backing::{DynPortState, PortPower};
 use crate::wrapper::message::*;
@@ -69,7 +69,7 @@ pub trait FwOfferValidator {
 /// Maximum number of supported ports
 pub const MAX_SUPPORTED_PORTS: usize = 2;
 
-/// Common functionality implemented on top of [`embedded_services::type_c::controller::Controller`]
+/// Common functionality implemented on top of [`crate::type_c::controller::Controller`]
 pub struct ControllerWrapper<
     'device,
     M: RawMutex,
@@ -607,11 +607,15 @@ where
     pub fn register(
         &'static self,
         controllers: &intrusive_list::IntrusiveList,
+<<<<<<< HEAD
         power_policy_context: &embedded_services::power::policy::policy::Context<
             Mutex<M, PowerProxyDevice<'static>>,
             R,
         >,
         cfu_client: &'static CfuClient,
+=======
+        power_policy_context: &power_policy_service::policy::policy::Context<Mutex<M, PowerProxyDevice<'static>>, R>,
+>>>>>>> 3ae2283 (Move power policy and type-C code out of `embedded-services`)
     ) -> Result<(), Error<<D::Inner as Controller>::BusError>> {
         for device in self.registration.power_devices {
             power_policy_context.register_device(device).map_err(|_| {

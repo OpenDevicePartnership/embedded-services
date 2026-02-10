@@ -3,7 +3,10 @@
 //! the system is in unlimited power state. In this mode up to [provider_unlimited](super::Config::provider_unlimited)
 //! is provided to each device. Above this threshold, the system is in limited power state.
 //! In this mode [provider_limited](super::Config::provider_limited) is provided to each device
-use embedded_services::{debug, event::Receiver, power::policy::policy::RequestData, trace};
+use crate::policy::device;
+use crate::policy::policy::RequestData;
+use crate::policy::{CommsData, CommsMessage, DeviceId, Error, ProviderPowerCapability};
+use embedded_services::{debug, event::Receiver, trace};
 
 use super::*;
 

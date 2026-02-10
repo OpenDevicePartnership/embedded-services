@@ -1,17 +1,14 @@
 use embassy_sync::blocking_mutex::raw::RawMutex;
-use embedded_services::{
-    event,
-    power::policy::policy,
-    sync::Lockable,
-    trace,
-    type_c::{
-        controller::Controller,
-        event::{PortPending, VdmNotification},
-    },
-};
+use embedded_services::{event, sync::Lockable, trace};
 use embedded_usb_pd::{Error, LocalPortId, PdError};
 
 use crate::wrapper::{DynPortState, message::vdm::OutputKind};
+
+use crate::type_c::{
+    controller::Controller,
+    event::{PortPending, VdmNotification},
+};
+use power_policy_service::policy::policy;
 
 use super::{ControllerWrapper, FwOfferValidator, message::vdm::Output};
 

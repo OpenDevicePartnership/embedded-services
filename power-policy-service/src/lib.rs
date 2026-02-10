@@ -3,19 +3,23 @@ use core::ops::DerefMut;
 use embassy_sync::mutex::Mutex;
 use embedded_services::GlobalRawMutex;
 use embedded_services::event::Receiver;
-use embedded_services::power::policy::device::{Device, DeviceTrait, State};
-use embedded_services::power::policy::policy::RequestData;
-use embedded_services::power::policy::{policy, *};
 use embedded_services::sync::Lockable;
 use embedded_services::{comms, error, info};
 
 pub mod config;
 pub mod consumer;
+pub mod policy;
 pub mod provider;
 pub mod task;
 
 pub use config::Config;
 pub mod charger;
+use policy::device::{Device, DeviceTrait, State};
+use policy::policy::{Context, RequestData};
+
+use policy::{
+    CommsData, CommsMessage, ConsumerPowerCapability, DeviceId, Error, ProviderPowerCapability, UnconstrainedState,
+};
 
 const MAX_CONNECTED_PROVIDERS: usize = 4;
 
@@ -37,7 +41,7 @@ where
     D::Inner: DeviceTrait,
 {
     /// Power policy context
-    pub context: &'a policy::Context<D, R>,
+    pub context: &'a Context<D, R>,
     /// State
     state: Mutex<GlobalRawMutex, InternalState>,
     /// Comms endpoint
@@ -51,7 +55,7 @@ where
     D::Inner: DeviceTrait,
 {
     /// Create a new power policy
-    pub fn new(context: &'a policy::Context<D, R>, config: config::Config) -> Self {
+    pub fn new(context: &'a Context<D, R>, config: config::Config) -> Self {
         Self {
             context,
             state: Mutex::new(InternalState::default()),
@@ -162,24 +166,24 @@ where
         }
     }
 
-    async fn wait_request(&self) -> policy::Request {
+    async fn wait_request(&self) -> policy::policy::Request {
         self.context.wait_request().await
     }
 
-    async fn process_request(&self, request: policy::Request) -> Result<(), Error> {
+    async fn process_request(&self, request: policy::policy::Request) -> Result<(), Error> {
         let device = self.context.get_device(request.id)?;
 
         match request.data {
-            policy::RequestData::Attached => {
+            policy::policy::RequestData::Attached => {
                 info!("Received notify attached from device {}", device.id().0);
                 self.process_notify_attach(device).await;
                 Ok(())
             }
-            policy::RequestData::Detached => {
+            policy::policy::RequestData::Detached => {
                 info!("Received notify detached from device {}", device.id().0);
                 self.process_notify_detach(device).await
             }
-            policy::RequestData::UpdatedConsumerCapability(capability) => {
+            policy::policy::RequestData::UpdatedConsumerCapability(capability) => {
                 info!(
                     "Device{}: Received notify consumer capability: {:#?}",
                     device.id().0,
@@ -187,7 +191,7 @@ where
                 );
                 self.process_notify_consumer_power_capability(device, capability).await
             }
-            policy::RequestData::RequestedProviderCapability(capability) => {
+            policy::policy::RequestData::RequestedProviderCapability(capability) => {
                 info!(
                     "Device{}: Received request provider capability: {:#?}",
                     device.id().0,
@@ -196,7 +200,7 @@ where
                 self.process_request_provider_power_capabilities(device, capability)
                     .await
             }
-            policy::RequestData::Disconnected => {
+            policy::policy::RequestData::Disconnected => {
                 info!("Received notify disconnect from device {}", device.id().0);
                 self.process_notify_disconnect(device).await
             }

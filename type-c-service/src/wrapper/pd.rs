@@ -1,12 +1,12 @@
+use crate::type_c::Cached;
+use crate::type_c::controller::{InternalResponseData, Response};
 use embassy_futures::yield_now;
 use embassy_sync::pubsub::WaitResult;
 use embassy_time::{Duration, Timer};
 use embedded_services::debug;
-use embedded_services::power::policy::device::State;
-use embedded_services::type_c::Cached;
-use embedded_services::type_c::controller::{InternalResponseData, Response};
 use embedded_usb_pd::constants::{T_PS_TRANSITION_EPR_MS, T_PS_TRANSITION_SPR_MS};
 use embedded_usb_pd::ucsi::{self, lpm};
+use power_policy_service::policy::device::State;
 
 use super::*;
 

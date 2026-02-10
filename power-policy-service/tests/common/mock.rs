@@ -1,10 +1,10 @@
 #![allow(clippy::unwrap_used)]
 use embassy_sync::signal::Signal;
-use embedded_services::power::policy::device::{DeviceTrait, InternalState};
-use embedded_services::power::policy::flags::Consumer;
-use embedded_services::power::policy::policy::RequestData;
-use embedded_services::power::policy::{ConsumerPowerCapability, Error, PowerCapability, ProviderPowerCapability};
 use embedded_services::{GlobalRawMutex, event, info};
+use power_policy_service::policy::device::{DeviceTrait, InternalState};
+use power_policy_service::policy::flags::Consumer;
+use power_policy_service::policy::policy::RequestData;
+use power_policy_service::policy::{ConsumerPowerCapability, Error, PowerCapability, ProviderPowerCapability};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[allow(dead_code)]

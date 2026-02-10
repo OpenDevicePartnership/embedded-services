@@ -735,7 +735,6 @@ dependencies = [
  "embassy-futures",
  "embassy-sync",
  "embassy-time",
- "embedded-batteries-async",
  "embedded-cfu-protocol",
  "embedded-hal-async",
  "embedded-io",
@@ -1306,12 +1305,15 @@ dependencies = [
 name = "power-policy-service"
 version = "0.1.0"
 dependencies = [
+ "bitfield 0.17.0",
  "defmt 0.3.100",
  "embassy-futures",
  "embassy-sync",
  "embassy-time",
+ "embedded-batteries-async",
  "embedded-services",
  "heapless",
+ "num_enum",
 ]
 
 [[package]]
@@ -1650,6 +1652,7 @@ version = "0.1.0"
 dependencies = [
  "bitfield 0.17.0",
  "bitflags 2.9.4",
+ "bitvec",
  "cfu-service",
  "defmt 0.3.100",
  "embassy-futures",
@@ -1662,6 +1665,7 @@ dependencies = [
  "embedded-services",
  "embedded-usb-pd",
  "heapless",
+ "power-policy-service",
  "tps6699x",
 ]
 

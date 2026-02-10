@@ -1,5 +1,5 @@
 use embassy_sync::pubsub::WaitResult;
-use embedded_services::power::policy as power_policy;
+use power_policy_service::policy as power_policy;
 
 use super::*;
 

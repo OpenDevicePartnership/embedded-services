@@ -1,8 +1,10 @@
 use super::{ControllerWrapper, FwOfferValidator};
+use crate::type_c::controller::Controller;
 use crate::wrapper::message::OutputDpStatusChanged;
 use embassy_sync::blocking_mutex::raw::RawMutex;
-use embedded_services::{event, power::policy::policy, sync::Lockable, trace, type_c::controller::Controller};
+use embedded_services::{event, sync::Lockable, trace};
 use embedded_usb_pd::{Error, LocalPortId};
+use power_policy_service::policy::policy;
 
 impl<
     'device,

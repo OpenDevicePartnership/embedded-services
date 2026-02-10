@@ -24,6 +24,7 @@ log = { workspace = true, optional = true }
 zerocopy.workspace = true
 mctp-rs = { workspace = true, features = ["espi"] }
 heapless.workspace = true
+power-policy-service = { path = "../power-policy-service" }
 
 [features]
 default = []

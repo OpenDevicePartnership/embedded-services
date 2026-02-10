@@ -2,18 +2,18 @@
 use core::marker::PhantomData;
 use core::pin::pin;
 
-use crate::broadcaster::immediate as broadcaster;
-use crate::event::Receiver;
-use crate::power::policy::device::DeviceTrait;
-use crate::power::policy::{CommsMessage, ConsumerPowerCapability, ProviderPowerCapability};
-use crate::sync::Lockable;
+use crate::policy::device::DeviceTrait;
+use crate::policy::{CommsMessage, ConsumerPowerCapability, ProviderPowerCapability};
 use embassy_futures::select::select_slice;
+use embedded_services::broadcaster::immediate as broadcaster;
+use embedded_services::event::Receiver;
+use embedded_services::sync::Lockable;
 
 use super::charger::ChargerResponse;
 use super::device::{self};
 use super::{DeviceId, Error, charger};
-use crate::power::policy::charger::ChargerResponseData::Ack;
-use crate::{error, intrusive_list};
+use crate::policy::charger::ChargerResponseData::Ack;
+use embedded_services::{error, intrusive_list};
 
 /// Data for a power policy request
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -2,17 +2,15 @@
 use core::pin::pin;
 
 use embassy_futures::select::select_slice;
-use embedded_services::{
-    debug,
-    power::policy::{
-        ConsumerPowerCapability, ProviderPowerCapability,
-        device::{CommandData, InternalResponseData, ResponseData},
-        flags::PsuType,
-    },
-};
+use embedded_services::debug;
 
-use embedded_services::power::policy::Error as PowerError;
-use embedded_services::power::policy::device::CommandData as PowerCommand;
+use power_policy_service::policy::Error as PowerError;
+use power_policy_service::policy::device::CommandData as PowerCommand;
+use power_policy_service::policy::{
+    ConsumerPowerCapability, ProviderPowerCapability,
+    device::{CommandData, InternalResponseData, ResponseData},
+    flags::PsuType,
+};
 
 use crate::wrapper::config::UnconstrainedSink;
 

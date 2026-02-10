@@ -6,18 +6,12 @@ use embassy_sync::{
     pubsub::PubSubChannel,
 };
 use embassy_time::{self as _, Timer};
-use embedded_services::{
-    GlobalRawMutex,
-    broadcaster::immediate as broadcaster,
-    power::{
-        self,
-        policy::{
-            self, ConsumerPowerCapability, Error, PowerCapability, ProviderPowerCapability, device::DeviceTrait, flags,
-        },
-    },
-};
+use embedded_services::{GlobalRawMutex, broadcaster::immediate as broadcaster};
 use log::*;
 use power_policy_service::PowerPolicy;
+use power_policy_service::policy::{
+    self, ConsumerPowerCapability, Error, PowerCapability, ProviderPowerCapability, device::DeviceTrait, flags,
+};
 use static_cell::StaticCell;
 
 const LOW_POWER: PowerCapability = PowerCapability {
@@ -126,12 +120,12 @@ async fn run(spawner: Spawner) {
     ));
 
     static SERVICE_CONTEXT: StaticCell<
-        power::policy::policy::Context<
+        power_policy_service::policy::policy::Context<
             Mutex<GlobalRawMutex, ExampleDevice<'static>>,
             channel::DynamicReceiver<'static, policy::policy::RequestData>,
         >,
     > = StaticCell::new();
-    let service_context = SERVICE_CONTEXT.init(power::policy::policy::Context::new());
+    let service_context = SERVICE_CONTEXT.init(power_policy_service::policy::policy::Context::new());
 
     service_context.register_device(device0_registration).unwrap();
     service_context.register_device(device1_registration).unwrap();

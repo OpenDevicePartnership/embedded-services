@@ -1,12 +1,10 @@
-use embedded_services::{
-    debug, error,
-    type_c::{
-        ControllerId,
-        external::{self, ControllerCommandData},
-    },
-};
+use embedded_services::{debug, error};
 
 use super::*;
+use crate::type_c::{
+    ControllerId,
+    external::{self, ControllerCommandData},
+};
 
 impl<'a> Service<'a> {
     /// Process external controller status command

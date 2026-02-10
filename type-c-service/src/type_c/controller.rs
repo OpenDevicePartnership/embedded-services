@@ -12,12 +12,14 @@ use embedded_usb_pd::{
 };
 
 use super::{ATTN_VDM_LEN, ControllerId, OTHER_VDM_LEN, external};
-use crate::ipc::deferred;
-use crate::power::policy;
 use crate::type_c::Cached;
 use crate::type_c::comms::CommsMessage;
 use crate::type_c::event::{PortEvent, PortPending};
-use crate::{GlobalRawMutex, IntrusiveNode, broadcaster::immediate as broadcaster, error, intrusive_list, trace};
+use embedded_services::ipc::deferred;
+use embedded_services::{
+    GlobalRawMutex, IntrusiveNode, broadcaster::immediate as broadcaster, error, intrusive_list, trace,
+};
+use power_policy_service::policy;
 
 /// maximum number of data objects in a VDM
 pub const MAX_NUM_DATA_OBJECTS: usize = 7; // 7 VDOs of 4 bytes each

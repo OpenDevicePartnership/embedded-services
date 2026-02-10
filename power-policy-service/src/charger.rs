@@ -1,14 +1,11 @@
 use embassy_sync::mutex::Mutex;
 use embedded_services::GlobalRawMutex;
 
-use embassy_futures::select::select;
-use embedded_services::{
-    debug, error, info,
-    power::policy::charger::{
-        self, ChargeController, ChargerEvent, ChargerResponse, InternalState, PolicyEvent, PoweredSubstate, State,
-    },
-    trace, warn,
+use crate::policy::charger::{
+    self, ChargeController, ChargerEvent, ChargerResponse, InternalState, PolicyEvent, PoweredSubstate, State,
 };
+use embassy_futures::select::select;
+use embedded_services::{debug, error, info, trace, warn};
 
 pub struct Wrapper<'a, C: ChargeController>
 where

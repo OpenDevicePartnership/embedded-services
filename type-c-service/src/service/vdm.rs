@@ -1,7 +1,7 @@
 //! VDM (Vendor Defined Messages) related functionality.
 
+use crate::type_c::controller::{AttnVdm, OtherVdm};
 use embedded_services::intrusive_list;
-use embedded_services::type_c::controller::{AttnVdm, OtherVdm};
 use embedded_usb_pd::{GlobalPortId, PdError};
 
 use super::Service;

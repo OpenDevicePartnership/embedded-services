@@ -2,8 +2,7 @@
 use embedded_usb_pd::pdo::{Common, Contract};
 use embedded_usb_pd::type_c;
 
-use crate::error;
-use crate::power::policy;
+use power_policy_service::policy;
 
 pub mod comms;
 pub mod controller;
@@ -20,24 +19,18 @@ pub const OTHER_VDM_LEN: usize = 29;
 /// Length of the Attention VDM data
 pub const ATTN_VDM_LEN: usize = 9;
 
-impl TryFrom<Contract> for policy::PowerCapability {
-    type Error = ();
-
-    fn try_from(contract: Contract) -> Result<Self, Self::Error> {
-        Ok(policy::PowerCapability {
-            voltage_mv: contract.pdo.max_voltage_mv(),
-            current_ma: contract.operating_current_ma().ok_or(())?,
-        })
-    }
+pub fn power_capability_try_from_contract(contract: Contract) -> Option<policy::PowerCapability> {
+    Some(policy::PowerCapability {
+        voltage_mv: contract.pdo.max_voltage_mv(),
+        current_ma: contract.operating_current_ma()?,
+    })
 }
 
-impl From<type_c::Current> for policy::PowerCapability {
-    fn from(current: type_c::Current) -> Self {
-        policy::PowerCapability {
-            voltage_mv: 5000,
-            // Assume higher power for now
-            current_ma: current.to_ma(false),
-        }
+pub fn power_capability_from_current(current: type_c::Current) -> policy::PowerCapability {
+    policy::PowerCapability {
+        voltage_mv: 5000,
+        // Assume higher power for now
+        current_ma: current.to_ma(false),
     }
 }
 
