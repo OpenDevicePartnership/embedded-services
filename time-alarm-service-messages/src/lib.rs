@@ -28,7 +28,7 @@ pub enum AcpiTimeAlarmRequest {
 #[derive(Clone, Copy, Debug, PartialEq, num_enum::IntoPrimitive, num_enum::TryFromPrimitive)]
 #[repr(u16)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-enum AcpiTimeAlarmRequestDiscriminant {
+pub enum AcpiTimeAlarmRequestDiscriminant {
     GetCapabilities = 1,
     GetRealTime = 2,
     SetRealTime = 3,
@@ -249,7 +249,7 @@ pub enum AcpiTimeAlarmResponse {
 
 #[derive(Copy, Clone, Debug, PartialEq, num_enum::IntoPrimitive, num_enum::TryFromPrimitive)]
 #[repr(u16)]
-enum AcpiTimeAlarmResponseDiscriminant {
+pub enum AcpiTimeAlarmResponseDiscriminant {
     Capabilities = 1,
     RealTime = 2,
     TimerStatus = 3,
