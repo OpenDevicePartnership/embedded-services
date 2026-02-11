@@ -66,18 +66,18 @@ impl Service {
             }
             Event::AcpiRequest(acpi_msg) => {
                 trace!("Battery service: ACPI cmd recvd");
-                match self.context.process_acpi_cmd(&acpi_msg).await {
-                    Ok(response) => {
-                        // TODO We should probably be responding to the requestor rather than just assuming the request came from the host
-                        self.comms_send(
-                            crate::EndpointID::External(embedded_services::comms::External::Host),
-                            &response,
-                        )
-                        .await
-                        .expect("comms_send is infallible")
-                    }
-                    Err(e) => error!("Battery service command failed: {:?}", e),
+                let response = self.context.process_acpi_cmd(&acpi_msg).await;
+                if let Err(e) = response {
+                    error!("Battery service command failed: {:?}", e)
                 }
+
+                // TODO We should probably be responding to the requestor rather than just assuming the request came from the host
+                self.comms_send(
+                    crate::EndpointID::External(embedded_services::comms::External::Host),
+                    &response,
+                )
+                .await
+                .expect("comms_send is infallible")
             }
         }
     }
