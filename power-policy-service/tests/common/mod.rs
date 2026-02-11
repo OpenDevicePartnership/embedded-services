@@ -10,11 +10,11 @@ use embassy_sync::{
 };
 use embassy_time::{Duration, with_timeout};
 use embedded_services::GlobalRawMutex;
-use power_policy_service::capability::PowerCapability;
 use power_policy_service::psu;
 use power_policy_service::psu::DeviceId;
 use power_policy_service::psu::event::RequestData;
 use power_policy_service::service::Service;
+use power_policy_service::{capability::PowerCapability, psu::event::EventReceivers};
 
 pub mod mock;
 
@@ -38,35 +38,18 @@ pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(15);
 
 const EVENT_CHANNEL_SIZE: usize = 4;
 
-async fn power_policy_task(
+pub type DeviceType = Mutex<GlobalRawMutex, Mock<'static, DynamicSender<'static, RequestData>>>;
+pub type ServiceType = Service<'static, DeviceType>;
+
+async fn power_policy_task<const N: usize>(
     completion_signal: &'static Signal<GlobalRawMutex, ()>,
-    power_policy: &'static Service<
-        'static,
-        Mutex<GlobalRawMutex, Mock<'static, DynamicSender<'static, RequestData>>>,
-        DynamicReceiver<'static, RequestData>,
-    >,
+    power_policy: &'static mut ServiceType,
+    mut event_receivers: EventReceivers<'static, N, DeviceType, DynamicReceiver<'static, RequestData>>,
 ) {
-    while let Either::First(result) = select(power_policy.process(), completion_signal.wait()).await {
-        result.unwrap();
+    while let Either::First(result) = select(event_receivers.wait_event(), completion_signal.wait()).await {
+        power_policy.process_psu_event(result).await.unwrap();
     }
 }
-
-pub type RegistrationType = psu::RegistrationEntry<
-    'static,
-    Mutex<GlobalRawMutex, Mock<'static, DynamicSender<'static, RequestData>>>,
-    DynamicReceiver<'static, RequestData>,
->;
-
-pub type ServiceType = Service<
-    'static,
-    Mutex<GlobalRawMutex, Mock<'static, DynamicSender<'static, RequestData>>>,
-    DynamicReceiver<'static, RequestData>,
->;
-
-pub type ServiceContext = power_policy_service::service::context::Context<
-    Mutex<GlobalRawMutex, Mock<'static, DynamicSender<'static, RequestData>>>,
-    DynamicReceiver<'static, RequestData>,
->;
 
 pub async fn run_test<F: Future<Output = ()>>(
     timeout: Duration,
@@ -91,9 +74,6 @@ pub async fn run_test<F: Future<Output = ()>>(
     static DEVICE0: StaticCell<Mutex<GlobalRawMutex, Mock<DynamicSender<'static, RequestData>>>> = StaticCell::new();
     let device0 = DEVICE0.init(Mutex::new(Mock::new(device0_sender, device0_signal)));
 
-    static DEVICE0_REGISTRATION: StaticCell<RegistrationType> = StaticCell::new();
-    let device0_registration = DEVICE0_REGISTRATION.init(psu::RegistrationEntry::new(DeviceId(0), device0, device0_receiver));
-
     static DEVICE1_EVENT_CHANNEL: StaticCell<Channel<GlobalRawMutex, RequestData, EVENT_CHANNEL_SIZE>> =
         StaticCell::new();
     let device1_event_channel = DEVICE1_EVENT_CHANNEL.init(Channel::new());
@@ -105,17 +85,20 @@ pub async fn run_test<F: Future<Output = ()>>(
     static DEVICE1: StaticCell<Mutex<GlobalRawMutex, Mock<DynamicSender<'static, RequestData>>>> = StaticCell::new();
     let device1 = DEVICE1.init(Mutex::new(Mock::new(device1_sender, device1_signal)));
 
-    static DEVICE1_REGISTRATION: StaticCell<RegistrationType> = StaticCell::new();
-    let device1_registration = DEVICE1_REGISTRATION.init(psu::RegistrationEntry::new(DeviceId(1), device1, device1_receiver));
-
-    static SERVICE_CONTEXT: StaticCell<ServiceContext> = StaticCell::new();
+    static SERVICE_CONTEXT: StaticCell<power_policy_service::service::context::Context> = StaticCell::new();
     let service_context = SERVICE_CONTEXT.init(power_policy_service::service::context::Context::new());
 
-    service_context.register_psu(device0_registration).unwrap();
-    service_context.register_psu(device1_registration).unwrap();
+    static POWER_POLICY_PSU_REGISTRATION: StaticCell<
+        [power_policy_service::psu::RegistrationEntry<'static, DeviceType>; 2],
+    > = StaticCell::new();
+    let psu_registration = POWER_POLICY_PSU_REGISTRATION.init([
+        psu::RegistrationEntry::new(DeviceId(0), device0),
+        psu::RegistrationEntry::new(DeviceId(1), device1),
+    ]);
 
     static POWER_POLICY: StaticCell<ServiceType> = StaticCell::new();
     let power_policy = POWER_POLICY.init(power_policy_service::service::Service::new(
+        psu_registration.as_slice(),
         service_context,
         Default::default(),
     ));
@@ -125,10 +108,17 @@ pub async fn run_test<F: Future<Output = ()>>(
 
     with_timeout(
         timeout,
-        join(power_policy_task(completion_signal, power_policy), async {
-            test(device0, device0_signal, device1, device1_signal).await;
-            completion_signal.signal(());
-        }),
+        join(
+            power_policy_task(
+                completion_signal,
+                power_policy,
+                EventReceivers::new(psu_registration, [device0_receiver, device1_receiver]),
+            ),
+            async {
+                test(device0, device0_signal, device1, device1_signal).await;
+                completion_signal.signal(());
+            },
+        ),
     )
     .await
     .unwrap();

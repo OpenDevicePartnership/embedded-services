@@ -1,12 +1,13 @@
 //! Low-level example of external messaging with a simple type-C service
 use embassy_executor::{Executor, Spawner};
-use embassy_sync::channel::{Channel, DynamicReceiver, DynamicSender};
+use embassy_sync::channel::{Channel, DynamicSender};
 use embassy_sync::mutex::Mutex;
 use embassy_sync::pubsub::PubSubChannel;
 use embassy_time::Timer;
 use embedded_services::{GlobalRawMutex, IntrusiveList};
 use embedded_usb_pd::GlobalPortId;
 use log::*;
+use power_policy_service::psu;
 use static_cell::StaticCell;
 use std_examples::type_c::mock_controller::{self, Wrapper};
 use type_c_service::service::{Service, config::Config};
@@ -142,32 +143,35 @@ fn create_wrapper(controller_context: &'static Context) -> &'static mut Wrapper<
         [PORT0_ID],
     ));
 
-    static INTERMEDIATE: StaticCell<type_c_service::wrapper::backing::IntermediateStorage<1, GlobalRawMutex>> =
-        StaticCell::new();
-    let intermediate = INTERMEDIATE.init(
-        backing_storage
-            .try_create_intermediate()
-            .expect("Failed to create intermediate storage"),
-    );
-
     static POLICY_CHANNEL: StaticCell<Channel<GlobalRawMutex, power_policy_service::psu::event::RequestData, 1>> =
         StaticCell::new();
     let policy_channel = POLICY_CHANNEL.init(Channel::new());
 
     let policy_sender = policy_channel.dyn_sender();
-    let policy_receiver = policy_channel.dyn_receiver();
+
+    static INTERMEDIATE: StaticCell<
+        type_c_service::wrapper::backing::IntermediateStorage<
+            1,
+            GlobalRawMutex,
+            DynamicSender<'static, psu::event::RequestData>,
+        >,
+    > = StaticCell::new();
+    let intermediate = INTERMEDIATE.init(
+        backing_storage
+            .try_create_intermediate([policy_sender])
+            .expect("Failed to create intermediate storage"),
+    );
 
     static REFERENCED: StaticCell<
         type_c_service::wrapper::backing::ReferencedStorage<
             1,
             GlobalRawMutex,
             DynamicSender<'_, power_policy_service::psu::event::RequestData>,
-            DynamicReceiver<'_, power_policy_service::psu::event::RequestData>,
         >,
     > = StaticCell::new();
     let referenced = REFERENCED.init(
         intermediate
-            .try_create_referenced([(POWER0_ID, policy_sender, policy_receiver)])
+            .try_create_referenced([POWER0_ID])
             .expect("Failed to create referenced storage"),
     );
 
@@ -175,15 +179,12 @@ fn create_wrapper(controller_context: &'static Context) -> &'static mut Wrapper<
     let controller = CONTROLLER.init(Mutex::new(mock_controller::Controller::new(state)));
 
     static WRAPPER: StaticCell<mock_controller::Wrapper> = StaticCell::new();
-    WRAPPER.init(
-        mock_controller::Wrapper::try_new(
-            controller,
-            Default::default(),
-            referenced,
-            crate::mock_controller::Validator,
-        )
-        .expect("Failed to create wrapper"),
-    )
+    WRAPPER.init(mock_controller::Wrapper::new(
+        controller,
+        Default::default(),
+        referenced,
+        crate::mock_controller::Validator,
+    ))
 }
 
 fn main() {

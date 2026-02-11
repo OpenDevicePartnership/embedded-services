@@ -3,7 +3,7 @@ use embassy_sync::signal::Signal;
 use embedded_services::{GlobalRawMutex, event, info};
 use power_policy_service::{
     capability::{ConsumerFlags, ConsumerPowerCapability, PowerCapability, ProviderPowerCapability},
-    psu::{Error, InternalState, Psu, event::RequestData},
+    psu::{Error, Psu, State, event::RequestData},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -19,7 +19,7 @@ pub struct Mock<'a, S: event::Sender<RequestData>> {
     sender: S,
     fn_call: &'a Signal<GlobalRawMutex, (usize, FnCall)>,
     // Internal state
-    pub state: InternalState,
+    pub state: State,
 }
 
 impl<'a, S: event::Sender<RequestData>> Mock<'a, S> {
@@ -41,22 +41,18 @@ impl<'a, S: event::Sender<RequestData>> Mock<'a, S> {
     }
 
     pub async fn simulate_consumer_connection(&mut self, capability: PowerCapability) {
-        self.state.attach().unwrap();
-
         self.sender.send(RequestData::Attached).await;
 
         let capability = Some(ConsumerPowerCapability {
             capability,
             flags: ConsumerFlags::none(),
         });
-        self.state.update_consumer_power_capability(capability).unwrap();
         self.sender
             .send(RequestData::UpdatedConsumerCapability(capability))
             .await;
     }
 
     pub async fn simulate_detach(&mut self) {
-        self.state.detach();
         self.sender.send(RequestData::Detached).await;
     }
 }
@@ -78,5 +74,9 @@ impl<'a, S: event::Sender<RequestData>> Psu for Mock<'a, S> {
         info!("Disconnect");
         self.record_fn_call(FnCall::Disconnect);
         Ok(())
+    }
+
+    fn state(&mut self) -> &mut State {
+        &mut self.state
     }
 }

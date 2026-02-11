@@ -10,9 +10,8 @@ impl<
     M: RawMutex,
     D: Lockable,
     S: event::Sender<power_policy_service::psu::event::RequestData>,
-    R: event::Receiver<power_policy_service::psu::event::RequestData>,
     V: FwOfferValidator,
-> ControllerWrapper<'device, M, D, S, R, V>
+> ControllerWrapper<'device, M, D, S, V>
 where
     D::Inner: Controller,
 {

@@ -1,26 +1,21 @@
 use core::future::Future;
-use embassy_sync::mutex::Mutex;
 use embedded_services::{error, event, info, sync::Lockable};
 
 use power_policy_service::service::context;
 
-use crate::{
-    service::Service,
-    wrapper::{ControllerWrapper, proxy::PowerProxyDevice},
-};
+use crate::{service::Service, wrapper::ControllerWrapper};
 
 /// Task to run the Type-C service, takes a closure to customize the event loop
-pub async fn task_closure<'a, M, D, S, R, V, Fut: Future<Output = ()>, F: Fn(&'a Service) -> Fut, const N: usize>(
+pub async fn task_closure<'a, M, D, S, V, Fut: Future<Output = ()>, F: Fn(&'a Service) -> Fut, const N: usize>(
     service: &'static Service<'a>,
-    wrappers: [&'a ControllerWrapper<'a, M, D, S, R, V>; N],
-    power_policy_context: &policy::Context<Mutex<M, PowerProxyDevice<'static>>, R>,
+    wrappers: [&'a ControllerWrapper<'a, M, D, S, V>; N],
+    power_policy_context: &context::Context,
     cfu_client: &'a cfu_service::CfuClient,
     f: F,
 ) where
     M: embassy_sync::blocking_mutex::raw::RawMutex,
     D: Lockable,
     S: event::Sender<power_policy_service::psu::event::RequestData>,
-    R: event::Receiver<power_policy_service::psu::event::RequestData>,
     V: crate::wrapper::FwOfferValidator,
     D::Inner: crate::type_c::controller::Controller,
 {
@@ -32,10 +27,7 @@ pub async fn task_closure<'a, M, D, S, R, V, Fut: Future<Output = ()>, F: Fn(&'a
     }
 
     for controller_wrapper in wrappers {
-        if controller_wrapper
-            .register(service.controllers(), power_policy_context, cfu_client)
-            .is_err()
-        {
+        if controller_wrapper.register(service.controllers(), cfu_client).is_err() {
             error!("Failed to register a controller");
             return;
         }
@@ -47,16 +39,15 @@ pub async fn task_closure<'a, M, D, S, R, V, Fut: Future<Output = ()>, F: Fn(&'a
 }
 
 /// Task to run the Type-C service, running the default event loop
-pub async fn task<'a, M, D, S, R, V, const N: usize>(
+pub async fn task<'a, M, D, S, V, const N: usize>(
     service: &'static Service<'a>,
-    wrappers: [&'a ControllerWrapper<'a, M, D, S, R, V>; N],
-    power_policy_context: &policy::Context<Mutex<M, PowerProxyDevice<'static>>, R>,
+    wrappers: [&'a ControllerWrapper<'a, M, D, S, V>; N],
+    power_policy_context: &context::Context,
     cfu_client: &'a cfu_service::CfuClient,
 ) where
     M: embassy_sync::blocking_mutex::raw::RawMutex,
     D: embedded_services::sync::Lockable,
     S: event::Sender<power_policy_service::psu::event::RequestData>,
-    R: event::Receiver<power_policy_service::psu::event::RequestData>,
     V: crate::wrapper::FwOfferValidator,
     <D as embedded_services::sync::Lockable>::Inner: crate::type_c::controller::Controller,
 {

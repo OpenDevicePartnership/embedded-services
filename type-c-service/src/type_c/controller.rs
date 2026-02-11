@@ -465,7 +465,8 @@ impl<'a> Device<'a> {
 
     /// Send a command to this controller
     pub async fn execute_command(&self, command: Command) -> Response<'_> {
-        self.command.execute(command).await
+        let r = self.command.execute(command).await;
+        r
     }
 
     /// Check if this controller has the given port

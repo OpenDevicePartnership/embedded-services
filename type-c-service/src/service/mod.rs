@@ -3,9 +3,7 @@ use embassy_sync::{
     mutex::Mutex,
     pubsub::{DynImmediatePublisher, DynSubscriber},
 };
-use embedded_services::{
-    GlobalRawMutex, debug, error, event::Receiver, info, intrusive_list, ipc::deferred, sync::Lockable, trace,
-};
+use embedded_services::{GlobalRawMutex, debug, error, info, intrusive_list, ipc::deferred, trace};
 use embedded_usb_pd::GlobalPortId;
 use embedded_usb_pd::PdError as Error;
 
@@ -252,16 +250,10 @@ impl<'a> Service<'a> {
     }
 
     /// Register the Type-C service with the power policy service
-    pub fn register_comms<
-        PD: Lockable + 'static,
-        PR: Receiver<power_policy_service::psu::event::RequestData> + 'static,
-    >(
+    pub fn register_comms(
         &'static self,
-        power_policy_context: &power_policy_service::service::context::Context<PD, PR>,
-    ) -> Result<(), intrusive_list::Error>
-    where
-        PD::Inner: power_policy_service::psu::Psu,
-    {
+        power_policy_context: &power_policy_service::service::context::Context,
+    ) -> Result<(), intrusive_list::Error> {
         power_policy_context.register_message_receiver(&self.power_policy_event_publisher)
     }
 

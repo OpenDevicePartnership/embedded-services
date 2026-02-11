@@ -1854,6 +1854,7 @@ dependencies = [
  "heapless",
  "log",
  "num_enum",
+ "power-policy-service",
  "static_cell",
  "tokio",
 ]
