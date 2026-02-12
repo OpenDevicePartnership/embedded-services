@@ -2,65 +2,14 @@
 #![no_main]
 
 use embassy_sync::once_lock::OnceLock;
-use embedded_mcu_hal::Nvram;
-use embedded_services::{error, info};
+use embedded_mcu_hal::{
+    Nvram,
+    time::{Datetime, Month, UncheckedDatetime},
+};
+use embedded_services::info;
 use static_cell::StaticCell;
+use time_alarm_service_messages::{AcpiDaylightSavingsTimeStatus, AcpiTimeZone, AcpiTimeZoneOffset, AcpiTimestamp};
 use {defmt_rtt as _, panic_probe as _};
-
-mod mock_espi_service {
-
-    use crate::OnceLock;
-    use crate::{error, info};
-    use embassy_time::{Duration, Ticker};
-    use embedded_services::comms::{self, EndpointID, External, Internal};
-    use time_alarm_service_messages::{AcpiTimeAlarmRequest, AcpiTimeAlarmResult};
-
-    pub struct Service {
-        endpoint: comms::Endpoint,
-    }
-
-    impl Service {
-        pub async fn init(spawner: embassy_executor::Spawner, service_storage: &'static OnceLock<Service>) {
-            let instance = service_storage.get_or_init(|| Service {
-                endpoint: comms::Endpoint::uninit(EndpointID::External(External::Host)),
-            });
-
-            comms::register_endpoint(instance, &instance.endpoint).await.unwrap();
-
-            spawner.must_spawn(run_mock_service(instance));
-        }
-    }
-
-    impl comms::MailboxDelegate for Service {
-        fn receive(&self, message: &comms::Message) -> Result<(), comms::MailboxDelegateError> {
-            let msg = message.data.get::<AcpiTimeAlarmResult>().ok_or_else(|| {
-                error!("Mock eSPI service received unknown message type");
-                comms::MailboxDelegateError::MessageNotFound
-            })?;
-
-            info!("Mock eSPI service received ACPI Time Alarm Response: {:?}", msg);
-
-            Ok(())
-        }
-    }
-
-    #[embassy_executor::task]
-    async fn run_mock_service(espi_service: &'static Service) {
-        let mut ticker = Ticker::every(Duration::from_secs(1));
-
-        loop {
-            ticker.next().await;
-            espi_service
-                .endpoint
-                .send(
-                    EndpointID::Internal(Internal::TimeAlarm),
-                    &AcpiTimeAlarmRequest::GetRealTime,
-                )
-                .await
-                .unwrap();
-        }
-    }
-}
 
 #[embassy_executor::main]
 async fn main(spawner: embassy_executor::Spawner) {
@@ -75,11 +24,7 @@ async fn main(spawner: embassy_executor::Spawner) {
     embedded_services::init().await;
     info!("services initialized");
 
-    static MOCK_ESPI_SERVICE: OnceLock<mock_espi_service::Service> = OnceLock::new();
-    mock_espi_service::Service::init(spawner, &MOCK_ESPI_SERVICE).await;
-
-    static TIME_SERVICE: embassy_sync::once_lock::OnceLock<time_alarm_service::Service> =
-        embassy_sync::once_lock::OnceLock::new();
+    static TIME_SERVICE: OnceLock<time_alarm_service::Service> = OnceLock::new();
     let time_service = time_alarm_service::Service::init(
         &TIME_SERVICE,
         dt_clock,
@@ -93,21 +38,43 @@ async fn main(spawner: embassy_executor::Spawner) {
     .expect("Failed to initialize time-alarm service");
 
     #[embassy_executor::task]
-    async fn command_handler_task(service: &'static time_alarm_service::Service) {
-        time_alarm_service::task::command_handler_task(service).await
+    async fn time_alarm_task(service: &'static time_alarm_service::Service<'static>) {
+        time_alarm_service::task::run_service(service).await
     }
 
-    #[embassy_executor::task]
-    async fn ac_timer_task(service: &'static time_alarm_service::Service) {
-        time_alarm_service::task::ac_timer_task(service).await
-    }
+    spawner.must_spawn(time_alarm_task(time_service));
 
-    #[embassy_executor::task]
-    async fn dc_timer_task(service: &'static time_alarm_service::Service) {
-        time_alarm_service::task::dc_timer_task(service).await
-    }
+    use embedded_services::relay::mctp::impl_odp_mctp_relay_handler;
+    impl_odp_mctp_relay_handler!(
+        EspiRelayHandler;
+        TimeAlarm, 0x0B, time_alarm_service::Service<'static>;
+    );
 
-    spawner.must_spawn(command_handler_task(time_service));
-    spawner.must_spawn(ac_timer_task(time_service));
-    spawner.must_spawn(dc_timer_task(time_service));
+    let _relay_handler = EspiRelayHandler::new(time_service);
+
+    // Here, you'd normally pass _relay_handler to your relay service (e.g. eSPI service).
+    // In this example, we're not leveraging a relay service, so we'll just demonstrate some direct calls.
+    //
+
+    time_service
+        .set_real_time(AcpiTimestamp {
+            datetime: Datetime::new(UncheckedDatetime {
+                year: 2024,
+                month: Month::January,
+                day: 10,
+                hour: 12,
+                minute: 0,
+                second: 0,
+                nanosecond: 0,
+            })
+            .unwrap(),
+            time_zone: AcpiTimeZone::MinutesFromUtc(AcpiTimeZoneOffset::new(60 * -8).unwrap()),
+            dst_status: AcpiDaylightSavingsTimeStatus::NotAdjusted,
+        })
+        .unwrap();
+
+    loop {
+        embassy_time::Timer::after(embassy_time::Duration::from_secs(10)).await;
+        info!("Current time from service: {:?}", time_service.get_real_time().unwrap());
+    }
 }

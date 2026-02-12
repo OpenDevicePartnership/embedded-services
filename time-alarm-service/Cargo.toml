@@ -33,3 +33,9 @@ log = ["dep:log", "embedded-services/log", "embassy-time/log"]
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt", "macros", "time"] }
+critical-section = { version = "1.1", features = ["std"]}
+embassy-time = { workspace = true, features = ["std", "generic-queue-8"] }
+embassy-time-driver = { workspace = true }

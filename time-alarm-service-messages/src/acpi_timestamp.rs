@@ -1,6 +1,4 @@
-use embedded_mcu_hal::time::{Datetime, Month, UncheckedDatetime};
-
-use crate::AcpiTimeAlarmError;
+use embedded_mcu_hal::time::{Datetime, DatetimeClockError, Month, UncheckedDatetime};
 use zerocopy::{FromBytes, I16, Immutable, IntoBytes, KnownLayout, LE, U16, Unaligned};
 
 // Timestamp structure as specified in the ACPI spec.  Must be exactly this layout.
@@ -86,9 +84,9 @@ pub struct AcpiTimeZoneOffset {
 }
 
 impl AcpiTimeZoneOffset {
-    pub fn new(minutes_from_utc: i16) -> Result<Self, AcpiTimeAlarmError> {
+    pub fn new(minutes_from_utc: i16) -> Result<Self, DatetimeClockError> {
         if !(-1440..=1440).contains(&minutes_from_utc) {
-            Err(AcpiTimeAlarmError::UnspecifiedFailure)
+            Err(DatetimeClockError::UnsupportedDatetime)
         } else {
             Ok(Self { minutes_from_utc })
         }
@@ -110,9 +108,9 @@ pub enum AcpiTimeZone {
 }
 
 impl TryFrom<i16> for AcpiTimeZone {
-    type Error = AcpiTimeAlarmError;
+    type Error = DatetimeClockError;
 
-    fn try_from(value: i16) -> Result<Self, AcpiTimeAlarmError> {
+    fn try_from(value: i16) -> Result<Self, DatetimeClockError> {
         if value == 2047 {
             Ok(Self::Unknown)
         } else {
@@ -152,26 +150,31 @@ impl AcpiTimestamp {
             .expect("Size is guaranteed to be the size of RawAcpiTimestamp")
     }
 
-    pub fn try_from_bytes(bytes: &[u8]) -> Result<Self, AcpiTimeAlarmError> {
+    pub fn try_from_bytes(bytes: &[u8]) -> Result<Self, DatetimeClockError> {
         let raw = RawAcpiTimestamp::ref_from_bytes(
             bytes
                 .get(..core::mem::size_of::<RawAcpiTimestamp>())
-                .ok_or(AcpiTimeAlarmError::UnspecifiedFailure)?,
+                .ok_or(DatetimeClockError::Unknown)?,
         )
-        .map_err(|_| AcpiTimeAlarmError::UnspecifiedFailure)?;
+        .map_err(|_| DatetimeClockError::Unknown)?;
 
         Ok(Self {
             datetime: Datetime::new(UncheckedDatetime {
                 year: raw.year.get(),
-                month: Month::try_from(raw.month).map_err(|_| AcpiTimeAlarmError::UnspecifiedFailure)?,
+                month: Month::try_from(raw.month).map_err(|_| DatetimeClockError::Unknown)?,
                 day: raw.day,
                 hour: raw.hour,
                 minute: raw.minute,
                 second: raw.second,
                 nanosecond: (raw.milliseconds.get() as u32) * 1_000_000,
-            })?,
-            time_zone: raw.time_zone.get().try_into()?,
-            dst_status: raw.daylight.try_into()?,
+            })
+            .map_err(|_| DatetimeClockError::Unknown)?,
+            time_zone: raw
+                .time_zone
+                .get()
+                .try_into()
+                .map_err(|_| DatetimeClockError::Unknown)?,
+            dst_status: raw.daylight.try_into().map_err(|_| DatetimeClockError::Unknown)?,
         })
     }
 }

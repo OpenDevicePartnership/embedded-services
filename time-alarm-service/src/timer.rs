@@ -27,20 +27,20 @@ mod persistent_storage {
     use crate::{AlarmExpiredWakePolicy, Datetime};
     use embedded_mcu_hal::NvramStorage;
 
-    pub struct PersistentStorage {
+    pub struct PersistentStorage<'hw> {
         /// When the timer is programmed to expire, or None if the timer is not set
         /// This can't be part of the wake_state because we need to be able to report its value for _CWS even when the timer has expired and
         /// we're handling the power source policy.
-        expiration_time_storage: &'static mut dyn NvramStorage<'static, u32>,
+        expiration_time_storage: &'hw mut dyn NvramStorage<'hw, u32>,
 
         // Persistent storage for the AlarmExpiredWakePolicy
-        wake_policy_storage: &'static mut dyn NvramStorage<'static, u32>,
+        wake_policy_storage: &'hw mut dyn NvramStorage<'hw, u32>,
     }
 
-    impl PersistentStorage {
+    impl<'hw> PersistentStorage<'hw> {
         pub fn new(
-            expiration_time_storage: &'static mut dyn NvramStorage<'static, u32>,
-            wake_policy_storage: &'static mut dyn NvramStorage<'static, u32>,
+            expiration_time_storage: &'hw mut dyn NvramStorage<'hw, u32>,
+            wake_policy_storage: &'hw mut dyn NvramStorage<'hw, u32>,
         ) -> Self {
             Self {
                 expiration_time_storage,
@@ -80,8 +80,8 @@ mod persistent_storage {
 }
 use persistent_storage::PersistentStorage;
 
-struct TimerState {
-    persistent_storage: PersistentStorage,
+struct TimerState<'hw> {
+    persistent_storage: PersistentStorage<'hw>,
 
     wake_state: WakeState,
 
@@ -92,16 +92,16 @@ struct TimerState {
     is_active: bool,
 }
 
-pub(crate) struct Timer {
-    timer_state: Mutex<GlobalRawMutex, RefCell<TimerState>>,
+pub(crate) struct Timer<'hw> {
+    timer_state: Mutex<GlobalRawMutex, RefCell<TimerState<'hw>>>,
 
     timer_signal: Signal<GlobalRawMutex, Option<u32>>,
 }
 
-impl Timer {
+impl<'hw> Timer<'hw> {
     pub fn new(
-        expiration_time_storage: &'static mut dyn NvramStorage<'static, u32>,
-        wake_policy_storage: &'static mut dyn NvramStorage<'static, u32>,
+        expiration_time_storage: &'hw mut dyn NvramStorage<'hw, u32>,
+        wake_policy_storage: &'hw mut dyn NvramStorage<'hw, u32>,
     ) -> Self {
         Self {
             timer_state: Mutex::new(RefCell::new(TimerState {
@@ -116,7 +116,7 @@ impl Timer {
 
     pub fn start(
         &self,
-        clock_state: &'static Mutex<GlobalRawMutex, RefCell<ClockState>>,
+        clock_state: &Mutex<GlobalRawMutex, RefCell<ClockState<'hw>>>,
         active: bool,
     ) -> Result<(), DatetimeClockError> {
         self.set_timer_wake_policy(
@@ -157,7 +157,7 @@ impl Timer {
 
     pub fn set_timer_wake_policy(
         &self,
-        clock_state: &'static Mutex<GlobalRawMutex, RefCell<ClockState>>,
+        clock_state: &Mutex<GlobalRawMutex, RefCell<ClockState<'hw>>>,
         wake_policy: AlarmExpiredWakePolicy,
     ) -> Result<(), DatetimeClockError> {
         self.timer_state.lock(|timer_state| {
@@ -176,7 +176,7 @@ impl Timer {
 
     pub fn set_expiration_time(
         &self,
-        clock_state: &'static Mutex<GlobalRawMutex, RefCell<ClockState>>,
+        clock_state: &Mutex<GlobalRawMutex, RefCell<ClockState<'hw>>>,
         expiration_time: Option<Datetime>,
     ) -> Result<(), DatetimeClockError> {
         self.timer_state.lock(|timer_state| {
@@ -209,7 +209,7 @@ impl Timer {
             .lock(|timer_state| timer_state.borrow().persistent_storage.get_expiration_time())
     }
 
-    pub fn set_active(&self, clock_state: &'static Mutex<GlobalRawMutex, RefCell<ClockState>>, is_active: bool) {
+    pub fn set_active(&self, clock_state: &Mutex<GlobalRawMutex, RefCell<ClockState<'hw>>>, is_active: bool) {
         self.timer_state.lock(|timer_state| {
             let mut timer_state = timer_state.borrow_mut();
 
@@ -276,7 +276,7 @@ impl Timer {
         });
     }
 
-    pub(crate) async fn wait_until_wake(&self, clock_state: &'static Mutex<GlobalRawMutex, RefCell<ClockState>>) {
+    pub(crate) async fn wait_until_wake(&self, clock_state: &Mutex<GlobalRawMutex, RefCell<ClockState<'hw>>>) {
         loop {
             let mut wait_duration: Option<u32> = self.timer_signal.wait().await;
             'waiting_for_timer: loop {
@@ -309,7 +309,7 @@ impl Timer {
 
     /// Handles state changes for when the timer expires (figuring out what to do based on the current power source, etc).
     /// Returns true if the timer's expiry indicates that a wake event should be signaled to the host.
-    fn process_expired_timer(&self, clock_state: &'static Mutex<GlobalRawMutex, RefCell<ClockState>>) -> bool {
+    fn process_expired_timer(&self, clock_state: &Mutex<GlobalRawMutex, RefCell<ClockState<'hw>>>) -> bool {
         self.timer_state.lock(|timer_state| {
             let mut timer_state = timer_state.borrow_mut();
 
@@ -393,7 +393,7 @@ impl Timer {
     }
 
     fn get_current_datetime(
-        clock_state: &'static Mutex<GlobalRawMutex, RefCell<ClockState>>,
+        clock_state: &Mutex<GlobalRawMutex, RefCell<ClockState<'hw>>>,
     ) -> Result<Datetime, DatetimeClockError> {
         clock_state.lock(|clock_state| clock_state.borrow().datetime_clock.get_current_datetime())
     }

@@ -30,6 +30,7 @@ embedded-usb-pd.workspace = true
 heapless.workspace = true
 log = { workspace = true, optional = true }
 num_enum.workspace = true
+paste.workspace = true
 uuid.workspace = true
 
 [dependencies.mctp-rs]
