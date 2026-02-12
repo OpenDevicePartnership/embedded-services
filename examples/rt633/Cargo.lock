@@ -785,6 +785,7 @@ dependencies = [
  "heapless",
  "mctp-rs",
  "num_enum",
+ "paste",
  "portable-atomic",
  "serde",
  "uuid",

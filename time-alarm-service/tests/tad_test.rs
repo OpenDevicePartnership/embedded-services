@@ -1,3 +1,7 @@
+// Panicking is how tests communicate failure, so we need to allow it here.
+#![allow(clippy::unwrap_used)]
+#![allow(clippy::expect_used)]
+
 mod common;
 
 #[cfg(test)]
@@ -45,10 +49,10 @@ mod test {
             _ = async {
                 let delay_secs = 2;
                 let begin = service.get_real_time().unwrap();
-                println!("Current time from service: {:?}", begin);
+                println!("Current time from service: {begin:?}");
                 Timer::after(embassy_time::Duration::from_millis(delay_secs * 1000)).await;
                 let end = service.get_real_time().unwrap();
-                println!("Current time from service after delay: {:?}", end);
+                println!("Current time from service after delay: {end:?}");
                 assert!(end.datetime.to_unix_time_seconds() - begin.datetime.to_unix_time_seconds() <= delay_secs + 1);
                 assert!(end.datetime.to_unix_time_seconds() - begin.datetime.to_unix_time_seconds() >= delay_secs - 1);
             } => {}
@@ -94,7 +98,7 @@ mod test {
                     time_zone: msg::AcpiTimeZone::Unknown,
                     dst_status: msg::AcpiDaylightSavingsTimeStatus::Adjusted,
                 };
-                service.set_real_time(target_timestamp.clone()).unwrap();
+                service.set_real_time(target_timestamp).unwrap();
 
                 let actual_timestamp = service.get_real_time().unwrap();
                 assert_eq!(actual_timestamp, target_timestamp);
