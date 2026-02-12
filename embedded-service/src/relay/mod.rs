@@ -535,238 +535,238 @@ pub mod mctp {
                 $service_handler_type:ty;
             )+
         ) => {
-            mod __odp_impl {
-                use $crate::_macro_internal::bitfield::bitfield;
-                use core::convert::Infallible;
-                use $crate::_macro_internal::mctp_rs::smbus_espi::SmbusEspiMedium;
-                use $crate::_macro_internal::mctp_rs::{MctpMedium, MctpMessageHeaderTrait, MctpMessageTrait, MctpPacketError, MctpPacketResult};
-                use $crate::relay::{SerializableMessage, SerializableResult};
-                use $crate::relay::mctp::RelayServiceHandler;
-                use $crate::_macro_internal::paste::paste;
+            $crate::_macro_internal::paste::paste! {
+                mod [< _odp_impl_ $relay_type_name >] {
+                    use $crate::_macro_internal::bitfield::bitfield;
+                    use core::convert::Infallible;
+                    use $crate::_macro_internal::mctp_rs::smbus_espi::SmbusEspiMedium;
+                    use $crate::_macro_internal::mctp_rs::{MctpMedium, MctpMessageHeaderTrait, MctpMessageTrait, MctpPacketError, MctpPacketResult};
+                    use $crate::relay::{SerializableMessage, SerializableResult};
+                    use $crate::relay::mctp::RelayServiceHandler;
 
-                #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-                #[repr(u8)]
-                pub enum OdpService {
-                    $(
-                        $service_name = $service_id,
-                    )+
-                }
-
-                impl From<OdpService> for u8 {
-                    fn from(val: OdpService) -> u8 {
-                        val as u8
+                    #[derive(Debug, PartialEq, Eq, Clone, Copy)]
+                    #[repr(u8)]
+                    pub enum OdpService {
+                        $(
+                            $service_name = $service_id,
+                        )+
                     }
-                }
 
-                impl TryFrom<u8> for OdpService {
-                    type Error = u8;
-                    fn try_from(value: u8) -> Result<Self, Self::Error> {
-                        match value {
-                            $(
-                                $service_id => Ok(OdpService::$service_name),
-                            )+
-                            other => Err(other),
-                        }
-                    }
-                }
-
-                pub enum HostRequest {
-                    $(
-                        $service_name(<$service_handler_type as $crate::relay::mctp::RelayServiceHandlerTypes>::RequestType),
-                    )+
-                }
-
-                impl MctpMessageTrait<'_> for HostRequest {
-                    type Header = OdpHeader;
-                    const MESSAGE_TYPE: u8 = 0x7D; // ODP message type
-
-                    fn serialize<M: MctpMedium>(self, buffer: &mut [u8]) -> MctpPacketResult<usize, M> {
-                        match self {
-                            $(
-                                HostRequest::$service_name(request) => SerializableMessage::serialize(request, buffer)
-                                    .map_err(|_| MctpPacketError::SerializeError(concat!("Failed to serialize ", stringify!($service_name), " request"))),
-                            )+
+                    impl From<OdpService> for u8 {
+                        fn from(val: OdpService) -> u8 {
+                            val as u8
                         }
                     }
 
-                    fn deserialize<M: MctpMedium>(header: &Self::Header, buffer: &'_ [u8]) -> MctpPacketResult<Self, M> {
-                        Ok(match header.service {
-                            $(
-                                OdpService::$service_name => Self::$service_name(
-                                    <$service_handler_type as $crate::relay::mctp::RelayServiceHandlerTypes>::RequestType::deserialize(header.message_id, buffer)
-                                        .map_err(|_| MctpPacketError::CommandParseError(concat!("Could not parse ", stringify!($service_name), " request")))?,
-                                ),
-                            )+
-                        })
-                    }
-                }
-
-                bitfield! {
-                    /// Wire format for ODP MCTP headers. Not user-facing - use OdpHeader instead.
-                    #[derive(Copy, Clone, PartialEq, Eq)]
-                    struct OdpHeaderWireFormat(u32);
-                    impl Debug;
-                    impl new;
-                    /// If true, represents a request; otherwise, represents a result
-                    is_request, set_is_request: 25;
-
-                    /// The service ID that this message is related to
-                    /// Note: Error checking is done when you access the field, not when you construct the OdpHeader. Take care when constructing a header.
-                    u8, service_id, set_service_id: 23, 16;
-
-                    /// On results, indicates if the result message is an error. Unused on requests.
-                    is_error, set_is_error: 15;
-
-                    /// The message type/discriminant
-                    u16, message_id, set_message_id: 14, 0;
-                }
-
-                #[derive(Copy, Clone, PartialEq, Eq)]
-                pub enum OdpMessageType {
-                    Request,
-                    Result { is_error: bool },
-                }
-
-                #[derive(Copy, Clone, PartialEq, Eq)]
-                pub struct OdpHeader {
-                    pub message_type: OdpMessageType,
-                    pub service: OdpService,
-                    pub message_id: u16,
-                }
-
-                impl From<OdpHeader> for OdpHeaderWireFormat {
-                    fn from(src: OdpHeader) -> Self {
-                        Self::new(
-                            matches!(src.message_type, OdpMessageType::Request),
-                            src.service.into(),
-                            match src.message_type {
-                                OdpMessageType::Request => false, // unused on requests
-                                OdpMessageType::Result { is_error } => is_error,
-                            },
-                            src.message_id,
-                        )
-                    }
-                }
-
-                impl TryFrom<OdpHeaderWireFormat> for OdpHeader {
-                    type Error = MctpPacketError<SmbusEspiMedium>;
-
-                    fn try_from(src: OdpHeaderWireFormat) -> Result<Self, Self::Error> {
-                        let service = OdpService::try_from(src.service_id())
-                            .map_err(|_| MctpPacketError::HeaderParseError("invalid odp service in odp header"))?;
-
-                        let message_type = if src.is_request() {
-                            OdpMessageType::Request
-                        } else {
-                            OdpMessageType::Result {
-                                is_error: src.is_error(),
+                    impl TryFrom<u8> for OdpService {
+                        type Error = u8;
+                        fn try_from(value: u8) -> Result<Self, Self::Error> {
+                            match value {
+                                $(
+                                    $service_id => Ok(OdpService::$service_name),
+                                )+
+                                other => Err(other),
                             }
-                        };
-
-                        Ok(OdpHeader {
-                            message_type,
-                            service,
-                            message_id: src.message_id(),
-                        })
-                    }
-                }
-
-                impl MctpMessageHeaderTrait for OdpHeader {
-                    fn serialize<M: MctpMedium>(self, buffer: &mut [u8]) -> MctpPacketResult<usize, M> {
-                        let wire_format = OdpHeaderWireFormat::from(self);
-                        let bytes = wire_format.0.to_be_bytes();
-                        buffer
-                            .get_mut(0..bytes.len())
-                            .ok_or(MctpPacketError::SerializeError("buffer too small for odp header"))?
-                            .copy_from_slice(&bytes);
-
-                        Ok(bytes.len())
+                        }
                     }
 
-                    fn deserialize<M: MctpMedium>(buffer: &[u8]) -> MctpPacketResult<(Self, &[u8]), M> {
-                        let bytes = buffer
-                            .get(0..core::mem::size_of::<u32>())
-                            .ok_or(MctpPacketError::HeaderParseError("buffer too small for odp header"))?;
-                        let raw = u32::from_be_bytes(
-                            bytes
-                                .try_into()
-                                .map_err(|_| MctpPacketError::HeaderParseError("buffer too small for odp header"))?,
-                        );
+                    pub enum HostRequest {
+                        $(
+                            $service_name(<$service_handler_type as $crate::relay::mctp::RelayServiceHandlerTypes>::RequestType),
+                        )+
+                    }
 
-                        let parsed_wire_format = OdpHeaderWireFormat(raw);
-                        let header = OdpHeader::try_from(parsed_wire_format)
-                            .map_err(|_| MctpPacketError::HeaderParseError("invalid odp header received"))?;
+                    impl MctpMessageTrait<'_> for HostRequest {
+                        type Header = OdpHeader;
+                        const MESSAGE_TYPE: u8 = 0x7D; // ODP message type
 
-                        Ok((
-                            header,
+                        fn serialize<M: MctpMedium>(self, buffer: &mut [u8]) -> MctpPacketResult<usize, M> {
+                            match self {
+                                $(
+                                    HostRequest::$service_name(request) => SerializableMessage::serialize(request, buffer)
+                                        .map_err(|_| MctpPacketError::SerializeError(concat!("Failed to serialize ", stringify!($service_name), " request"))),
+                                )+
+                            }
+                        }
+
+                        fn deserialize<M: MctpMedium>(header: &Self::Header, buffer: &'_ [u8]) -> MctpPacketResult<Self, M> {
+                            Ok(match header.service {
+                                $(
+                                    OdpService::$service_name => Self::$service_name(
+                                        <$service_handler_type as $crate::relay::mctp::RelayServiceHandlerTypes>::RequestType::deserialize(header.message_id, buffer)
+                                            .map_err(|_| MctpPacketError::CommandParseError(concat!("Could not parse ", stringify!($service_name), " request")))?,
+                                    ),
+                                )+
+                            })
+                        }
+                    }
+
+                    bitfield! {
+                        /// Wire format for ODP MCTP headers. Not user-facing - use OdpHeader instead.
+                        #[derive(Copy, Clone, PartialEq, Eq)]
+                        struct OdpHeaderWireFormat(u32);
+                        impl Debug;
+                        impl new;
+                        /// If true, represents a request; otherwise, represents a result
+                        is_request, set_is_request: 25;
+
+                        /// The service ID that this message is related to
+                        /// Note: Error checking is done when you access the field, not when you construct the OdpHeader. Take care when constructing a header.
+                        u8, service_id, set_service_id: 23, 16;
+
+                        /// On results, indicates if the result message is an error. Unused on requests.
+                        is_error, set_is_error: 15;
+
+                        /// The message type/discriminant
+                        u16, message_id, set_message_id: 14, 0;
+                    }
+
+                    #[derive(Copy, Clone, PartialEq, Eq)]
+                    pub enum OdpMessageType {
+                        Request,
+                        Result { is_error: bool },
+                    }
+
+                    #[derive(Copy, Clone, PartialEq, Eq)]
+                    pub struct OdpHeader {
+                        pub message_type: OdpMessageType,
+                        pub service: OdpService,
+                        pub message_id: u16,
+                    }
+
+                    impl From<OdpHeader> for OdpHeaderWireFormat {
+                        fn from(src: OdpHeader) -> Self {
+                            Self::new(
+                                matches!(src.message_type, OdpMessageType::Request),
+                                src.service.into(),
+                                match src.message_type {
+                                    OdpMessageType::Request => false, // unused on requests
+                                    OdpMessageType::Result { is_error } => is_error,
+                                },
+                                src.message_id,
+                            )
+                        }
+                    }
+
+                    impl TryFrom<OdpHeaderWireFormat> for OdpHeader {
+                        type Error = MctpPacketError<SmbusEspiMedium>;
+
+                        fn try_from(src: OdpHeaderWireFormat) -> Result<Self, Self::Error> {
+                            let service = OdpService::try_from(src.service_id())
+                                .map_err(|_| MctpPacketError::HeaderParseError("invalid odp service in odp header"))?;
+
+                            let message_type = if src.is_request() {
+                                OdpMessageType::Request
+                            } else {
+                                OdpMessageType::Result {
+                                    is_error: src.is_error(),
+                                }
+                            };
+
+                            Ok(OdpHeader {
+                                message_type,
+                                service,
+                                message_id: src.message_id(),
+                            })
+                        }
+                    }
+
+                    impl MctpMessageHeaderTrait for OdpHeader {
+                        fn serialize<M: MctpMedium>(self, buffer: &mut [u8]) -> MctpPacketResult<usize, M> {
+                            let wire_format = OdpHeaderWireFormat::from(self);
+                            let bytes = wire_format.0.to_be_bytes();
                             buffer
-                                .get(core::mem::size_of::<u32>()..)
-                                .ok_or(MctpPacketError::HeaderParseError("buffer too small for odp header"))?,
-                        ))
-                    }
-                }
+                                .get_mut(0..bytes.len())
+                                .ok_or(MctpPacketError::SerializeError("buffer too small for odp header"))?
+                                .copy_from_slice(&bytes);
 
-                impl $crate::relay::mctp::RelayHeader<OdpService> for OdpHeader {
-                    fn get_service_id(&self) -> OdpService {
-                        self.service
-                    }
-                }
-
-                #[derive(Clone)]
-                pub enum HostResult {
-                    $(
-                        $service_name(<$service_handler_type as $crate::relay::mctp::RelayServiceHandlerTypes>::ResultType),
-                    )+
-                }
-
-                impl $crate::relay::mctp::RelayResponse<OdpService, OdpHeader> for HostResult {
-                    fn create_header(&self, service_id: &OdpService) -> OdpHeader {
-                        match (self) {
-                            $(
-                                (HostResult::$service_name(result)) => OdpHeader {
-                                    message_type: OdpMessageType::Result { is_error: !result.is_ok() },
-                                    service: *service_id,
-                                    message_id: result.discriminant(),
-                                },
-                            )+
+                            Ok(bytes.len())
                         }
-                    }
-                }
 
-                impl MctpMessageTrait<'_> for HostResult {
-                    const MESSAGE_TYPE: u8 = 0x7D; // ODP message type
-                    type Header = OdpHeader;
+                        fn deserialize<M: MctpMedium>(buffer: &[u8]) -> MctpPacketResult<(Self, &[u8]), M> {
+                            let bytes = buffer
+                                .get(0..core::mem::size_of::<u32>())
+                                .ok_or(MctpPacketError::HeaderParseError("buffer too small for odp header"))?;
+                            let raw = u32::from_be_bytes(
+                                bytes
+                                    .try_into()
+                                    .map_err(|_| MctpPacketError::HeaderParseError("buffer too small for odp header"))?,
+                            );
 
-                    fn serialize<M: MctpMedium>(self, buffer: &mut [u8]) -> MctpPacketResult<usize, M> {
-                        match self {
-                            $(
-                                HostResult::$service_name(result) => result
-                                    .serialize(buffer)
-                                    .map_err(|_| MctpPacketError::SerializeError(concat!("Failed to serialize ", stringify!($service_name), " result"))),
-                            )+
+                            let parsed_wire_format = OdpHeaderWireFormat(raw);
+                            let header = OdpHeader::try_from(parsed_wire_format)
+                                .map_err(|_| MctpPacketError::HeaderParseError("invalid odp header received"))?;
+
+                            Ok((
+                                header,
+                                buffer
+                                    .get(core::mem::size_of::<u32>()..)
+                                    .ok_or(MctpPacketError::HeaderParseError("buffer too small for odp header"))?,
+                            ))
                         }
                     }
 
-                    fn deserialize<M: MctpMedium>(header: &Self::Header, buffer: &'_ [u8]) -> MctpPacketResult<Self, M> {
-                        match header.service {
-                            $(
-                                OdpService::$service_name => {
-                                    match header.message_type {
-                                        OdpMessageType::Request => {
-                                            Err(MctpPacketError::CommandParseError(concat!("Received ", stringify!($service_name), " request when expecting result")))
+                    impl $crate::relay::mctp::RelayHeader<OdpService> for OdpHeader {
+                        fn get_service_id(&self) -> OdpService {
+                            self.service
+                        }
+                    }
+
+                    #[derive(Clone)]
+                    pub enum HostResult {
+                        $(
+                            $service_name(<$service_handler_type as $crate::relay::mctp::RelayServiceHandlerTypes>::ResultType),
+                        )+
+                    }
+
+                    impl $crate::relay::mctp::RelayResponse<OdpService, OdpHeader> for HostResult {
+                        fn create_header(&self, service_id: &OdpService) -> OdpHeader {
+                            match (self) {
+                                $(
+                                    (HostResult::$service_name(result)) => OdpHeader {
+                                        message_type: OdpMessageType::Result { is_error: !result.is_ok() },
+                                        service: *service_id,
+                                        message_id: result.discriminant(),
+                                    },
+                                )+
+                            }
+                        }
+                    }
+
+                    impl MctpMessageTrait<'_> for HostResult {
+                        const MESSAGE_TYPE: u8 = 0x7D; // ODP message type
+                        type Header = OdpHeader;
+
+                        fn serialize<M: MctpMedium>(self, buffer: &mut [u8]) -> MctpPacketResult<usize, M> {
+                            match self {
+                                $(
+                                    HostResult::$service_name(result) => result
+                                        .serialize(buffer)
+                                        .map_err(|_| MctpPacketError::SerializeError(concat!("Failed to serialize ", stringify!($service_name), " result"))),
+                                )+
+                            }
+                        }
+
+                        fn deserialize<M: MctpMedium>(header: &Self::Header, buffer: &'_ [u8]) -> MctpPacketResult<Self, M> {
+                            match header.service {
+                                $(
+                                    OdpService::$service_name => {
+                                        match header.message_type {
+                                            OdpMessageType::Request => {
+                                                Err(MctpPacketError::CommandParseError(concat!("Received ", stringify!($service_name), " request when expecting result")))
+                                            }
+                                            OdpMessageType::Result { is_error } => {
+                                                Ok(HostResult::$service_name(<$service_handler_type as $crate::relay::mctp::RelayServiceHandlerTypes>::ResultType::deserialize(is_error, header.message_id, buffer)
+                                                    .map_err(|_| MctpPacketError::CommandParseError(concat!("Could not parse ", stringify!($service_name), " result")))?))
+                                            }
                                         }
-                                        OdpMessageType::Result { is_error } => {
-                                            Ok(HostResult::$service_name(<$service_handler_type as $crate::relay::mctp::RelayServiceHandlerTypes>::ResultType::deserialize(is_error, header.message_id, buffer)
-                                                .map_err(|_| MctpPacketError::CommandParseError(concat!("Could not parse ", stringify!($service_name), " result")))?))
-                                        }
-                                    }
-                                },
-                            )+
+                                    },
+                                )+
+                            }
                         }
                     }
-                }
 
-                paste! {
+
                     pub struct $relay_type_name<'hw> {
                         $(
                             [<$service_name:snake _handler>]: &'hw $service_handler_type,
@@ -809,9 +809,11 @@ pub mod mctp {
                             }
                         }
                     }
-                }
-            } // end mod __odp_impl
-            use __odp_impl::$relay_type_name;
+                } // end mod __odp_impl
+
+                use [< _odp_impl_ $relay_type_name >]::$relay_type_name;
+
+            } // end paste!
         }; // end macro arm
     } // end macro
 

@@ -92,8 +92,6 @@ impl DatetimeClock for MockDatetimeClock {
     }
 }
 
-unsafe impl Send for MockDatetimeClock {}
-
 pub(crate) struct MockNvramStorage<'a> {
     value: u32,
     _phantom: core::marker::PhantomData<&'a ()>,
@@ -117,5 +115,3 @@ impl<'a> NvramStorage<'a, u32> for MockNvramStorage<'a> {
         self.value = value;
     }
 }
-
-unsafe impl Send for MockNvramStorage<'_> {}
