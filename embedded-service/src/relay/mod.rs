@@ -536,7 +536,7 @@ pub mod mctp {
             )+
         ) => {
             $crate::_macro_internal::paste::paste! {
-                mod [< _odp_impl_ $relay_type_name >] {
+                mod [< _odp_impl_ $relay_type_name:snake >] {
                     use $crate::_macro_internal::bitfield::bitfield;
                     use core::convert::Infallible;
                     use $crate::_macro_internal::mctp_rs::smbus_espi::SmbusEspiMedium;
@@ -811,7 +811,7 @@ pub mod mctp {
                     }
                 } // end mod __odp_impl
 
-                use [< _odp_impl_ $relay_type_name >]::$relay_type_name;
+                use [< _odp_impl_ $relay_type_name:snake >]::$relay_type_name;
 
             } // end paste!
         }; // end macro arm
