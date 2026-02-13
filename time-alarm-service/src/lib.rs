@@ -1,15 +1,13 @@
 #![no_std]
 
 use core::cell::RefCell;
-use embassy_futures::select::{Either, select};
 use embassy_sync::blocking_mutex::Mutex;
-use embassy_sync::channel::Channel;
 use embassy_sync::once_lock::OnceLock;
 use embassy_sync::signal::Signal;
 use embedded_mcu_hal::NvramStorage;
 use embedded_mcu_hal::time::{Datetime, DatetimeClock, DatetimeClockError};
-use embedded_services::{GlobalRawMutex, comms::MailboxDelegateError};
-use embedded_services::{comms, info, warn};
+use embedded_services::GlobalRawMutex;
+use embedded_services::{info, warn};
 use time_alarm_service_messages::*;
 
 pub mod task;
@@ -18,48 +16,14 @@ use timer::Timer;
 
 // -------------------------------------------------
 
-#[derive(Debug)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub enum TimeAlarmError {
-    UnknownCommand,
-    DoubleInitError,
-    MailboxFullError,
-    ClockError(DatetimeClockError),
-}
-
-impl From<TimeAlarmError> for MailboxDelegateError {
-    fn from(error: TimeAlarmError) -> Self {
-        match error {
-            TimeAlarmError::UnknownCommand => MailboxDelegateError::InvalidData,
-            TimeAlarmError::DoubleInitError => MailboxDelegateError::Other,
-            TimeAlarmError::MailboxFullError => MailboxDelegateError::BufferFull,
-            TimeAlarmError::ClockError(_) => MailboxDelegateError::Other,
-        }
-    }
-}
-
-impl From<DatetimeClockError> for TimeAlarmError {
-    fn from(e: DatetimeClockError) -> Self {
-        TimeAlarmError::ClockError(e)
-    }
-}
-
-impl From<embedded_services::intrusive_list::Error> for TimeAlarmError {
-    fn from(_error: embedded_services::intrusive_list::Error) -> Self {
-        TimeAlarmError::DoubleInitError
-    }
-}
-
-// -------------------------------------------------
-
 mod time_zone_data {
     use crate::AcpiDaylightSavingsTimeStatus;
     use crate::AcpiTimeZone;
     use crate::NvramStorage;
 
-    pub struct TimeZoneData {
+    pub struct TimeZoneData<'hw> {
         // Storage used to back the timezone and DST settings.
-        storage: &'static mut dyn NvramStorage<'static, u32>,
+        storage: &'hw mut dyn NvramStorage<'hw, u32>,
     }
 
     #[repr(C)]
@@ -70,8 +34,8 @@ mod time_zone_data {
         _padding: u8,
     }
 
-    impl TimeZoneData {
-        pub fn new(storage: &'static mut dyn NvramStorage<'static, u32>) -> Self {
+    impl<'hw> TimeZoneData<'hw> {
+        pub fn new(storage: &'hw mut dyn NvramStorage<'hw, u32>) -> Self {
             Self { storage }
         }
 
@@ -93,10 +57,11 @@ mod time_zone_data {
         ///
         pub fn get_data(&self) -> (AcpiTimeZone, AcpiDaylightSavingsTimeStatus) {
             let representation: RawTimeZoneData = zerocopy::transmute!(self.storage.read());
-            (|| -> Result<(AcpiTimeZone, AcpiDaylightSavingsTimeStatus), time_alarm_service_messages::AcpiTimeAlarmError> {
-                Ok((representation.tz.try_into()?, representation.dst.try_into()?))
-            })()
-            .unwrap_or((AcpiTimeZone::Unknown, AcpiDaylightSavingsTimeStatus::NotObserved))
+
+            let time_zone = AcpiTimeZone::try_from(representation.tz).unwrap_or(AcpiTimeZone::Unknown);
+            let dst_status = AcpiDaylightSavingsTimeStatus::try_from(representation.dst)
+                .unwrap_or(AcpiDaylightSavingsTimeStatus::NotObserved);
+            (time_zone, dst_status)
         }
     }
 }
@@ -104,20 +69,20 @@ use time_zone_data::TimeZoneData;
 
 // -------------------------------------------------
 
-struct ClockState {
-    datetime_clock: &'static mut dyn DatetimeClock,
-    tz_data: TimeZoneData,
+struct ClockState<'hw> {
+    datetime_clock: &'hw mut dyn DatetimeClock,
+    tz_data: TimeZoneData<'hw>,
 }
 
 // -------------------------------------------------
 
-struct Timers {
-    ac_timer: Timer,
-    dc_timer: Timer,
+struct Timers<'hw> {
+    ac_timer: Timer<'hw>,
+    dc_timer: Timer<'hw>,
 }
 
-impl Timers {
-    fn get_timer(&self, timer: AcpiTimerId) -> &Timer {
+impl<'hw> Timers<'hw> {
+    fn get_timer(&self, timer: AcpiTimerId) -> &Timer<'hw> {
         match timer {
             AcpiTimerId::AcPower => &self.ac_timer,
             AcpiTimerId::DcPower => &self.dc_timer,
@@ -125,10 +90,10 @@ impl Timers {
     }
 
     fn new(
-        ac_expiration_storage: &'static mut dyn NvramStorage<'static, u32>,
-        ac_policy_storage: &'static mut dyn NvramStorage<'static, u32>,
-        dc_expiration_storage: &'static mut dyn NvramStorage<'static, u32>,
-        dc_policy_storage: &'static mut dyn NvramStorage<'static, u32>,
+        ac_expiration_storage: &'hw mut dyn NvramStorage<'hw, u32>,
+        ac_policy_storage: &'hw mut dyn NvramStorage<'hw, u32>,
+        dc_expiration_storage: &'hw mut dyn NvramStorage<'hw, u32>,
+        dc_policy_storage: &'hw mut dyn NvramStorage<'hw, u32>,
     ) -> Self {
         Self {
             ac_timer: Timer::new(ac_expiration_storage, ac_policy_storage),
@@ -139,37 +104,30 @@ impl Timers {
 
 // -------------------------------------------------
 
-pub struct Service {
-    endpoint: comms::Endpoint,
-
-    // ACPI messages from the host are sent through this channel.
-    acpi_channel: Channel<GlobalRawMutex, (comms::EndpointID, AcpiTimeAlarmRequest), 10>,
-
-    clock_state: Mutex<GlobalRawMutex, RefCell<ClockState>>,
+pub struct Service<'hw> {
+    clock_state: Mutex<GlobalRawMutex, RefCell<ClockState<'hw>>>,
 
     // TODO [POWER_SOURCE] signal this whenever the power source changes
     power_source_signal: Signal<GlobalRawMutex, AcpiTimerId>,
 
-    timers: Timers,
+    timers: Timers<'hw>,
 
     capabilities: TimeAlarmDeviceCapabilities,
 }
 
-impl Service {
+impl<'hw> Service<'hw> {
     pub async fn init(
-        service_storage: &'static OnceLock<Service>,
-        backing_clock: &'static mut impl DatetimeClock,
-        tz_storage: &'static mut dyn NvramStorage<'static, u32>,
-        ac_expiration_storage: &'static mut dyn NvramStorage<'static, u32>,
-        ac_policy_storage: &'static mut dyn NvramStorage<'static, u32>,
-        dc_expiration_storage: &'static mut dyn NvramStorage<'static, u32>,
-        dc_policy_storage: &'static mut dyn NvramStorage<'static, u32>,
-    ) -> Result<&'static Service, TimeAlarmError> {
+        service_storage: &'hw OnceLock<Service<'hw>>,
+        backing_clock: &'hw mut impl DatetimeClock,
+        tz_storage: &'hw mut dyn NvramStorage<'hw, u32>,
+        ac_expiration_storage: &'hw mut dyn NvramStorage<'hw, u32>,
+        ac_policy_storage: &'hw mut dyn NvramStorage<'hw, u32>,
+        dc_expiration_storage: &'hw mut dyn NvramStorage<'hw, u32>,
+        dc_policy_storage: &'hw mut dyn NvramStorage<'hw, u32>,
+    ) -> Result<&'hw Service<'hw>, DatetimeClockError> {
         info!("Starting time-alarm service task");
 
         let service = service_storage.get_or_init(|| Service {
-            endpoint: comms::Endpoint::uninit(comms::EndpointID::Internal(comms::Internal::TimeAlarm)),
-            acpi_channel: Channel::new(),
             clock_state: Mutex::new(RefCell::new(ClockState {
                 datetime_clock: backing_clock,
                 tz_data: TimeZoneData::new(tz_storage),
@@ -202,52 +160,147 @@ impl Service {
         service.timers.ac_timer.start(&service.clock_state, true)?;
         service.timers.dc_timer.start(&service.clock_state, false)?;
 
-        comms::register_endpoint(service, &service.endpoint).await?;
-
         Ok(service)
     }
 
-    pub(crate) async fn handle_requests(&'static self) -> ! {
-        loop {
-            let acpi_command = self.acpi_channel.receive();
-            let power_source_change = self.power_source_signal.wait();
+    /// Query clock capabilities.  Analogous to ACPI TAD's _GRT method.
+    pub fn get_capabilities(&self) -> TimeAlarmDeviceCapabilities {
+        self.capabilities
+    }
 
-            match select(acpi_command, power_source_change).await {
-                Either::First((respond_to_endpoint, acpi_command)) => {
-                    info!("[Time/Alarm] Received command: {:?}", acpi_command);
+    /// Query the current time.  Analogous to ACPI TAD's _GRT method.
+    pub fn get_real_time(&self) -> Result<AcpiTimestamp, DatetimeClockError> {
+        self.clock_state.lock(|clock_state| {
+            let clock_state = clock_state.borrow();
+            let datetime = clock_state.datetime_clock.get_current_datetime()?;
+            let (time_zone, dst_status) = clock_state.tz_data.get_data();
+            Ok(AcpiTimestamp {
+                datetime,
+                time_zone,
+                dst_status,
+            })
+        })
+    }
 
-                    let result: AcpiTimeAlarmResult = self
-                        .handle_acpi_command(acpi_command)
-                        .await
-                        .map_err(|_| time_alarm_service_messages::AcpiTimeAlarmError::UnspecifiedFailure);
+    /// Change the current time.  Analogous to ACPI TAD's _SRT method.
+    pub fn set_real_time(&self, timestamp: AcpiTimestamp) -> Result<(), DatetimeClockError> {
+        self.clock_state.lock(|clock_state| {
+            let mut clock_state = clock_state.borrow_mut();
+            clock_state.datetime_clock.set_current_datetime(&timestamp.datetime)?;
+            clock_state.tz_data.set_data(timestamp.time_zone, timestamp.dst_status);
+            Ok(())
+        })
+    }
 
-                    info!("[Time/Alarm] Responding with: {:?}", result);
+    /// Query the current wake status.  Analogous to ACPI TAD's _GWS method.
+    pub fn get_wake_status(&self, timer_id: AcpiTimerId) -> TimerStatus {
+        self.timers.get_timer(timer_id).get_wake_status()
+    }
 
-                    let _: Result<(), core::convert::Infallible> =
-                        self.endpoint.send(respond_to_endpoint, &result).await;
-                }
-                Either::Second(new_power_source) => {
-                    info!("[Time/Alarm] Power source changed to {:?}", new_power_source);
+    /// Clear the current wake status.  Analogous to ACPI TAD's _CWS method.
+    pub fn clear_wake_status(&self, timer_id: AcpiTimerId) {
+        self.timers.get_timer(timer_id).clear_wake_status();
+    }
 
-                    self.timers
-                        .get_timer(new_power_source.get_other_timer_id())
-                        .set_active(&self.clock_state, false);
-                    self.timers
-                        .get_timer(new_power_source)
-                        .set_active(&self.clock_state, true);
-                }
+    /// Configures behavior when the timer expires while the system is on the other power source.  Analogous to ACPI TAD's _STP method.
+    pub fn set_expired_timer_policy(
+        &self,
+        timer_id: AcpiTimerId,
+        policy: AlarmExpiredWakePolicy,
+    ) -> Result<(), DatetimeClockError> {
+        self.timers
+            .get_timer(timer_id)
+            .set_timer_wake_policy(&self.clock_state, policy)?;
+        Ok(())
+    }
+
+    /// Query current behavior when the timer expires while the system is on the other power source.  Analogous to ACPI TAD's _TIP method.
+    pub fn get_expired_timer_policy(&self, timer_id: AcpiTimerId) -> AlarmExpiredWakePolicy {
+        self.timers.get_timer(timer_id).get_timer_wake_policy()
+    }
+
+    /// Change the expiry time for the given timer.  Analogous to ACPI TAD's _STV method.
+    pub fn set_timer_value(
+        &self,
+        timer_id: AcpiTimerId,
+        timer_value: AlarmTimerSeconds,
+    ) -> Result<(), DatetimeClockError> {
+        let new_expiration_time = match timer_value {
+            AlarmTimerSeconds::DISABLED => None,
+            AlarmTimerSeconds(secs) => {
+                let current_time = self
+                    .clock_state
+                    .lock(|clock_state| clock_state.borrow().datetime_clock.get_current_datetime())?;
+
+                Some(Datetime::from_unix_time_seconds(
+                    current_time.to_unix_time_seconds() + u64::from(secs),
+                ))
             }
+        };
+
+        self.timers
+            .get_timer(timer_id)
+            .set_expiration_time(&self.clock_state, new_expiration_time)?;
+        Ok(())
+    }
+
+    /// Query the expiry time for the given timer.  Analogous to ACPI TAD's _TIV method.
+    pub fn get_timer_value(&self, timer_id: AcpiTimerId) -> Result<AlarmTimerSeconds, DatetimeClockError> {
+        let expiration_time = self.timers.get_timer(timer_id).get_expiration_time();
+        match expiration_time {
+            Some(expiration_time) => {
+                let current_time = self
+                    .clock_state
+                    .lock(|clock_state| clock_state.borrow().datetime_clock.get_current_datetime())?;
+
+                Ok(AlarmTimerSeconds(
+                    expiration_time
+                        .to_unix_time_seconds()
+                        .saturating_sub(current_time.to_unix_time_seconds()) as u32,
+                ))
+            }
+            None => Ok(AlarmTimerSeconds::DISABLED),
         }
     }
 
-    pub(crate) async fn handle_timer(&'static self, timer_id: AcpiTimerId) -> ! {
+    pub(crate) async fn run_service(&'hw self) -> ! {
+        loop {
+            embassy_futures::select::select3(
+                self.handle_power_source_updates(),
+                self.handle_timer(AcpiTimerId::AcPower),
+                self.handle_timer(AcpiTimerId::DcPower),
+            )
+            .await;
+        }
+    }
+
+    async fn handle_power_source_updates(&'hw self) -> ! {
+        loop {
+            let new_power_source = self.power_source_signal.wait().await;
+            info!("[Time/Alarm] Power source changed to {:?}", new_power_source);
+
+            self.timers
+                .get_timer(new_power_source.get_other_timer_id())
+                .set_active(&self.clock_state, false);
+            self.timers
+                .get_timer(new_power_source)
+                .set_active(&self.clock_state, true);
+        }
+    }
+
+    async fn handle_timer(&'hw self, timer_id: AcpiTimerId) -> ! {
         let timer = self.timers.get_timer(timer_id);
         loop {
             timer.wait_until_wake(&self.clock_state).await;
-            let _ = self
-                .timers
+            self.timers
                 .get_timer(timer_id.get_other_timer_id())
-                .set_timer_wake_policy(&self.clock_state, AlarmExpiredWakePolicy::NEVER);
+                .set_timer_wake_policy(&self.clock_state, AlarmExpiredWakePolicy::NEVER)
+                .unwrap_or_else(|e| {
+                    warn!(
+                        "[Time/Alarm] Failed to update wake policy on timer expiry - this should never happen: {:?}",
+                        e
+                    );
+                });
 
             warn!(
                 "[Time/Alarm] Timer {:?} expired and would trigger a wake now, but the power service is not yet implemented so will currently do nothing",
@@ -256,99 +309,44 @@ impl Service {
             // TODO [COMMS] We can't currently trigger a wake because the power service isn't implemented yet - when it is, we need to notify it here
         }
     }
+}
 
-    async fn handle_acpi_command(
-        &'static self,
-        command: AcpiTimeAlarmRequest,
-    ) -> Result<AcpiTimeAlarmResponse, TimeAlarmError> {
-        match command {
-            AcpiTimeAlarmRequest::GetCapabilities => Ok(AcpiTimeAlarmResponse::Capabilities(self.capabilities)),
-            AcpiTimeAlarmRequest::GetRealTime => self.clock_state.lock(|clock_state| {
-                let clock_state = clock_state.borrow();
-                let datetime = clock_state.datetime_clock.get_current_datetime()?;
-                let (time_zone, dst_status) = clock_state.tz_data.get_data();
-                Ok(AcpiTimeAlarmResponse::RealTime(AcpiTimestamp {
-                    datetime,
-                    time_zone,
-                    dst_status,
-                }))
-            }),
-            AcpiTimeAlarmRequest::SetRealTime(timestamp) => self.clock_state.lock(|clock_state| {
-                let mut clock_state = clock_state.borrow_mut();
-                clock_state.datetime_clock.set_current_datetime(&timestamp.datetime)?;
-                clock_state.tz_data.set_data(timestamp.time_zone, timestamp.dst_status);
+impl<'hw> embedded_services::relay::mctp::RelayServiceHandlerTypes for Service<'hw> {
+    type RequestType = AcpiTimeAlarmRequest;
+    type ResultType = AcpiTimeAlarmResult;
+}
 
+impl<'hw> embedded_services::relay::mctp::RelayServiceHandler for Service<'hw> {
+    async fn process_request(&self, request: Self::RequestType) -> Self::ResultType {
+        use time_alarm_service_messages::AcpiTimeAlarmResponse;
+        match request {
+            AcpiTimeAlarmRequest::GetCapabilities => Ok(AcpiTimeAlarmResponse::Capabilities(self.get_capabilities())),
+            AcpiTimeAlarmRequest::GetRealTime => Ok(AcpiTimeAlarmResponse::RealTime(self.get_real_time()?)),
+            AcpiTimeAlarmRequest::SetRealTime(timestamp) => {
+                self.set_real_time(timestamp)?;
                 Ok(AcpiTimeAlarmResponse::OkNoData)
-            }),
+            }
             AcpiTimeAlarmRequest::GetWakeStatus(timer_id) => {
-                let status = self.timers.get_timer(timer_id).get_wake_status();
-                Ok(AcpiTimeAlarmResponse::TimerStatus(status))
+                Ok(AcpiTimeAlarmResponse::TimerStatus(self.get_wake_status(timer_id)))
             }
             AcpiTimeAlarmRequest::ClearWakeStatus(timer_id) => {
-                self.timers.get_timer(timer_id).clear_wake_status();
+                self.clear_wake_status(timer_id);
                 Ok(AcpiTimeAlarmResponse::OkNoData)
             }
             AcpiTimeAlarmRequest::SetExpiredTimerPolicy(timer_id, timer_policy) => {
-                self.timers
-                    .get_timer(timer_id)
-                    .set_timer_wake_policy(&self.clock_state, timer_policy)?;
-                Ok(AcpiTimeAlarmResponse::OkNoData)
-            }
-            AcpiTimeAlarmRequest::SetTimerValue(timer_id, timer_value) => {
-                let new_expiration_time = match timer_value {
-                    AlarmTimerSeconds::DISABLED => None,
-                    AlarmTimerSeconds(secs) => {
-                        let current_time = self
-                            .clock_state
-                            .lock(|clock_state| clock_state.borrow().datetime_clock.get_current_datetime())?;
-
-                        Some(Datetime::from_unix_time_seconds(
-                            current_time.to_unix_time_seconds() + u64::from(secs),
-                        ))
-                    }
-                };
-
-                self.timers
-                    .get_timer(timer_id)
-                    .set_expiration_time(&self.clock_state, new_expiration_time)?;
+                self.set_expired_timer_policy(timer_id, timer_policy)?;
                 Ok(AcpiTimeAlarmResponse::OkNoData)
             }
             AcpiTimeAlarmRequest::GetExpiredTimerPolicy(timer_id) => Ok(AcpiTimeAlarmResponse::WakePolicy(
-                self.timers.get_timer(timer_id).get_timer_wake_policy(),
+                self.get_expired_timer_policy(timer_id),
             )),
-            AcpiTimeAlarmRequest::GetTimerValue(timer_id) => {
-                let expiration_time = self.timers.get_timer(timer_id).get_expiration_time();
-
-                let timer_wire_format = match expiration_time {
-                    Some(expiration_time) => {
-                        let current_time = self
-                            .clock_state
-                            .lock(|clock_state| clock_state.borrow().datetime_clock.get_current_datetime())?;
-
-                        AlarmTimerSeconds(
-                            expiration_time
-                                .to_unix_time_seconds()
-                                .saturating_sub(current_time.to_unix_time_seconds()) as u32,
-                        )
-                    }
-                    None => AlarmTimerSeconds::DISABLED,
-                };
-
-                Ok(AcpiTimeAlarmResponse::TimerSeconds(timer_wire_format))
+            AcpiTimeAlarmRequest::SetTimerValue(timer_id, timer_value) => {
+                self.set_timer_value(timer_id, timer_value)?;
+                Ok(AcpiTimeAlarmResponse::OkNoData)
             }
-        }
-    }
-}
-
-impl comms::MailboxDelegate for Service {
-    fn receive(&self, message: &comms::Message) -> Result<(), comms::MailboxDelegateError> {
-        if let Some(acpi_cmd) = message.data.get::<time_alarm_service_messages::AcpiTimeAlarmRequest>() {
-            self.acpi_channel
-                .try_send((message.from, *acpi_cmd))
-                .map_err(|_| MailboxDelegateError::BufferFull)?;
-            Ok(())
-        } else {
-            Err(comms::MailboxDelegateError::InvalidData)
+            AcpiTimeAlarmRequest::GetTimerValue(timer_id) => {
+                Ok(AcpiTimeAlarmResponse::TimerSeconds(self.get_timer_value(timer_id)?))
+            }
         }
     }
 }

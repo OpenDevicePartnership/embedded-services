@@ -1,29 +1,12 @@
-use embassy_futures::select::select;
-use embassy_imxrt::espi;
-use embedded_services::comms;
+use crate::Service;
 
-use crate::{ESPI_SERVICE, Service, process_controller_event};
-
-pub async fn espi_service(
-    mut espi: espi::Espi<'static>,
+// TODO: We currently require that the service has lifetime 'static because we still communicate with
+//       some services over the legacy comms system, which requires that things that interact with it
+//       have lifetime 'static.  Once we've fully transitioned to the direct async call method of interfacing
+//       between services, we should be able to relax this requirement to just require that the service has
+//       the same lifetime as the services it's communicating with.
+pub async fn espi_service<R: embedded_services::relay::mctp::RelayHandler>(
+    espi_service: &'static Service<R>,
 ) -> Result<embedded_services::Never, crate::espi_service::Error> {
-    espi.wait_for_plat_reset().await;
-
-    let espi_service = ESPI_SERVICE.get_or_init(Service::new);
-    comms::register_endpoint(espi_service, espi_service.endpoint())
-        .await
-        .unwrap();
-
-    loop {
-        let event = select(espi.wait_for_event(), espi_service.wait_for_response()).await;
-
-        match event {
-            embassy_futures::select::Either::First(controller_event) => {
-                process_controller_event(&mut espi, espi_service, controller_event).await?
-            }
-            embassy_futures::select::Either::Second(host_msg) => {
-                espi_service.process_response_to_host(&mut espi, host_msg).await
-            }
-        }
-    }
+    espi_service.run_service().await
 }

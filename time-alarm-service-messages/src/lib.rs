@@ -361,6 +361,12 @@ impl From<TryFromSliceError> for AcpiTimeAlarmError {
     }
 }
 
+impl From<embedded_mcu_hal::time::DatetimeClockError> for AcpiTimeAlarmError {
+    fn from(_error: embedded_mcu_hal::time::DatetimeClockError) -> Self {
+        AcpiTimeAlarmError::UnspecifiedFailure
+    }
+}
+
 pub type AcpiTimeAlarmResult = Result<AcpiTimeAlarmResponse, AcpiTimeAlarmError>;
 
 fn safe_put_u32(buffer: &mut [u8], index: usize, val: u32) -> Result<usize, MessageSerializationError> {

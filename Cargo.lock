@@ -1012,6 +1012,7 @@ dependencies = [
  "log",
  "mctp-rs",
  "num_enum",
+ "paste",
  "portable-atomic",
  "rstest",
  "serde",
@@ -2315,15 +2316,18 @@ name = "time-alarm-service"
 version = "0.1.0"
 dependencies = [
  "bitfield 0.17.0",
+ "critical-section",
  "defmt 0.3.100",
  "embassy-executor",
  "embassy-futures",
  "embassy-sync",
  "embassy-time",
+ "embassy-time-driver",
  "embedded-mcu-hal",
  "embedded-services",
  "log",
  "time-alarm-service-messages",
+ "tokio",
  "zerocopy",
 ]
 

@@ -1,20 +1,9 @@
-use crate::{AcpiTimerId, Service};
+use crate::Service;
 use embedded_services::info;
 
-/// Call this from a dedicated async task.  Must be called exactly once per service.
-pub async fn command_handler_task(service: &'static Service) {
+/// Call this from a dedicated async task.  Must be called exactly once on each service instance.
+/// Note that on-device, 'hw must be 'static.  We're generic over 'hw to enable some test scenarios leveraging tokio and mocks.
+pub async fn run_service<'hw>(service: &'hw Service<'hw>) -> ! {
     info!("Starting time-alarm service task");
-    service.handle_requests().await;
-}
-
-/// Call this from a dedicated async task.  Must be called exactly once per service.
-pub async fn ac_timer_task(service: &'static Service) {
-    info!("Starting time-alarm AC timer task");
-    service.handle_timer(AcpiTimerId::AcPower).await;
-}
-
-/// Call this from a dedicated async task.  Must be called exactly once per service.
-pub async fn dc_timer_task(service: &'static Service) {
-    info!("Starting time-alarm DC timer task");
-    service.handle_timer(AcpiTimerId::DcPower).await;
+    service.run_service().await
 }
