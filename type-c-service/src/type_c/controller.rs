@@ -12,12 +12,13 @@ use embedded_usb_pd::{
 };
 
 use super::{ATTN_VDM_LEN, ControllerId, OTHER_VDM_LEN, external};
-use crate::ipc::deferred;
-use crate::power::policy;
 use crate::type_c::Cached;
 use crate::type_c::comms::CommsMessage;
 use crate::type_c::event::{PortEvent, PortPending};
-use crate::{GlobalRawMutex, IntrusiveNode, broadcaster::immediate as broadcaster, error, intrusive_list, trace};
+use embedded_services::ipc::deferred;
+use embedded_services::{
+    GlobalRawMutex, IntrusiveNode, broadcaster::immediate as broadcaster, error, intrusive_list, trace,
+};
 
 /// maximum number of data objects in a VDM
 pub const MAX_NUM_DATA_OBJECTS: usize = 7; // 7 VDOs of 4 bytes each
@@ -27,9 +28,9 @@ pub const MAX_NUM_DATA_OBJECTS: usize = 7; // 7 VDOs of 4 bytes each
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct PortStatus {
     /// Current available source contract
-    pub available_source_contract: Option<policy::PowerCapability>,
+    pub available_source_contract: Option<power_policy_service::capability::PowerCapability>,
     /// Current available sink contract
-    pub available_sink_contract: Option<policy::PowerCapability>,
+    pub available_sink_contract: Option<power_policy_service::capability::PowerCapability>,
     /// Current connection state
     pub connection_state: Option<ConnectionState>,
     /// Port partner supports dual-power roles
@@ -464,7 +465,8 @@ impl<'a> Device<'a> {
 
     /// Send a command to this controller
     pub async fn execute_command(&self, command: Command) -> Response<'_> {
-        self.command.execute(command).await
+        let r = self.command.execute(command).await;
+        r
     }
 
     /// Check if this controller has the given port

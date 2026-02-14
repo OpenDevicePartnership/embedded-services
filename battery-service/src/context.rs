@@ -8,9 +8,8 @@ use embassy_sync::mutex::Mutex;
 use embassy_sync::signal::Signal;
 use embassy_time::{Duration, with_timeout};
 use embedded_services::GlobalRawMutex;
-use embedded_services::comms::MailboxDelegateError;
-use embedded_services::power::policy::PowerCapability;
 use embedded_services::{IntrusiveList, debug, error, info, intrusive_list, trace, warn};
+use power_policy_service::capability::PowerCapability;
 
 use core::ops::DerefMut;
 use core::sync::atomic::AtomicUsize;
@@ -528,9 +527,10 @@ impl Context {
         *self.power_info.lock().await
     }
 
-    pub(crate) fn set_power_info(
+    // TODO: bring back when power policy messaging is working again
+    /*pub(crate) fn set_power_info(
         &self,
-        power_info: &embedded_services::power::policy::CommsData,
+        power_info: &power_policy_service::service::event::CommsData,
     ) -> Result<(), MailboxDelegateError> {
         let mut guard = self
             .power_info
@@ -540,13 +540,13 @@ impl Context {
         let psu_state = guard.deref_mut();
 
         match power_info {
-            embedded_services::power::policy::CommsData::ConsumerDisconnected(_) => {
+            power_policy_service::service::event::CommsData::ConsumerDisconnected(_) => {
                 *psu_state = PsuState {
                     psu_connected: false,
                     power_capability: None,
                 }
             }
-            embedded_services::power::policy::CommsData::ConsumerConnected(_device_id, power_capability) => {
+            power_policy_service::service::event::CommsData::ConsumerConnected(_device_id, power_capability) => {
                 *psu_state = PsuState {
                     psu_connected: true,
                     power_capability: Some(power_capability.capability),
@@ -557,7 +557,7 @@ impl Context {
 
         trace!("Battery: PSU state: {:?}", psu_state);
         Ok(())
-    }
+    }*/
 }
 
 impl Default for Context {

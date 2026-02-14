@@ -1,25 +1,23 @@
 use cfu_service::CfuClient;
 use embassy_executor::{Executor, Spawner};
-use embassy_sync::channel::{Channel, DynamicReceiver, DynamicSender};
+use embassy_sync::channel::{Channel, DynamicReceiver};
 use embassy_sync::mutex::Mutex;
 use embassy_sync::once_lock::OnceLock;
 use embassy_sync::pubsub::PubSubChannel;
 use embassy_time::Timer;
-use embedded_services::power::policy::policy;
-use embedded_services::power::{self};
-use embedded_services::type_c::ControllerId;
-use embedded_services::type_c::controller::Context;
 use embedded_services::{GlobalRawMutex, IntrusiveList};
 use embedded_usb_pd::GlobalPortId;
 use embedded_usb_pd::ado::Ado;
 use embedded_usb_pd::type_c::Current;
 use log::*;
-use power_policy_service::PowerPolicy;
+use power_policy_service::psu;
 use static_cell::StaticCell;
 use std_examples::type_c::mock_controller;
 use std_examples::type_c::mock_controller::Wrapper;
 use type_c_service::service::Service;
 use type_c_service::service::config::Config;
+use type_c_service::type_c::controller::Context;
+use type_c_service::type_c::{ControllerId, power_capability_from_current};
 use type_c_service::wrapper::backing::Storage;
 use type_c_service::wrapper::message::*;
 use type_c_service::wrapper::proxy::PowerProxyDevice;
@@ -27,8 +25,9 @@ use type_c_service::wrapper::proxy::PowerProxyDevice;
 const NUM_PD_CONTROLLERS: usize = 1;
 const CONTROLLER0_ID: ControllerId = ControllerId(0);
 const PORT0_ID: GlobalPortId = GlobalPortId(0);
-const POWER0_ID: power::policy::DeviceId = power::policy::DeviceId(0);
 const DELAY_MS: u64 = 1000;
+
+type DeviceType = Mutex<GlobalRawMutex, PowerProxyDevice<'static>>;
 
 #[embassy_executor::task]
 async fn controller_task(
@@ -64,34 +63,30 @@ async fn task(spawner: Spawner) {
     embedded_services::init().await;
 
     // Create power policy service
-    static POWER_SERVICE_CONTEXT: StaticCell<
-        power::policy::policy::Context<
-            Mutex<GlobalRawMutex, PowerProxyDevice<'static>>,
-            DynamicReceiver<'static, policy::RequestData>,
-        >,
-    > = StaticCell::new();
-    let power_service_context = POWER_SERVICE_CONTEXT.init(power::policy::policy::Context::new());
+    static POWER_SERVICE_CONTEXT: StaticCell<power_policy_service::service::context::Context> = StaticCell::new();
+    let power_service_context = POWER_SERVICE_CONTEXT.init(power_policy_service::service::context::Context::new());
 
-    static CONTEXT: StaticCell<embedded_services::type_c::controller::Context> = StaticCell::new();
-    let controller_context = CONTEXT.init(embedded_services::type_c::controller::Context::new());
+    static CONTEXT: StaticCell<type_c_service::type_c::controller::Context> = StaticCell::new();
+    let controller_context = CONTEXT.init(type_c_service::type_c::controller::Context::new());
 
-    let (wrapper, controller, state) = create_wrapper(controller_context);
+    let (wrapper, policy_receiver, controller, state) = create_wrapper(controller_context);
 
-    static POWER_SERVICE: StaticCell<
-        power_policy_service::PowerPolicy<
-            Mutex<GlobalRawMutex, PowerProxyDevice<'static>>,
-            DynamicReceiver<'static, policy::RequestData>,
-        >,
-    > = StaticCell::new();
-    let power_service = POWER_SERVICE.init(power_policy_service::PowerPolicy::new(
+    static POWER_POLICY_PSU_REGISTRATION: StaticCell<[&DeviceType; 1]> = StaticCell::new();
+    let psu_registration = POWER_POLICY_PSU_REGISTRATION.init([&wrapper.ports[0].proxy]);
+
+    static POWER_SERVICE: StaticCell<Mutex<GlobalRawMutex, power_policy_service::service::Service<DeviceType>>> =
+        StaticCell::new();
+    let power_service = POWER_SERVICE.init(Mutex::new(power_policy_service::service::Service::new(
+        psu_registration,
         power_service_context,
-        power_policy_service::config::Config::default(),
-    ));
+        power_policy_service::service::config::Config::default(),
+    )));
 
     // Create type-c service
     // The service is the only receiver and we only use a DynImmediatePublisher, which doesn't take a publisher slot
-    static POWER_POLICY_CHANNEL: StaticCell<PubSubChannel<GlobalRawMutex, power::policy::CommsMessage, 4, 1, 0>> =
-        StaticCell::new();
+    static POWER_POLICY_CHANNEL: StaticCell<
+        PubSubChannel<GlobalRawMutex, power_policy_service::service::event::Event<'static, DeviceType>, 4, 1, 0>,
+    > = StaticCell::new();
 
     let power_policy_channel = POWER_POLICY_CHANNEL.init(PubSubChannel::new());
     let power_policy_publisher = power_policy_channel.dyn_immediate_publisher();
@@ -101,7 +96,7 @@ async fn task(spawner: Spawner) {
     static CONTROLLER_LIST: StaticCell<IntrusiveList> = StaticCell::new();
     let controller_list = CONTROLLER_LIST.init(IntrusiveList::new());
 
-    static TYPE_C_SERVICE: StaticCell<Service<'static>> = StaticCell::new();
+    static TYPE_C_SERVICE: StaticCell<Service<'static, DeviceType>> = StaticCell::new();
     let type_c_service = TYPE_C_SERVICE.init(Service::create(
         Config::default(),
         controller_context,
@@ -114,7 +109,10 @@ async fn task(spawner: Spawner) {
     static CFU_CLIENT: OnceLock<CfuClient> = OnceLock::new();
     let cfu_client = CfuClient::new(&CFU_CLIENT).await;
 
-    spawner.must_spawn(power_policy_service_task(power_service));
+    spawner.must_spawn(power_policy_task(
+        psu::event::EventReceivers::new([&wrapper.ports[0].proxy], [policy_receiver]),
+        power_service,
+    ));
     spawner.must_spawn(type_c_service_task(
         type_c_service,
         [wrapper],
@@ -125,7 +123,9 @@ async fn task(spawner: Spawner) {
 
     Timer::after_millis(1000).await;
     info!("Simulating connection");
-    state.connect_sink(Current::UsbDefault.into(), false).await;
+    state
+        .connect_sink(power_capability_from_current(Current::UsbDefault), false)
+        .await;
     Timer::after_millis(DELAY_MS).await;
 
     info!("Simulating PD alert");
@@ -146,26 +146,18 @@ async fn task(spawner: Spawner) {
 }
 
 #[embassy_executor::task]
-async fn power_policy_service_task(
-    service: &'static PowerPolicy<
-        'static,
-        Mutex<GlobalRawMutex, PowerProxyDevice<'static>>,
-        DynamicReceiver<'static, policy::RequestData>,
-    >,
+async fn power_policy_task(
+    psu_events: psu::event::EventReceivers<'static, 1, DeviceType>,
+    power_policy: &'static Mutex<GlobalRawMutex, power_policy_service::service::Service<'static, DeviceType>>,
 ) {
-    power_policy_service::task::task(service)
-        .await
-        .expect("Failed to start power policy service task");
+    power_policy_service::service::task::task(psu_events, power_policy).await;
 }
 
 #[embassy_executor::task]
 async fn type_c_service_task(
-    service: &'static Service<'static>,
+    service: &'static Service<'static, DeviceType>,
     wrappers: [&'static Wrapper<'static>; NUM_PD_CONTROLLERS],
-    power_policy_context: &'static policy::Context<
-        Mutex<GlobalRawMutex, PowerProxyDevice<'static>>,
-        DynamicReceiver<'static, policy::RequestData>,
-    >,
+    power_policy_context: &'static power_policy_service::service::context::Context,
     cfu_client: &'static CfuClient,
 ) {
     info!("Starting type-c task");
@@ -176,6 +168,7 @@ fn create_wrapper(
     context: &'static Context,
 ) -> (
     &'static Wrapper<'static>,
+    DynamicReceiver<'static, power_policy_service::psu::event::EventData>,
     &'static Mutex<GlobalRawMutex, mock_controller::Controller<'static>>,
     &'static mock_controller::ControllerState,
 ) {
@@ -190,31 +183,26 @@ fn create_wrapper(
         [PORT0_ID],
     ));
 
-    static INTERMEDIATE: StaticCell<type_c_service::wrapper::backing::IntermediateStorage<1, GlobalRawMutex>> =
+    static POLICY_CHANNEL: StaticCell<Channel<GlobalRawMutex, power_policy_service::psu::event::EventData, 1>> =
         StaticCell::new();
-    let intermediate = INTERMEDIATE.init(
-        storage
-            .try_create_intermediate()
-            .expect("Failed to create intermediate storage"),
-    );
-
-    static POLICY_CHANNEL: StaticCell<Channel<GlobalRawMutex, policy::RequestData, 1>> = StaticCell::new();
     let policy_channel = POLICY_CHANNEL.init(Channel::new());
 
     let policy_sender = policy_channel.dyn_sender();
     let policy_receiver = policy_channel.dyn_receiver();
 
-    static REFERENCED: StaticCell<
-        type_c_service::wrapper::backing::ReferencedStorage<
-            1,
-            GlobalRawMutex,
-            DynamicSender<'_, policy::RequestData>,
-            DynamicReceiver<'_, policy::RequestData>,
-        >,
-    > = StaticCell::new();
+    static INTERMEDIATE: StaticCell<type_c_service::wrapper::backing::IntermediateStorage<1, GlobalRawMutex>> =
+        StaticCell::new();
+    let intermediate = INTERMEDIATE.init(
+        storage
+            .try_create_intermediate([("Pd0", policy_sender)])
+            .expect("Failed to create intermediate storage"),
+    );
+
+    static REFERENCED: StaticCell<type_c_service::wrapper::backing::ReferencedStorage<1, GlobalRawMutex>> =
+        StaticCell::new();
     let referenced = REFERENCED.init(
         intermediate
-            .try_create_referenced([(POWER0_ID, policy_sender, policy_receiver)])
+            .try_create_referenced()
             .expect("Failed to create referenced storage"),
     );
 
@@ -223,15 +211,13 @@ fn create_wrapper(
 
     static WRAPPER: StaticCell<mock_controller::Wrapper> = StaticCell::new();
     (
-        WRAPPER.init(
-            mock_controller::Wrapper::try_new(
-                controller,
-                Default::default(),
-                referenced,
-                crate::mock_controller::Validator,
-            )
-            .expect("Failed to create wrapper"),
-        ),
+        WRAPPER.init(mock_controller::Wrapper::new(
+            controller,
+            Default::default(),
+            referenced,
+            crate::mock_controller::Validator,
+        )),
+        policy_receiver,
         controller,
         state,
     )

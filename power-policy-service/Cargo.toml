@@ -16,6 +16,9 @@ embassy-futures.workspace = true
 embassy-sync.workspace = true
 embassy-time.workspace = true
 embedded-services.workspace = true
+embedded-batteries-async.workspace = true
+num_enum.workspace = true
+bitfield.workspace = true
 log = { workspace = true, optional = true }
 heapless.workspace = true
 
@@ -26,6 +29,7 @@ embassy-time = { workspace = true, features = ["std", "generic-queue-8"] }
 tokio = { workspace = true, features = ["rt", "macros", "time"] }
 env_logger = "0.11.8"
 log = { workspace = true }
+power-policy-service = { path = ".", features = ["log"] }
 
 [features]
 default = []

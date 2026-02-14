@@ -113,6 +113,7 @@ dependencies = [
  "embedded-services",
  "heapless",
  "mctp-rs",
+ "power-policy-service",
  "zerocopy",
 ]
 
@@ -777,7 +778,6 @@ dependencies = [
  "embassy-futures",
  "embassy-sync",
  "embassy-time",
- "embedded-batteries-async 0.3.4",
  "embedded-cfu-protocol",
  "embedded-hal-async",
  "embedded-io",
@@ -1318,6 +1318,20 @@ name = "portable-atomic"
 version = "1.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f84267b20a16ea918e43c6a88433c2d54fa145c92a811b5b047ccbe153674483"
+
+[[package]]
+name = "power-policy-service"
+version = "0.1.0"
+dependencies = [
+ "bitfield 0.17.0",
+ "embassy-futures",
+ "embassy-sync",
+ "embassy-time",
+ "embedded-batteries-async 0.3.4",
+ "embedded-services",
+ "heapless",
+ "num_enum",
+]
 
 [[package]]
 name = "proc-macro-error-attr2"

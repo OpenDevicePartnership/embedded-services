@@ -1,28 +1,17 @@
 use embassy_sync::blocking_mutex::raw::RawMutex;
-use embedded_services::{
-    event,
-    power::policy::policy,
-    sync::Lockable,
-    trace,
-    type_c::{
-        controller::Controller,
-        event::{PortPending, VdmNotification},
-    },
-};
+use embedded_services::{sync::Lockable, trace};
 use embedded_usb_pd::{Error, LocalPortId, PdError};
 
-use crate::wrapper::{DynPortState, message::vdm::OutputKind};
+use crate::wrapper::message::vdm::OutputKind;
+
+use crate::type_c::{
+    controller::Controller,
+    event::{PortPending, VdmNotification},
+};
 
 use super::{ControllerWrapper, FwOfferValidator, message::vdm::Output};
 
-impl<
-    'device,
-    M: RawMutex,
-    D: Lockable,
-    S: event::Sender<policy::RequestData>,
-    R: event::Receiver<policy::RequestData>,
-    V: FwOfferValidator,
-> ControllerWrapper<'device, M, D, S, R, V>
+impl<'device, M: RawMutex, D: Lockable, V: FwOfferValidator> ControllerWrapper<'device, M, D, V>
 where
     D::Inner: Controller,
 {
@@ -45,21 +34,18 @@ where
     }
 
     /// Finalize a VDM output by notifying the service.
-    pub(super) async fn finalize_vdm(
-        &self,
-        state: &mut dyn DynPortState<'_, S>,
-        output: Output,
-    ) -> Result<(), PdError> {
+    pub(super) async fn finalize_vdm(&self, output: Output) -> Result<(), PdError> {
         trace!("Finalizing VDM output: {:?}", output);
         let Output { port, kind } = output;
         let global_port_id = self.registration.pd_controller.lookup_global_port(port)?;
-        let port_index = port.0 as usize;
-        let notification = &mut state
-            .port_states_mut()
-            .get_mut(port_index)
+        let mut port_state = self
+            .ports
+            .get(port.0 as usize)
             .ok_or(PdError::InvalidPort)?
-            .pending_events
-            .notification;
+            .state
+            .lock()
+            .await;
+        let notification = &mut port_state.pending_events.notification;
         match kind {
             OutputKind::Entered(_) => notification.set_custom_mode_entered(true),
             OutputKind::Exited(_) => notification.set_custom_mode_exited(true),

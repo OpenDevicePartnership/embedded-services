@@ -2,12 +2,14 @@
 use core::ops::Deref;
 
 use embedded_batteries_async::acpi::{PowerSourceState, PowerUnit};
-use embedded_services::{info, power::policy::PowerCapability, trace};
+use embedded_services::{info, trace};
 
 use battery_service_messages::{
     AcpiBatteryResponse, BixFixedStrings, DeviceId, PifFixedStrings, STD_BIX_BATTERY_SIZE, STD_BIX_MODEL_SIZE,
     STD_BIX_OEM_SIZE, STD_BIX_SERIAL_SIZE, STD_PIF_MODEL_SIZE, STD_PIF_OEM_SIZE, STD_PIF_SERIAL_SIZE,
 };
+
+use power_policy_service::capability::PowerCapability;
 
 use crate::{
     AcpiBatteryError,

@@ -1,18 +1,19 @@
-use embedded_services::{
-    debug, error,
-    type_c::{
-        controller::{DpConfig, PdStateMachineConfig, TbtConfig, TypeCStateMachineState, UsbControlConfig},
-        external,
-    },
-};
+use embedded_services::{debug, error};
 use embedded_usb_pd::GlobalPortId;
 
 use super::*;
 use crate::PortEventStreamer;
 
-use embedded_services::type_c::controller::SendVdm;
+use crate::type_c::controller::SendVdm;
+use crate::type_c::{
+    controller::{DpConfig, PdStateMachineConfig, TbtConfig, TypeCStateMachineState, UsbControlConfig},
+    external,
+};
 
-impl<'a> Service<'a> {
+impl<'a, PSU: Lockable> Service<'a, PSU>
+where
+    PSU::Inner: psu::Psu,
+{
     /// Wait for port flags
     pub(super) async fn wait_port_flags(&self) -> PortEventStreamer {
         if let Some(ref streamer) = self.state.lock().await.port_event_streaming_state {

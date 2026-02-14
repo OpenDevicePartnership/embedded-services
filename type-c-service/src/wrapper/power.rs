@@ -2,37 +2,26 @@
 use core::pin::pin;
 
 use embassy_futures::select::select_slice;
-use embedded_services::{
-    debug,
-    power::policy::{
-        ConsumerPowerCapability, ProviderPowerCapability,
-        device::{CommandData, InternalResponseData, ResponseData},
-        flags::PsuType,
-    },
-};
+use embedded_services::debug;
 
-use embedded_services::power::policy::Error as PowerError;
-use embedded_services::power::policy::device::CommandData as PowerCommand;
+use power_policy_service::capability::{ConsumerPowerCapability, ProviderPowerCapability, PsuType};
+use power_policy_service::psu::CommandData as PowerCommand;
+use power_policy_service::psu::Error as PowerError;
+use power_policy_service::psu::{CommandData, InternalResponseData, ResponseData};
 
+use crate::wrapper::backing::ControllerState;
 use crate::wrapper::config::UnconstrainedSink;
 
 use super::*;
 
-impl<
-    'device,
-    M: RawMutex,
-    D: Lockable,
-    S: event::Sender<policy::RequestData>,
-    R: event::Receiver<policy::RequestData>,
-    V: FwOfferValidator,
-> ControllerWrapper<'device, M, D, S, R, V>
+impl<'device, M: RawMutex, D: Lockable, V: FwOfferValidator> ControllerWrapper<'device, M, D, V>
 where
     D::Inner: Controller,
 {
     /// Handle a new contract as consumer
     pub(super) async fn process_new_consumer_contract(
         &self,
-        power: &mut PortPower<S>,
+        port_state: &mut PortState<'_>,
         status: &PortStatus,
     ) -> Result<(), Error<<D::Inner as Controller>::BusError>> {
         info!("Process new consumer contract");
@@ -48,9 +37,11 @@ where
             c
         });
 
-        power
-            .sender
-            .send(policy::RequestData::UpdatedConsumerCapability(available_sink_contract))
+        port_state
+            .power_policy_sender
+            .send(power_policy_service::psu::event::EventData::UpdatedConsumerCapability(
+                available_sink_contract,
+            ))
             .await;
         Ok(())
     }
@@ -58,19 +49,21 @@ where
     /// Handle a new contract as provider
     pub(super) async fn process_new_provider_contract(
         &self,
-        power: &mut PortPower<S>,
+        port_state: &mut PortState<'_>,
         status: &PortStatus,
     ) -> Result<(), Error<<D::Inner as Controller>::BusError>> {
         info!("Process New provider contract");
-        power
-            .sender
-            .send(policy::RequestData::RequestedProviderCapability(
-                status.available_source_contract.map(|caps| {
-                    let mut caps = ProviderPowerCapability::from(caps);
-                    caps.flags.set_psu_type(PsuType::TypeC);
-                    caps
-                }),
-            ))
+        port_state
+            .power_policy_sender
+            .send(
+                power_policy_service::psu::event::EventData::RequestedProviderCapability(
+                    status.available_source_contract.map(|caps| {
+                        let mut caps = ProviderPowerCapability::from(caps);
+                        caps.flags.set_psu_type(PsuType::TypeC);
+                        caps
+                    }),
+                ),
+            )
             .await;
         Ok(())
     }
@@ -129,13 +122,13 @@ where
     /// Returns no error because this is a top-level function
     pub(super) async fn process_power_command(
         &self,
+        controller_state: &mut ControllerState,
         controller: &mut D::Inner,
-        state: &mut dyn DynPortState<'_, S>,
         port: LocalPortId,
         command: &CommandData,
     ) -> InternalResponseData {
         trace!("Processing power command: device{} {:#?}", port.0, command);
-        if state.controller_state().fw_update_state.in_progress() {
+        if controller_state.fw_update_state.in_progress() {
             debug!("Port{}: Firmware update in progress", port.0);
             return Err(PowerError::Busy);
         }

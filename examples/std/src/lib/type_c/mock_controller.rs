@@ -1,21 +1,21 @@
-use embassy_sync::{channel, mutex::Mutex, signal::Signal};
+use embassy_sync::{mutex::Mutex, signal::Signal};
 use embedded_cfu_protocol::protocol_definitions::{FwUpdateOfferResponse, HostToken};
-use embedded_services::{
-    GlobalRawMutex,
-    power::policy::{PowerCapability, policy},
-    type_c::{
-        controller::{
-            AttnVdm, ControllerStatus, DpConfig, DpPinConfig, DpStatus, OtherVdm, PdStateMachineConfig, PortStatus,
-            RetimerFwUpdateState, SendVdm, TbtConfig, TypeCStateMachineState, UsbControlConfig,
-        },
-        event::PortEvent,
-    },
-};
+use embedded_services::GlobalRawMutex;
 use embedded_usb_pd::{Error, ado::Ado};
 use embedded_usb_pd::{LocalPortId, PdError};
 use embedded_usb_pd::{PowerRole, type_c::Current};
 use embedded_usb_pd::{type_c::ConnectionState, ucsi::lpm};
 use log::{debug, info, trace};
+
+use power_policy_service::capability::PowerCapability;
+use type_c_service::type_c::{
+    controller::{
+        AttnVdm, ControllerStatus, DpConfig, DpPinConfig, DpStatus, OtherVdm, PdStateMachineConfig, PortStatus,
+        RetimerFwUpdateState, SendVdm, TbtConfig, TypeCStateMachineState, UsbControlConfig,
+    },
+    event::PortEvent,
+    power_capability_from_current,
+};
 
 pub struct ControllerState {
     events: Signal<GlobalRawMutex, PortEvent>,
@@ -77,7 +77,8 @@ impl ControllerState {
 
     /// Simulate a debug accessory source connecting
     pub async fn connect_debug_accessory_source(&self, current: Current) {
-        self.connect(PowerRole::Source, current.into(), true, false).await;
+        self.connect(PowerRole::Source, power_capability_from_current(current), true, false)
+            .await;
     }
 
     /// Simulate a PD alert
@@ -115,7 +116,7 @@ impl<'a> Controller<'a> {
     }
 }
 
-impl embedded_services::type_c::controller::Controller for Controller<'_> {
+impl type_c_service::type_c::controller::Controller for Controller<'_> {
     type BusError = ();
 
     async fn wait_port_event(&mut self) -> Result<(), Error<Self::BusError>> {
@@ -337,11 +338,5 @@ impl type_c_service::wrapper::FwOfferValidator for Validator {
     }
 }
 
-pub type Wrapper<'a> = type_c_service::wrapper::ControllerWrapper<
-    'a,
-    GlobalRawMutex,
-    Mutex<GlobalRawMutex, Controller<'a>>,
-    channel::DynamicSender<'a, policy::RequestData>,
-    channel::DynamicReceiver<'a, policy::RequestData>,
-    Validator,
->;
+pub type Wrapper<'a> =
+    type_c_service::wrapper::ControllerWrapper<'a, GlobalRawMutex, Mutex<GlobalRawMutex, Controller<'a>>, Validator>;

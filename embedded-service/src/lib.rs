@@ -15,16 +15,13 @@ pub mod activity;
 pub mod broadcaster;
 pub mod buffer;
 pub mod comms;
-pub mod event;
 pub mod fmt;
 pub mod hid;
 pub mod init;
 pub mod ipc;
 pub mod keyboard;
-pub mod power;
 pub mod relay;
 pub mod sync;
-pub mod type_c;
 
 /// Global Mutex type, ThreadModeRawMutex is used in a microcontroller context, whereas CriticalSectionRawMutex is used
 /// in a standard context for unit testing.
@@ -76,5 +73,4 @@ pub async fn init() {
     comms::init();
     activity::init();
     keyboard::init();
-    power::policy::init();
 }

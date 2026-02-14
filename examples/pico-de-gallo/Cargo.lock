@@ -181,6 +181,7 @@ dependencies = [
  "heapless 0.8.0",
  "log",
  "mctp-rs",
+ "power-policy-service",
  "zerocopy",
 ]
 
@@ -628,7 +629,6 @@ dependencies = [
  "embassy-futures",
  "embassy-sync",
  "embassy-time",
- "embedded-batteries-async",
  "embedded-cfu-protocol",
  "embedded-hal-async",
  "embedded-io 0.6.1",
@@ -1335,6 +1335,20 @@ checksum = "9475666d89f42231a0a57da32d5f6ca7f9b5cd4c335ea1fe8f3278215b7a21ff"
 dependencies = [
  "postcard-derive",
  "serde",
+]
+
+[[package]]
+name = "power-policy-service"
+version = "0.1.0"
+dependencies = [
+ "bitfield 0.17.0",
+ "embassy-futures",
+ "embassy-sync",
+ "embassy-time",
+ "embedded-batteries-async",
+ "embedded-services",
+ "heapless 0.8.0",
+ "num_enum",
 ]
 
 [[package]]

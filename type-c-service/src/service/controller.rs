@@ -1,14 +1,15 @@
-use embedded_services::{
-    debug, error,
-    type_c::{
-        ControllerId,
-        external::{self, ControllerCommandData},
-    },
-};
+use embedded_services::{debug, error};
 
 use super::*;
+use crate::type_c::{
+    ControllerId,
+    external::{self, ControllerCommandData},
+};
 
-impl<'a> Service<'a> {
+impl<'a, PSU: Lockable> Service<'a, PSU>
+where
+    PSU::Inner: psu::Psu,
+{
     /// Process external controller status command
     pub(super) async fn process_external_controller_status(
         &self,

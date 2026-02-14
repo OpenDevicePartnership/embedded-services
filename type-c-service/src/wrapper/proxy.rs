@@ -1,9 +1,6 @@
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use embassy_sync::channel::{Channel, DynamicReceiver, DynamicSender};
-use embedded_services::power;
-use embedded_services::power::policy::device::{
-    CommandData as PolicyCommandData, DeviceTrait, InternalResponseData as PolicyResponseData,
-};
+use power_policy_service::psu::{CommandData as PolicyCommandData, InternalResponseData as PolicyResponseData, Psu};
 
 pub struct PowerProxyChannel<M: RawMutex> {
     command_channel: Channel<M, PolicyCommandData, 1>,
@@ -18,11 +15,13 @@ impl<M: RawMutex> PowerProxyChannel<M> {
         }
     }
 
-    pub fn get_device(&self) -> PowerProxyDevice<'_> {
-        PowerProxyDevice {
-            sender: self.command_channel.dyn_sender(),
-            receiver: self.response_channel.dyn_receiver(),
-        }
+    pub fn get_device_components(
+        &self,
+    ) -> (
+        DynamicSender<'_, PolicyCommandData>,
+        DynamicReceiver<'_, PolicyResponseData>,
+    ) {
+        (self.command_channel.dyn_sender(), self.response_channel.dyn_receiver())
     }
 
     pub fn get_receiver(&self) -> PowerProxyReceiver<'_> {
@@ -58,14 +57,23 @@ impl<'a> PowerProxyReceiver<'a> {
 pub struct PowerProxyDevice<'a> {
     sender: DynamicSender<'a, PolicyCommandData>,
     receiver: DynamicReceiver<'a, PolicyResponseData>,
+    /// Per-port PSU state
+    pub(crate) psu_state: power_policy_service::psu::State,
+    name: &'static str,
 }
 
 impl<'a> PowerProxyDevice<'a> {
     pub fn new(
+        name: &'static str,
         sender: DynamicSender<'a, PolicyCommandData>,
         receiver: DynamicReceiver<'a, PolicyResponseData>,
     ) -> Self {
-        Self { sender, receiver }
+        Self {
+            name,
+            sender,
+            receiver,
+            psu_state: power_policy_service::psu::State::default(),
+        }
     }
 
     async fn execute(&mut self, command: PolicyCommandData) -> PolicyResponseData {
@@ -74,15 +82,15 @@ impl<'a> PowerProxyDevice<'a> {
     }
 }
 
-impl<'a> DeviceTrait for PowerProxyDevice<'a> {
-    async fn disconnect(&mut self) -> Result<(), power::policy::Error> {
+impl<'a> Psu for PowerProxyDevice<'a> {
+    async fn disconnect(&mut self) -> Result<(), power_policy_service::psu::Error> {
         self.execute(PolicyCommandData::Disconnect).await?.complete_or_err()
     }
 
     async fn connect_provider(
         &mut self,
-        capability: power::policy::ProviderPowerCapability,
-    ) -> Result<(), power::policy::Error> {
+        capability: power_policy_service::capability::ProviderPowerCapability,
+    ) -> Result<(), power_policy_service::psu::Error> {
         self.execute(PolicyCommandData::ConnectAsProvider(capability))
             .await?
             .complete_or_err()
@@ -90,11 +98,19 @@ impl<'a> DeviceTrait for PowerProxyDevice<'a> {
 
     async fn connect_consumer(
         &mut self,
-        capability: power::policy::ConsumerPowerCapability,
-    ) -> Result<(), power::policy::Error> {
+        capability: power_policy_service::capability::ConsumerPowerCapability,
+    ) -> Result<(), power_policy_service::psu::Error> {
         self.execute(PolicyCommandData::ConnectAsConsumer(capability))
             .await?
             .complete_or_err()
+    }
+
+    fn state(&mut self) -> &mut power_policy_service::psu::State {
+        &mut self.psu_state
+    }
+
+    fn name(&self) -> &'static str {
+        self.name
     }
 }
 
