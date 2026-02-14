@@ -3,7 +3,7 @@ use embassy_sync::signal::Signal;
 use embedded_services::{GlobalRawMutex, event, info};
 use power_policy_service::{
     capability::{ConsumerFlags, ConsumerPowerCapability, PowerCapability, ProviderPowerCapability},
-    psu::{Error, Psu, State, event::RequestData},
+    psu::{Error, Psu, State, event::EventData},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -15,16 +15,18 @@ pub enum FnCall {
     Reset,
 }
 
-pub struct Mock<'a, S: event::Sender<RequestData>> {
+pub struct Mock<'a, S: event::Sender<EventData>> {
     sender: S,
     fn_call: &'a Signal<GlobalRawMutex, (usize, FnCall)>,
     // Internal state
     pub state: State,
+    name: &'static str,
 }
 
-impl<'a, S: event::Sender<RequestData>> Mock<'a, S> {
-    pub fn new(sender: S, fn_call: &'a Signal<GlobalRawMutex, (usize, FnCall)>) -> Self {
+impl<'a, S: event::Sender<EventData>> Mock<'a, S> {
+    pub fn new(name: &'static str, sender: S, fn_call: &'a Signal<GlobalRawMutex, (usize, FnCall)>) -> Self {
         Self {
+            name,
             sender,
             fn_call,
             state: Default::default(),
@@ -41,23 +43,21 @@ impl<'a, S: event::Sender<RequestData>> Mock<'a, S> {
     }
 
     pub async fn simulate_consumer_connection(&mut self, capability: PowerCapability) {
-        self.sender.send(RequestData::Attached).await;
+        self.sender.send(EventData::Attached).await;
 
         let capability = Some(ConsumerPowerCapability {
             capability,
             flags: ConsumerFlags::none(),
         });
-        self.sender
-            .send(RequestData::UpdatedConsumerCapability(capability))
-            .await;
+        self.sender.send(EventData::UpdatedConsumerCapability(capability)).await;
     }
 
     pub async fn simulate_detach(&mut self) {
-        self.sender.send(RequestData::Detached).await;
+        self.sender.send(EventData::Detached).await;
     }
 }
 
-impl<'a, S: event::Sender<RequestData>> Psu for Mock<'a, S> {
+impl<'a, S: event::Sender<EventData>> Psu for Mock<'a, S> {
     async fn connect_consumer(&mut self, capability: ConsumerPowerCapability) -> Result<(), Error> {
         info!("Connect consumer {:#?}", capability);
         self.record_fn_call(FnCall::ConnectConsumer(capability));
@@ -78,5 +78,9 @@ impl<'a, S: event::Sender<RequestData>> Psu for Mock<'a, S> {
 
     fn state(&mut self) -> &mut State {
         &mut self.state
+    }
+
+    fn name(&self) -> &'static str {
+        self.name
     }
 }

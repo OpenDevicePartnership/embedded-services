@@ -6,7 +6,10 @@ use crate::type_c::{
     external::{self, ControllerCommandData},
 };
 
-impl<'a> Service<'a> {
+impl<'a, PSU: Lockable> Service<'a, PSU>
+where
+    PSU::Inner: psu::Psu,
+{
     /// Process external controller status command
     pub(super) async fn process_external_controller_status(
         &self,

@@ -1,13 +1,23 @@
 use core::future::Future;
 use embedded_services::{error, event, info, sync::Lockable};
 
-use power_policy_service::service::context;
+use power_policy_service::{psu, service::context};
 
 use crate::{service::Service, wrapper::ControllerWrapper};
 
 /// Task to run the Type-C service, takes a closure to customize the event loop
-pub async fn task_closure<'a, M, D, S, V, Fut: Future<Output = ()>, F: Fn(&'a Service) -> Fut, const N: usize>(
-    service: &'static Service<'a>,
+pub async fn task_closure<
+    'a,
+    M,
+    D,
+    PSU: Lockable,
+    S,
+    V,
+    Fut: Future<Output = ()>,
+    F: Fn(&'a Service<'a, PSU>) -> Fut,
+    const N: usize,
+>(
+    service: &'static Service<'a, PSU>,
     wrappers: [&'a ControllerWrapper<'a, M, D, S, V>; N],
     power_policy_context: &context::Context,
     cfu_client: &'a cfu_service::CfuClient,
@@ -15,7 +25,8 @@ pub async fn task_closure<'a, M, D, S, V, Fut: Future<Output = ()>, F: Fn(&'a Se
 ) where
     M: embassy_sync::blocking_mutex::raw::RawMutex,
     D: Lockable,
-    S: event::Sender<power_policy_service::psu::event::RequestData>,
+    PSU::Inner: psu::Psu,
+    S: event::Sender<power_policy_service::psu::event::EventData>,
     V: crate::wrapper::FwOfferValidator,
     D::Inner: crate::type_c::controller::Controller,
 {
@@ -39,15 +50,16 @@ pub async fn task_closure<'a, M, D, S, V, Fut: Future<Output = ()>, F: Fn(&'a Se
 }
 
 /// Task to run the Type-C service, running the default event loop
-pub async fn task<'a, M, D, S, V, const N: usize>(
-    service: &'static Service<'a>,
+pub async fn task<'a, M, D, PSU: Lockable, S, V, const N: usize>(
+    service: &'static Service<'a, PSU>,
     wrappers: [&'a ControllerWrapper<'a, M, D, S, V>; N],
     power_policy_context: &context::Context,
     cfu_client: &'a cfu_service::CfuClient,
 ) where
     M: embassy_sync::blocking_mutex::raw::RawMutex,
     D: embedded_services::sync::Lockable,
-    S: event::Sender<power_policy_service::psu::event::RequestData>,
+    PSU::Inner: psu::Psu,
+    S: event::Sender<power_policy_service::psu::event::EventData>,
     V: crate::wrapper::FwOfferValidator,
     <D as embedded_services::sync::Lockable>::Inner: crate::type_c::controller::Controller,
 {
@@ -56,7 +68,7 @@ pub async fn task<'a, M, D, S, V, const N: usize>(
         wrappers,
         power_policy_context,
         cfu_client,
-        |service: &Service| async {
+        |service: &Service<'_, PSU>| async {
             if let Err(e) = service.process_next_event().await {
                 error!("Type-C service processing error: {:#?}", e);
             }

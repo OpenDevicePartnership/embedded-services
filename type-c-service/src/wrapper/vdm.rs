@@ -15,7 +15,7 @@ impl<
     'device,
     M: RawMutex,
     D: Lockable,
-    S: event::Sender<power_policy_service::psu::event::RequestData>,
+    S: event::Sender<power_policy_service::psu::event::EventData>,
     V: FwOfferValidator,
 > ControllerWrapper<'device, M, D, S, V>
 where

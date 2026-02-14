@@ -25,7 +25,6 @@ use type_c_service::wrapper::proxy::PowerProxyDevice;
 const NUM_PD_CONTROLLERS: usize = 1;
 const CONTROLLER0_ID: ControllerId = ControllerId(0);
 const PORT0_ID: GlobalPortId = GlobalPortId(0);
-const POWER0_ID: power_policy_service::psu::DeviceId = power_policy_service::psu::DeviceId(0);
 const DELAY_MS: u64 = 1000;
 
 type DeviceType = Mutex<GlobalRawMutex, PowerProxyDevice<'static>>;
@@ -72,11 +71,8 @@ async fn task(spawner: Spawner) {
 
     let (wrapper, policy_receiver, controller, state) = create_wrapper(controller_context);
 
-    static POWER_POLICY_PSU_REGISTRATION: StaticCell<
-        [power_policy_service::psu::RegistrationEntry<'static, DeviceType>; 1],
-    > = StaticCell::new();
-    let psu_registration =
-        POWER_POLICY_PSU_REGISTRATION.init([psu::RegistrationEntry::new(POWER0_ID, &wrapper.ports[0].proxy)]);
+    static POWER_POLICY_PSU_REGISTRATION: StaticCell<[&DeviceType; 1]> = StaticCell::new();
+    let psu_registration = POWER_POLICY_PSU_REGISTRATION.init([&wrapper.ports[0].proxy]);
 
     static POWER_SERVICE: StaticCell<Mutex<GlobalRawMutex, power_policy_service::service::Service<DeviceType>>> =
         StaticCell::new();
@@ -89,7 +85,7 @@ async fn task(spawner: Spawner) {
     // Create type-c service
     // The service is the only receiver and we only use a DynImmediatePublisher, which doesn't take a publisher slot
     static POWER_POLICY_CHANNEL: StaticCell<
-        PubSubChannel<GlobalRawMutex, power_policy_service::service::event::CommsMessage, 4, 1, 0>,
+        PubSubChannel<GlobalRawMutex, power_policy_service::service::event::Event<'static, DeviceType>, 4, 1, 0>,
     > = StaticCell::new();
 
     let power_policy_channel = POWER_POLICY_CHANNEL.init(PubSubChannel::new());
@@ -100,7 +96,7 @@ async fn task(spawner: Spawner) {
     static CONTROLLER_LIST: StaticCell<IntrusiveList> = StaticCell::new();
     let controller_list = CONTROLLER_LIST.init(IntrusiveList::new());
 
-    static TYPE_C_SERVICE: StaticCell<Service<'static>> = StaticCell::new();
+    static TYPE_C_SERVICE: StaticCell<Service<'static, DeviceType>> = StaticCell::new();
     let type_c_service = TYPE_C_SERVICE.init(Service::create(
         Config::default(),
         controller_context,
@@ -114,7 +110,7 @@ async fn task(spawner: Spawner) {
     let cfu_client = CfuClient::new(&CFU_CLIENT).await;
 
     spawner.must_spawn(power_policy_task(
-        psu::event::EventReceivers::new(psu_registration, [policy_receiver]),
+        psu::event::EventReceivers::new([&wrapper.ports[0].proxy], [policy_receiver]),
         power_service,
     ));
     spawner.must_spawn(type_c_service_task(
@@ -151,7 +147,7 @@ async fn task(spawner: Spawner) {
 
 #[embassy_executor::task]
 async fn power_policy_task(
-    psu_events: psu::event::EventReceivers<'static, 1, DeviceType, DynamicReceiver<'static, psu::event::RequestData>>,
+    psu_events: psu::event::EventReceivers<'static, 1, DeviceType, DynamicReceiver<'static, psu::event::EventData>>,
     power_policy: &'static Mutex<GlobalRawMutex, power_policy_service::service::Service<'static, DeviceType>>,
 ) {
     power_policy_service::service::task::task(psu_events, power_policy).await;
@@ -159,7 +155,7 @@ async fn power_policy_task(
 
 #[embassy_executor::task]
 async fn type_c_service_task(
-    service: &'static Service<'static>,
+    service: &'static Service<'static, DeviceType>,
     wrappers: [&'static Wrapper<'static>; NUM_PD_CONTROLLERS],
     power_policy_context: &'static power_policy_service::service::context::Context,
     cfu_client: &'static CfuClient,
@@ -172,7 +168,7 @@ fn create_wrapper(
     context: &'static Context,
 ) -> (
     &'static Wrapper<'static>,
-    DynamicReceiver<'static, power_policy_service::psu::event::RequestData>,
+    DynamicReceiver<'static, power_policy_service::psu::event::EventData>,
     &'static Mutex<GlobalRawMutex, mock_controller::Controller<'static>>,
     &'static mock_controller::ControllerState,
 ) {
@@ -187,7 +183,7 @@ fn create_wrapper(
         [PORT0_ID],
     ));
 
-    static POLICY_CHANNEL: StaticCell<Channel<GlobalRawMutex, power_policy_service::psu::event::RequestData, 1>> =
+    static POLICY_CHANNEL: StaticCell<Channel<GlobalRawMutex, power_policy_service::psu::event::EventData, 1>> =
         StaticCell::new();
     let policy_channel = POLICY_CHANNEL.init(Channel::new());
 
@@ -198,12 +194,12 @@ fn create_wrapper(
         type_c_service::wrapper::backing::IntermediateStorage<
             1,
             GlobalRawMutex,
-            DynamicSender<'static, psu::event::RequestData>,
+            DynamicSender<'static, psu::event::EventData>,
         >,
     > = StaticCell::new();
     let intermediate = INTERMEDIATE.init(
         storage
-            .try_create_intermediate([policy_sender])
+            .try_create_intermediate([("Pd0", policy_sender)])
             .expect("Failed to create intermediate storage"),
     );
 
@@ -211,12 +207,12 @@ fn create_wrapper(
         type_c_service::wrapper::backing::ReferencedStorage<
             1,
             GlobalRawMutex,
-            DynamicSender<'_, psu::event::RequestData>,
+            DynamicSender<'_, psu::event::EventData>,
         >,
     > = StaticCell::new();
     let referenced = REFERENCED.init(
         intermediate
-            .try_create_referenced([POWER0_ID])
+            .try_create_referenced()
             .expect("Failed to create referenced storage"),
     );
 

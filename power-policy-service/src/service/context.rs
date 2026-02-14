@@ -1,18 +1,14 @@
 //! Context for any power policy implementations
 use crate::charger;
-use embedded_services::broadcaster::immediate as broadcaster;
 
 use crate::charger::ChargerResponse;
 use crate::psu::Error;
-use crate::service::event::CommsMessage;
 use embedded_services::{error, intrusive_list};
 
 /// Power policy context
 pub struct Context {
     /// Registered chargers
     charger_devices: intrusive_list::IntrusiveList,
-    /// Message broadcaster
-    broadcaster: broadcaster::Immediate<CommsMessage>,
 }
 
 impl Default for Context {
@@ -26,7 +22,6 @@ impl Context {
     pub const fn new() -> Self {
         Self {
             charger_devices: intrusive_list::IntrusiveList::new(),
-            broadcaster: broadcaster::Immediate::new(),
         }
     }
 
@@ -82,14 +77,6 @@ impl Context {
         Ok(charger::ChargerResponseData::Ack)
     }
 
-    /// Register a message receiver for power policy messages
-    pub fn register_message_receiver(
-        &self,
-        receiver: &'static broadcaster::Receiver<'_, CommsMessage>,
-    ) -> intrusive_list::Result<()> {
-        self.broadcaster.register_receiver(receiver)
-    }
-
     /// Initialize Policy charger devices
     pub async fn init(&self) -> Result<(), Error> {
         // Check if the chargers are powered and able to communicate
@@ -103,10 +90,5 @@ impl Context {
     /// Provides access to the charger list
     pub fn charger_devices(&self) -> &intrusive_list::IntrusiveList {
         &self.charger_devices
-    }
-
-    /// Broadcast a power policy message to all subscribers
-    pub async fn broadcast_message(&self, message: CommsMessage) {
-        self.broadcaster.broadcast(message).await;
     }
 }

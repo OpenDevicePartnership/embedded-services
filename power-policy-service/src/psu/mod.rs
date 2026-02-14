@@ -1,6 +1,5 @@
 //! Device struct and methods
 use crate::capability::{ConsumerPowerCapability, PowerCapability, ProviderPowerCapability};
-use embedded_services::sync::Lockable;
 
 pub mod event;
 
@@ -29,11 +28,6 @@ pub enum Error {
     /// Generic failure
     Failed,
 }
-
-/// Device ID new type
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct DeviceId(pub u8);
 
 /// Most basic device states
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -242,8 +236,6 @@ pub enum CommandData {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct Command {
-    /// Target device
-    pub id: DeviceId,
     /// Request data
     pub data: CommandData,
 }
@@ -270,8 +262,6 @@ pub type InternalResponseData = Result<ResponseData, Error>;
 
 /// Response from a device to the power policy service
 pub struct Response {
-    /// Target device
-    pub id: DeviceId,
     /// Response data
     pub data: ResponseData,
 }
@@ -286,30 +276,6 @@ pub trait Psu {
     fn connect_consumer(&mut self, capability: ConsumerPowerCapability) -> impl Future<Output = Result<(), Error>>;
     /// Return a mutable reference to the current PSU state
     fn state(&mut self) -> &mut State;
-}
-
-/// PSU registration struct
-pub struct RegistrationEntry<'a, D: Lockable>
-where
-    D::Inner: Psu,
-{
-    /// Device ID
-    pub id: DeviceId,
-    /// Reference to hardware
-    pub device: &'a D,
-}
-
-impl<'a, D: Lockable> RegistrationEntry<'a, D>
-where
-    D::Inner: Psu,
-{
-    /// Create a new device
-    pub fn new(id: DeviceId, device: &'a D) -> Self {
-        Self { id, device }
-    }
-
-    /// Get the device ID
-    pub fn id(&self) -> DeviceId {
-        self.id
-    }
+    /// Return the name of the PSU
+    fn name(&self) -> &'static str;
 }

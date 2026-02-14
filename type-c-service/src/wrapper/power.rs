@@ -18,7 +18,7 @@ impl<
     'device,
     M: RawMutex,
     D: Lockable,
-    S: event::Sender<power_policy_service::psu::event::RequestData>,
+    S: event::Sender<power_policy_service::psu::event::EventData>,
     V: FwOfferValidator,
 > ControllerWrapper<'device, M, D, S, V>
 where
@@ -45,7 +45,7 @@ where
 
         port_state
             .power_policy_sender
-            .send(power_policy_service::psu::event::RequestData::UpdatedConsumerCapability(available_sink_contract))
+            .send(power_policy_service::psu::event::EventData::UpdatedConsumerCapability(available_sink_contract))
             .await;
         Ok(())
     }
@@ -60,7 +60,7 @@ where
         port_state
             .power_policy_sender
             .send(
-                power_policy_service::psu::event::RequestData::RequestedProviderCapability(
+                power_policy_service::psu::event::EventData::RequestedProviderCapability(
                     status.available_source_contract.map(|caps| {
                         let mut caps = ProviderPowerCapability::from(caps);
                         caps.flags.set_psu_type(PsuType::TypeC);

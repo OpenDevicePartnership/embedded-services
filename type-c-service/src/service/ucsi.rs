@@ -28,7 +28,10 @@ pub(super) struct State {
     pub(super) psu_connected: bool,
 }
 
-impl<'a> Service<'a> {
+impl<'a, PSU: Lockable> Service<'a, PSU>
+where
+    PSU::Inner: psu::Psu,
+{
     /// PPM reset implementation
     fn process_ppm_reset(&self, state: &mut State) {
         debug!("Resetting PPM");

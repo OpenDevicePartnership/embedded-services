@@ -72,7 +72,7 @@ pub struct ControllerWrapper<
     'device,
     M: RawMutex,
     D: Lockable,
-    S: event::Sender<power_policy_service::psu::event::RequestData>,
+    S: event::Sender<power_policy_service::psu::event::EventData>,
     V: FwOfferValidator,
 > where
     D::Inner: Controller,
@@ -100,7 +100,7 @@ impl<
     'device,
     M: RawMutex,
     D: Lockable,
-    S: event::Sender<power_policy_service::psu::event::RequestData>,
+    S: event::Sender<power_policy_service::psu::event::EventData>,
     V: FwOfferValidator,
 > ControllerWrapper<'device, M, D, S, V>
 where
@@ -194,13 +194,13 @@ where
             info!("Plug inserted");
             port_state
                 .power_policy_sender
-                .send(power_policy_service::psu::event::RequestData::Attached)
+                .send(power_policy_service::psu::event::EventData::Attached)
                 .await;
         } else {
             info!("Plug removed");
             port_state
                 .power_policy_sender
-                .send(power_policy_service::psu::event::RequestData::Detached)
+                .send(power_policy_service::psu::event::EventData::Detached)
                 .await;
         }
 
@@ -621,7 +621,7 @@ impl<
     'device,
     M: RawMutex,
     C: Lockable,
-    S: event::Sender<power_policy_service::psu::event::RequestData>,
+    S: event::Sender<power_policy_service::psu::event::EventData>,
     V: FwOfferValidator,
 > Lockable for ControllerWrapper<'device, M, C, S, V>
 where

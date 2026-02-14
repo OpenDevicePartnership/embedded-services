@@ -4,12 +4,15 @@ use core::pin::pin;
 use embassy_futures::select::select_slice;
 use embedded_services::{event::Receiver, sync::Lockable};
 
-use crate::capability::{ConsumerPowerCapability, ProviderPowerCapability};
+use crate::{
+    capability::{ConsumerPowerCapability, ProviderPowerCapability},
+    psu,
+};
 
 /// Data for a power policy request
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub enum RequestData {
+pub enum EventData {
     /// Notify that a device has attached
     Attached,
     /// Notify that available power for consumption has changed
@@ -25,11 +28,14 @@ pub enum RequestData {
 /// Request to the power policy service
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct Request {
+pub struct Event<'a, D: Lockable>
+where
+    D::Inner: psu::Psu,
+{
     /// Device that sent this request
-    pub id: super::DeviceId,
-    /// Request data
-    pub data: RequestData,
+    pub psu: &'a D,
+    /// Event data
+    pub event: EventData,
 }
 
 /// Data for a power policy response
@@ -53,44 +59,39 @@ impl ResponseData {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct Response {
-    /// Target device
-    pub id: super::DeviceId,
     /// Response data
     pub data: ResponseData,
 }
 
 /// Struct used to contain PSU event receivers and manage mapping from a receiver to its corresponding device.
-pub struct EventReceivers<'a, const N: usize, PSU: Lockable, R: Receiver<RequestData>>
+pub struct EventReceivers<'a, const N: usize, PSU: Lockable, R: Receiver<EventData>>
 where
-    PSU::Inner: crate::psu::Psu,
+    PSU::Inner: psu::Psu,
 {
-    pub psu_registration: &'a [crate::psu::RegistrationEntry<'a, PSU>; N],
+    pub psu_devices: [&'a PSU; N],
     pub receivers: [R; N],
 }
 
-impl<'a, const N: usize, PSU: Lockable, R: Receiver<RequestData>> EventReceivers<'a, N, PSU, R>
+impl<'a, const N: usize, PSU: Lockable, R: Receiver<EventData>> EventReceivers<'a, N, PSU, R>
 where
-    PSU::Inner: crate::psu::Psu,
+    PSU::Inner: psu::Psu,
 {
     /// Create a new instance
-    pub fn new(psu_registration: &'a [crate::psu::RegistrationEntry<'a, PSU>; N], receivers: [R; N]) -> Self {
-        Self {
-            psu_registration,
-            receivers,
-        }
+    pub fn new(psu_devices: [&'a PSU; N], receivers: [R; N]) -> Self {
+        Self { psu_devices, receivers }
     }
 
     /// Get the next pending PSU event
-    pub async fn wait_event(&mut self) -> Request {
-        let ((event, id), _) = {
+    pub async fn wait_event(&mut self) -> Event<'a, PSU> {
+        let ((event, psu), _) = {
             let mut futures = heapless::Vec::<_, N>::new();
-            for (receiver, registration) in self.receivers.iter_mut().zip(self.psu_registration.iter()) {
+            for (receiver, psu) in self.receivers.iter_mut().zip(self.psu_devices.iter()) {
                 // Push will never fail since the number of receivers is the same as the capacity of the vector
-                let _ = futures.push(async move { (receiver.wait_next().await, registration.id) });
+                let _ = futures.push(async move { (receiver.wait_next().await, psu) });
             }
             select_slice(pin!(&mut futures)).await
         };
 
-        Request { id, data: event }
+        Event { psu, event }
     }
 }

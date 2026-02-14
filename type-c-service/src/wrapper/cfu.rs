@@ -33,7 +33,7 @@ impl<
     'device,
     M: RawMutex,
     D: Lockable,
-    S: event::Sender<power_policy_service::psu::event::RequestData>,
+    S: event::Sender<power_policy_service::psu::event::EventData>,
     V: FwOfferValidator,
 > ControllerWrapper<'device, M, D, S, V>
 where
@@ -154,7 +154,7 @@ where
                     info!("Controller{}: Detaching power device", controller_id.0);
                     port_state
                         .power_policy_sender
-                        .send(power_policy_service::psu::event::RequestData::Detached)
+                        .send(power_policy_service::psu::event::EventData::Detached)
                         .await;
                 }
             }

@@ -5,17 +5,32 @@ use super::*;
 
 use crate::capability::ConsumerFlags;
 use crate::charger::Device as ChargerDevice;
+use crate::service::event::Event as ServiceEvent;
 use crate::{capability::ConsumerPowerCapability, charger::PolicyEvent, psu::PsuState};
 
 /// State of the current consumer
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct AvailableConsumer {
-    /// The ID of the currently connected consumer
-    pub device_id: DeviceId,
+pub struct AvailableConsumer<'device, D: Lockable>
+where
+    D::Inner: Psu,
+{
+    /// Device reference
+    pub psu: &'device D,
     /// The power capability of the currently connected consumer
     pub consumer_power_capability: ConsumerPowerCapability,
 }
+
+impl<'device, D: Lockable> Clone for AvailableConsumer<'device, D>
+where
+    D::Inner: Psu,
+{
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<'device, D: Lockable> Copy for AvailableConsumer<'device, D> where D::Inner: Psu {}
 
 /// Compare two consumer capabilities to determine which one is better
 ///
@@ -31,25 +46,26 @@ fn cmp_consumer_capability(
     (a.capability, a_is_current).cmp(&(b.capability, b_is_current))
 }
 
-impl<D: Lockable + 'static> Service<'_, D>
+impl<'a, PSU: Lockable> Service<'a, PSU>
 where
-    D::Inner: Psu,
+    PSU::Inner: Psu,
 {
     /// Iterate over all devices to determine what is best power port provides the highest power
-    async fn find_best_consumer(&self) -> Result<Option<AvailableConsumer>, Error> {
+    async fn find_best_consumer(&self) -> Result<Option<AvailableConsumer<'a, PSU>>, Error> {
         let mut best_consumer = None;
-        let current_consumer_id = self.state.current_consumer_state.map(|f| f.device_id);
+        let current_consumer = self.state.current_consumer_state.as_ref().map(|f| f.psu);
 
-        for psu_registration in self.psu_registration.iter() {
-            let consumer_capability = psu_registration.device.lock().await.state().consumer_capability;
+        for psu in self.psu_devices.iter() {
+            let mut locked_psu = psu.lock().await;
+            let consumer_capability = locked_psu.state().consumer_capability;
             // Don't consider consumers below minimum threshold
             if consumer_capability
                 .zip(self.config.min_consumer_threshold_mw)
                 .is_some_and(|(cap, min)| cap.capability.max_power_mw() < min)
             {
                 info!(
-                    "Device{}: Not considering consumer, power capability is too low",
-                    psu_registration.id().0,
+                    "({}): Not considering consumer, power capability is too low",
+                    locked_psu.name(),
                 );
                 continue;
             }
@@ -60,7 +76,7 @@ where
                 (None, None) => None,
                 // No existing consumer
                 (None, Some(power_capability)) => Some(AvailableConsumer {
-                    device_id: psu_registration.id(),
+                    psu: *psu,
                     consumer_power_capability: power_capability,
                 }),
                 // Existing consumer, no new consumer
@@ -69,13 +85,13 @@ where
                 (Some(best), Some(available)) => {
                     if cmp_consumer_capability(
                         &available,
-                        Some(psu_registration.id()) == current_consumer_id,
+                        current_consumer.is_some_and(|current_consumer| ptr::eq(current_consumer, *psu)),
                         &best.consumer_power_capability,
-                        Some(best.device_id) == current_consumer_id,
+                        current_consumer.is_some_and(|current_consumer| ptr::eq(current_consumer, best.psu)),
                     ) == core::cmp::Ordering::Greater
                     {
                         Some(AvailableConsumer {
-                            device_id: psu_registration.id(),
+                            psu,
                             consumer_power_capability: available,
                         })
                     } else {
@@ -92,8 +108,8 @@ where
     async fn update_unconstrained_state(&mut self) -> Result<(), Error> {
         // Count how many available unconstrained devices we have
         let mut unconstrained_new = UnconstrainedState::default();
-        for psu_registration in self.psu_registration.iter() {
-            if let Some(capability) = psu_registration.device.lock().await.state().consumer_capability {
+        for psu in self.psu_devices.iter() {
+            if let Some(capability) = psu.lock().await.state().consumer_capability {
                 if capability.flags.unconstrained_power() {
                     unconstrained_new.available += 1;
                 }
@@ -104,21 +120,20 @@ where
         unconstrained_new.unconstrained = self
             .state
             .current_consumer_state
+            .as_ref()
             .is_some_and(|current| current.consumer_power_capability.flags.unconstrained_power());
 
         if unconstrained_new != self.state.unconstrained {
             info!("Unconstrained state changed: {:?}", unconstrained_new);
             self.state.unconstrained = unconstrained_new;
-            self.comms_notify(CommsMessage {
-                data: CommsData::Unconstrained(self.state.unconstrained),
-            })
-            .await;
+            self.broadcast_event(ServiceEvent::Unconstrained(self.state.unconstrained))
+                .await;
         }
         Ok(())
     }
 
     /// Common logic to execute after a consumer is connected
-    async fn post_consumer_connected(&mut self, connected_consumer: AvailableConsumer) -> Result<(), Error> {
+    async fn post_consumer_connected(&mut self, connected_consumer: AvailableConsumer<'a, PSU>) -> Result<(), Error> {
         self.state.current_consumer_state = Some(connected_consumer);
         // todo: review the delay time
         embassy_time::Timer::after_millis(800).await;
@@ -145,12 +160,10 @@ where
                     .await?;
             }
         }
-        self.comms_notify(CommsMessage {
-            data: CommsData::ConsumerConnected(
-                connected_consumer.device_id,
-                connected_consumer.consumer_power_capability,
-            ),
-        })
+        self.broadcast_event(ServiceEvent::ConsumerConnected(
+            connected_consumer.psu,
+            connected_consumer.consumer_power_capability,
+        ))
         .await;
 
         Ok(())
@@ -178,10 +191,10 @@ where
     }
 
     /// Connect to a new consumer
-    async fn connect_new_consumer(&mut self, new_consumer: AvailableConsumer) -> Result<(), Error> {
+    async fn connect_new_consumer(&mut self, new_consumer: AvailableConsumer<'a, PSU>) -> Result<(), Error> {
         // Handle our current consumer
         if let Some(current_consumer) = self.state.current_consumer_state {
-            if new_consumer.device_id == current_consumer.device_id
+            if ptr::eq(current_consumer.psu, new_consumer.psu)
                 && new_consumer.consumer_power_capability == current_consumer.consumer_power_capability
             {
                 // If the consumer is the same device, capability, and is still available, we don't need to do anything
@@ -190,24 +203,16 @@ where
             }
 
             self.state.current_consumer_state = None;
-            let mut consumer_device = self
-                .get_psu_registration(current_consumer.device_id)
-                .ok_or(Error::InvalidDevice)?
-                .device
-                .lock()
-                .await;
+            let mut current_psu = current_consumer.psu.lock().await;
 
-            if matches!(consumer_device.state().psu_state, PsuState::ConnectedConsumer(_)) {
+            if matches!(current_psu.state().psu_state, PsuState::ConnectedConsumer(_)) {
                 // Disconnect the current consumer if needed
-                info!("Device{}: Disconnecting current consumer", current_consumer.device_id.0);
+                info!("({}): Disconnecting current consumer", current_psu.name());
                 // disconnect current consumer and set idle
-                consumer_device.disconnect().await?;
-                if let Err(e) = consumer_device.state().disconnect(false) {
+                current_psu.disconnect().await?;
+                if let Err(e) = current_psu.state().disconnect(false) {
                     // This should never happen because we check the state above, log an error instead of a panic
-                    error!(
-                        "Device{}: Disconnect transition failed: {:#?}",
-                        current_consumer.device_id.0, e
-                    );
+                    error!("({}): Disconnect transition failed: {:#?}", current_psu.name(), e);
                 }
             }
 
@@ -217,25 +222,19 @@ where
             // so just continue execution.
             self.disconnect_chargers().await?;
 
-            self.comms_notify(CommsMessage {
-                data: CommsData::ConsumerDisconnected(current_consumer.device_id),
-            })
-            .await;
+            self.broadcast_event(ServiceEvent::ConsumerDisconnected(current_consumer.psu))
+                .await;
 
             // Don't update the unconstrained here because this is a transitional state
         }
 
-        info!("Device {}, connecting new consumer", new_consumer.device_id.0);
-        let registration = self
-            .get_psu_registration(new_consumer.device_id)
-            .ok_or(Error::InvalidDevice)?;
-        let psu_id = registration.id();
-        let mut psu = registration.device.lock().await;
+        let mut psu = new_consumer.psu.lock().await;
+        info!("({}): Connecting new consumer", psu.name());
 
         if let e @ Err(_) = psu.state().connect_consumer(new_consumer.consumer_power_capability) {
             error!(
-                "Device{}: Not ready to connect consumer, state: {:#?}",
-                psu_id.0,
+                "(({}): Not ready to connect consumer, state: {:#?}",
+                psu.name(),
                 psu.state().psu_state
             );
             e
@@ -247,23 +246,28 @@ where
 
     /// Determines and connects the best external power
     pub(super) async fn update_current_consumer(&mut self) -> Result<(), Error> {
-        info!(
-            "Selecting power port, current power: {:#?}",
-            self.state.current_consumer_state
-        );
+        let current_consumer_name = if let Some(current_consumer) = self.state.current_consumer_state {
+            current_consumer.psu.lock().await.name()
+        } else {
+            "None"
+        };
+        info!("Selecting power port, current power: {:#?}", current_consumer_name);
 
         let best_consumer = self.find_best_consumer().await?;
-        info!("Best consumer: {:#?}", best_consumer);
+        let best_consumer_name = if let Some(best_consumer) = best_consumer {
+            best_consumer.psu.lock().await.name()
+        } else {
+            "None"
+        };
+        info!("Best consumer: {:#?}", best_consumer_name);
         if let Some(best_consumer) = best_consumer {
             self.connect_new_consumer(best_consumer).await?;
         } else {
             // Notify disconnect if recently detached consumer was previously attached.
-            if let Some(consumer_state) = self.state.current_consumer_state {
+            if let Some(current_consumer) = self.state.current_consumer_state {
                 self.disconnect_chargers().await?;
-                self.comms_notify(CommsMessage {
-                    data: CommsData::ConsumerDisconnected(consumer_state.device_id),
-                })
-                .await;
+                self.broadcast_event(ServiceEvent::ConsumerDisconnected(current_consumer.psu))
+                    .await;
             }
             // No new consumer available
             self.state.current_consumer_state = None;

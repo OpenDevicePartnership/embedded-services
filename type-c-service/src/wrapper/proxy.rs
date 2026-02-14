@@ -59,14 +59,17 @@ pub struct PowerProxyDevice<'a> {
     receiver: DynamicReceiver<'a, PolicyResponseData>,
     /// Per-port PSU state
     pub(crate) psu_state: power_policy_service::psu::State,
+    name: &'static str,
 }
 
 impl<'a> PowerProxyDevice<'a> {
     pub fn new(
+        name: &'static str,
         sender: DynamicSender<'a, PolicyCommandData>,
         receiver: DynamicReceiver<'a, PolicyResponseData>,
     ) -> Self {
         Self {
+            name,
             sender,
             receiver,
             psu_state: power_policy_service::psu::State::default(),
@@ -104,6 +107,10 @@ impl<'a> Psu for PowerProxyDevice<'a> {
 
     fn state(&mut self) -> &mut power_policy_service::psu::State {
         &mut self.psu_state
+    }
+
+    fn name(&self) -> &'static str {
+        self.name
     }
 }
 

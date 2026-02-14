@@ -3,10 +3,9 @@ use embassy_sync::{
     blocking_mutex::raw::NoopRawMutex,
     channel::{self, Channel},
     mutex::Mutex,
-    pubsub::PubSubChannel,
 };
 use embassy_time::{self as _, Timer};
-use embedded_services::{GlobalRawMutex, broadcaster::immediate as broadcaster};
+use embedded_services::GlobalRawMutex;
 use log::*;
 use power_policy_service::psu::{Error, Psu};
 use power_policy_service::{
@@ -25,19 +24,21 @@ const HIGH_POWER: PowerCapability = PowerCapability {
     current_ma: 3000,
 };
 
-const DEVICE0_ID: power_policy_service::psu::DeviceId = power_policy_service::psu::DeviceId(0);
-const DEVICE1_ID: power_policy_service::psu::DeviceId = power_policy_service::psu::DeviceId(1);
-
 const PER_CALL_DELAY_MS: u64 = 1000;
 
 struct ExampleDevice<'a> {
-    sender: channel::DynamicSender<'a, power_policy_service::psu::event::RequestData>,
+    sender: channel::DynamicSender<'a, power_policy_service::psu::event::EventData>,
     state: psu::State,
+    name: &'static str,
 }
 
 impl<'a> ExampleDevice<'a> {
-    fn new(sender: channel::DynamicSender<'a, power_policy_service::psu::event::RequestData>) -> Self {
+    fn new(
+        name: &'static str,
+        sender: channel::DynamicSender<'a, power_policy_service::psu::event::EventData>,
+    ) -> Self {
         Self {
+            name,
             sender,
             state: Default::default(),
         }
@@ -45,19 +46,21 @@ impl<'a> ExampleDevice<'a> {
 
     pub async fn simulate_attach(&mut self) {
         self.sender
-            .send(power_policy_service::psu::event::RequestData::Attached)
+            .send(power_policy_service::psu::event::EventData::Attached)
             .await;
     }
 
     pub async fn simulate_update_consumer_power_capability(&mut self, capability: Option<ConsumerPowerCapability>) {
         self.sender
-            .send(power_policy_service::psu::event::RequestData::UpdatedConsumerCapability(capability))
+            .send(power_policy_service::psu::event::EventData::UpdatedConsumerCapability(
+                capability,
+            ))
             .await;
     }
 
     pub async fn simulate_detach(&mut self) {
         self.sender
-            .send(power_policy_service::psu::event::RequestData::Detached)
+            .send(power_policy_service::psu::event::EventData::Detached)
             .await;
     }
 
@@ -66,7 +69,7 @@ impl<'a> ExampleDevice<'a> {
         capability: Option<ProviderPowerCapability>,
     ) {
         self.sender
-            .send(power_policy_service::psu::event::RequestData::RequestedProviderCapability(capability))
+            .send(power_policy_service::psu::event::EventData::RequestedProviderCapability(capability))
             .await
     }
 }
@@ -90,6 +93,10 @@ impl Psu for ExampleDevice<'_> {
     fn state(&mut self) -> &mut psu::State {
         &mut self.state
     }
+
+    fn name(&self) -> &'static str {
+        self.name
+    }
 }
 
 type DeviceType = Mutex<GlobalRawMutex, ExampleDevice<'static>>;
@@ -99,31 +106,32 @@ async fn run(spawner: Spawner) {
     embedded_services::init().await;
 
     info!("Creating device 0");
-    static DEVICE0_EVENT_CHANNEL: StaticCell<Channel<NoopRawMutex, power_policy_service::psu::event::RequestData, 4>> =
+    static DEVICE0_EVENT_CHANNEL: StaticCell<Channel<NoopRawMutex, power_policy_service::psu::event::EventData, 4>> =
         StaticCell::new();
     let device0_event_channel = DEVICE0_EVENT_CHANNEL.init(Channel::new());
     static DEVICE0: StaticCell<DeviceType> = StaticCell::new();
-    let device0 = DEVICE0.init(Mutex::new(ExampleDevice::new(device0_event_channel.dyn_sender())));
+    let device0 = DEVICE0.init(Mutex::new(ExampleDevice::new(
+        "Device 0",
+        device0_event_channel.dyn_sender(),
+    )));
 
     info!("Creating device 1");
-    static DEVICE1_EVENT_CHANNEL: StaticCell<Channel<NoopRawMutex, power_policy_service::psu::event::RequestData, 4>> =
+    static DEVICE1_EVENT_CHANNEL: StaticCell<Channel<NoopRawMutex, power_policy_service::psu::event::EventData, 4>> =
         StaticCell::new();
     let device1_event_channel = DEVICE1_EVENT_CHANNEL.init(Channel::new());
     static DEVICE1: StaticCell<DeviceType> = StaticCell::new();
-    let device1 = DEVICE1.init(Mutex::new(ExampleDevice::new(device1_event_channel.dyn_sender())));
+    let device1 = DEVICE1.init(Mutex::new(ExampleDevice::new(
+        "Device 1",
+        device1_event_channel.dyn_sender(),
+    )));
 
     static SERVICE_CONTEXT: StaticCell<power_policy_service::service::context::Context> = StaticCell::new();
     let service_context = SERVICE_CONTEXT.init(power_policy_service::service::context::Context::new());
 
-    static POWER_POLICY_PSU_REGISTRATION: StaticCell<
-        [power_policy_service::psu::RegistrationEntry<'static, DeviceType>; 2],
-    > = StaticCell::new();
-    let psu_registration = POWER_POLICY_PSU_REGISTRATION.init([
-        psu::RegistrationEntry::new(DEVICE0_ID, device0),
-        psu::RegistrationEntry::new(DEVICE1_ID, device1),
-    ]);
+    static POWER_POLICY_PSU_REGISTRATION: StaticCell<[&DeviceType; 2]> = StaticCell::new();
+    let psu_registration = POWER_POLICY_PSU_REGISTRATION.init([device0, device1]);
 
-    static SERVICE: StaticCell<Mutex<GlobalRawMutex, power_policy_service::service::Service<DeviceType>>> =
+    static SERVICE: StaticCell<Mutex<GlobalRawMutex, power_policy_service::service::Service<'static, DeviceType>>> =
         StaticCell::new();
     let service = SERVICE.init(Mutex::new(power_policy_service::service::Service::new(
         psu_registration.as_slice(),
@@ -133,7 +141,7 @@ async fn run(spawner: Spawner) {
 
     spawner.must_spawn(power_policy_task(
         psu::event::EventReceivers::new(
-            psu_registration,
+            [device0, device1],
             [
                 device0_event_channel.dyn_receiver(),
                 device1_event_channel.dyn_receiver(),
@@ -141,7 +149,6 @@ async fn run(spawner: Spawner) {
         ),
         service,
     ));
-    spawner.must_spawn(receiver_task(service));
 
     // Plug in device 0, should become current consumer
     info!("Connecting device 0");
@@ -264,47 +271,12 @@ async fn run(spawner: Spawner) {
 }
 
 #[embassy_executor::task]
-async fn receiver_task(
-    service: &'static Mutex<GlobalRawMutex, power_policy_service::service::Service<'static, DeviceType>>,
-) {
-    static CHANNEL: StaticCell<
-        PubSubChannel<NoopRawMutex, power_policy_service::service::event::CommsMessage, 4, 1, 0>,
-    > = StaticCell::new();
-    let channel = CHANNEL.init(PubSubChannel::new());
-
-    let publisher = channel.dyn_immediate_publisher();
-    let mut subscriber = channel.dyn_subscriber().unwrap();
-
-    static RECEIVER: StaticCell<broadcaster::Receiver<'static, power_policy_service::service::event::CommsMessage>> =
-        StaticCell::new();
-    let receiver = RECEIVER.init(broadcaster::Receiver::new(publisher));
-
-    service
-        .lock()
-        .await
-        .context
-        .register_message_receiver(receiver)
-        .unwrap();
-
-    loop {
-        match subscriber.next_message().await {
-            embassy_sync::pubsub::WaitResult::Message(msg) => {
-                info!("Received message: {msg:?}");
-            }
-            embassy_sync::pubsub::WaitResult::Lagged(count) => {
-                warn!("Lagged messages: {count}");
-            }
-        }
-    }
-}
-
-#[embassy_executor::task]
 async fn power_policy_task(
     psu_events: crate::psu::event::EventReceivers<
         'static,
         2,
         DeviceType,
-        channel::DynamicReceiver<'static, power_policy_service::psu::event::RequestData>,
+        channel::DynamicReceiver<'static, power_policy_service::psu::event::EventData>,
     >,
     power_policy: &'static Mutex<GlobalRawMutex, power_policy_service::service::Service<'static, DeviceType>>,
 ) {

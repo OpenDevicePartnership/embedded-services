@@ -142,10 +142,12 @@ impl comms::MailboxDelegate for Service {
             })?
         } else if let Some(battery_request) = message.data.get::<AcpiBatteryRequest>() {
             self.context.send_acpi_cmd(*battery_request);
-        } else if let Some(power_policy_msg) = message.data.get::<power_policy_service::service::event::CommsMessage>()
-        {
-            self.context.set_power_info(&power_policy_msg.data)?;
         }
+        // TODO: address in refactor
+        /*else if let Some(power_policy_msg) = message.data.get::<power_policy_service::service::event::Event>()
+        {
+        self.context.set_power_info(&power_policy_msg.data)?;
+        }*/
 
         Ok(())
     }

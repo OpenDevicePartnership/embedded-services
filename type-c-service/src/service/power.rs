@@ -3,7 +3,10 @@ use power_policy_service::service as power_policy;
 
 use super::*;
 
-impl<'a> Service<'a> {
+impl<'a, PSU: Lockable> Service<'a, PSU>
+where
+    PSU::Inner: psu::Psu,
+{
     /// Wait for a power policy event
     pub(super) async fn wait_power_policy_event(&self) -> Event<'_> {
         loop {
@@ -12,14 +15,14 @@ impl<'a> Service<'a> {
                     // Missed some messages, all we can do is log an error
                     error!("Power policy {} event(s) lagged", lagged);
                 }
-                WaitResult::Message(message) => match message.data {
-                    power_policy_service::service::event::CommsData::Unconstrained(state) => {
+                WaitResult::Message(message) => match message {
+                    power_policy_service::service::event::Event::Unconstrained(state) => {
                         return Event::PowerPolicy(PowerPolicyEvent::Unconstrained(state));
                     }
-                    power_policy_service::service::event::CommsData::ConsumerDisconnected(_) => {
+                    power_policy_service::service::event::Event::ConsumerDisconnected(_) => {
                         return Event::PowerPolicy(PowerPolicyEvent::ConsumerDisconnected);
                     }
-                    power_policy_service::service::event::CommsData::ConsumerConnected(_, _) => {
+                    power_policy_service::service::event::Event::ConsumerConnected(_, _) => {
                         return Event::PowerPolicy(PowerPolicyEvent::ConsumerConnected);
                     }
                     _ => {
