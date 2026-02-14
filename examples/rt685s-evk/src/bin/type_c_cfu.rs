@@ -10,7 +10,7 @@ use embassy_imxrt::gpio::{Input, Inverter, Pull};
 use embassy_imxrt::i2c::Async;
 use embassy_imxrt::i2c::master::{Config, I2cMaster};
 use embassy_imxrt::{bind_interrupts, peripherals};
-use embassy_sync::channel::{Channel, DynamicReceiver, DynamicSender};
+use embassy_sync::channel::Channel;
 use embassy_sync::mutex::Mutex;
 use embassy_sync::once_lock::OnceLock;
 use embassy_sync::pubsub::PubSubChannel;
@@ -51,13 +51,7 @@ type DeviceType = Mutex<GlobalRawMutex, PowerProxyDevice<'static>>;
 type BusMaster<'a> = I2cMaster<'a, Async>;
 type BusDevice<'a> = I2cDevice<'a, GlobalRawMutex, BusMaster<'a>>;
 type Tps6699xMutex<'a> = Mutex<GlobalRawMutex, tps6699x_drv::Tps6699x<'a, GlobalRawMutex, BusDevice<'a>>>;
-type Wrapper<'a> = ControllerWrapper<
-    'a,
-    GlobalRawMutex,
-    Tps6699xMutex<'a>,
-    DynamicSender<'a, power_policy_service::psu::event::EventData>,
-    Validator,
->;
+type Wrapper<'a> = ControllerWrapper<'a, GlobalRawMutex, Tps6699xMutex<'a>, Validator>;
 type Controller<'a> = tps6699x::controller::Controller<GlobalRawMutex, BusDevice<'a>>;
 type Interrupt<'a> = tps6699x::Interrupt<'a, GlobalRawMutex, BusDevice<'a>>;
 
@@ -163,7 +157,7 @@ async fn fw_update_task() {
 
 #[embassy_executor::task]
 async fn power_policy_task(
-    psu_events: psu::event::EventReceivers<'static, 2, DeviceType, DynamicReceiver<'static, psu::event::EventData>>,
+    psu_events: psu::event::EventReceivers<'static, 2, DeviceType>,
     power_policy: &'static Mutex<GlobalRawMutex, power_policy_service::service::Service<'static, DeviceType>>,
 ) {
     power_policy_service::service::task::task(psu_events, power_policy).await;
@@ -244,22 +238,14 @@ async fn main(spawner: Spawner) {
     let policy_sender1 = policy_channel1.dyn_sender();
     let policy_receiver1 = policy_channel1.dyn_receiver();
 
-    static INTERMEDIATE: StaticCell<
-        IntermediateStorage<TPS66994_NUM_PORTS, GlobalRawMutex, DynamicSender<'static, psu::event::EventData>>,
-    > = StaticCell::new();
+    static INTERMEDIATE: StaticCell<IntermediateStorage<TPS66994_NUM_PORTS, GlobalRawMutex>> = StaticCell::new();
     let intermediate = INTERMEDIATE.init(
         storage
             .try_create_intermediate([("Pd0", policy_sender0), ("Pd1", policy_sender1)])
             .expect("Failed to create intermediate storage"),
     );
 
-    static REFERENCED: StaticCell<
-        ReferencedStorage<
-            TPS66994_NUM_PORTS,
-            GlobalRawMutex,
-            DynamicSender<'_, power_policy_service::psu::event::EventData>,
-        >,
-    > = StaticCell::new();
+    static REFERENCED: StaticCell<ReferencedStorage<TPS66994_NUM_PORTS, GlobalRawMutex>> = StaticCell::new();
     let referenced = REFERENCED.init(
         intermediate
             .try_create_referenced()

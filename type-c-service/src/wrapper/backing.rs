@@ -22,8 +22,8 @@
 //! use embedded_services::power;
 //! use embedded_usb_pd::GlobalPortId;
 //! use type_c_service::wrapper::backing::{Storage, IntermediateStorage, ReferencedStorage};
-//! use embassy_sync::channel::{Channel, DynamicReceiver, DynamicSender};
-//! use power_policy_service::policy::policy;
+//! use embassy_sync::channel::{Channel, DynamicSender};
+//! use power_policy_service::psu;
 //!
 //! fn init(context: &'static crate::type_c::controller::Context) {
 //!    static STORAGE: StaticCell<Storage<1, NoopRawMutex>> = StaticCell::new();
@@ -34,27 +34,24 @@
 //!        [GlobalPortId(0)],
 //!    ));
 //!
-//!    static INTERMEDIATE: StaticCell<type_c_service::wrapper::backing::IntermediateStorage<1, NoopRawMutex>> =
-//!        StaticCell::new();
-//!    let intermediate = INTERMEDIATE.init(storage.try_create_intermediate().expect("Failed to create intermediate storage"));
-//!
-//!    static POLICY_CHANNEL: StaticCell<Channel<NoopRawMutex, policy::RequestData, 1>> = StaticCell::new();
+//!    static POLICY_CHANNEL: StaticCell<Channel<NoopRawMutex, psu::event::EventData, 1>> = StaticCell::new();
 //!    let policy_channel = POLICY_CHANNEL.init(Channel::new());
-//!
 //!    let policy_sender = policy_channel.dyn_sender();
-//!    let policy_receiver = policy_channel.dyn_receiver();
+//!
+//!    static INTERMEDIATE: StaticCell<IntermediateStorage<1, NoopRawMutex>> =
+//!        StaticCell::new();
+//!    let intermediate = INTERMEDIATE.init(
+//!        storage
+//!            .try_create_intermediate([("Pd0", policy_sender)])
+//!            .expect("Failed to create intermediate storage"),
+//!    );
 //!
 //!    static REFERENCED: StaticCell<
-//!        type_c_service::wrapper::backing::ReferencedStorage<
-//!            1,
-//!            NoopRawMutex,
-//!            DynamicSender<'_, policy::RequestData>,
-//!            DynamicReceiver<'_, policy::RequestData>,
-//!        >,
+//!        ReferencedStorage<1, NoopRawMutex>,
 //!    > = StaticCell::new();
 //!    let referenced = REFERENCED.init(
 //!        intermediate
-//!            .try_create_referenced([(power::policy::DeviceId(0), policy_sender, policy_receiver)])
+//!            .try_create_referenced()
 //!            .expect("Failed to create referenced storage"),
 //!    );
 //! }
@@ -64,13 +61,13 @@ use core::array::from_fn;
 use cfu_service::component::CfuDevice;
 use embassy_sync::{
     blocking_mutex::raw::RawMutex,
+    channel::DynamicSender,
     mutex::Mutex,
     pubsub::{DynImmediatePublisher, DynSubscriber, PubSubChannel},
 };
 
 use embassy_time::Instant;
 use embedded_cfu_protocol::protocol_definitions::ComponentId;
-use embedded_services::event;
 use embedded_usb_pd::{GlobalPortId, ado::Ado};
 
 use crate::type_c::{
@@ -153,20 +150,23 @@ impl<'a, const N: usize, M: RawMutex> Storage<'a, N, M> {
     }
 
     /// Create intermediate storage from this storage
-    pub fn try_create_intermediate<S: event::Sender<power_policy_service::psu::event::EventData>>(
-        &self,
-        power_policy_init: [(&'static str, S); N],
-    ) -> Option<IntermediateStorage<'_, N, M, S>> {
+    pub fn try_create_intermediate(
+        &'a self,
+        power_policy_init: [(
+            &'static str,
+            DynamicSender<'a, power_policy_service::psu::event::EventData>,
+        ); N],
+    ) -> Option<IntermediateStorage<'a, N, M>> {
         IntermediateStorage::try_from_storage(self, power_policy_init)
     }
 }
 
-pub struct Port<'a, M: RawMutex, S: event::Sender<power_policy_service::psu::event::EventData>> {
+pub struct Port<'a, M: RawMutex> {
     pub proxy: Mutex<M, PowerProxyDevice<'a>>,
-    pub state: Mutex<M, PortState<'a, S>>,
+    pub state: Mutex<M, PortState<'a>>,
 }
 
-pub struct PortState<'a, S: event::Sender<power_policy_service::psu::event::EventData>> {
+pub struct PortState<'a> {
     /// Cached port status
     pub(crate) status: PortStatus,
     /// Software status event
@@ -180,11 +180,14 @@ pub struct PortState<'a, S: event::Sender<power_policy_service::psu::event::Even
     // so we use that, but this requires us to keep separate publisher and subscriber objects.
     pub(crate) pd_alerts: (DynImmediatePublisher<'a, Ado>, DynSubscriber<'a, Ado>),
     /// Sender to send events to the power policy service
-    pub(crate) power_policy_sender: S,
+    pub(crate) power_policy_sender: DynamicSender<'a, power_policy_service::psu::event::EventData>,
 }
 
-impl<'a, S: event::Sender<power_policy_service::psu::event::EventData>> PortState<'a, S> {
-    pub fn new(pd_alerts: (DynImmediatePublisher<'a, Ado>, DynSubscriber<'a, Ado>), power_policy_sender: S) -> Self {
+impl<'a> PortState<'a> {
+    pub fn new(
+        pd_alerts: (DynImmediatePublisher<'a, Ado>, DynSubscriber<'a, Ado>),
+        power_policy_sender: DynamicSender<'a, power_policy_service::psu::event::EventData>,
+    ) -> Self {
         Self {
             status: PortStatus::default(),
             sw_status_event: PortStatusChanged::default(),
@@ -197,21 +200,20 @@ impl<'a, S: event::Sender<power_policy_service::psu::event::EventData>> PortStat
 }
 
 /// Intermediate storage that holds power proxy devices
-pub struct IntermediateStorage<
-    'a,
-    const N: usize,
-    M: RawMutex,
-    S: event::Sender<power_policy_service::psu::event::EventData>,
-> {
+pub struct IntermediateStorage<'a, const N: usize, M: RawMutex> {
     storage: &'a Storage<'a, N, M>,
-    ports: [Port<'a, M, S>; N],
+    ports: [Port<'a, M>; N],
     power_proxy_receivers: [Mutex<M, PowerProxyReceiver<'a>>; N],
 }
 
-impl<'a, const N: usize, M: RawMutex, S: event::Sender<power_policy_service::psu::event::EventData>>
-    IntermediateStorage<'a, N, M, S>
-{
-    fn try_from_storage(storage: &'a Storage<'a, N, M>, power_policy_init: [(&'static str, S); N]) -> Option<Self> {
+impl<'a, const N: usize, M: RawMutex> IntermediateStorage<'a, N, M> {
+    fn try_from_storage(
+        storage: &'a Storage<'a, N, M>,
+        power_policy_init: [(
+            &'static str,
+            DynamicSender<'a, power_policy_service::psu::event::EventData>,
+        ); N],
+    ) -> Option<Self> {
         let mut ports = heapless::Vec::<_, N>::new();
         let mut power_proxy_receivers = heapless::Vec::<_, N>::new();
 
@@ -245,7 +247,7 @@ impl<'a, const N: usize, M: RawMutex, S: event::Sender<power_policy_service::psu
     }
 
     /// Create referenced storage from this intermediate storage
-    pub fn try_create_referenced<'b>(&'b self) -> Option<ReferencedStorage<'b, N, M, S>>
+    pub fn try_create_referenced<'b>(&'b self) -> Option<ReferencedStorage<'b, N, M>>
     where
         'b: 'a,
     {
@@ -257,22 +259,15 @@ impl<'a, const N: usize, M: RawMutex, S: event::Sender<power_policy_service::psu
 ///
 /// To simplify usage, we use interior mutability through a ref cell to avoid having to declare the state
 /// completely separately.
-pub struct ReferencedStorage<
-    'a,
-    const N: usize,
-    M: RawMutex,
-    S: event::Sender<power_policy_service::psu::event::EventData>,
-> {
-    intermediate: &'a IntermediateStorage<'a, N, M, S>,
+pub struct ReferencedStorage<'a, const N: usize, M: RawMutex> {
+    intermediate: &'a IntermediateStorage<'a, N, M>,
     pd_controller: crate::type_c::controller::Device<'a>,
     power_devices: [&'a Mutex<M, PowerProxyDevice<'a>>; N],
 }
 
-impl<'a, const N: usize, M: RawMutex, S: event::Sender<power_policy_service::psu::event::EventData>>
-    ReferencedStorage<'a, N, M, S>
-{
+impl<'a, const N: usize, M: RawMutex> ReferencedStorage<'a, N, M> {
     /// Create a new referenced storage from the given intermediate storage
-    fn try_from_intermediate(intermediate: &'a IntermediateStorage<'a, N, M, S>) -> Option<Self> {
+    fn try_from_intermediate(intermediate: &'a IntermediateStorage<'a, N, M>) -> Option<Self> {
         Some(Self {
             intermediate,
             pd_controller: crate::type_c::controller::Device::new(
@@ -284,7 +279,7 @@ impl<'a, const N: usize, M: RawMutex, S: event::Sender<power_policy_service::psu
     }
 
     /// Creates the backing, returns `None` if a backing has already been created
-    pub fn create_backing<'b>(&'b self) -> Backing<'b, M, S>
+    pub fn create_backing<'b>(&'b self) -> Backing<'b, M>
     where
         'b: 'a,
     {
@@ -302,8 +297,8 @@ impl<'a, const N: usize, M: RawMutex, S: event::Sender<power_policy_service::psu
 }
 
 /// Wrapper around registration and type-erased state
-pub struct Backing<'a, M: RawMutex, S: event::Sender<power_policy_service::psu::event::EventData>> {
+pub struct Backing<'a, M: RawMutex> {
     pub(crate) registration: Registration<'a, M>,
-    pub(crate) ports: &'a [Port<'a, M, S>],
+    pub(crate) ports: &'a [Port<'a, M>],
     pub(crate) power_receivers: &'a [Mutex<M, PowerProxyReceiver<'a>>],
 }

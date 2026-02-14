@@ -30,9 +30,9 @@ use embassy_sync::mutex::Mutex;
 use embassy_sync::signal::Signal;
 use embassy_time::Instant;
 use embedded_cfu_protocol::protocol_definitions::{FwUpdateOffer, FwUpdateOfferResponse, FwVersion};
+use embedded_services::intrusive_list;
 use embedded_services::sync::Lockable;
 use embedded_services::{debug, error, info, trace, warn};
-use embedded_services::{event, intrusive_list};
 use embedded_usb_pd::ado::Ado;
 use embedded_usb_pd::{Error, LocalPortId, PdError};
 
@@ -68,13 +68,8 @@ pub trait FwOfferValidator {
 pub const MAX_SUPPORTED_PORTS: usize = 2;
 
 /// Common functionality implemented on top of [`crate::type_c::controller::Controller`]
-pub struct ControllerWrapper<
-    'device,
-    M: RawMutex,
-    D: Lockable,
-    S: event::Sender<power_policy_service::psu::event::EventData>,
-    V: FwOfferValidator,
-> where
+pub struct ControllerWrapper<'device, M: RawMutex, D: Lockable, V: FwOfferValidator>
+where
     D::Inner: Controller,
 {
     controller: &'device D,
@@ -91,18 +86,12 @@ pub struct ControllerWrapper<
     /// Power proxy receivers
     power_proxy_receivers: &'device [Mutex<M, PowerProxyReceiver<'device>>],
     /// Port proxies
-    pub ports: &'device [backing::Port<'device, M, S>],
+    pub ports: &'device [backing::Port<'device, M>],
     /// Controller state
     controller_state: Mutex<M, backing::ControllerState>,
 }
 
-impl<
-    'device,
-    M: RawMutex,
-    D: Lockable,
-    S: event::Sender<power_policy_service::psu::event::EventData>,
-    V: FwOfferValidator,
-> ControllerWrapper<'device, M, D, S, V>
+impl<'device, M: RawMutex, D: Lockable, V: FwOfferValidator> ControllerWrapper<'device, M, D, V>
 where
     D::Inner: Controller,
 {
@@ -110,7 +99,7 @@ where
     pub fn new<const N: usize>(
         controller: &'device D,
         config: config::Config,
-        storage: &'device backing::ReferencedStorage<'device, N, M, S>,
+        storage: &'device backing::ReferencedStorage<'device, N, M>,
         fw_version_validator: V,
     ) -> Self {
         const {
@@ -186,7 +175,7 @@ where
     /// Handle a plug event
     async fn process_plug_event(
         &self,
-        port_state: &mut PortState<'_, S>,
+        port_state: &mut PortState<'_>,
         status: &PortStatus,
     ) -> Result<(), Error<<D::Inner as Controller>::BusError>> {
         info!("Plug event");
@@ -617,13 +606,7 @@ where
     }
 }
 
-impl<
-    'device,
-    M: RawMutex,
-    C: Lockable,
-    S: event::Sender<power_policy_service::psu::event::EventData>,
-    V: FwOfferValidator,
-> Lockable for ControllerWrapper<'device, M, C, S, V>
+impl<'device, M: RawMutex, C: Lockable, V: FwOfferValidator> Lockable for ControllerWrapper<'device, M, C, V>
 where
     <C as Lockable>::Inner: Controller,
 {

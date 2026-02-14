@@ -1,4 +1,4 @@
-use embassy_sync::{channel, mutex::Mutex, signal::Signal};
+use embassy_sync::{mutex::Mutex, signal::Signal};
 use embedded_cfu_protocol::protocol_definitions::{FwUpdateOfferResponse, HostToken};
 use embedded_services::GlobalRawMutex;
 use embedded_usb_pd::{Error, ado::Ado};
@@ -338,10 +338,5 @@ impl type_c_service::wrapper::FwOfferValidator for Validator {
     }
 }
 
-pub type Wrapper<'a> = type_c_service::wrapper::ControllerWrapper<
-    'a,
-    GlobalRawMutex,
-    Mutex<GlobalRawMutex, Controller<'a>>,
-    channel::DynamicSender<'a, power_policy_service::psu::event::EventData>,
-    Validator,
->;
+pub type Wrapper<'a> =
+    type_c_service::wrapper::ControllerWrapper<'a, GlobalRawMutex, Mutex<GlobalRawMutex, Controller<'a>>, Validator>;

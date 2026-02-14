@@ -1,7 +1,7 @@
 use crate::mock_controller::Wrapper;
 use cfu_service::CfuClient;
 use embassy_executor::{Executor, Spawner};
-use embassy_sync::channel::{Channel, DynamicReceiver, DynamicSender};
+use embassy_sync::channel::Channel;
 use embassy_sync::mutex::Mutex;
 use embassy_sync::once_lock::OnceLock;
 use embassy_sync::pubsub::PubSubChannel;
@@ -178,7 +178,7 @@ async fn wrapper_task(wrapper: &'static mock_controller::Wrapper<'static>) {
 
 #[embassy_executor::task]
 async fn power_policy_task(
-    psu_events: psu::event::EventReceivers<'static, 2, DeviceType, DynamicReceiver<'static, psu::event::EventData>>,
+    psu_events: psu::event::EventReceivers<'static, 2, DeviceType>,
     power_policy: &'static Mutex<GlobalRawMutex, power_policy_service::service::Service<'static, DeviceType>>,
 ) {
     power_policy_service::service::task::task(psu_events, power_policy).await;
@@ -215,26 +215,16 @@ async fn task(spawner: Spawner) {
     let policy_sender0 = policy_channel0.dyn_sender();
     let policy_receiver0 = policy_channel0.dyn_receiver();
 
-    static INTERMEDIATE0: StaticCell<
-        type_c_service::wrapper::backing::IntermediateStorage<
-            1,
-            GlobalRawMutex,
-            DynamicSender<'_, psu::event::EventData>,
-        >,
-    > = StaticCell::new();
+    static INTERMEDIATE0: StaticCell<type_c_service::wrapper::backing::IntermediateStorage<1, GlobalRawMutex>> =
+        StaticCell::new();
     let intermediate0 = INTERMEDIATE0.init(
         storage0
             .try_create_intermediate([("Pd0", policy_sender0)])
             .expect("Failed to create intermediate storage"),
     );
 
-    static REFERENCED0: StaticCell<
-        type_c_service::wrapper::backing::ReferencedStorage<
-            1,
-            GlobalRawMutex,
-            DynamicSender<'_, psu::event::EventData>,
-        >,
-    > = StaticCell::new();
+    static REFERENCED0: StaticCell<type_c_service::wrapper::backing::ReferencedStorage<1, GlobalRawMutex>> =
+        StaticCell::new();
     let referenced0 = REFERENCED0.init(
         intermediate0
             .try_create_referenced()
@@ -260,26 +250,16 @@ async fn task(spawner: Spawner) {
 
     static STORAGE1: StaticCell<Storage<1, GlobalRawMutex>> = StaticCell::new();
     let storage1 = STORAGE1.init(Storage::new(controller_context, CONTROLLER1_ID, CFU1_ID, [PORT1_ID]));
-    static INTERMEDIATE1: StaticCell<
-        type_c_service::wrapper::backing::IntermediateStorage<
-            1,
-            GlobalRawMutex,
-            DynamicSender<'_, psu::event::EventData>,
-        >,
-    > = StaticCell::new();
+    static INTERMEDIATE1: StaticCell<type_c_service::wrapper::backing::IntermediateStorage<1, GlobalRawMutex>> =
+        StaticCell::new();
     let intermediate1 = INTERMEDIATE1.init(
         storage1
             .try_create_intermediate([("Pd1", policy_sender1)])
             .expect("Failed to create intermediate storage"),
     );
 
-    static REFERENCED1: StaticCell<
-        type_c_service::wrapper::backing::ReferencedStorage<
-            1,
-            GlobalRawMutex,
-            DynamicSender<'_, psu::event::EventData>,
-        >,
-    > = StaticCell::new();
+    static REFERENCED1: StaticCell<type_c_service::wrapper::backing::ReferencedStorage<1, GlobalRawMutex>> =
+        StaticCell::new();
     let referenced1 = REFERENCED1.init(
         intermediate1
             .try_create_referenced()

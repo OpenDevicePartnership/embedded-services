@@ -1,13 +1,13 @@
 use embassy_sync::{blocking_mutex::raw::RawMutex, mutex::Mutex};
-use embedded_services::{error, event::Receiver, info, sync::Lockable};
+use embedded_services::{error, info, sync::Lockable};
 
-use crate::psu::{Psu, event::EventData};
+use crate::psu::Psu;
 
 use super::Service;
 
 /// Runs the power policy task.
-pub async fn task<const PSU_COUNT: usize, M: RawMutex, PSU: Lockable, R: Receiver<EventData>>(
-    mut psu_events: crate::psu::event::EventReceivers<'static, PSU_COUNT, PSU, R>,
+pub async fn task<const PSU_COUNT: usize, M: RawMutex, PSU: Lockable>(
+    mut psu_events: crate::psu::event::EventReceivers<'static, PSU_COUNT, PSU>,
     policy: &'static Mutex<M, Service<'static, PSU>>,
 ) -> !
 where

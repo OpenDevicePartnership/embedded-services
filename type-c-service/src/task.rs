@@ -1,5 +1,5 @@
 use core::future::Future;
-use embedded_services::{error, event, info, sync::Lockable};
+use embedded_services::{error, info, sync::Lockable};
 
 use power_policy_service::{psu, service::context};
 
@@ -11,14 +11,13 @@ pub async fn task_closure<
     M,
     D,
     PSU: Lockable,
-    S,
     V,
     Fut: Future<Output = ()>,
     F: Fn(&'a Service<'a, PSU>) -> Fut,
     const N: usize,
 >(
     service: &'static Service<'a, PSU>,
-    wrappers: [&'a ControllerWrapper<'a, M, D, S, V>; N],
+    wrappers: [&'a ControllerWrapper<'a, M, D, V>; N],
     power_policy_context: &context::Context,
     cfu_client: &'a cfu_service::CfuClient,
     f: F,
@@ -26,7 +25,6 @@ pub async fn task_closure<
     M: embassy_sync::blocking_mutex::raw::RawMutex,
     D: Lockable,
     PSU::Inner: psu::Psu,
-    S: event::Sender<power_policy_service::psu::event::EventData>,
     V: crate::wrapper::FwOfferValidator,
     D::Inner: crate::type_c::controller::Controller,
 {
@@ -50,16 +48,15 @@ pub async fn task_closure<
 }
 
 /// Task to run the Type-C service, running the default event loop
-pub async fn task<'a, M, D, PSU: Lockable, S, V, const N: usize>(
+pub async fn task<'a, M, D, PSU: Lockable, V, const N: usize>(
     service: &'static Service<'a, PSU>,
-    wrappers: [&'a ControllerWrapper<'a, M, D, S, V>; N],
+    wrappers: [&'a ControllerWrapper<'a, M, D, V>; N],
     power_policy_context: &context::Context,
     cfu_client: &'a cfu_service::CfuClient,
 ) where
     M: embassy_sync::blocking_mutex::raw::RawMutex,
     D: embedded_services::sync::Lockable,
     PSU::Inner: psu::Psu,
-    S: event::Sender<power_policy_service::psu::event::EventData>,
     V: crate::wrapper::FwOfferValidator,
     <D as embedded_services::sync::Lockable>::Inner: crate::type_c::controller::Controller,
 {

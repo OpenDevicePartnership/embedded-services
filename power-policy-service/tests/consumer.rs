@@ -1,9 +1,8 @@
 #![allow(clippy::unwrap_used)]
-use embassy_sync::{channel::DynamicSender, mutex::Mutex, signal::Signal};
+use embassy_sync::{mutex::Mutex, signal::Signal};
 use embassy_time::{Duration, TimeoutError, with_timeout};
 use embedded_services::GlobalRawMutex;
 use power_policy_service::capability::{ConsumerFlags, ConsumerPowerCapability};
-use power_policy_service::psu::event::EventData;
 
 mod common;
 
@@ -19,7 +18,7 @@ const PER_CALL_TIMEOUT: Duration = Duration::from_millis(1000);
 
 /// Test the basic consumer flow with a single device.
 async fn test_single(
-    device0: &'static Mutex<GlobalRawMutex, Mock<'static, DynamicSender<'static, EventData>>>,
+    device0: &'static Mutex<GlobalRawMutex, Mock<'static>>,
     device0_signal: &'static Signal<GlobalRawMutex, (usize, FnCall)>,
 ) {
     // Test initial connection
@@ -53,9 +52,9 @@ async fn test_single(
 
 /// Test swapping to a higher powered device.
 async fn test_swap_higher(
-    device0: &'static Mutex<GlobalRawMutex, Mock<'static, DynamicSender<'static, EventData>>>,
+    device0: &'static Mutex<GlobalRawMutex, Mock<'static>>,
     device0_signal: &'static Signal<GlobalRawMutex, (usize, FnCall)>,
-    device1: &'static Mutex<GlobalRawMutex, Mock<'static, DynamicSender<'static, EventData>>>,
+    device1: &'static Mutex<GlobalRawMutex, Mock<'static>>,
     device1_signal: &'static Signal<GlobalRawMutex, (usize, FnCall)>,
 ) {
     // Device0 connection at low power

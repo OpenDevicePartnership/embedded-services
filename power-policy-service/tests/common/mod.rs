@@ -3,11 +3,7 @@ use embassy_futures::{
     join::join,
     select::{Either, select},
 };
-use embassy_sync::{
-    channel::{Channel, DynamicReceiver, DynamicSender},
-    mutex::Mutex,
-    signal::Signal,
-};
+use embassy_sync::{channel::Channel, mutex::Mutex, signal::Signal};
 use embassy_time::{Duration, with_timeout};
 use embedded_services::GlobalRawMutex;
 use power_policy_service::psu::event::EventData;
@@ -36,13 +32,13 @@ pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(15);
 
 const EVENT_CHANNEL_SIZE: usize = 4;
 
-pub type DeviceType = Mutex<GlobalRawMutex, Mock<'static, DynamicSender<'static, EventData>>>;
+pub type DeviceType = Mutex<GlobalRawMutex, Mock<'static>>;
 pub type ServiceType = Service<'static, DeviceType>;
 
 async fn power_policy_task<const N: usize>(
     completion_signal: &'static Signal<GlobalRawMutex, ()>,
     power_policy: &'static mut ServiceType,
-    mut event_receivers: EventReceivers<'static, N, DeviceType, DynamicReceiver<'static, EventData>>,
+    mut event_receivers: EventReceivers<'static, N, DeviceType>,
 ) {
     while let Either::First(result) = select(event_receivers.wait_event(), completion_signal.wait()).await {
         power_policy.process_psu_event(result).await.unwrap();
@@ -52,9 +48,9 @@ async fn power_policy_task<const N: usize>(
 pub async fn run_test<F: Future<Output = ()>>(
     timeout: Duration,
     test: impl FnOnce(
-        &'static Mutex<GlobalRawMutex, Mock<DynamicSender<'static, EventData>>>,
+        &'static Mutex<GlobalRawMutex, Mock<'static>>,
         &'static Signal<GlobalRawMutex, (usize, FnCall)>,
-        &'static Mutex<GlobalRawMutex, Mock<DynamicSender<'static, EventData>>>,
+        &'static Mutex<GlobalRawMutex, Mock<'static>>,
         &'static Signal<GlobalRawMutex, (usize, FnCall)>,
     ) -> F,
 ) {
@@ -69,7 +65,7 @@ pub async fn run_test<F: Future<Output = ()>>(
 
     static DEVICE0_SIGNAL: StaticCell<Signal<GlobalRawMutex, (usize, FnCall)>> = StaticCell::new();
     let device0_signal = DEVICE0_SIGNAL.init(Signal::new());
-    static DEVICE0: StaticCell<Mutex<GlobalRawMutex, Mock<DynamicSender<'static, EventData>>>> = StaticCell::new();
+    static DEVICE0: StaticCell<Mutex<GlobalRawMutex, Mock<'static>>> = StaticCell::new();
     let device0 = DEVICE0.init(Mutex::new(Mock::new("PSU0", device0_sender, device0_signal)));
 
     static DEVICE1_EVENT_CHANNEL: StaticCell<Channel<GlobalRawMutex, EventData, EVENT_CHANNEL_SIZE>> =
@@ -80,7 +76,7 @@ pub async fn run_test<F: Future<Output = ()>>(
 
     static DEVICE1_SIGNAL: StaticCell<Signal<GlobalRawMutex, (usize, FnCall)>> = StaticCell::new();
     let device1_signal = DEVICE1_SIGNAL.init(Signal::new());
-    static DEVICE1: StaticCell<Mutex<GlobalRawMutex, Mock<DynamicSender<'static, EventData>>>> = StaticCell::new();
+    static DEVICE1: StaticCell<Mutex<GlobalRawMutex, Mock<'static>>> = StaticCell::new();
     let device1 = DEVICE1.init(Mutex::new(Mock::new("PSU1", device1_sender, device1_signal)));
 
     static SERVICE_CONTEXT: StaticCell<power_policy_service::service::context::Context> = StaticCell::new();

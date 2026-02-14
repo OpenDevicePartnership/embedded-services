@@ -9,7 +9,7 @@ use embassy_imxrt::gpio::{Input, Inverter, Pull};
 use embassy_imxrt::i2c::Async;
 use embassy_imxrt::i2c::master::{Config, I2cMaster};
 use embassy_imxrt::{bind_interrupts, peripherals};
-use embassy_sync::channel::{Channel, DynamicReceiver, DynamicSender};
+use embassy_sync::channel::{Channel};
 use embassy_sync::mutex::Mutex;
 use embassy_sync::once_lock::OnceLock;
 use embassy_sync::pubsub::PubSubChannel;
@@ -57,7 +57,6 @@ type Wrapper<'a> = ControllerWrapper<
     'a,
     GlobalRawMutex,
     Tps6699xMutex<'a>,
-    DynamicSender<'a, power_policy_service::psu::event::EventData>,
     Validator,
 >;
 type Controller<'a> = tps6699x::controller::Controller<GlobalRawMutex, BusDevice<'a>>;
@@ -79,7 +78,7 @@ async fn interrupt_task(mut int_in: Input<'static>, mut interrupt: Interrupt<'st
 
 #[embassy_executor::task]
 async fn power_policy_task(
-    psu_events: psu::event::EventReceivers<'static, 2, DeviceType, DynamicReceiver<'static, psu::event::EventData>>,
+    psu_events: psu::event::EventReceivers<'static, 2, DeviceType>,
     power_policy: &'static Mutex<GlobalRawMutex, power_policy_service::service::Service<'static, DeviceType>>,
 ) {
     power_policy_service::service::task::task(psu_events, power_policy).await;
@@ -161,7 +160,7 @@ async fn main(spawner: Spawner) {
     let policy_receiver1 = policy_channel1.dyn_receiver();
 
     static INTERMEDIATE: StaticCell<
-        IntermediateStorage<TPS66994_NUM_PORTS, GlobalRawMutex, DynamicSender<'static, psu::event::EventData>>,
+        IntermediateStorage<TPS66994_NUM_PORTS, GlobalRawMutex>,
     > = StaticCell::new();
     let intermediate = INTERMEDIATE.init(
         storage
@@ -170,7 +169,7 @@ async fn main(spawner: Spawner) {
     );
 
     static REFERENCED: StaticCell<
-        ReferencedStorage<TPS66994_NUM_PORTS, GlobalRawMutex, DynamicSender<'_, psu::event::EventData>>,
+        ReferencedStorage<TPS66994_NUM_PORTS, GlobalRawMutex>,
     > = StaticCell::new();
     let referenced = REFERENCED.init(
         intermediate
