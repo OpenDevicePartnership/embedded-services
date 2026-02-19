@@ -1,28 +1,26 @@
 use core::future::Future;
-use embedded_services::{error, info};
+use embassy_sync::mutex::Mutex;
+use embedded_services::{error, event, info, power::policy::policy, sync::Lockable};
 
-use crate::{service::Service, wrapper::ControllerWrapper};
+use crate::{
+    service::Service,
+    wrapper::{ControllerWrapper, proxy::PowerProxyDevice},
+};
 
 /// Task to run the Type-C service, takes a closure to customize the event loop
-pub async fn task_closure<
-    'a,
-    M,
-    C,
-    V,
-    Fut: Future<Output = ()>,
-    F: Fn(&'a Service) -> Fut,
-    const N: usize,
-    const POLICY_CHANNEL_SIZE: usize,
->(
+pub async fn task_closure<'a, M, D, S, R, V, Fut: Future<Output = ()>, F: Fn(&'a Service) -> Fut, const N: usize>(
     service: &'static Service<'a>,
-    wrappers: [&'a ControllerWrapper<'a, M, C, V, POLICY_CHANNEL_SIZE>; N],
-    power_policy_context: &'a embedded_services::power::policy::policy::Context<POLICY_CHANNEL_SIZE>,
+    wrappers: [&'a ControllerWrapper<'a, M, D, S, R, V>; N],
+    power_policy_context: &policy::Context<Mutex<M, PowerProxyDevice<'static>>, R>,
+    cfu_client: &'a cfu_service::CfuClient,
     f: F,
 ) where
     M: embassy_sync::blocking_mutex::raw::RawMutex,
-    C: embedded_services::sync::Lockable,
+    D: Lockable,
+    S: event::Sender<policy::RequestData>,
+    R: event::Receiver<policy::RequestData>,
     V: crate::wrapper::FwOfferValidator,
-    <C as embedded_services::sync::Lockable>::Inner: embedded_services::type_c::controller::Controller,
+    D::Inner: embedded_services::type_c::controller::Controller,
 {
     info!("Starting type-c task");
 
@@ -33,8 +31,7 @@ pub async fn task_closure<
 
     for controller_wrapper in wrappers {
         if controller_wrapper
-            .register(service.controllers(), power_policy_context)
-            .await
+            .register(service.controllers(), power_policy_context, cfu_client)
             .is_err()
         {
             error!("Failed to register a controller");
@@ -48,20 +45,29 @@ pub async fn task_closure<
 }
 
 /// Task to run the Type-C service, running the default event loop
-pub async fn task<'a, M, C, V, const N: usize, const POLICY_CHANNEL_SIZE: usize>(
+pub async fn task<'a, M, D, S, R, V, const N: usize>(
     service: &'static Service<'a>,
-    wrappers: [&'a ControllerWrapper<'a, M, C, V, POLICY_CHANNEL_SIZE>; N],
-    power_policy_context: &'a embedded_services::power::policy::policy::Context<POLICY_CHANNEL_SIZE>,
+    wrappers: [&'a ControllerWrapper<'a, M, D, S, R, V>; N],
+    power_policy_context: &policy::Context<Mutex<M, PowerProxyDevice<'static>>, R>,
+    cfu_client: &'a cfu_service::CfuClient,
 ) where
     M: embassy_sync::blocking_mutex::raw::RawMutex,
-    C: embedded_services::sync::Lockable,
+    D: embedded_services::sync::Lockable,
+    S: event::Sender<policy::RequestData>,
+    R: event::Receiver<policy::RequestData>,
     V: crate::wrapper::FwOfferValidator,
-    <C as embedded_services::sync::Lockable>::Inner: embedded_services::type_c::controller::Controller,
+    <D as embedded_services::sync::Lockable>::Inner: embedded_services::type_c::controller::Controller,
 {
-    task_closure(service, wrappers, power_policy_context, |service: &Service| async {
-        if let Err(e) = service.process_next_event().await {
-            error!("Type-C service processing error: {:#?}", e);
-        }
-    })
+    task_closure(
+        service,
+        wrappers,
+        power_policy_context,
+        cfu_client,
+        |service: &Service| async {
+            if let Err(e) = service.process_next_event().await {
+                error!("Type-C service processing error: {:#?}", e);
+            }
+        },
+    )
     .await;
 }

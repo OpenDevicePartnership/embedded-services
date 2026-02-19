@@ -14,8 +14,8 @@ pub mod thread_mode_cell;
 pub mod activity;
 pub mod broadcaster;
 pub mod buffer;
-pub mod cfu;
 pub mod comms;
+pub mod event;
 pub mod fmt;
 pub mod hid;
 pub mod init;
@@ -84,7 +84,6 @@ pub type Never = core::convert::Infallible;
 pub async fn init() {
     comms::init();
     activity::init();
-    cfu::init();
     keyboard::init();
     power::policy::init();
 }

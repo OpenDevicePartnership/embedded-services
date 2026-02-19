@@ -1,9 +1,10 @@
 //! CFU message bridge
 //! TODO: remove this once we have a more generic FW update implementation
+use cfu_service::component::{InternalResponseData, RequestData};
 use embassy_futures::select::{Either, select};
 use embedded_cfu_protocol::protocol_definitions::*;
-use embedded_services::cfu::component::{InternalResponseData, RequestData};
 use embedded_services::power;
+use embedded_services::power::policy::policy;
 use embedded_services::type_c::controller::Controller;
 use embedded_services::{debug, error};
 
@@ -29,10 +30,16 @@ impl FwUpdateState {
     }
 }
 
-impl<'device, M: RawMutex, C: Lockable, V: FwOfferValidator, const POLICY_CHANNEL_SIZE: usize>
-    ControllerWrapper<'device, M, C, V, POLICY_CHANNEL_SIZE>
+impl<
+    'device,
+    M: RawMutex,
+    D: Lockable,
+    S: event::Sender<policy::RequestData>,
+    R: event::Receiver<policy::RequestData>,
+    V: FwOfferValidator,
+> ControllerWrapper<'device, M, D, S, R, V>
 where
-    <C as Lockable>::Inner: Controller,
+    D::Inner: Controller,
 {
     /// Create a new invalid FW version response
     fn create_invalid_fw_version_response(&self) -> InternalResponseData {
@@ -45,7 +52,7 @@ where
     }
 
     /// Process a GetFwVersion command
-    async fn process_get_fw_version(&self, target: &mut C::Inner) -> InternalResponseData {
+    async fn process_get_fw_version(&self, target: &mut D::Inner) -> InternalResponseData {
         let version = match target.get_active_fw_version().await {
             Ok(v) => v,
             Err(Error::Pd(e)) => {
@@ -76,7 +83,7 @@ where
     }
 
     /// Process a GiveOffer command
-    async fn process_give_offer(&self, target: &mut C::Inner, offer: &FwUpdateOffer) -> InternalResponseData {
+    async fn process_give_offer(&self, target: &mut D::Inner, offer: &FwUpdateOffer) -> InternalResponseData {
         if offer.component_info.component_id != self.registration.cfu_device.component_id() {
             return Self::create_offer_rejection();
         }
@@ -98,8 +105,8 @@ where
 
     async fn process_abort_update(
         &self,
-        controller: &mut C::Inner,
-        state: &mut dyn DynPortState<'_>,
+        controller: &mut D::Inner,
+        state: &mut dyn DynPortState<'_, S>,
     ) -> InternalResponseData {
         // abort the update process
         match controller.abort_fw_update().await {
@@ -123,8 +130,8 @@ where
     /// Process a GiveContent command
     async fn process_give_content(
         &self,
-        controller: &mut C::Inner,
-        state: &mut dyn DynPortState<'_>,
+        controller: &mut D::Inner,
+        state: &mut dyn DynPortState<'_, S>,
         content: &FwUpdateContentCommand,
     ) -> InternalResponseData {
         let data = if let Some(data) = content.data.get(0..content.header.data_length as usize) {
@@ -142,45 +149,12 @@ where
 
             // Detach from the power policy so it doesn't attempt to do anything while we are updating
             let controller_id = self.registration.pd_controller.id();
-            let mut detached_all = true;
-            for power in self.registration.power_devices {
+            for power in state.port_power_mut() {
                 info!("Controller{}: checking power device", controller_id.0);
-                if power.state().await != power::policy::device::State::Detached {
+                if power.state.state() != power::policy::device::State::Detached {
                     info!("Controller{}: Detaching power device", controller_id.0);
-                    if let Err(e) = power.detach().await {
-                        error!("Controller{}: Failed to detach power device: {:?}", controller_id.0, e);
-
-                        // Sync to bring the controller to a known state with all services
-                        match self.sync_state_internal(controller, state).await {
-                            Ok(_) => debug!(
-                                "Controller{}: Synced state after detaching power device",
-                                controller_id.0
-                            ),
-                            Err(Error::Pd(e)) => error!(
-                                "Controller{}: Failed to sync state after detaching power device: {:?}",
-                                controller_id.0, e
-                            ),
-                            Err(Error::Bus(_)) => error!(
-                                "Controller{}: Failed to sync state after detaching power device, bus error",
-                                controller_id.0
-                            ),
-                        }
-
-                        detached_all = false;
-                        break;
-                    }
+                    power.sender.send(policy::RequestData::Detached).await;
                 }
-            }
-
-            if !detached_all {
-                error!(
-                    "Controller{}: Failed to detach all power devices, rejecting offer",
-                    controller_id.0
-                );
-                return InternalResponseData::ContentResponse(FwUpdateContentResponse::new(
-                    content.header.sequence_num,
-                    CfuUpdateContentResponseStatus::ErrorPrepare,
-                ));
             }
 
             // Need to start the update
@@ -259,7 +233,7 @@ where
     }
 
     /// Process a CFU tick
-    pub async fn process_cfu_tick(&self, controller: &mut C::Inner, state: &mut dyn DynPortState<'_>) {
+    pub async fn process_cfu_tick(&self, controller: &mut D::Inner, state: &mut dyn DynPortState<'_, S>) {
         match state.controller_state_mut().fw_update_state {
             FwUpdateState::Idle => {
                 // No FW update in progress, nothing to do
@@ -301,8 +275,8 @@ where
     /// Process a CFU command
     pub async fn process_cfu_command(
         &self,
-        controller: &mut C::Inner,
-        state: &mut dyn DynPortState<'_>,
+        controller: &mut D::Inner,
+        state: &mut dyn DynPortState<'_, S>,
         command: &RequestData,
     ) -> InternalResponseData {
         if state.controller_state().fw_update_state == FwUpdateState::Recovery {

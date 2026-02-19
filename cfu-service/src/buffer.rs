@@ -10,14 +10,9 @@ use embassy_sync::{
 };
 use embassy_time::{Duration, TimeoutError, with_timeout};
 use embedded_cfu_protocol::protocol_definitions::*;
-use embedded_services::{
-    GlobalRawMutex,
-    cfu::{
-        self,
-        component::{CfuDevice, InternalResponseData, RequestData},
-    },
-    error, intrusive_list, trace,
-};
+use embedded_services::{GlobalRawMutex, error, intrusive_list, trace};
+
+use crate::component::{CfuDevice, InternalResponseData, RequestData};
 
 /// Internal state for [`Buffer`]
 #[derive(Copy, Clone, Default)]
@@ -115,9 +110,11 @@ impl<'a> Buffer<'a> {
     }
 
     /// Process a fw version request
-    async fn process_get_fw_version(&self) -> InternalResponseData {
-        if let Ok(InternalResponseData::FwVersionResponse(mut response)) =
-            cfu::route_request(self.buffered_id, RequestData::FwVersionRequest).await
+    async fn process_get_fw_version(&self, cfu_client: &crate::CfuClient) -> InternalResponseData {
+        if let Ok(InternalResponseData::FwVersionResponse(mut response)) = cfu_client
+            .context
+            .route_request(self.buffered_id, RequestData::FwVersionRequest)
+            .await
         {
             // Update the component ID in the response to match our external ID
             response.component_info[0].component_id = self.cfu_device.component_id();
@@ -128,8 +125,12 @@ impl<'a> Buffer<'a> {
         }
     }
 
-    async fn process_abort_update(&self) -> InternalResponseData {
-        match cfu::route_request(self.buffered_id, RequestData::AbortUpdate).await {
+    async fn process_abort_update(&self, cfu_client: &crate::CfuClient) -> InternalResponseData {
+        match cfu_client
+            .context
+            .route_request(self.buffered_id, RequestData::AbortUpdate)
+            .await
+        {
             Ok(response) => response,
             Err(e) => {
                 error!("Failed to abort update for device {}: {:?}", self.buffered_id, e);
@@ -139,11 +140,13 @@ impl<'a> Buffer<'a> {
     }
 
     /// Process a give offer request
-    async fn process_give_offer(&self, offer: &FwUpdateOffer) -> InternalResponseData {
+    async fn process_give_offer(&self, offer: &FwUpdateOffer, cfu_client: &crate::CfuClient) -> InternalResponseData {
         let mut offer = *offer;
         offer.component_info.component_id = self.buffered_id;
-        if let Ok(response @ InternalResponseData::OfferResponse(_)) =
-            cfu::route_request(self.buffered_id, RequestData::GiveOffer(offer)).await
+        if let Ok(response @ InternalResponseData::OfferResponse(_)) = cfu_client
+            .context
+            .route_request(self.buffered_id, RequestData::GiveOffer(offer))
+            .await
         {
             response
         } else {
@@ -157,7 +160,12 @@ impl<'a> Buffer<'a> {
     }
 
     /// Process update content
-    async fn process_give_content(&self, state: &mut State, content: &FwUpdateContentCommand) -> InternalResponseData {
+    async fn process_give_content(
+        &self,
+        state: &mut State,
+        content: &FwUpdateContentCommand,
+        cfu_client: &crate::CfuClient,
+    ) -> InternalResponseData {
         // Clear out any pending response if this is a new FW update
         if content.header.flags & FW_UPDATE_FLAG_FIRST_BLOCK != 0 {
             state.pending_response = None;
@@ -171,7 +179,11 @@ impl<'a> Buffer<'a> {
             trace!("Content successfully buffered");
         } else {
             // Buffered component can accept new content, send it
-            if let Err(e) = cfu::send_device_request(self.buffered_id, RequestData::GiveContent(*content)).await {
+            if let Err(e) = cfu_client
+                .context
+                .send_device_request(self.buffered_id, RequestData::GiveContent(*content))
+                .await
+            {
                 error!(
                     "Failed to send content to buffered component {:?}: {:?}",
                     self.buffered_id, e
@@ -181,7 +193,12 @@ impl<'a> Buffer<'a> {
         }
 
         // Wait for a response from the buffered component
-        match with_timeout(self.config.buffer_timeout, cfu::wait_device_response(self.buffered_id)).await {
+        match with_timeout(
+            self.config.buffer_timeout,
+            cfu_client.context.wait_device_response(self.buffered_id),
+        )
+        .await
+        {
             Err(TimeoutError) => {
                 // Component didn't respond in time
                 state.component_busy = true;
@@ -242,7 +259,7 @@ impl<'a> Buffer<'a> {
     }
 
     /// Wait for an event
-    pub async fn wait_event(&self) -> Event {
+    pub async fn wait_event(&self, cfu_client: &crate::CfuClient) -> Event {
         let is_busy = self.state.lock().await.component_busy;
         match select3(
             // Wait for a buffered content request
@@ -250,7 +267,7 @@ impl<'a> Buffer<'a> {
             // Wait for a request from the host
             self.cfu_device.wait_request(),
             // Wait for response from the buffered component
-            cfu::wait_device_response(self.buffered_id),
+            cfu_client.context.wait_device_response(self.buffered_id),
         )
         .await
         {
@@ -275,14 +292,18 @@ impl<'a> Buffer<'a> {
     }
 
     /// Top-level event processing function
-    pub async fn process(&self, event: Event) -> Option<InternalResponseData> {
+    pub async fn process(&self, event: Event, cfu_client: &crate::CfuClient) -> Option<InternalResponseData> {
         let mut state = self.state.lock().await;
         match event {
-            Event::CfuRequest(request) => Some(self.process_request(&mut state, request).await),
+            Event::CfuRequest(request) => Some(self.process_request(&mut state, request, cfu_client).await),
             Event::BufferedContent(content) => {
                 // Send the buffered content to the component
                 // Don't need to wait for a response here, the response will be caught later by either [`wait_event`] or [`process_give_content`]
-                if let Err(e) = cfu::send_device_request(self.buffered_id, RequestData::GiveContent(content)).await {
+                if let Err(e) = cfu_client
+                    .context
+                    .send_device_request(self.buffered_id, RequestData::GiveContent(content))
+                    .await
+                {
                     error!(
                         "Failed to send content to buffered component {:?}: {:?}",
                         self.buffered_id, e
@@ -303,23 +324,28 @@ impl<'a> Buffer<'a> {
     }
 
     /// Process a CFU message and produce a response
-    async fn process_request(&self, state: &mut State, request: RequestData) -> InternalResponseData {
+    async fn process_request(
+        &self,
+        state: &mut State,
+        request: RequestData,
+        cfu_client: &crate::CfuClient,
+    ) -> InternalResponseData {
         match request {
             RequestData::FwVersionRequest => {
                 trace!("Got FwVersionRequest");
-                self.process_get_fw_version().await
+                self.process_get_fw_version(cfu_client).await
             }
             RequestData::GiveOffer(offer) => {
                 trace!("Got GiveOffer");
-                self.process_give_offer(&offer).await
+                self.process_give_offer(&offer, cfu_client).await
             }
             RequestData::GiveContent(content) => {
                 trace!("Got GiveContent");
-                self.process_give_content(state, &content).await
+                self.process_give_content(state, &content, cfu_client).await
             }
             RequestData::AbortUpdate => {
                 trace!("Got AbortUpdate");
-                self.process_abort_update().await
+                self.process_abort_update(cfu_client).await
             }
             RequestData::FinalizeUpdate => {
                 trace!("Got FinalizeUpdate");
@@ -356,7 +382,7 @@ impl<'a> Buffer<'a> {
     }
 
     /// Register the buffer with all relevant services
-    pub async fn register(&'static self) -> Result<(), intrusive_list::Error> {
-        cfu::register_device(&self.cfu_device).await
+    pub fn register(&'static self, cfu_client: &crate::CfuClient) -> Result<(), intrusive_list::Error> {
+        cfu_client.context.register_device(&self.cfu_device)
     }
 }

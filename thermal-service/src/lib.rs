@@ -8,6 +8,8 @@ use embedded_services::{comms, error, info, intrusive_list};
 
 mod context;
 pub mod fan;
+#[cfg(feature = "mock")]
+pub mod mock;
 pub mod mptf;
 pub mod sensor;
 pub mod task;
