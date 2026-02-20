@@ -10,19 +10,17 @@ pub trait RunnableService<'hw>: Sized {
     /// Most services should consider using the `impl_runner_creation_token!` macro to do this automatically.
     type RunnerCreationToken;
 
-    /// Run the service event loop. This future never completes.
-    fn run(
-        &'hw self,
-        _creation_token: Self::RunnerCreationToken,
-    ) -> impl core::future::Future<Output = crate::Never> + 'hw;
-
-    // ##### NOTE - below this line is only needed to get typesafety for spawn_service!(), which we could do without  #####
-
     /// The error type that your `init` function can return on failure.
     type ErrorType;
 
     /// Any initialization parameters that your service needs to run.
     type InitParams;
+
+    /// Run the service event loop. This future never completes.
+    fn run(
+        &'hw self,
+        _creation_token: Self::RunnerCreationToken,
+    ) -> impl core::future::Future<Output = crate::Never> + 'hw;
 
     /// Initializes an instance of the service in the provided OnceLock and returns a reference to the service and
     /// a runner that can be used to run the service.
@@ -97,7 +95,7 @@ pub use impl_runner_creation_token;
 /// Arguments
 ///
 /// - spawner:    An embassy_executor::Spawner.
-/// - service_ty: The service type that implements RunnableService that you want to creat and run.
+/// - service_ty: The service type that implements RunnableService that you want to create and run.
 /// - init_arg:   The init argument type to pass to `Service::init()`
 ///
 /// Example:
@@ -112,7 +110,7 @@ pub use impl_runner_creation_token;
 #[macro_export]
 macro_rules! spawn_service {
     ($spawner:expr, $service_ty:ty, $init_arg:expr) => {{
-        use embedded_services::service::RunnableService;
+        use $crate::service::RunnableService;
         static SERVICE: embassy_sync::once_lock::OnceLock<$service_ty> = embassy_sync::once_lock::OnceLock::new();
         match <$service_ty>::init(&SERVICE, $init_arg).await {
             Ok((service_ref, runner)) => {
