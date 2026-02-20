@@ -22,6 +22,7 @@ pub mod init;
 pub mod ipc;
 pub mod keyboard;
 pub mod relay;
+pub mod service;
 pub mod sync;
 
 /// Hidden re-exports used by macros defined in this crate.
