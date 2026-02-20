@@ -23,7 +23,4 @@
 mod espi_service;
 
 #[cfg(not(test))]
-pub mod task;
-
-#[cfg(not(test))]
 pub use espi_service::*;
