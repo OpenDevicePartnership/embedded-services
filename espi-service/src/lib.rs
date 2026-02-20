@@ -26,7 +26,4 @@ mod espi_service;
 mod mctp;
 
 #[cfg(not(test))]
-pub mod task;
-
-#[cfg(not(test))]
 pub use espi_service::*;

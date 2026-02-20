@@ -10,7 +10,6 @@ use embedded_services::GlobalRawMutex;
 use embedded_services::{info, warn};
 use time_alarm_service_messages::*;
 
-pub mod task;
 mod timer;
 use timer::Timer;
 
@@ -124,7 +123,7 @@ impl<'hw> Service<'hw> {
         ac_policy_storage: &'hw mut dyn NvramStorage<'hw, u32>,
         dc_expiration_storage: &'hw mut dyn NvramStorage<'hw, u32>,
         dc_policy_storage: &'hw mut dyn NvramStorage<'hw, u32>,
-    ) -> Result<&'hw Service<'hw>, DatetimeClockError> {
+    ) -> Result<(&'hw Self, embedded_services::service::ServiceRunner<'hw, Self>), DatetimeClockError> {
         info!("Starting time-alarm service task");
 
         let service = service_storage.get_or_init(|| Service {
@@ -160,7 +159,10 @@ impl<'hw> Service<'hw> {
         service.timers.ac_timer.start(&service.clock_state, true)?;
         service.timers.dc_timer.start(&service.clock_state, false)?;
 
-        Ok(service)
+        Ok((
+            service,
+            embedded_services::service::ServiceRunner::new(service, RunnerCreationToken::new()),
+        ))
     }
 
     /// Query clock capabilities.  Analogous to ACPI TAD's _GRT method.
@@ -263,17 +265,6 @@ impl<'hw> Service<'hw> {
         }
     }
 
-    pub(crate) async fn run_service(&'hw self) -> ! {
-        loop {
-            embassy_futures::select::select3(
-                self.handle_power_source_updates(),
-                self.handle_timer(AcpiTimerId::AcPower),
-                self.handle_timer(AcpiTimerId::DcPower),
-            )
-            .await;
-        }
-    }
-
     async fn handle_power_source_updates(&'hw self) -> ! {
         loop {
             let new_power_source = self.power_source_signal.wait().await;
@@ -307,6 +298,22 @@ impl<'hw> Service<'hw> {
                 timer_id
             );
             // TODO [COMMS] We can't currently trigger a wake because the power service isn't implemented yet - when it is, we need to notify it here
+        }
+    }
+}
+
+embedded_services::impl_runner_creation_token!(RunnerCreationToken);
+
+impl<'hw> embedded_services::service::RunnableService<'hw> for Service<'hw> {
+    type RunnerCreationToken = RunnerCreationToken;
+    async fn run(&'hw self, _: Self::RunnerCreationToken) -> embedded_services::Never {
+        loop {
+            embassy_futures::select::select3(
+                self.handle_power_source_updates(),
+                self.handle_timer(AcpiTimerId::AcPower),
+                self.handle_timer(AcpiTimerId::DcPower),
+            )
+            .await;
         }
     }
 }
