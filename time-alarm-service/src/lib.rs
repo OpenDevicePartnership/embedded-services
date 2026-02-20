@@ -115,56 +115,6 @@ pub struct Service<'hw> {
 }
 
 impl<'hw> Service<'hw> {
-    pub async fn init(
-        service_storage: &'hw OnceLock<Service<'hw>>,
-        backing_clock: &'hw mut impl DatetimeClock,
-        tz_storage: &'hw mut dyn NvramStorage<'hw, u32>,
-        ac_expiration_storage: &'hw mut dyn NvramStorage<'hw, u32>,
-        ac_policy_storage: &'hw mut dyn NvramStorage<'hw, u32>,
-        dc_expiration_storage: &'hw mut dyn NvramStorage<'hw, u32>,
-        dc_policy_storage: &'hw mut dyn NvramStorage<'hw, u32>,
-    ) -> Result<(&'hw Self, embedded_services::service::ServiceRunner<'hw, Self>), DatetimeClockError> {
-        info!("Starting time-alarm service task");
-
-        let service = service_storage.get_or_init(|| Service {
-            clock_state: Mutex::new(RefCell::new(ClockState {
-                datetime_clock: backing_clock,
-                tz_data: TimeZoneData::new(tz_storage),
-            })),
-            power_source_signal: Signal::new(),
-            timers: Timers::new(
-                ac_expiration_storage,
-                ac_policy_storage,
-                dc_expiration_storage,
-                dc_policy_storage,
-            ),
-            capabilities: {
-                // TODO [CONFIG] We could consider making some of these user-configurable, e.g. if we want to support devices that don't have a battery
-                let mut caps = TimeAlarmDeviceCapabilities(0);
-                caps.set_ac_wake_implemented(true);
-                caps.set_dc_wake_implemented(true);
-                caps.set_realtime_implemented(true);
-                caps.set_realtime_accuracy_in_milliseconds(false);
-                caps.set_get_wake_status_supported(true);
-                caps.set_ac_s4_wake_supported(true);
-                caps.set_ac_s5_wake_supported(true);
-                caps.set_dc_s4_wake_supported(true);
-                caps.set_dc_s5_wake_supported(true);
-                caps
-            },
-        });
-
-        // TODO [POWER_SOURCE] we need to subscribe to messages that tell us if we're on AC or DC power so we can decide which alarms to trigger, but those notifications are not yet implemented - revisit when they are.
-        // TODO [POWER_SOURCE] if it's possible to learn which power source is active at init time, we should set that one active rather than defaulting to the AC timer.
-        service.timers.ac_timer.start(&service.clock_state, true)?;
-        service.timers.dc_timer.start(&service.clock_state, false)?;
-
-        Ok((
-            service,
-            embedded_services::service::ServiceRunner::new(service, RunnerCreationToken::new()),
-        ))
-    }
-
     /// Query clock capabilities.  Analogous to ACPI TAD's _GRT method.
     pub fn get_capabilities(&self) -> TimeAlarmDeviceCapabilities {
         self.capabilities
@@ -304,6 +254,15 @@ impl<'hw> Service<'hw> {
 
 embedded_services::impl_runner_creation_token!(RunnerCreationToken);
 
+pub struct ServiceInitParams<'hw> {
+    pub backing_clock: &'hw mut dyn DatetimeClock,
+    pub tz_storage: &'hw mut dyn NvramStorage<'hw, u32>,
+    pub ac_expiration_storage: &'hw mut dyn NvramStorage<'hw, u32>,
+    pub ac_policy_storage: &'hw mut dyn NvramStorage<'hw, u32>,
+    pub dc_expiration_storage: &'hw mut dyn NvramStorage<'hw, u32>,
+    pub dc_policy_storage: &'hw mut dyn NvramStorage<'hw, u32>,
+}
+
 impl<'hw> embedded_services::service::RunnableService<'hw> for Service<'hw> {
     type RunnerCreationToken = RunnerCreationToken;
     async fn run(&'hw self, _: Self::RunnerCreationToken) -> embedded_services::Never {
@@ -315,6 +274,54 @@ impl<'hw> embedded_services::service::RunnableService<'hw> for Service<'hw> {
             )
             .await;
         }
+    }
+
+    type ErrorType = DatetimeClockError;
+    type InitParams = ServiceInitParams<'hw>;
+
+    async fn init(
+        service_storage: &'hw OnceLock<Service<'hw>>,
+        init_params: Self::InitParams,
+    ) -> Result<(&'hw Self, embedded_services::service::ServiceRunner<'hw, Self>), DatetimeClockError> {
+        info!("Starting time-alarm service task");
+
+        let service = service_storage.get_or_init(|| Service {
+            clock_state: Mutex::new(RefCell::new(ClockState {
+                datetime_clock: init_params.backing_clock,
+                tz_data: TimeZoneData::new(init_params.tz_storage),
+            })),
+            power_source_signal: Signal::new(),
+            timers: Timers::new(
+                init_params.ac_expiration_storage,
+                init_params.ac_policy_storage,
+                init_params.dc_expiration_storage,
+                init_params.dc_policy_storage,
+            ),
+            capabilities: {
+                // TODO [CONFIG] We could consider making some of these user-configurable, e.g. if we want to support devices that don't have a battery
+                let mut caps = TimeAlarmDeviceCapabilities(0);
+                caps.set_ac_wake_implemented(true);
+                caps.set_dc_wake_implemented(true);
+                caps.set_realtime_implemented(true);
+                caps.set_realtime_accuracy_in_milliseconds(false);
+                caps.set_get_wake_status_supported(true);
+                caps.set_ac_s4_wake_supported(true);
+                caps.set_ac_s5_wake_supported(true);
+                caps.set_dc_s4_wake_supported(true);
+                caps.set_dc_s5_wake_supported(true);
+                caps
+            },
+        });
+
+        // TODO [POWER_SOURCE] we need to subscribe to messages that tell us if we're on AC or DC power so we can decide which alarms to trigger, but those notifications are not yet implemented - revisit when they are.
+        // TODO [POWER_SOURCE] if it's possible to learn which power source is active at init time, we should set that one active rather than defaulting to the AC timer.
+        service.timers.ac_timer.start(&service.clock_state, true)?;
+        service.timers.dc_timer.start(&service.clock_state, false)?;
+
+        Ok((
+            service,
+            embedded_services::service::ServiceRunner::new(service, RunnerCreationToken::new()),
+        ))
     }
 }
 

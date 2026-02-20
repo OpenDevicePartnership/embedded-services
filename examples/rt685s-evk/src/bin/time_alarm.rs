@@ -26,12 +26,14 @@ async fn main(spawner: embassy_executor::Spawner) {
     let time_service = embedded_services::spawn_service!(
         spawner,
         [time_alarm_service::Service<'static>],
-        dt_clock,
-        tz,
-        ac_expiration,
-        ac_policy,
-        dc_expiration,
-        dc_policy
+        time_alarm_service::ServiceInitParams {
+            backing_clock: dt_clock,
+            tz_storage: tz,
+            ac_expiration_storage: ac_expiration,
+            ac_policy_storage: ac_policy,
+            dc_expiration_storage: dc_expiration,
+            dc_policy_storage: dc_policy
+        }
     )
     .expect("Failed to spawn time alarm service");
 

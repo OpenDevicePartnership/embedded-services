@@ -3,7 +3,7 @@
 /// A trait for a service that can be run on the EC.
 /// Implementations of RunnableService should have an init() function to construct the service that
 /// returns a Runner, which the user is expected to spawn a task for.
-pub trait RunnableService<'hw> {
+pub trait RunnableService<'hw>: Sized {
     /// A token type used to restrict users from spawning more than one service runner.  Services will generally
     /// define this as a zero-sized type and only provide a constructor for it that is private to the service module,
     /// which prevents users from constructing their own tokens and spawning multiple runners.
@@ -15,6 +15,21 @@ pub trait RunnableService<'hw> {
         &'hw self,
         _creation_token: Self::RunnerCreationToken,
     ) -> impl core::future::Future<Output = crate::Never> + 'hw;
+
+    // ##### NOTE - below this line is only needed to get typesafety for spawn_service!(), which we could do without  #####
+
+    /// The error type that your `init` function can return on failure.
+    type ErrorType;
+
+    /// Any initialization parameters that your service needs to run.
+    type InitParams;
+
+    /// Initializes an instance of the service in the provided OnceLock and returns a reference to the service and
+    /// a runner that can be used to run the service.
+    fn init(
+        storage: &'hw embassy_sync::once_lock::OnceLock<Self>,
+        params: Self::InitParams,
+    ) -> impl core::future::Future<Output = Result<(&'hw Self, ServiceRunner<'hw, Self>), Self::ErrorType>>;
 }
 
 /// A handle that must be passed to a spawned task and `.run().await`'d to drive the service.
@@ -107,6 +122,7 @@ pub use impl_runner_creation_token;
 macro_rules! spawn_service {
     ($spawner:expr, [ $($service_ty:tt)* ], $($init_args:expr),* $(,)?) => {
         {
+            use embedded_services::service::RunnableService;
             static SERVICE: embassy_sync::once_lock::OnceLock<$($service_ty)*> = embassy_sync::once_lock::OnceLock::new();
             match <$($service_ty)*>::init(
                 &SERVICE,
