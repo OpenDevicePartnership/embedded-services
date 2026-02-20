@@ -33,7 +33,7 @@ pub trait RunnableService<'hw>: Sized {
 }
 
 /// A handle that must be passed to a spawned task and `.run().await`'d to drive the service.
-/// Dropping this without calling `runner.run().await` means the service will not process events
+#[must_use = "Dropping the ServiceRunner without calling .run().await means the service will not process events"]
 pub struct ServiceRunner<'hw, T: RunnableService<'hw>> {
     service: &'hw T,
     creation_token: T::RunnerCreationToken, // This token is used to ensure that only the service can create a runner for itself. It's probably a zero-sized type.
@@ -89,61 +89,44 @@ pub use impl_runner_creation_token;
 /// This macro handles the boilerplate of:
 /// 1. Creating a `static` [`OnceLock`](embassy_sync::once_lock::OnceLock) to hold the service
 /// 2. Calling the service's `init()` method
-/// 3. Defining an [`embassy_executor::task`] to run the service
+/// 3. Defining an embassy_executor::task to run the service
 /// 4. Spawning the task on the provided executor
 ///
 /// Returns a Result<reference-to-service, Error> where Error is the error type of $service_ty::init().
 ///
-/// Note that for a service to be supported, it must have the following properties: // TODO figure out if this should be a trait. Would require a single associated-type arg rather than letting each service define its own init list though...
-/// 1. Implements the RunnableService trait
-/// 2. Has an init() function with the following properties:
-///   i.  Takes as its first argument a &OnceLock<service_ty>
-///   ii. Returns a Result<(reference-to-service, service-runner), Error> where the service-runner
-///       is an instance of RunnableService.
-///
 /// Arguments
 ///
-/// - spawner:    An [`embassy_executor::Spawner`].
-/// - service_ty: The service type, wrapped in brackets to allow generic arguments
-///   (e.g. `[my_crate::Service<'static>]`).
-/// - init_args:  The arguments to pass to `Service::init()`, excluding the `OnceLock` argument, which is codegenned.
+/// - spawner:    An embassy_executor::Spawner.
+/// - service_ty: The service type that implements RunnableService that you want to creat and run.
+/// - init_arg:   The init argument type to pass to `Service::init()`
 ///
 /// Example:
 ///
 /// ```ignore
 /// let time_service = embedded_services::spawn_service!(
-///     time_alarm_task,
 ///     spawner,
-///     [time_alarm_service::Service<'static>],
-///     dt_clock, tz, ac_expiration, ac_policy, dc_expiration, dc_policy
+///     time_alarm_service::Service<'static>,
+///     time_alarm_service::ServiceInitParams { dt_clock, tz, ac_expiration, ac_policy, dc_expiration, dc_policy }
 /// ).expect("failed to initialize time_alarm service");
 /// ```
 #[macro_export]
 macro_rules! spawn_service {
-    ($spawner:expr, [ $($service_ty:tt)* ], $($init_args:expr),* $(,)?) => {
-        {
-            use embedded_services::service::RunnableService;
-            static SERVICE: embassy_sync::once_lock::OnceLock<$($service_ty)*> = embassy_sync::once_lock::OnceLock::new();
-            match <$($service_ty)*>::init(
-                &SERVICE,
-                $($init_args),*
-            )
-            .await {
-                Ok((service_ref, runner)) => {
-                    #[embassy_executor::task]
-                    async fn service_task_fn(
-                        runner: $crate::service::ServiceRunner<'static, $($service_ty)*>,
-                    ) {
-                        runner.run().await;
-                    }
+    ($spawner:expr, $service_ty:ty, $init_arg:expr) => {{
+        use embedded_services::service::RunnableService;
+        static SERVICE: embassy_sync::once_lock::OnceLock<$service_ty> = embassy_sync::once_lock::OnceLock::new();
+        match <$service_ty>::init(&SERVICE, $init_arg).await {
+            Ok((service_ref, runner)) => {
+                #[embassy_executor::task]
+                async fn service_task_fn(runner: $crate::service::ServiceRunner<'static, $service_ty>) {
+                    runner.run().await;
+                }
 
-                    $spawner.must_spawn(service_task_fn(runner));
-                    Ok(service_ref)
-                },
-                Err(e) => Err(e)
+                $spawner.must_spawn(service_task_fn(runner));
+                Ok(service_ref)
             }
+            Err(e) => Err(e),
         }
-    };
+    }};
 }
 
 pub use spawn_service;

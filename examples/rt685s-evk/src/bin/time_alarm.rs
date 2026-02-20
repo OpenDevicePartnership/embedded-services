@@ -25,7 +25,7 @@ async fn main(spawner: embassy_executor::Spawner) {
 
     let time_service = embedded_services::spawn_service!(
         spawner,
-        [time_alarm_service::Service<'static>],
+        time_alarm_service::Service<'static>,
         time_alarm_service::ServiceInitParams {
             backing_clock: dt_clock,
             tz_storage: tz,
