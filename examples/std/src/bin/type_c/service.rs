@@ -19,7 +19,7 @@ use std_examples::type_c::mock_controller;
 use std_examples::type_c::mock_controller::Wrapper;
 use type_c_service::service::Service;
 use type_c_service::service::config::Config;
-use type_c_service::type_c::controller::Context;
+use type_c_service::service::context::Context;
 use type_c_service::type_c::{ControllerId, power_capability_from_current};
 use type_c_service::wrapper::backing::Storage;
 use type_c_service::wrapper::message::*;
@@ -74,8 +74,8 @@ async fn task(spawner: Spawner) {
     static POWER_SERVICE_CONTEXT: StaticCell<power_policy_service::service::context::Context> = StaticCell::new();
     let power_service_context = POWER_SERVICE_CONTEXT.init(power_policy_service::service::context::Context::new());
 
-    static CONTEXT: StaticCell<type_c_service::type_c::controller::Context> = StaticCell::new();
-    let controller_context = CONTEXT.init(type_c_service::type_c::controller::Context::new());
+    static CONTEXT: StaticCell<type_c_service::service::context::Context> = StaticCell::new();
+    let controller_context = CONTEXT.init(type_c_service::service::context::Context::new());
 
     let (wrapper, policy_receiver, controller, state) = create_wrapper(controller_context);
 
@@ -102,14 +102,10 @@ async fn task(spawner: Spawner) {
     // Guaranteed to not panic since we initialized the channel above
     let power_policy_subscriber = power_policy_channel.dyn_subscriber().unwrap();
 
-    static CONTROLLER_LIST: StaticCell<IntrusiveList> = StaticCell::new();
-    let controller_list = CONTROLLER_LIST.init(IntrusiveList::new());
-
     static TYPE_C_SERVICE: StaticCell<Service<'static, DeviceType>> = StaticCell::new();
     let type_c_service = TYPE_C_SERVICE.init(Service::create(
         Config::default(),
         controller_context,
-        controller_list,
         power_policy_publisher,
         power_policy_subscriber,
     ));

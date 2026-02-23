@@ -1,20 +1,6 @@
-//! Type-C service
+//! Type-C service utility functions and constants.
 use embedded_usb_pd::pdo::{Common, Contract};
 use embedded_usb_pd::type_c;
-
-pub mod comms;
-pub mod controller;
-pub mod event;
-
-/// Controller ID
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct ControllerId(pub u8);
-
-/// Length of the Other VDM data
-pub const OTHER_VDM_LEN: usize = 29;
-/// Length of the Attention VDM data
-pub const ATTN_VDM_LEN: usize = 9;
 
 pub fn power_capability_try_from_contract(
     contract: Contract,
@@ -60,8 +46,3 @@ pub const POWER_CAPABILITY_5V_3A0: power_policy_interface::capability::PowerCapa
         voltage_mv: 5000,
         current_ma: 3000,
     };
-
-/// Newtype to help clarify arguments to port status commands
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct Cached(pub bool);

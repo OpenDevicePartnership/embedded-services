@@ -19,8 +19,6 @@ use core::array::from_fn;
 use core::future::pending;
 use core::ops::DerefMut;
 
-use crate::type_c::controller::{self, Controller, PortStatus};
-use crate::type_c::event::{PortEvent, PortNotificationSingle, PortPending, PortStatusChanged};
 use crate::wrapper::backing::{ControllerState, PortState};
 use cfu_service::CfuClient;
 use embassy_futures::select::{Either, Either5, select, select_array, select5};
@@ -42,12 +40,17 @@ use crate::{PortEventStreamer, PortEventVariant};
 pub mod backing;
 mod cfu;
 pub mod config;
+pub mod controller;
 mod dp;
+pub mod event;
 pub mod message;
 mod pd;
 mod power;
 pub mod proxy;
 mod vdm;
+
+use controller::{Controller, PortStatus};
+use event::{PortEvent, PortNotificationSingle, PortPending, PortStatusChanged};
 
 /// Base interval for checking for FW update timeouts and recovery attempts
 pub const DEFAULT_FW_UPDATE_TICK_INTERVAL_MS: u64 = 5000;
@@ -593,16 +596,18 @@ where
     /// Register all devices with their respective services
     pub fn register(
         &'static self,
-        controllers: &intrusive_list::IntrusiveList,
+        service_context: &crate::service::context::Context,
         cfu_client: &CfuClient,
     ) -> Result<(), Error<<D::Inner as Controller>::BusError>> {
-        controller::register_controller(controllers, self.registration.pd_controller).map_err(|_| {
-            error!(
-                "Controller{}: Failed to register PD controller",
-                self.registration.pd_controller.id().0
-            );
-            Error::Pd(PdError::Failed)
-        })?;
+        service_context
+            .register_controller(self.registration.pd_controller)
+            .map_err(|_| {
+                error!(
+                    "Controller{}: Failed to register PD controller",
+                    self.registration.pd_controller.id().0
+                );
+                Error::Pd(PdError::Failed)
+            })?;
 
         //TODO: Remove when we have a more general framework in place
         cfu_client.register_device(self.registration.cfu_device).map_err(|_| {

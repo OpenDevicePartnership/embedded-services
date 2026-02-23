@@ -1,5 +1,5 @@
 use super::{ControllerWrapper, FwOfferValidator};
-use crate::type_c::controller::Controller;
+use crate::wrapper::controller::Controller;
 use crate::wrapper::message::OutputDpStatusChanged;
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use embedded_services::{event, sync::Lockable, trace};

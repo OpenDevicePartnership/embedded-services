@@ -2,7 +2,7 @@
 use embedded_services::{GlobalRawMutex, ipc::deferred};
 use embedded_usb_pd::{LocalPortId, ado::Ado};
 
-use crate::type_c::{
+use crate::wrapper::{
     controller::{self, DpStatus, PortStatus},
     event::{PortNotificationSingle, PortStatusChanged},
 };
@@ -102,7 +102,7 @@ pub struct OutputControllerCommand<'a> {
 pub mod vdm {
     //! Events and output for vendor-defined messaging.
     use super::LocalPortId;
-    use crate::type_c::controller::{AttnVdm, OtherVdm};
+    use crate::wrapper::controller::{AttnVdm, OtherVdm};
 
     /// The kind of output from processing a vendor-defined message.
     #[derive(Copy, Clone, Debug)]

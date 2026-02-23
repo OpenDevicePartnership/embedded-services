@@ -8,15 +8,15 @@ use embedded_usb_pd::GlobalPortId;
 use embedded_usb_pd::PdError as Error;
 use power_policy_interface::psu;
 
-use crate::type_c::{
-    self, Cached, comms,
-    controller::PortStatus,
-    event::{PortNotificationSingle, PortStatusChanged},
-};
+use crate::wrapper::controller::{Cached, PortStatus};
+
+use crate::wrapper::event::{PortNotificationSingle, PortStatusChanged};
 
 use crate::{PortEventStreamer, PortEventVariant};
 
 pub mod config;
+pub mod context;
+pub mod event;
 pub mod pd;
 mod port;
 mod power;
@@ -45,9 +45,7 @@ where
     PSU::Inner: psu::Psu,
 {
     /// Type-C context
-    context: &'a type_c::controller::Context,
-    /// Controller intrusive list
-    controllers: &'a intrusive_list::IntrusiveList,
+    pub(crate) context: &'a context::Context,
     /// Current state
     state: Mutex<GlobalRawMutex, State>,
     /// Config
@@ -70,6 +68,7 @@ where
 // This is present instead of just using [`power_policy::CommsMessage`] to allow for
 // supporting variants like `ConsumerConnected(GlobalPortId, ConsumerPowerCapability)`
 // But there's currently not a way to do look-ups between power policy device IDs and GlobalPortIds
+#[derive(Copy, Clone)]
 pub enum PowerPolicyEvent {
     /// Unconstrained state changed
     Unconstrained(power_policy_interface::service::UnconstrainedState),
@@ -80,6 +79,7 @@ pub enum PowerPolicyEvent {
 }
 
 /// Type-C service events
+#[derive(Copy, Clone)]
 pub enum Event {
     /// Port event
     PortStatusChanged(GlobalPortId, PortStatusChanged, PortStatus),
@@ -107,7 +107,6 @@ where
             config,
             _power_policy_event_publisher: power_policy_publisher.into(),
             power_policy_event_subscriber: Mutex::new(power_policy_subscriber),
-            controllers: controller_list,
         }
     }
 
@@ -150,7 +149,7 @@ where
             }
 
             self.context
-                .broadcast_message(comms::CommsMessage::DebugAccessory(comms::DebugAccessoryMessage {
+                .broadcast_message(event::Event::DebugAccessory(event::DebugAccessory {
                     port: port_id,
                     connected: status.is_connected(),
                 }))
@@ -169,10 +168,7 @@ where
             match select(self.wait_port_flags(), self.wait_power_policy_event()).await {
                 Either::First(mut stream) => {
                     if let Some((port_id, event)) = stream
-                        .next(|port_id| {
-                            self.context
-                                .get_port_event(self.controllers, GlobalPortId(port_id as u8))
-                        })
+                        .next(|port_id| self.context.get_port_event(GlobalPortId(port_id as u8)))
                         .await?
                     {
                         let port_id = GlobalPortId(port_id as u8);
@@ -180,10 +176,7 @@ where
                         match event {
                             PortEventVariant::StatusChanged(status_event) => {
                                 // Return a port status changed event
-                                let status = self
-                                    .context
-                                    .get_port_status(self.controllers, port_id, Cached(true))
-                                    .await?;
+                                let status = self.context.get_port_status(port_id, Cached(true)).await?;
                                 return Ok(Event::PortStatusChanged(port_id, status_event, status));
                             }
                             PortEventVariant::Notification(notification) => {
@@ -226,7 +219,17 @@ where
         self.process_event(event).await
     }
 
+<<<<<<< HEAD
     pub(crate) fn controllers(&self) -> &'a intrusive_list::IntrusiveList {
         self.controllers
+=======
+    /// Register the Type-C service with the power policy service
+    pub fn register_comms(
+        &'static self,
+        _power_policy_context: &power_policy_service::service::context::Context,
+    ) -> Result<(), intrusive_list::Error> {
+        // TODO
+        Ok(())
+>>>>>>> d141e7e (type-c-service: Clean up module structure)
     }
 }

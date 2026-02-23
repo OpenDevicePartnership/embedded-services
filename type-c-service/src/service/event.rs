@@ -5,7 +5,7 @@ use embedded_usb_pd::GlobalPortId;
 /// Message generated when a debug acessory is connected or disconnected
 #[derive(Copy, Clone, Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct DebugAccessoryMessage {
+pub struct DebugAccessory {
     /// Port
     pub port: GlobalPortId,
     /// Connected
@@ -25,9 +25,9 @@ pub struct UsciChangeIndicator {
 /// Top-level comms message
 #[derive(Copy, Clone, Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub enum CommsMessage {
+pub enum Event {
     /// Debug accessory message
-    DebugAccessory(DebugAccessoryMessage),
+    DebugAccessory(DebugAccessory),
     /// UCSI CCI message
     UcsiCci(UsciChangeIndicator),
 }
