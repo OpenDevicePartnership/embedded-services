@@ -65,6 +65,9 @@ pub enum UsbControlMethod {
     /// if either [`UsbControlConfig::usb2_enabled`] or [`UsbControlConfig::usb3_enabled`]
     /// is false.
     DpConfig,
+
+    /// Set USB capabilities through [`tps6699x::registers::field_sets::TbtConfig`].
+    TbtConfig,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -675,17 +678,34 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
                     .await?;
             }
             UsbControlMethod::DpConfig => {
-                use tps6699x::registers::UsbDataPath;
+                use tps6699x::registers::DpUsbDataPath;
                 let usb_data_path = if config.usb2_enabled && config.usb3_enabled {
-                    UsbDataPath::MayBeRequired
+                    DpUsbDataPath::MayBeRequired
                 } else {
-                    UsbDataPath::NotRequired
+                    DpUsbDataPath::NotRequired
                 };
 
                 self.tps6699x
                     .modify_dp_config(port, |dp_config| {
                         dp_config.set_usb_data_path(usb_data_path);
                         dp_config.clone()
+                    })
+                    .await?;
+            }
+            UsbControlMethod::TbtConfig => {
+                use tps6699x::registers::TbtUsbDataPath;
+                let usb_data_path = if config.usb2_enabled && config.usb3_enabled && config.usb4_enabled {
+                    TbtUsbDataPath::MayBeRequired
+                } else {
+                    TbtUsbDataPath::NotRequired
+                };
+
+                self.tps6699x
+                    .lock_inner()
+                    .await
+                    .modify_tbt_config(port, |tbt_config| {
+                        tbt_config.set_usb_data_path(usb_data_path);
+                        tbt_config.clone()
                     })
                     .await?;
             }
