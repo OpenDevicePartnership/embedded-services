@@ -26,7 +26,7 @@ use static_cell::StaticCell;
 use tps6699x::asynchronous::embassy as tps6699x;
 use type_c_service::driver::tps6699x::{self as tps6699x_drv};
 use type_c_service::service::Service;
-use type_c_service::type_c::{Cached, ControllerId};
+use type_c_service::type_c::ControllerId;
 use type_c_service::wrapper::ControllerWrapper;
 use type_c_service::wrapper::backing::{IntermediateStorage, ReferencedStorage, Storage};
 use type_c_service::wrapper::proxy::PowerProxyDevice;
@@ -249,31 +249,4 @@ async fn main(spawner: Spawner) {
     ));
 
     spawner.must_spawn(pd_controller_task(wrapper));
-
-    // Sync our internal state with the hardware
-    controller_context
-        .sync_controller_state_external(CONTROLLER0_ID)
-        .await
-        .unwrap();
-
-    embassy_time::Timer::after_secs(10).await;
-
-    let status = controller_context
-        .get_controller_status_external(CONTROLLER0_ID)
-        .await
-        .unwrap();
-
-    info!("Controller status: {:?}", status);
-
-    let status = controller_context
-        .get_port_status_external(PORT0_ID, Cached(true))
-        .await
-        .unwrap();
-    info!("Port status: {:?}", status);
-
-    let status = controller_context
-        .get_port_status_external(PORT1_ID, Cached(true))
-        .await
-        .unwrap();
-    info!("Port status: {:?}", status);
 }

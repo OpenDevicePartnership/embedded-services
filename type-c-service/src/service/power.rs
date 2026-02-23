@@ -8,7 +8,7 @@ where
     PSU::Inner: psu::Psu,
 {
     /// Wait for a power policy event
-    pub(super) async fn wait_power_policy_event(&self) -> Event<'_> {
+    pub(super) async fn wait_power_policy_event(&self) -> Event {
         loop {
             match self.power_policy_event_subscriber.lock().await.next_message().await {
                 WaitResult::Lagged(lagged) => {

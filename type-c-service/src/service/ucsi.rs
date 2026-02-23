@@ -10,6 +10,18 @@ use embedded_usb_pd::{PdError, PowerRole};
 
 use super::*;
 
+/// UCSI command response
+#[derive(Copy, Clone, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct UcsiResponse {
+    /// Notify the OPM, the function call
+    pub notify_opm: bool,
+    /// Response CCI
+    pub cci: GlobalCci,
+    /// UCSI response data
+    pub data: Result<Option<ucsi::ResponseData>, PdError>,
+}
+
 /// UCSI state
 #[derive(Default)]
 pub(super) struct State {
@@ -47,10 +59,11 @@ where
     }
 
     /// PPM get capabilities implementation
-    fn process_get_capabilities(&self, controllers: &intrusive_list::IntrusiveList) -> ppm::ResponseData {
+    fn process_get_capabilities(&self, _controllers: &intrusive_list::IntrusiveList) -> ppm::ResponseData {
         debug!("Get PPM capabilities: {:?}", self.config.ucsi_capabilities);
         let mut capabilities = self.config.ucsi_capabilities;
-        capabilities.num_connectors = external::get_num_ports(controllers) as u8;
+        // TODO: implement this when the refactoring stabilizes
+        capabilities.num_connectors = 0;
         ppm::ResponseData::GetCapability(capabilities)
     }
 
@@ -173,14 +186,14 @@ where
     }
 
     /// Process an external UCSI command
-    pub(super) async fn process_ucsi_command(
+    pub async fn process_ucsi_command(
         &self,
         controllers: &intrusive_list::IntrusiveList,
         command: &GlobalCommand,
-    ) -> external::UcsiResponse {
+    ) -> UcsiResponse {
         let state = &mut self.state.lock().await;
         let mut next_input = Some(PpmInput::Command(command));
-        let mut response: external::UcsiResponse = external::UcsiResponse {
+        let mut response = UcsiResponse {
             notify_opm: false,
             cci: Cci::default(),
             data: Ok(None),
@@ -194,7 +207,7 @@ where
                 state.ucsi.ppm_state_machine.consume(next_input)
             } else {
                 error!("Unexpected end of state machine processing");
-                return external::UcsiResponse {
+                return UcsiResponse {
                     notify_opm: true,
                     cci: Cci::new_error(),
                     data: Err(PdError::InvalidMode),
@@ -205,7 +218,7 @@ where
                 Ok(output) => output,
                 Err(e @ InvalidTransition { .. }) => {
                     error!("PPM state machine transition failed: {:#?}", e);
-                    return external::UcsiResponse {
+                    return UcsiResponse {
                         notify_opm: true,
                         cci: Cci::new_error(),
                         data: Err(PdError::Failed),
