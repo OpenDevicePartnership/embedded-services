@@ -24,6 +24,7 @@ members = [
     "keyboard-service",
     "power-policy-interface",
     "odp-service-common",
+    "type-c-interface",
 ]
 exclude = ["examples/*"]
 
@@ -105,6 +106,7 @@ static_cell = "2.1.0"
 toml = { version = "0.8", default-features = false }
 thermal-service-messages = { path = "./thermal-service-messages" }
 time-alarm-service-messages = { path = "./time-alarm-service-messages" }
+type-c-interface = { path = "./type-c-interface" }
 syn = "2.0"
 tps6699x = { git = "https://github.com/OpenDevicePartnership/tps6699x" }
 tokio = { version = "1.42.0" }

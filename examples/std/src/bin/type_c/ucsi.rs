@@ -24,8 +24,8 @@ use static_cell::StaticCell;
 use std_examples::type_c::mock_controller;
 use type_c_service::service::Service;
 use type_c_service::service::config::Config;
+use type_c_service::service::context::Context;
 use type_c_service::type_c::ControllerId;
-use type_c_service::type_c::controller::Context;
 use type_c_service::wrapper::backing::Storage;
 use type_c_service::wrapper::proxy::PowerProxyDevice;
 
@@ -208,11 +208,8 @@ async fn task(spawner: Spawner) {
 
     embedded_services::init().await;
 
-    static CONTROLLER_CONTEXT: StaticCell<type_c_service::type_c::controller::Context> = StaticCell::new();
-    let controller_context = CONTROLLER_CONTEXT.init(type_c_service::type_c::controller::Context::new());
-
-    static CONTROLLER_LIST: StaticCell<IntrusiveList> = StaticCell::new();
-    let controller_list = CONTROLLER_LIST.init(IntrusiveList::new());
+    static CONTROLLER_CONTEXT: StaticCell<Context> = StaticCell::new();
+    let controller_context = CONTROLLER_CONTEXT.init(Context::new());
 
     static STORAGE0: StaticCell<Storage<1, GlobalRawMutex>> = StaticCell::new();
     let storage0 = STORAGE0.init(Storage::new(controller_context, CONTROLLER0_ID, CFU0_ID, [PORT0_ID]));
@@ -359,7 +356,6 @@ async fn task(spawner: Spawner) {
             ..Default::default()
         },
         controller_context,
-        controller_list,
         power_policy_publisher,
         power_policy_subscriber,
     ));

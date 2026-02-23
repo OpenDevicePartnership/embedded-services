@@ -63,13 +63,8 @@ async fn task(spawner: Spawner) {
     static POWER_SERVICE_CONTEXT: StaticCell<power_policy_service::service::context::Context> = StaticCell::new();
     let power_service_context = POWER_SERVICE_CONTEXT.init(power_policy_service::service::context::Context::new());
 
-    static CONTROLLER_CONTEXT: StaticCell<type_c_service::type_c::controller::Context> = StaticCell::new();
-    let controller_context = CONTROLLER_CONTEXT.init(type_c_service::type_c::controller::Context::new());
-
-    static CONTEXT: StaticCell<type_c_service::type_c::controller::Context> = StaticCell::new();
-    let context = CONTEXT.init(type_c_service::type_c::controller::Context::new());
-    static CONTROLLER_LIST: StaticCell<IntrusiveList> = StaticCell::new();
-    let controller_list = CONTROLLER_LIST.init(IntrusiveList::new());
+    static CONTROLLER_CONTEXT: StaticCell<type_c_service::service::context::Context> = StaticCell::new();
+    let controller_context = CONTROLLER_CONTEXT.init(type_c_service::service::context::Context::new());
 
     static POLICY_CHANNEL0: StaticCell<Channel<GlobalRawMutex, psu::event::EventData, 1>> = StaticCell::new();
     let policy_channel0 = POLICY_CHANNEL0.init(Channel::new());
@@ -210,7 +205,6 @@ async fn task(spawner: Spawner) {
     let type_c_service = TYPE_C_SERVICE.init(Service::create(
         Default::default(),
         controller_context,
-        controller_list,
         power_policy_publisher,
         power_policy_subscriber,
     ));

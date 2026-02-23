@@ -1,6 +1,6 @@
-use crate::type_c::Cached;
-use crate::type_c::controller::{InternalResponseData, Response};
 use crate::wrapper::backing::ControllerState;
+use type_c_interface::port::Cached;
+use type_c_interface::port::{InternalResponseData, Response};
 use embassy_futures::yield_now;
 use embassy_sync::pubsub::WaitResult;
 use embassy_time::{Duration, Timer};
@@ -8,6 +8,7 @@ use embedded_services::debug;
 use embedded_usb_pd::constants::{T_PS_TRANSITION_EPR_MS, T_PS_TRANSITION_SPR_MS};
 use embedded_usb_pd::ucsi::{self, lpm};
 use power_policy_interface::psu::{self, PsuState};
+use type_c_interface::port;
 
 use super::*;
 
@@ -110,7 +111,7 @@ where
         state: &psu::State,
         local_port: LocalPortId,
         voltage_mv: Option<u16>,
-    ) -> Result<controller::PortResponseData, PdError> {
+    ) -> Result<port::PortResponseData, PdError> {
         let psu_state = state.psu_state;
         debug!("Port{}: Current state: {:#?}", local_port.0, psu_state);
         if matches!(psu_state, PsuState::ConnectedConsumer(_)) {
@@ -130,7 +131,7 @@ where
         }
 
         match controller.set_max_sink_voltage(local_port, voltage_mv).await {
-            Ok(()) => Ok(controller::PortResponseData::Complete),
+            Ok(()) => Ok(port::PortResponseData::Complete),
             Err(e) => match e {
                 Error::Bus(_) => Err(PdError::Failed),
                 Error::Pd(e) => Err(e),
@@ -144,12 +145,12 @@ where
         port_state: &mut PortState<'_, S>,
         local_port: LocalPortId,
         cached: Cached,
-    ) -> Result<controller::PortResponseData, PdError> {
+    ) -> Result<port::PortResponseData, PdError> {
         if cached.0 {
-            Ok(controller::PortResponseData::PortStatus(port_state.status))
+            Ok(port::PortResponseData::PortStatus(port_state.status))
         } else {
             match controller.get_port_status(local_port).await {
-                Ok(status) => Ok(controller::PortResponseData::PortStatus(status)),
+                Ok(status) => Ok(port::PortResponseData::PortStatus(status)),
                 Err(e) => match e {
                     Error::Bus(_) => Err(PdError::Failed),
                     Error::Pd(e) => Err(e),
@@ -163,83 +164,83 @@ where
         &self,
         controller_state: &mut ControllerState,
         controller: &mut D::Inner,
-        command: &controller::PortCommand,
+        command: &port::PortCommand,
     ) -> Response<'static> {
         if controller_state.fw_update_state.in_progress() {
             debug!("FW update in progress, ignoring port command");
-            return controller::Response::Port(Err(PdError::Busy));
+            return port::Response::Port(Err(PdError::Busy));
         }
 
         let local_port = if let Ok(port) = self.registration.pd_controller.lookup_local_port(command.port) {
             port
         } else {
             debug!("Invalid port: {:?}", command.port);
-            return controller::Response::Port(Err(PdError::InvalidPort));
+            return port::Response::Port(Err(PdError::InvalidPort));
         };
 
         let Some(port) = self.ports.get(local_port.0 as usize) else {
             debug!("Invalid port: {:?}", command.port);
-            return controller::Response::Port(Err(PdError::InvalidPort));
+            return port::Response::Port(Err(PdError::InvalidPort));
         };
 
         let mut port_state = port.state.lock().await;
-        controller::Response::Port(match command.data {
-            controller::PortCommandData::PortStatus(cached) => {
+        port::Response::Port(match command.data {
+            port::PortCommandData::PortStatus(cached) => {
                 self.process_get_port_status(controller, &mut port_state, local_port, cached)
                     .await
             }
-            controller::PortCommandData::ClearEvents => {
+            port::PortCommandData::ClearEvents => {
                 let event = core::mem::take(&mut port_state.pending_events);
-                Ok(controller::PortResponseData::ClearEvents(event))
+                Ok(port::PortResponseData::ClearEvents(event))
             }
-            controller::PortCommandData::RetimerFwUpdateGetState => {
+            port::PortCommandData::RetimerFwUpdateGetState => {
                 match controller.get_rt_fw_update_status(local_port).await {
-                    Ok(status) => Ok(controller::PortResponseData::RtFwUpdateStatus(status)),
+                    Ok(status) => Ok(port::PortResponseData::RtFwUpdateStatus(status)),
                     Err(e) => match e {
                         Error::Bus(_) => Err(PdError::Failed),
                         Error::Pd(e) => Err(e),
                     },
                 }
             }
-            controller::PortCommandData::RetimerFwUpdateSetState => {
+            port::PortCommandData::RetimerFwUpdateSetState => {
                 match controller.set_rt_fw_update_state(local_port).await {
-                    Ok(()) => Ok(controller::PortResponseData::Complete),
+                    Ok(()) => Ok(port::PortResponseData::Complete),
                     Err(e) => match e {
                         Error::Bus(_) => Err(PdError::Failed),
                         Error::Pd(e) => Err(e),
                     },
                 }
             }
-            controller::PortCommandData::RetimerFwUpdateClearState => {
+            port::PortCommandData::RetimerFwUpdateClearState => {
                 match controller.clear_rt_fw_update_state(local_port).await {
-                    Ok(()) => Ok(controller::PortResponseData::Complete),
+                    Ok(()) => Ok(port::PortResponseData::Complete),
                     Err(e) => match e {
                         Error::Bus(_) => Err(PdError::Failed),
                         Error::Pd(e) => Err(e),
                     },
                 }
             }
-            controller::PortCommandData::SetRetimerCompliance => match controller.set_rt_compliance(local_port).await {
-                Ok(()) => Ok(controller::PortResponseData::Complete),
+            port::PortCommandData::SetRetimerCompliance => match controller.set_rt_compliance(local_port).await {
+                Ok(()) => Ok(port::PortResponseData::Complete),
                 Err(e) => match e {
                     Error::Bus(_) => Err(PdError::Failed),
                     Error::Pd(e) => Err(e),
                 },
             },
-            controller::PortCommandData::ReconfigureRetimer => match controller.reconfigure_retimer(local_port).await {
-                Ok(()) => Ok(controller::PortResponseData::Complete),
+            port::PortCommandData::ReconfigureRetimer => match controller.reconfigure_retimer(local_port).await {
+                Ok(()) => Ok(port::PortResponseData::Complete),
                 Err(e) => match e {
                     Error::Bus(_) => Err(PdError::Failed),
                     Error::Pd(e) => Err(e),
                 },
             },
-            controller::PortCommandData::GetPdAlert => {
+            port::PortCommandData::GetPdAlert => {
                 match self.process_get_pd_alert(&mut port_state, local_port).await {
-                    Ok(alert) => Ok(controller::PortResponseData::PdAlert(alert)),
+                    Ok(alert) => Ok(port::PortResponseData::PdAlert(alert)),
                     Err(e) => Err(e),
                 }
             }
-            controller::PortCommandData::SetMaxSinkVoltage(voltage_mv) => {
+            port::PortCommandData::SetMaxSinkVoltage(voltage_mv) => {
                 match self.registration.pd_controller.lookup_local_port(command.port) {
                     Ok(local_port) => {
                         let psu_state = port.proxy.lock().await.psu_state;
@@ -255,115 +256,115 @@ where
                     Err(e) => Err(e),
                 }
             }
-            controller::PortCommandData::SetUnconstrainedPower(unconstrained) => {
+            port::PortCommandData::SetUnconstrainedPower(unconstrained) => {
                 match controller.set_unconstrained_power(local_port, unconstrained).await {
-                    Ok(()) => Ok(controller::PortResponseData::Complete),
+                    Ok(()) => Ok(port::PortResponseData::Complete),
                     Err(e) => match e {
                         Error::Bus(_) => Err(PdError::Failed),
                         Error::Pd(e) => Err(e),
                     },
                 }
             }
-            controller::PortCommandData::ClearDeadBatteryFlag => {
+            port::PortCommandData::ClearDeadBatteryFlag => {
                 match controller.clear_dead_battery_flag(local_port).await {
-                    Ok(()) => Ok(controller::PortResponseData::Complete),
+                    Ok(()) => Ok(port::PortResponseData::Complete),
                     Err(e) => match e {
                         Error::Bus(_) => Err(PdError::Failed),
                         Error::Pd(e) => Err(e),
                     },
                 }
             }
-            controller::PortCommandData::GetOtherVdm => match controller.get_other_vdm(local_port).await {
+            port::PortCommandData::GetOtherVdm => match controller.get_other_vdm(local_port).await {
                 Ok(vdm) => {
                     debug!("Port{}: Other VDM: {:?}", local_port.0, vdm);
-                    Ok(controller::PortResponseData::OtherVdm(vdm))
+                    Ok(port::PortResponseData::OtherVdm(vdm))
                 }
                 Err(e) => match e {
                     Error::Bus(_) => Err(PdError::Failed),
                     Error::Pd(e) => Err(e),
                 },
             },
-            controller::PortCommandData::GetAttnVdm => match controller.get_attn_vdm(local_port).await {
+            port::PortCommandData::GetAttnVdm => match controller.get_attn_vdm(local_port).await {
                 Ok(vdm) => {
                     debug!("Port{}: Attention VDM: {:?}", local_port.0, vdm);
-                    Ok(controller::PortResponseData::AttnVdm(vdm))
+                    Ok(port::PortResponseData::AttnVdm(vdm))
                 }
                 Err(e) => match e {
                     Error::Bus(_) => Err(PdError::Failed),
                     Error::Pd(e) => Err(e),
                 },
             },
-            controller::PortCommandData::SendVdm(tx_vdm) => match controller.send_vdm(local_port, tx_vdm).await {
-                Ok(()) => Ok(controller::PortResponseData::Complete),
+            port::PortCommandData::SendVdm(tx_vdm) => match controller.send_vdm(local_port, tx_vdm).await {
+                Ok(()) => Ok(port::PortResponseData::Complete),
                 Err(e) => match e {
                     Error::Bus(_) => Err(PdError::Failed),
                     Error::Pd(e) => Err(e),
                 },
             },
-            controller::PortCommandData::SetUsbControl(config) => {
+            port::PortCommandData::SetUsbControl(config) => {
                 match controller.set_usb_control(local_port, config).await {
-                    Ok(()) => Ok(controller::PortResponseData::Complete),
+                    Ok(()) => Ok(port::PortResponseData::Complete),
                     Err(e) => match e {
                         Error::Bus(_) => Err(PdError::Failed),
                         Error::Pd(e) => Err(e),
                     },
                 }
             }
-            controller::PortCommandData::GetDpStatus => match controller.get_dp_status(local_port).await {
+            port::PortCommandData::GetDpStatus => match controller.get_dp_status(local_port).await {
                 Ok(status) => {
                     debug!("Port{}: DP Status: {:?}", local_port.0, status);
-                    Ok(controller::PortResponseData::DpStatus(status))
+                    Ok(port::PortResponseData::DpStatus(status))
                 }
                 Err(e) => match e {
                     Error::Bus(_) => Err(PdError::Failed),
                     Error::Pd(e) => Err(e),
                 },
             },
-            controller::PortCommandData::SetDpConfig(config) => {
+            port::PortCommandData::SetDpConfig(config) => {
                 match controller.set_dp_config(local_port, config).await {
-                    Ok(()) => Ok(controller::PortResponseData::Complete),
+                    Ok(()) => Ok(port::PortResponseData::Complete),
                     Err(e) => match e {
                         Error::Bus(_) => Err(PdError::Failed),
                         Error::Pd(e) => Err(e),
                     },
                 }
             }
-            controller::PortCommandData::ExecuteDrst => match controller.execute_drst(local_port).await {
-                Ok(()) => Ok(controller::PortResponseData::Complete),
+            port::PortCommandData::ExecuteDrst => match controller.execute_drst(local_port).await {
+                Ok(()) => Ok(port::PortResponseData::Complete),
                 Err(e) => match e {
                     Error::Bus(_) => Err(PdError::Failed),
                     Error::Pd(e) => Err(e),
                 },
             },
-            controller::PortCommandData::SetTbtConfig(config) => {
+            port::PortCommandData::SetTbtConfig(config) => {
                 match controller.set_tbt_config(local_port, config).await {
-                    Ok(()) => Ok(controller::PortResponseData::Complete),
+                    Ok(()) => Ok(port::PortResponseData::Complete),
                     Err(e) => match e {
                         Error::Bus(_) => Err(PdError::Failed),
                         Error::Pd(e) => Err(e),
                     },
                 }
             }
-            controller::PortCommandData::SetPdStateMachineConfig(config) => {
+            port::PortCommandData::SetPdStateMachineConfig(config) => {
                 match controller.set_pd_state_machine_config(local_port, config).await {
-                    Ok(()) => Ok(controller::PortResponseData::Complete),
+                    Ok(()) => Ok(port::PortResponseData::Complete),
                     Err(e) => match e {
                         Error::Bus(_) => Err(PdError::Failed),
                         Error::Pd(e) => Err(e),
                     },
                 }
             }
-            controller::PortCommandData::SetTypeCStateMachineConfig(state) => {
+            port::PortCommandData::SetTypeCStateMachineConfig(state) => {
                 match controller.set_type_c_state_machine_config(local_port, state).await {
-                    Ok(()) => Ok(controller::PortResponseData::Complete),
+                    Ok(()) => Ok(port::PortResponseData::Complete),
                     Err(e) => match e {
                         Error::Bus(_) => Err(PdError::Failed),
                         Error::Pd(e) => Err(e),
                     },
                 }
             }
-            controller::PortCommandData::ExecuteUcsiCommand(command_data) => {
-                Ok(controller::PortResponseData::UcsiResponse(
+            port::PortCommandData::ExecuteUcsiCommand(command_data) => {
+                Ok(port::PortResponseData::UcsiResponse(
                     controller
                         .execute_ucsi_command(lpm::Command::new(local_port, command_data))
                         .await
@@ -380,29 +381,29 @@ where
         &self,
         controller_state: &mut ControllerState,
         controller: &mut D::Inner,
-        command: &controller::InternalCommandData,
+        command: &port::InternalCommandData,
     ) -> Response<'static> {
         if controller_state.fw_update_state.in_progress() {
             debug!("FW update in progress, ignoring controller command");
-            return controller::Response::Controller(Err(PdError::Busy));
+            return port::Response::Controller(Err(PdError::Busy));
         }
 
         match command {
-            controller::InternalCommandData::Status => {
+            port::InternalCommandData::Status => {
                 let status = controller.get_controller_status().await;
-                controller::Response::Controller(status.map(InternalResponseData::Status).map_err(|_| PdError::Failed))
+                port::Response::Controller(status.map(InternalResponseData::Status).map_err(|_| PdError::Failed))
             }
-            controller::InternalCommandData::SyncState => {
+            port::InternalCommandData::SyncState => {
                 let result = self.sync_state_internal(controller).await;
-                controller::Response::Controller(
+                port::Response::Controller(
                     result
                         .map(|_| InternalResponseData::Complete)
                         .map_err(|_| PdError::Failed),
                 )
             }
-            controller::InternalCommandData::Reset => {
+            port::InternalCommandData::Reset => {
                 let result = controller.reset_controller().await;
-                controller::Response::Controller(
+                port::Response::Controller(
                     result
                         .map(|_| InternalResponseData::Complete)
                         .map_err(|_| PdError::Failed),
@@ -416,17 +417,17 @@ where
         &self,
         controller_state: &mut ControllerState,
         controller: &mut D::Inner,
-        command: &controller::Command,
+        command: &port::Command,
     ) -> Response<'static> {
         match command {
-            controller::Command::Port(command) => {
+            port::Command::Port(command) => {
                 self.process_port_command(controller_state, controller, command).await
             }
-            controller::Command::Controller(command) => {
+            port::Command::Controller(command) => {
                 self.process_controller_command(controller_state, controller, command)
                     .await
             }
-            controller::Command::Lpm(_) => controller::Response::Ucsi(ucsi::Response {
+            port::Command::Lpm(_) => port::Response::Ucsi(ucsi::Response {
                 cci: ucsi::cci::Cci::new_error(),
                 data: None,
             }),

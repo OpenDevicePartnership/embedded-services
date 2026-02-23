@@ -1,8 +1,8 @@
 //! This module contains the [`ControllerWrapper`] struct. This struct serves as a bridge between various service messages
-//! and the actual controller functions provided by [`crate::type_c::controller::Controller`].
+//! and the actual controller functions provided by [`type_c_interface::port::Controller`].
 //! # Supported service messaging
 //! This struct current currently supports messages from the following services:
-//! * Type-C: [`crate::type_c::controller::Command`]
+//! * Type-C: [`type_c_interface::port::Command`]
 //! * CFU: [`cfu_service::Request`]
 //! # Event loop
 //! This struct follows a standard wait/process/finalize event loop.
@@ -19,8 +19,6 @@ use core::array::from_fn;
 use core::future::pending;
 use core::ops::DerefMut;
 
-use crate::type_c::controller::{self, Controller, PortStatus};
-use crate::type_c::event::{PortEvent, PortNotificationSingle, PortPending, PortStatusChanged};
 use crate::wrapper::backing::{ControllerState, PortState};
 use cfu_service::CfuClient;
 use embassy_futures::select::{Either, Either5, select, select_array, select5};
@@ -31,7 +29,7 @@ use embassy_time::Instant;
 use embedded_cfu_protocol::protocol_definitions::{FwUpdateOffer, FwUpdateOfferResponse, FwVersion};
 use embedded_services::sync::Lockable;
 use embedded_services::{debug, error, info, trace, warn};
-use embedded_services::{event, intrusive_list};
+use embedded_services::{event};
 use embedded_usb_pd::ado::Ado;
 use embedded_usb_pd::{Error, LocalPortId, PdError};
 
@@ -48,6 +46,9 @@ mod pd;
 mod power;
 pub mod proxy;
 mod vdm;
+
+use type_c_interface::port::{Controller, PortStatus};
+use type_c_interface::port::event::{PortEvent, PortNotificationSingle, PortPending, PortStatusChanged};
 
 /// Base interval for checking for FW update timeouts and recovery attempts
 pub const DEFAULT_FW_UPDATE_TICK_INTERVAL_MS: u64 = 5000;
@@ -66,7 +67,7 @@ pub trait FwOfferValidator {
 /// Maximum number of supported ports
 pub const MAX_SUPPORTED_PORTS: usize = 2;
 
-/// Common functionality implemented on top of [`crate::type_c::controller::Controller`]
+/// Common functionality implemented on top of [`type_c_interface::port::Controller`]
 pub struct ControllerWrapper<
     'device,
     M: RawMutex,
@@ -591,18 +592,17 @@ where
     }
 
     /// Register all devices with their respective services
-    pub fn register(
-        &'static self,
-        controllers: &intrusive_list::IntrusiveList,
-        cfu_client: &CfuClient,
-    ) -> Result<(), Error<<D::Inner as Controller>::BusError>> {
-        controller::register_controller(controllers, self.registration.pd_controller).map_err(|_| {
-            error!(
-                "Controller{}: Failed to register PD controller",
-                self.registration.pd_controller.id().0
-            );
-            Error::Pd(PdError::Failed)
-        })?;
+    pub fn register(&'static self, cfu_client: &CfuClient) -> Result<(), Error<<D::Inner as Controller>::BusError>> {
+        self.registration
+            .context
+            .register_controller(self.registration.pd_controller)
+            .map_err(|_| {
+                error!(
+                    "Controller{}: Failed to register PD controller",
+                    self.registration.pd_controller.id().0
+                );
+                Error::Pd(PdError::Failed)
+            })?;
 
         //TODO: Remove when we have a more general framework in place
         cfu_client.register_device(self.registration.cfu_device).map_err(|_| {

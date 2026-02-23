@@ -1,11 +1,11 @@
 use embassy_executor::{Executor, Spawner};
 use embassy_sync::once_lock::OnceLock;
 use embassy_time::Timer;
-use embedded_services::IntrusiveList;
 use embedded_usb_pd::ucsi::lpm;
 use embedded_usb_pd::{GlobalPortId, PdError as Error};
 use log::*;
 use static_cell::StaticCell;
+use type_c_service::service::context::{Context, DeviceContainer};
 use type_c_service::type_c::{Cached, ControllerId, controller};
 
 const CONTROLLER0_ID: ControllerId = ControllerId(0);
@@ -22,7 +22,7 @@ mod test_controller {
         pub controller: controller::Device<'a>,
     }
 
-    impl controller::DeviceContainer for Controller<'_> {
+    impl DeviceContainer for Controller<'_> {
         fn get_pd_controller_device(&self) -> &controller::Device<'_> {
             &self.controller
         }
@@ -115,13 +115,13 @@ mod test_controller {
 }
 
 #[embassy_executor::task]
-async fn controller_task(controller_list: &'static IntrusiveList) {
+async fn controller_task(controller_context: &'static Context) {
     static CONTROLLER: OnceLock<test_controller::Controller> = OnceLock::new();
 
     static PORTS: [GlobalPortId; 2] = [PORT0_ID, PORT1_ID];
 
     let controller = CONTROLLER.get_or_init(|| test_controller::Controller::new(CONTROLLER0_ID, &PORTS));
-    controller::register_controller(controller_list, controller).unwrap();
+    controller_context.register_controller(controller).unwrap();
 
     loop {
         controller.process().await;
@@ -132,32 +132,27 @@ async fn controller_task(controller_list: &'static IntrusiveList) {
 async fn task(spawner: Spawner) {
     embedded_services::init().await;
 
-    static CONTROLLER_LIST: StaticCell<IntrusiveList> = StaticCell::new();
-    let controller_list = CONTROLLER_LIST.init(IntrusiveList::new());
+    static CONTROLLER_CONTEXT: StaticCell<Context> = StaticCell::new();
+    let controller_context = CONTROLLER_CONTEXT.init(Context::new());
 
     info!("Starting controller task");
-    spawner.must_spawn(controller_task(controller_list));
+    spawner.must_spawn(controller_task(controller_context));
     // Wait for controller to be registered
     Timer::after_secs(1).await;
 
-    let context = controller::Context::new();
+    controller_context.reset_controller(CONTROLLER0_ID).await.unwrap();
 
-    context.reset_controller(controller_list, CONTROLLER0_ID).await.unwrap();
-
-    let status = context
-        .get_controller_status(controller_list, CONTROLLER0_ID)
-        .await
-        .unwrap();
+    let status = controller_context.get_controller_status(CONTROLLER0_ID).await.unwrap();
     info!("Controller 0 status: {status:#?}");
 
-    let status = context
-        .get_port_status(controller_list, PORT0_ID, Cached(true))
+    let status = controller_context
+        .get_port_status(PORT0_ID, Cached(true))
         .await
         .unwrap();
     info!("Port 0 status: {status:#?}");
 
-    let status = context
-        .get_port_status(controller_list, PORT1_ID, Cached(true))
+    let status = controller_context
+        .get_port_status(PORT1_ID, Cached(true))
         .await
         .unwrap();
     info!("Port 1 status: {status:#?}");
