@@ -11,7 +11,7 @@ use embedded_usb_pd::{
     type_c::ConnectionState,
 };
 
-use super::{ATTN_VDM_LEN, ControllerId, OTHER_VDM_LEN, external};
+use super::{ATTN_VDM_LEN, ControllerId, OTHER_VDM_LEN};
 use crate::type_c::Cached;
 use crate::type_c::comms::CommsMessage;
 use crate::type_c::event::{PortEvent, PortPending};
@@ -672,8 +672,6 @@ pub trait Controller {
 /// Internal context for managing PD controllers
 pub struct Context {
     port_events: Signal<GlobalRawMutex, PortPending>,
-    /// Channel for receiving commands to the type-C service
-    external_command: deferred::Channel<GlobalRawMutex, external::Command, external::Response<'static>>,
     /// Event broadcaster
     broadcaster: broadcaster::Immediate<CommsMessage>,
 }
@@ -689,7 +687,6 @@ impl Context {
     pub const fn new() -> Self {
         Self {
             port_events: Signal::new(),
-            external_command: deferred::Channel::new(),
             broadcaster: broadcaster::Immediate::new(),
         }
     }
@@ -1095,13 +1092,6 @@ impl Context {
         }
     }
 
-    /// Wait for an external command
-    pub async fn wait_external_command(
-        &self,
-    ) -> deferred::Request<'_, GlobalRawMutex, external::Command, external::Response<'static>> {
-        self.external_command.receive().await
-    }
-
     /// Get the number of ports on the system
     pub fn get_num_ports(&self, controllers: &intrusive_list::IntrusiveList) -> usize {
         get_num_ports(controllers)
@@ -1291,50 +1281,6 @@ impl Context {
         }
     }
 
-    /// Execute an external port command
-    pub(super) async fn execute_external_port_command(
-        &self,
-        command: external::Command,
-    ) -> Result<external::PortResponseData, PdError> {
-        match self.external_command.execute(command).await {
-            external::Response::Port(response) => response,
-            r => {
-                error!("Invalid response: expected external port, got {:?}", r);
-                Err(PdError::InvalidResponse)
-            }
-        }
-    }
-
-    /// Execute an external UCSI command
-    pub(super) async fn execute_external_ucsi_command(&self, command: ucsi::GlobalCommand) -> external::UcsiResponse {
-        match self.external_command.execute(external::Command::Ucsi(command)).await {
-            external::Response::Ucsi(response) => response,
-            r => {
-                error!("Invalid response: expected external UCSI, got {:?}", r);
-                external::UcsiResponse {
-                    // Always notify OPM of an error
-                    notify_opm: true,
-                    cci: ucsi::cci::GlobalCci::new_error(),
-                    data: Err(PdError::InvalidResponse),
-                }
-            }
-        }
-    }
-
-    /// Execute an external controller command
-    pub(super) async fn execute_external_controller_command(
-        &self,
-        command: external::Command,
-    ) -> Result<external::ControllerResponseData<'static>, PdError> {
-        match self.external_command.execute(command).await {
-            external::Response::Controller(response) => response,
-            r => {
-                error!("Invalid response: expected external controller, got {:?}", r);
-                Err(PdError::InvalidResponse)
-            }
-        }
-    }
-
     /// Register a message receiver for type-C messages
     pub async fn register_message_receiver(
         &self,
@@ -1359,17 +1305,6 @@ pub fn register_controller(
     controller: &'static impl DeviceContainer,
 ) -> Result<(), intrusive_list::Error> {
     controllers.push(controller.get_pd_controller_device())
-}
-
-pub(super) fn lookup_controller(
-    controllers: &intrusive_list::IntrusiveList,
-    controller_id: ControllerId,
-) -> Result<&'static Device<'static>, PdError> {
-    controllers
-        .into_iter()
-        .filter_map(|node| node.data::<Device>())
-        .find(|controller| controller.id == controller_id)
-        .ok_or(PdError::InvalidController)
 }
 
 /// Get total number of ports on the system

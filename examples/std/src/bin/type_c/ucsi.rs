@@ -1,3 +1,4 @@
+#![allow(unused_imports)]
 use crate::mock_controller::Wrapper;
 use cfu_service::CfuClient;
 use embassy_executor::{Executor, Spawner};
@@ -25,7 +26,6 @@ use type_c_service::service::Service;
 use type_c_service::service::config::Config;
 use type_c_service::type_c::ControllerId;
 use type_c_service::type_c::controller::Context;
-use type_c_service::type_c::external::UcsiResponseResult;
 use type_c_service::wrapper::backing::Storage;
 use type_c_service::wrapper::proxy::PowerProxyDevice;
 
@@ -45,8 +45,8 @@ type PowerPolicyServiceType = Mutex<
 >;
 
 #[embassy_executor::task]
-async fn opm_task(context: &'static Context, state: [&'static mock_controller::ControllerState; NUM_PD_CONTROLLERS]) {
-    const CAPABILITY: PowerCapability = PowerCapability {
+async fn opm_task(_context: &'static Context, _state: [&'static mock_controller::ControllerState; NUM_PD_CONTROLLERS]) {
+    /*const CAPABILITY: PowerCapability = PowerCapability {
         voltage_mv: 20000,
         current_ma: 5000,
     };
@@ -172,7 +172,7 @@ async fn opm_task(context: &'static Context, state: [&'static mock_controller::C
             "Sending command complete ack successful, connector change:  {:?}",
             response.cci.connector_change()
         );
-    }
+    }*/
 }
 
 #[embassy_executor::task(pool_size = 2)]
