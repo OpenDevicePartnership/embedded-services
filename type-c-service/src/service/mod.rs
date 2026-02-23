@@ -1,9 +1,9 @@
-use embassy_futures::select::{Either3, select3};
+use embassy_futures::select::{Either, select};
 use embassy_sync::{
     mutex::Mutex,
     pubsub::{DynImmediatePublisher, DynSubscriber},
 };
-use embedded_services::{GlobalRawMutex, debug, error, info, intrusive_list, ipc::deferred, sync::Lockable, trace};
+use embedded_services::{GlobalRawMutex, debug, error, info, intrusive_list, sync::Lockable, trace};
 use embedded_usb_pd::GlobalPortId;
 use embedded_usb_pd::PdError as Error;
 use power_policy_interface::psu;
@@ -12,13 +12,11 @@ use crate::type_c::{
     self, Cached, comms,
     controller::PortStatus,
     event::{PortNotificationSingle, PortStatusChanged},
-    external,
 };
 
 use crate::{PortEventStreamer, PortEventVariant};
 
 pub mod config;
-mod controller;
 pub mod pd;
 mod port;
 mod power;
@@ -82,13 +80,11 @@ pub enum PowerPolicyEvent {
 }
 
 /// Type-C service events
-pub enum Event<'a> {
+pub enum Event {
     /// Port event
     PortStatusChanged(GlobalPortId, PortStatusChanged, PortStatus),
     /// A controller notified of an event that occurred.
     PortNotification(GlobalPortId, PortNotificationSingle),
-    /// External command
-    ExternalCommand(deferred::Request<'a, GlobalRawMutex, external::Command, external::Response<'static>>),
     /// Power policy event
     PowerPolicy(PowerPolicyEvent),
 }
@@ -167,28 +163,11 @@ where
         Ok(())
     }
 
-    /// Process external commands
-    async fn process_external_command(&self, command: &external::Command) -> external::Response<'static> {
-        match command {
-            external::Command::Controller(command) => self.process_external_controller_command(command).await,
-            external::Command::Port(command) => self.process_external_port_command(command, self.controllers).await,
-            external::Command::Ucsi(command) => {
-                external::Response::Ucsi(self.process_ucsi_command(self.controllers, command).await)
-            }
-        }
-    }
-
     /// Wait for the next event
-    pub async fn wait_next(&self) -> Result<Event<'_>, Error> {
+    pub async fn wait_next(&self) -> Result<Event, Error> {
         loop {
-            match select3(
-                self.wait_port_flags(),
-                self.context.wait_external_command(),
-                self.wait_power_policy_event(),
-            )
-            .await
-            {
-                Either3::First(mut stream) => {
+            match select(self.wait_port_flags(), self.wait_power_policy_event()).await {
+                Either::First(mut stream) => {
                     if let Some((port_id, event)) = stream
                         .next(|port_id| {
                             self.context
@@ -217,16 +196,13 @@ where
                         self.state.lock().await.port_event_streaming_state = None;
                     }
                 }
-                Either3::Second(request) => {
-                    return Ok(Event::ExternalCommand(request));
-                }
-                Either3::Third(event) => return Ok(event),
+                Either::Second(event) => return Ok(event),
             }
         }
     }
 
     /// Process the given event
-    pub async fn process_event(&self, event: Event<'_>) -> Result<(), Error> {
+    pub async fn process_event(&self, event: Event) -> Result<(), Error> {
         match event {
             Event::PortStatusChanged(port, event_kind, status) => {
                 trace!("Port{}: Processing port status changed", port.0);
@@ -235,12 +211,6 @@ where
             Event::PortNotification(port, notification) => {
                 // Other port notifications
                 info!("Port{}: Got port notification: {:?}", port.0, notification);
-                Ok(())
-            }
-            Event::ExternalCommand(request) => {
-                trace!("Processing external command");
-                let response = self.process_external_command(&request.command).await;
-                request.respond(response);
                 Ok(())
             }
             Event::PowerPolicy(event) => {
