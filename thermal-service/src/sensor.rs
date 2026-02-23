@@ -8,7 +8,6 @@ use embedded_sensors_hal_async::temperature::{DegreesCelsius, TemperatureSensor,
 use embedded_services::GlobalRawMutex;
 use embedded_services::error;
 use embedded_services::ipc::deferred as ipc;
-use embedded_services::{Node, intrusive_list};
 
 // Timeout period (in ms) for physical bus access
 const BUS_TIMEOUT: u64 = 200;
@@ -144,8 +143,6 @@ pub struct DeviceId(pub u8);
 
 /// Sensor device struct
 pub struct Device {
-    /// Intrusive list node allowing Device to be contained in a list
-    node: Node,
     /// Device ID
     id: DeviceId,
     /// Channel for IPC requests and responses
@@ -158,7 +155,6 @@ impl Device {
     /// Create a new sensor device
     pub fn new(id: DeviceId) -> Self {
         Self {
-            node: Node::uninit(),
             id,
             ipc: ipc::Channel::new(),
             enable: Signal::new(),
@@ -173,12 +169,6 @@ impl Device {
     /// Execute request and wait for response
     pub async fn execute_request(&self, request: Request) -> Response {
         self.ipc.execute(request).await
-    }
-}
-
-impl intrusive_list::NodeContainer for Device {
-    fn get_node(&self) -> &Node {
-        &self.node
     }
 }
 
@@ -396,7 +386,7 @@ impl<T: Controller, const SAMPLE_BUF_LEN: usize> Sensor<T, SAMPLE_BUF_LEN> {
         }
     }
 
-    async fn check_thresholds(&self, temp: DegreesCelsius, thermal_service: &'static crate::Service) {
+    async fn check_thresholds<'hw>(&self, temp: DegreesCelsius, thermal_service: &crate::Service<'hw>) {
         let profile = self.profile.lock().await;
         let mut state = self.state.lock().await;
 
@@ -450,7 +440,7 @@ impl<T: Controller, const SAMPLE_BUF_LEN: usize> Sensor<T, SAMPLE_BUF_LEN> {
     }
 
     /// Periodically samples temperature from physical sensor and caches it
-    pub async fn handle_sampling(&self, thermal_service: &'static crate::Service) {
+    pub async fn handle_sampling<'hw>(&self, thermal_service: &crate::Service<'hw>) {
         loop {
             // Only sample temperature if enabled
             if self.profile.lock().await.sampling_enabled {

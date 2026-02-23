@@ -4,7 +4,7 @@
 #![allow(clippy::unwrap_used)]
 
 use embedded_sensors_hal_async::temperature::DegreesCelsius;
-use embedded_services::{comms, error, info, intrusive_list};
+use thermal_service_messages::{ThermalRequest, ThermalResult};
 
 mod context;
 pub mod fan;
@@ -34,66 +34,19 @@ pub enum Event {
     FanFailure(fan::DeviceId, fan::Error),
 }
 
-pub struct Service {
-    context: context::Context,
-    endpoint: comms::Endpoint,
+pub struct Service<'hw> {
+    context: context::Context<'hw>,
 }
 
-impl Service {
-    pub async fn new(
-        service_storage: &'static embassy_sync::once_lock::OnceLock<Service>,
-        sensors: &[&'static sensor::Device],
-        fans: &[&'static fan::Device],
-    ) -> Result<&'static Self, Error> {
-        let service = service_storage.get_or_init(|| Self {
-            context: context::Context::new(),
-            endpoint: comms::Endpoint::uninit(comms::EndpointID::Internal(comms::Internal::Thermal)),
-        });
-
-        for sensor in sensors {
-            service.register_sensor(sensor).unwrap();
-        }
-
-        for fan in fans {
-            service.register_fan(fan).unwrap();
-        }
-
-        service.init().await?;
-
-        Ok(service)
-    }
-
-    async fn init(&'static self) -> Result<(), Error> {
-        info!("Starting thermal service task");
-
-        if comms::register_endpoint(self, &self.endpoint).await.is_err() {
-            error!("Failed to register thermal service endpoint");
-            Err(Error)
-        } else {
-            Ok(())
-        }
-    }
-
-    /// Used to send messages to other services from the Thermal service,
-    /// such as notifying the Host of thresholds crossed or the Power service if CRT TEMP is reached.
-    pub async fn send_service_msg(
-        &self,
-        to: comms::EndpointID,
-        data: &(impl embedded_services::Any + Send + Sync),
-    ) -> Result<(), Error> {
-        // TODO: When this gets updated to return error, handle retrying send on failure
-        self.endpoint.send(to, data).await.map_err(|_| Error)?;
-        Ok(())
-    }
-
-    /// Send a MPTF request
-    pub fn queue_mptf_request(&self, msg: thermal_service_messages::ThermalRequest) -> Result<(), Error> {
-        self.context.queue_mptf_request(msg)
-    }
-
-    /// Wait for a MPTF request
-    pub async fn wait_mptf_request(&self) -> thermal_service_messages::ThermalRequest {
-        self.context.wait_mptf_request().await
+impl<'hw> Service<'hw> {
+    pub async fn init(
+        service_storage: &'hw embassy_sync::once_lock::OnceLock<Service<'hw>>,
+        sensors: &'hw [&'hw sensor::Device],
+        fans: &'hw [&'hw fan::Device],
+    ) -> &'hw Self {
+        service_storage.get_or_init(|| Self {
+            context: context::Context::new(sensors, fans),
+        })
     }
 
     /// Send a thermal event
@@ -106,18 +59,13 @@ impl Service {
         self.context.wait_event().await
     }
 
-    /// Register a sensor with the thermal service
-    pub fn register_sensor(&self, sensor: &'static sensor::Device) -> Result<(), intrusive_list::Error> {
-        self.context.register_sensor(sensor)
-    }
-
     /// Provides access to the sensors list
-    pub fn sensors(&'static self) -> &'static intrusive_list::IntrusiveList {
+    pub fn sensors(&self) -> &[&sensor::Device] {
         self.context.sensors()
     }
 
     /// Find a sensor by its ID
-    pub fn get_sensor(&self, id: sensor::DeviceId) -> Option<&'static sensor::Device> {
+    pub fn get_sensor(&self, id: sensor::DeviceId) -> Option<&sensor::Device> {
         self.context.get_sensor(id)
     }
 
@@ -126,18 +74,13 @@ impl Service {
         self.context.execute_sensor_request(id, request).await
     }
 
-    /// Register a fan with the thermal service
-    pub fn register_fan(&self, fan: &'static fan::Device) -> Result<(), intrusive_list::Error> {
-        self.context.register_fan(fan)
-    }
-
     /// Provides access to the fans list
-    pub fn fans(&'static self) -> &'static intrusive_list::IntrusiveList {
+    pub fn fans(&self) -> &[&fan::Device] {
         self.context.fans()
     }
 
     /// Find a fan by its ID
-    pub fn get_fan(&self, id: fan::DeviceId) -> Option<&'static fan::Device> {
+    pub fn get_fan(&self, id: fan::DeviceId) -> Option<&fan::Device> {
         self.context.get_fan(id)
     }
 
@@ -147,15 +90,13 @@ impl Service {
     }
 }
 
-impl comms::MailboxDelegate for Service {
-    fn receive(&self, message: &comms::Message) -> Result<(), comms::MailboxDelegateError> {
-        // Queue for later processing
-        if let Some(msg) = message.data.get::<thermal_service_messages::ThermalRequest>() {
-            self.context
-                .queue_mptf_request(*msg)
-                .map_err(|_| comms::MailboxDelegateError::BufferFull)
-        } else {
-            Err(comms::MailboxDelegateError::InvalidData)
-        }
+impl<'hw> embedded_services::relay::mctp::RelayServiceHandlerTypes for Service<'hw> {
+    type RequestType = ThermalRequest;
+    type ResultType = ThermalResult;
+}
+
+impl<'hw> embedded_services::relay::mctp::RelayServiceHandler for Service<'hw> {
+    async fn process_request(&self, request: Self::RequestType) -> Self::ResultType {
+        mptf::process_request(&request, self).await
     }
 }

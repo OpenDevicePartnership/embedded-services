@@ -8,7 +8,6 @@ use embedded_fans_async::{self as fan_traits, Error as HardwareError};
 use embedded_sensors_hal_async::temperature::DegreesCelsius;
 use embedded_services::GlobalRawMutex;
 use embedded_services::ipc::deferred as ipc;
-use embedded_services::{Node, intrusive_list};
 use embedded_services::{error, trace};
 
 /// Convenience type for Fan response result
@@ -144,8 +143,6 @@ pub struct DeviceId(pub u8);
 
 /// Fan device struct
 pub struct Device {
-    // Intrusive list node allowing Device to be contained in a list
-    node: Node,
     // Device ID
     id: DeviceId,
     // Channel for IPC requests and responses
@@ -158,7 +155,6 @@ impl Device {
     /// Create a new fan device
     pub fn new(id: DeviceId) -> Self {
         Self {
-            node: Node::uninit(),
             id,
             ipc: ipc::Channel::new(),
             auto_control_enable: Signal::new(),
@@ -173,12 +169,6 @@ impl Device {
     /// Execute request and wait for response
     pub async fn execute_request(&self, request: Request) -> Response {
         self.ipc.execute(request).await
-    }
-}
-
-impl intrusive_list::NodeContainer for Device {
-    fn get_node(&self) -> &Node {
-        &self.node
     }
 }
 
@@ -394,7 +384,7 @@ impl<T: Controller, const SAMPLE_BUF_LEN: usize> Fan<T, SAMPLE_BUF_LEN> {
         }
     }
 
-    pub async fn handle_auto_control(&self, thermal_service: &'static crate::Service) {
+    pub async fn handle_auto_control<'hw>(&self, thermal_service: &crate::Service<'hw>) {
         loop {
             if self.profile.lock().await.auto_control {
                 let temp = match thermal_service

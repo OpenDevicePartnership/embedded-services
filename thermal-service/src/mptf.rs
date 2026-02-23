@@ -33,9 +33,9 @@ pub enum Notify {
     Critical,
 }
 
-async fn sensor_get_tmp(
+async fn sensor_get_tmp<'hw>(
     instance_id: u8,
-    thermal_service: &'static crate::Service,
+    thermal_service: &crate::Service<'hw>,
 ) -> thermal_service_messages::ThermalResult {
     if let Ok(ts::sensor::ResponseData::Temp(temp)) = thermal_service
         .execute_sensor_request(sensor::DeviceId(instance_id), sensor::Request::GetTemp)
@@ -49,10 +49,10 @@ async fn sensor_get_tmp(
     }
 }
 
-async fn get_var_handler(
+async fn get_var_handler<'hw>(
     instance_id: u8,
     var_uuid: uuid::Bytes,
-    thermal_service: &'static crate::Service,
+    thermal_service: &crate::Service<'hw>,
 ) -> thermal_service_messages::ThermalResult {
     match var_uuid {
         uuid_standard::CRT_TEMP => sensor_get_thrs(instance_id, sensor::ThresholdType::Critical, thermal_service).await,
@@ -78,11 +78,11 @@ async fn get_var_handler(
     }
 }
 
-async fn set_var_handler(
+async fn set_var_handler<'hw>(
     instance_id: u8,
     var_uuid: uuid::Bytes,
     set_var: u32,
-    thermal_service: &'static crate::Service,
+    thermal_service: &crate::Service<'hw>,
 ) -> thermal_service_messages::ThermalResult {
     match var_uuid {
         uuid_standard::CRT_TEMP => {
@@ -138,9 +138,9 @@ async fn set_var_handler(
     }
 }
 
-async fn sensor_get_warn_thrs(
+async fn sensor_get_warn_thrs<'hw>(
     instance_id: u8,
-    thermal_service: &'static crate::Service,
+    thermal_service: &crate::Service<'hw>,
 ) -> thermal_service_messages::ThermalResult {
     let low = thermal_service
         .execute_sensor_request(
@@ -167,12 +167,12 @@ async fn sensor_get_warn_thrs(
     }
 }
 
-async fn sensor_set_warn_thrs(
+async fn sensor_set_warn_thrs<'hw>(
     instance_id: u8,
     _timeout: Milliseconds,
     low: DeciKelvin,
     high: DeciKelvin,
-    thermal_service: &'static crate::Service,
+    thermal_service: &crate::Service<'hw>,
 ) -> thermal_service_messages::ThermalResult {
     let low_res = thermal_service
         .execute_sensor_request(
@@ -194,10 +194,10 @@ async fn sensor_set_warn_thrs(
     }
 }
 
-async fn sensor_get_thrs(
+async fn sensor_get_thrs<'hw>(
     instance: u8,
     threshold_type: sensor::ThresholdType,
-    thermal_service: &'static crate::Service,
+    thermal_service: &crate::Service<'hw>,
 ) -> thermal_service_messages::ThermalResult {
     match thermal_service
         .execute_sensor_request(
@@ -213,10 +213,10 @@ async fn sensor_get_thrs(
     }
 }
 
-async fn fan_get_temp(
+async fn fan_get_temp<'hw>(
     instance: u8,
     fan_request: fan::Request,
-    thermal_service: &'static crate::Service,
+    thermal_service: &crate::Service<'hw>,
 ) -> thermal_service_messages::ThermalResult {
     match thermal_service
         .execute_fan_request(fan::DeviceId(instance), fan_request)
@@ -229,10 +229,10 @@ async fn fan_get_temp(
     }
 }
 
-async fn fan_get_rpm(
+async fn fan_get_rpm<'hw>(
     instance: u8,
     fan_request: fan::Request,
-    thermal_service: &'static crate::Service,
+    thermal_service: &crate::Service<'hw>,
 ) -> thermal_service_messages::ThermalResult {
     match thermal_service
         .execute_fan_request(fan::DeviceId(instance), fan_request)
@@ -245,11 +245,11 @@ async fn fan_get_rpm(
     }
 }
 
-async fn sensor_set_thrs(
+async fn sensor_set_thrs<'hw>(
     instance: u8,
     threshold_type: sensor::ThresholdType,
     threshold_dk: u32,
-    thermal_service: &'static crate::Service,
+    thermal_service: &crate::Service<'hw>,
 ) -> thermal_service_messages::ThermalResult {
     match thermal_service
         .execute_sensor_request(
@@ -263,10 +263,10 @@ async fn sensor_set_thrs(
     }
 }
 
-async fn fan_set_var(
+async fn fan_set_var<'hw>(
     instance: u8,
     fan_request: fan::Request,
-    thermal_service: &'static crate::Service,
+    thermal_service: &crate::Service<'hw>,
 ) -> thermal_service_messages::ThermalResult {
     match thermal_service
         .execute_fan_request(fan::DeviceId(instance), fan_request)
@@ -277,9 +277,9 @@ async fn fan_set_var(
     }
 }
 
-pub(crate) async fn process_request(
+pub(crate) async fn process_request<'hw>(
     request: &thermal_service_messages::ThermalRequest,
-    thermal_service: &'static crate::Service,
+    thermal_service: &crate::Service<'hw>,
 ) -> thermal_service_messages::ThermalResult {
     match request {
         thermal_service_messages::ThermalRequest::ThermalGetTmpRequest { instance_id } => {

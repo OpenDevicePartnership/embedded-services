@@ -15,14 +15,17 @@ async fn run(spawner: Spawner) {
     static FAN: StaticCell<ts::mock::TsMockFan> = StaticCell::new();
     let fan = FAN.init(ts::mock::new_fan());
 
-    static SERVICE: OnceLock<ts::Service> = OnceLock::new();
-    let service = ts::Service::new(&SERVICE, &[sensor.device()], &[fan.device()])
-        .await
-        .expect("Failed to initialize thermal service");
+    static SENSORS: StaticCell<[&'static ts::sensor::Device; 1]> = StaticCell::new();
+    let sensors = SENSORS.init([sensor.device()]);
+
+    static FANS: StaticCell<[&'static ts::fan::Device; 1]> = StaticCell::new();
+    let fans = FANS.init([fan.device()]);
+
+    static STORAGE: OnceLock<ts::Service<'static>> = OnceLock::new();
+    let service = ts::Service::init(&STORAGE, sensors, fans).await;
 
     spawner.must_spawn(sensor_task(service, sensor));
     spawner.must_spawn(fan_task(service, fan));
-    spawner.must_spawn(handle_requests_task(service));
     spawner.must_spawn(monitor(service));
 }
 
@@ -37,22 +40,17 @@ fn main() {
 }
 
 #[embassy_executor::task]
-async fn sensor_task(service: &'static ts::Service, sensor: &'static ts::mock::TsMockSensor) {
+async fn sensor_task(service: &'static ts::Service<'static>, sensor: &'static ts::mock::TsMockSensor) {
     ts::task::sensor_task(sensor, service).await
 }
 
 #[embassy_executor::task]
-async fn fan_task(service: &'static ts::Service, fan: &'static ts::mock::TsMockFan) {
+async fn fan_task(service: &'static ts::Service<'static>, fan: &'static ts::mock::TsMockFan) {
     ts::task::fan_task(fan, service).await;
 }
 
 #[embassy_executor::task]
-async fn handle_requests_task(service: &'static ts::Service) {
-    ts::task::handle_requests(service).await;
-}
-
-#[embassy_executor::task]
-async fn monitor(service: &'static ts::Service) {
+async fn monitor(service: &'static ts::Service<'static>) {
     loop {
         match service
             .execute_sensor_request(ts::mock::MOCK_SENSOR_ID, ts::sensor::Request::GetTemp)
