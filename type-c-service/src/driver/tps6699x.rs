@@ -1,10 +1,3 @@
-use crate::type_c;
-use crate::type_c::ATTN_VDM_LEN;
-use crate::type_c::controller::{
-    self, AttnVdm, Controller, ControllerStatus, DpPinConfig, OtherVdm, PortStatus, SendVdm, TbtConfig,
-    TypeCStateMachineState, UsbControlConfig,
-};
-use crate::type_c::event::PortEvent;
 use ::tps6699x::registers::field_sets::IntEventBus1;
 use ::tps6699x::registers::{PdCcPullUp, PpExtVbusSw, PpIntVbusSw};
 use ::tps6699x::{PORT0, PORT1, TPS66993_NUM_PORTS, TPS66994_NUM_PORTS};
@@ -35,9 +28,15 @@ use tps6699x::command::{
 };
 use tps6699x::fw_update::UpdateConfig as FwUpdateConfig;
 use tps6699x::registers::port_config::TypeCStateMachine;
+use type_c_interface::port::event::PortEvent;
+use type_c_interface::port::{ATTN_VDM_LEN, DpConfig, DpStatus, PdStateMachineConfig, RetimerFwUpdateState};
+use type_c_interface::port::{
+    AttnVdm, Controller, ControllerStatus, DpPinConfig, OtherVdm, PortStatus, SendVdm, TbtConfig,
+    TypeCStateMachineState, UsbControlConfig,
+};
 
-use crate::type_c::power_capability_from_current;
-use crate::type_c::power_capability_try_from_contract;
+use crate::util::power_capability_from_current;
+use crate::util::power_capability_try_from_contract;
 
 type Updater<'a, M, B> = BorrowedUpdaterInProgress<tps6699x_drv::Tps6699x<'a, M, B>>;
 
@@ -409,10 +408,10 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
     async fn get_rt_fw_update_status(
         &mut self,
         port: LocalPortId,
-    ) -> Result<type_c::controller::RetimerFwUpdateState, Error<Self::BusError>> {
+    ) -> Result<RetimerFwUpdateState, Error<Self::BusError>> {
         match self.tps6699x.get_rt_fw_update_status(port).await {
-            Ok(true) => Ok(type_c::controller::RetimerFwUpdateState::Active),
-            Ok(false) => Ok(type_c::controller::RetimerFwUpdateState::Inactive),
+            Ok(true) => Ok(RetimerFwUpdateState::Active),
+            Ok(false) => Ok(RetimerFwUpdateState::Inactive),
             Err(e) => Err(e),
         }
     }
@@ -658,7 +657,7 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
         Ok(())
     }
 
-    async fn get_dp_status(&mut self, port: LocalPortId) -> Result<controller::DpStatus, Error<Self::BusError>> {
+    async fn get_dp_status(&mut self, port: LocalPortId) -> Result<DpStatus, Error<Self::BusError>> {
         let dp_status = self.tps6699x.get_dp_status(port).await?;
         debug!("Port{} DP status: {:#?}", port.0, dp_status);
 
@@ -668,17 +667,13 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
         let cfg_raw: PdDpPinConfig = dp_config.config_pin().into();
         let pin_config: DpPinConfig = cfg_raw.into();
 
-        Ok(controller::DpStatus {
+        Ok(DpStatus {
             alt_mode_entered,
             dfp_d_pin_cfg: pin_config,
         })
     }
 
-    async fn set_dp_config(
-        &mut self,
-        port: LocalPortId,
-        config: controller::DpConfig,
-    ) -> Result<(), Error<Self::BusError>> {
+    async fn set_dp_config(&mut self, port: LocalPortId, config: DpConfig) -> Result<(), Error<Self::BusError>> {
         debug!("Port{} setting DP config: {:#?}", port.0, config);
 
         let mut dp_config_reg = self.tps6699x.get_dp_config(port).await?;
@@ -717,7 +712,7 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
     async fn set_pd_state_machine_config(
         &mut self,
         port: LocalPortId,
-        config: controller::PdStateMachineConfig,
+        config: PdStateMachineConfig,
     ) -> Result<(), Error<Self::BusError>> {
         debug!("Port{} setting PD state machine config: {:#?}", port.0, config);
 
@@ -731,7 +726,7 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
     async fn set_type_c_state_machine_config(
         &mut self,
         port: LocalPortId,
-        state: controller::TypeCStateMachineState,
+        state: TypeCStateMachineState,
     ) -> Result<(), Error<Self::BusError>> {
         debug!("Port{} setting Type-C state machine state: {:#?}", port.0, state);
 

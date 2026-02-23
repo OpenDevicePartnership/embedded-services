@@ -3,18 +3,15 @@ use embassy_sync::{
     mutex::Mutex,
     pubsub::{DynImmediatePublisher, DynSubscriber},
 };
-use embedded_services::{GlobalRawMutex, debug, error, info, intrusive_list, sync::Lockable, trace};
+use embedded_services::{GlobalRawMutex, debug, error, info, sync::Lockable, trace};
 use embedded_usb_pd::GlobalPortId;
 use embedded_usb_pd::PdError as Error;
 use power_policy_interface::psu;
 
-use crate::type_c::{
-    self, Cached, comms,
-    controller::PortStatus,
-    event::{PortNotificationSingle, PortStatusChanged},
-};
-
 use crate::{PortEventStreamer, PortEventVariant};
+use type_c_interface::port::event::{PortNotificationSingle, PortStatusChanged};
+use type_c_interface::port::{Cached, PortStatus};
+use type_c_interface::service::event;
 
 pub mod config;
 pub mod pd;
@@ -45,9 +42,7 @@ where
     PSU::Inner: psu::Psu,
 {
     /// Type-C context
-    context: &'a type_c::controller::Context,
-    /// Controller intrusive list
-    controllers: &'a intrusive_list::IntrusiveList,
+    pub(crate) context: &'a type_c_interface::service::context::Context,
     /// Current state
     state: Mutex<GlobalRawMutex, State>,
     /// Config
@@ -70,6 +65,7 @@ where
 // This is present instead of just using [`power_policy::CommsMessage`] to allow for
 // supporting variants like `ConsumerConnected(GlobalPortId, ConsumerPowerCapability)`
 // But there's currently not a way to do look-ups between power policy device IDs and GlobalPortIds
+#[derive(Copy, Clone)]
 pub enum PowerPolicyEvent {
     /// Unconstrained state changed
     Unconstrained(power_policy_interface::service::UnconstrainedState),
@@ -80,6 +76,7 @@ pub enum PowerPolicyEvent {
 }
 
 /// Type-C service events
+#[derive(Copy, Clone)]
 pub enum Event {
     /// Port event
     PortStatusChanged(GlobalPortId, PortStatusChanged, PortStatus),
@@ -96,8 +93,7 @@ where
     /// Create a new service the given configuration
     pub fn create(
         config: config::Config,
-        context: &'a crate::type_c::controller::Context,
-        controller_list: &'a intrusive_list::IntrusiveList,
+        context: &'a type_c_interface::service::context::Context,
         power_policy_publisher: DynImmediatePublisher<'a, power_policy_interface::service::event::Event<'a, PSU>>,
         power_policy_subscriber: DynSubscriber<'a, power_policy_interface::service::event::Event<'a, PSU>>,
     ) -> Self {
@@ -107,7 +103,6 @@ where
             config,
             _power_policy_event_publisher: power_policy_publisher.into(),
             power_policy_event_subscriber: Mutex::new(power_policy_subscriber),
-            controllers: controller_list,
         }
     }
 
@@ -150,7 +145,7 @@ where
             }
 
             self.context
-                .broadcast_message(comms::CommsMessage::DebugAccessory(comms::DebugAccessoryMessage {
+                .broadcast_message(event::Event::DebugAccessory(event::DebugAccessory {
                     port: port_id,
                     connected: status.is_connected(),
                 }))
@@ -169,10 +164,7 @@ where
             match select(self.wait_port_flags(), self.wait_power_policy_event()).await {
                 Either::First(mut stream) => {
                     if let Some((port_id, event)) = stream
-                        .next(|port_id| {
-                            self.context
-                                .get_port_event(self.controllers, GlobalPortId(port_id as u8))
-                        })
+                        .next(|port_id| self.context.get_port_event(GlobalPortId(port_id as u8)))
                         .await?
                     {
                         let port_id = GlobalPortId(port_id as u8);
@@ -180,10 +172,7 @@ where
                         match event {
                             PortEventVariant::StatusChanged(status_event) => {
                                 // Return a port status changed event
-                                let status = self
-                                    .context
-                                    .get_port_status(self.controllers, port_id, Cached(true))
-                                    .await?;
+                                let status = self.context.get_port_status(port_id, Cached(true)).await?;
                                 return Ok(Event::PortStatusChanged(port_id, status_event, status));
                             }
                             PortEventVariant::Notification(notification) => {
@@ -224,9 +213,5 @@ where
     pub async fn process_next_event(&self) -> Result<(), Error> {
         let event = self.wait_next().await?;
         self.process_event(event).await
-    }
-
-    pub(crate) fn controllers(&self) -> &'a intrusive_list::IntrusiveList {
-        self.controllers
     }
 }

@@ -2,9 +2,9 @@
 use embedded_services::{GlobalRawMutex, ipc::deferred};
 use embedded_usb_pd::{LocalPortId, ado::Ado};
 
-use crate::type_c::{
-    controller::{self, DpStatus, PortStatus},
-    event::{PortNotificationSingle, PortStatusChanged},
+use type_c_interface::{
+    port::{self, DpStatus, PortStatus},
+    port::event::{PortNotificationSingle, PortStatusChanged},
 };
 
 /// Port status changed event data
@@ -56,7 +56,7 @@ pub enum Event<'a> {
     /// Power policy command received
     PowerPolicyCommand(EventPowerPolicyCommand),
     /// Command from TCPM
-    ControllerCommand(deferred::Request<'a, GlobalRawMutex, controller::Command, controller::Response<'static>>),
+    ControllerCommand(deferred::Request<'a, GlobalRawMutex, port::Command, port::Response<'static>>),
     /// Cfu event
     CfuEvent(EventCfu),
 }
@@ -94,15 +94,15 @@ pub struct OutputPowerPolicyCommand {
 /// Controller command output data
 pub struct OutputControllerCommand<'a> {
     /// Controller request
-    pub request: deferred::Request<'a, GlobalRawMutex, controller::Command, controller::Response<'static>>,
+    pub request: deferred::Request<'a, GlobalRawMutex, port::Command, port::Response<'static>>,
     /// Response
-    pub response: controller::Response<'static>,
+    pub response: port::Response<'static>,
 }
 
 pub mod vdm {
     //! Events and output for vendor-defined messaging.
     use super::LocalPortId;
-    use crate::type_c::controller::{AttnVdm, OtherVdm};
+    use type_c_interface::port::{AttnVdm, OtherVdm};
 
     /// The kind of output from processing a vendor-defined message.
     #[derive(Copy, Clone, Debug)]
