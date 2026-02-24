@@ -9,7 +9,7 @@ mod test {
     use embassy_sync::once_lock::OnceLock;
     use embassy_time::Timer;
     use embedded_mcu_hal::time::{Datetime, DatetimeClock};
-    use embedded_services::service::RunnableService;
+    use embedded_services::service::{RunnableService, ServiceRunner};
 
     use time_alarm_service_messages as msg;
 

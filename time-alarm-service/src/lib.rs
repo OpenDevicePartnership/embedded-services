@@ -252,7 +252,24 @@ impl<'hw> Service<'hw> {
     }
 }
 
-embedded_services::impl_runner_creation_token!(RunnerCreationToken);
+pub struct Runner<'hw> {
+    service: &'hw Service<'hw>,
+}
+
+impl<'hw> embedded_services::service::ServiceRunner<'hw> for Runner<'hw> {
+    fn run(self) -> impl core::future::Future<Output = embedded_services::Never> + 'hw {
+        async move {
+            loop {
+                embassy_futures::select::select3(
+                    self.service.handle_power_source_updates(),
+                    self.service.handle_timer(AcpiTimerId::AcPower),
+                    self.service.handle_timer(AcpiTimerId::DcPower),
+                )
+                .await;
+            }
+        }
+    }
+}
 
 pub struct ServiceInitParams<'hw> {
     pub backing_clock: &'hw mut dyn DatetimeClock,
@@ -264,25 +281,14 @@ pub struct ServiceInitParams<'hw> {
 }
 
 impl<'hw> embedded_services::service::RunnableService<'hw> for Service<'hw> {
-    type RunnerCreationToken = RunnerCreationToken;
-    async fn run(&'hw self, _: Self::RunnerCreationToken) -> embedded_services::Never {
-        loop {
-            embassy_futures::select::select3(
-                self.handle_power_source_updates(),
-                self.handle_timer(AcpiTimerId::AcPower),
-                self.handle_timer(AcpiTimerId::DcPower),
-            )
-            .await;
-        }
-    }
-
+    type Runner = Runner<'hw>;
     type ErrorType = DatetimeClockError;
     type InitParams = ServiceInitParams<'hw>;
 
     async fn init(
         service_storage: &'hw OnceLock<Service<'hw>>,
         init_params: Self::InitParams,
-    ) -> Result<(&'hw Self, embedded_services::service::ServiceRunner<'hw, Self>), DatetimeClockError> {
+    ) -> Result<(&'hw Self, Runner<'hw>), DatetimeClockError> {
         info!("Starting time-alarm service task");
 
         let service = service_storage.get_or_init(|| Service {
@@ -318,10 +324,7 @@ impl<'hw> embedded_services::service::RunnableService<'hw> for Service<'hw> {
         service.timers.ac_timer.start(&service.clock_state, true)?;
         service.timers.dc_timer.start(&service.clock_state, false)?;
 
-        Ok((
-            service,
-            embedded_services::service::ServiceRunner::new(service, RunnerCreationToken::new()),
-        ))
+        Ok((service, Runner { service }))
     }
 }
 
