@@ -2,9 +2,8 @@
 
 use core::{any::Any, convert::Infallible};
 
-use battery_service_messages::{AcpiBatteryError, AcpiBatteryRequest};
+use battery_service_messages::{AcpiBatteryError, AcpiBatteryRequest, AcpiBatteryResult};
 use context::BatteryEvent;
-use embassy_futures::select::select;
 use embedded_services::{
     comms::{self, EndpointID},
     error, trace,
@@ -50,36 +49,14 @@ impl Service {
     }
 
     /// Wait for next event.
-    pub async fn wait_next(&self) -> Event {
-        match select(self.context.wait_event(), self.context.wait_acpi_cmd()).await {
-            embassy_futures::select::Either::First(event) => Event::StateMachine(event),
-            embassy_futures::select::Either::Second(acpi_msg) => Event::AcpiRequest(acpi_msg),
-        }
+    pub async fn wait_next(&self) -> BatteryEvent {
+        self.context.wait_event().await
     }
 
     /// Process battery service event.
-    pub async fn process_event(&self, event: Event) {
-        match event {
-            Event::StateMachine(event) => {
-                trace!("Battery service: state machine event recvd {:?}", event);
-                self.context.process(event).await
-            }
-            Event::AcpiRequest(acpi_msg) => {
-                trace!("Battery service: ACPI cmd recvd");
-                let response = self.context.process_acpi_cmd(&acpi_msg).await;
-                if let Err(e) = response {
-                    error!("Battery service command failed: {:?}", e)
-                }
-
-                // TODO We should probably be responding to the requestor rather than just assuming the request came from the host
-                self.comms_send(
-                    crate::EndpointID::External(embedded_services::comms::External::Host),
-                    &response,
-                )
-                .await
-                .expect("comms_send is infallible")
-            }
-        }
+    pub async fn process_event(&self, event: BatteryEvent) {
+        trace!("Battery service: state machine event recvd {:?}", event);
+        self.context.process(event).await
     }
 
     /// Register fuel gauge device with the battery service.
@@ -121,16 +98,25 @@ impl Service {
     }
 }
 
-#[derive(Clone, Copy)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub enum Event {
-    StateMachine(BatteryEvent),
-    AcpiRequest(AcpiBatteryRequest),
-}
-
 impl Default for Service {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl embedded_services::relay::mctp::RelayServiceHandlerTypes for Service {
+    type RequestType = AcpiBatteryRequest;
+    type ResultType = AcpiBatteryResult;
+}
+
+impl embedded_services::relay::mctp::RelayServiceHandler for Service {
+    async fn process_request(&self, request: Self::RequestType) -> Self::ResultType {
+        trace!("Battery service: ACPI cmd recvd");
+        let response = self.context.process_acpi_cmd(&request).await;
+        if let Err(e) = response {
+            error!("Battery service command failed: {:?}", e)
+        }
+        response
     }
 }
 
@@ -140,8 +126,6 @@ impl comms::MailboxDelegate for Service {
             self.context.send_event_no_wait(*event).map_err(|e| match e {
                 embassy_sync::channel::TrySendError::Full(_) => comms::MailboxDelegateError::BufferFull,
             })?
-        } else if let Some(battery_request) = message.data.get::<AcpiBatteryRequest>() {
-            self.context.send_acpi_cmd(*battery_request);
         } else if let Some(power_policy_msg) = message.data.get::<embedded_services::power::policy::CommsMessage>() {
             self.context.set_power_info(&power_policy_msg.data)?;
         }

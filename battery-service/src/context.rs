@@ -5,7 +5,6 @@ use battery_service_messages::{AcpiBatteryRequest, AcpiBatteryResponse, DeviceId
 use embassy_sync::channel::Channel;
 use embassy_sync::channel::TrySendError;
 use embassy_sync::mutex::Mutex;
-use embassy_sync::signal::Signal;
 use embassy_time::{Duration, with_timeout};
 use embedded_services::GlobalRawMutex;
 use embedded_services::comms::MailboxDelegateError;
@@ -138,7 +137,6 @@ pub struct Context {
     battery_response: Channel<GlobalRawMutex, BatteryResponse, 1>,
     no_op_retry_count: AtomicUsize,
     config: Config,
-    acpi_request: Signal<GlobalRawMutex, AcpiBatteryRequest>,
     power_info: Mutex<GlobalRawMutex, PsuState>,
 }
 
@@ -180,7 +178,6 @@ impl Context {
             battery_response: Channel::new(),
             no_op_retry_count: AtomicUsize::new(0),
             config,
-            acpi_request: Signal::new(),
             power_info: Mutex::new(PsuState::new()),
         }
     }
@@ -483,14 +480,6 @@ impl Context {
     /// Wait for battery event.
     pub async fn wait_event(&self) -> BatteryEvent {
         self.battery_event.receive().await
-    }
-
-    pub(super) fn send_acpi_cmd(&self, request: AcpiBatteryRequest) {
-        self.acpi_request.signal(request);
-    }
-
-    pub(super) async fn wait_acpi_cmd(&self) -> AcpiBatteryRequest {
-        self.acpi_request.wait().await
     }
 
     pub async fn get_state(&self) -> State {
