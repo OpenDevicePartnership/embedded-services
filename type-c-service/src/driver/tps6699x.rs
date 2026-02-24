@@ -664,9 +664,8 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
     ) -> Result<(), Error<Self::BusError>> {
         match self.config.usb_control_method {
             UsbControlMethod::TxIdentity => {
-                let tx_identity_value = (config.usb2_enabled as u8) << 0
-                    | (config.usb3_enabled as u8) << 1
-                    | (config.usb4_enabled as u8) << 2;
+                let tx_identity_value =
+                    (config.usb2_enabled as u8) | (config.usb3_enabled as u8) << 1 | (config.usb4_enabled as u8) << 2;
 
                 self.tps6699x
                     .modify_tx_identity(port, |identity| {
@@ -688,7 +687,7 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
                 self.tps6699x
                     .modify_dp_config(port, |dp_config| {
                         dp_config.set_usb_data_path(usb_data_path);
-                        dp_config.clone()
+                        *dp_config
                     })
                     .await?;
             }
@@ -705,7 +704,7 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
                     .await
                     .modify_tbt_config(port, |tbt_config| {
                         tbt_config.set_usb_data_path(usb_data_path);
-                        tbt_config.clone()
+                        *tbt_config
                     })
                     .await?;
             }
