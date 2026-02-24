@@ -54,6 +54,9 @@ embedded-services = { path = "../../embedded-service", features = ["defmt"] }
 power-button-service = { path = "../../power-button-service", features = [
     "defmt",
 ] }
+power-policy-interface = { path = "../../power-policy-interface", features = [
+    "defmt",
+] }
 power-policy-service = { path = "../../power-policy-service", features = [
     "defmt",
 ] }

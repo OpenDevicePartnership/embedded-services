@@ -21,6 +21,7 @@ num_enum.workspace = true
 bitfield.workspace = true
 log = { workspace = true, optional = true }
 heapless.workspace = true
+power-policy-interface.workspace = true
 
 [dev-dependencies]
 static_cell.workspace = true
@@ -35,12 +36,14 @@ default = []
 defmt = [
     "dep:defmt",
     "embedded-services/defmt",
+    "power-policy-interface/defmt",
     "embassy-time/defmt",
     "embassy-sync/defmt",
 ]
 log = [
     "dep:log",
     "embedded-services/log",
+    "power-policy-interface/log",
     "embassy-time/log",
     "embassy-sync/log",
 ]

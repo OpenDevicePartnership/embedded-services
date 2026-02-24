@@ -2,18 +2,18 @@
 use core::marker::PhantomData;
 use core::pin::pin;
 
-use crate::charger;
-use crate::psu::Psu;
-use crate::psu::event::Request;
 use embassy_futures::select::select_slice;
 use embedded_services::broadcaster::immediate as broadcaster;
 use embedded_services::event::Receiver;
 use embedded_services::sync::Lockable;
+use power_policy_interface::charger;
+use power_policy_interface::psu::Psu;
+use power_policy_interface::psu::event::Request;
 
-use crate::charger::ChargerResponse;
-use crate::psu::{self, DeviceId, Error, event::RequestData};
-use crate::service::event::CommsMessage;
 use embedded_services::{error, intrusive_list};
+use power_policy_interface::charger::ChargerResponse;
+use power_policy_interface::psu::{self, DeviceId, Error, event::RequestData};
+use power_policy_interface::service::event::CommsMessage;
 
 /// Power policy context
 pub struct Context<D: Lockable, R: Receiver<RequestData>>

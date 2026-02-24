@@ -19,15 +19,15 @@ pub const ATTN_VDM_LEN: usize = 9;
 
 pub fn power_capability_try_from_contract(
     contract: Contract,
-) -> Option<power_policy_service::capability::PowerCapability> {
-    Some(power_policy_service::capability::PowerCapability {
+) -> Option<power_policy_interface::capability::PowerCapability> {
+    Some(power_policy_interface::capability::PowerCapability {
         voltage_mv: contract.pdo.max_voltage_mv(),
         current_ma: contract.operating_current_ma()?,
     })
 }
 
-pub fn power_capability_from_current(current: type_c::Current) -> power_policy_service::capability::PowerCapability {
-    power_policy_service::capability::PowerCapability {
+pub fn power_capability_from_current(current: type_c::Current) -> power_policy_interface::capability::PowerCapability {
+    power_policy_interface::capability::PowerCapability {
         voltage_mv: 5000,
         // Assume higher power for now
         current_ma: current.to_ma(false),
@@ -35,29 +35,29 @@ pub fn power_capability_from_current(current: type_c::Current) -> power_policy_s
 }
 
 /// Type-C USB2 power capability 5V@500mA
-pub const POWER_CAPABILITY_USB_DEFAULT_USB2: power_policy_service::capability::PowerCapability =
-    power_policy_service::capability::PowerCapability {
+pub const POWER_CAPABILITY_USB_DEFAULT_USB2: power_policy_interface::capability::PowerCapability =
+    power_policy_interface::capability::PowerCapability {
         voltage_mv: 5000,
         current_ma: 500,
     };
 
 /// Type-C USB3 power capability 5V@900mA
-pub const POWER_CAPABILITY_USB_DEFAULT_USB3: power_policy_service::capability::PowerCapability =
-    power_policy_service::capability::PowerCapability {
+pub const POWER_CAPABILITY_USB_DEFAULT_USB3: power_policy_interface::capability::PowerCapability =
+    power_policy_interface::capability::PowerCapability {
         voltage_mv: 5000,
         current_ma: 900,
     };
 
 /// Type-C power capability 5V@1.5A
-pub const POWER_CAPABILITY_5V_1A5: power_policy_service::capability::PowerCapability =
-    power_policy_service::capability::PowerCapability {
+pub const POWER_CAPABILITY_5V_1A5: power_policy_interface::capability::PowerCapability =
+    power_policy_interface::capability::PowerCapability {
         voltage_mv: 5000,
         current_ma: 1500,
     };
 
 /// Type-C power capability 5V@3A
-pub const POWER_CAPABILITY_5V_3A0: power_policy_service::capability::PowerCapability =
-    power_policy_service::capability::PowerCapability {
+pub const POWER_CAPABILITY_5V_3A0: power_policy_interface::capability::PowerCapability =
+    power_policy_interface::capability::PowerCapability {
         voltage_mv: 5000,
         current_ma: 3000,
     };

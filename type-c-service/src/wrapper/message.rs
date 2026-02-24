@@ -32,7 +32,7 @@ pub struct EventPowerPolicyCommand {
     /// Port ID
     pub port: LocalPortId,
     /// Power policy request
-    pub request: power_policy_service::psu::CommandData,
+    pub request: power_policy_interface::psu::CommandData,
 }
 
 /// CFU events
@@ -88,7 +88,7 @@ pub struct OutputPowerPolicyCommand {
     /// Port ID
     pub port: LocalPortId,
     /// Response
-    pub response: power_policy_service::psu::InternalResponseData,
+    pub response: power_policy_interface::psu::InternalResponseData,
 }
 
 /// Controller command output data

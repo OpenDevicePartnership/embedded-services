@@ -3,7 +3,6 @@
 //! # Supported service messaging
 //! This struct current currently supports messages from the following services:
 //! * Type-C: [`crate::type_c::controller::Command`]
-//! * Power policy: [`power_policy_service::policy::device::Command`]
 //! * CFU: [`cfu_service::Request`]
 //! # Event loop
 //! This struct follows a standard wait/process/finalize event loop.
@@ -73,8 +72,8 @@ pub struct ControllerWrapper<
     'device,
     M: RawMutex,
     D: Lockable,
-    S: event::Sender<power_policy_service::psu::event::RequestData>,
-    R: event::Receiver<power_policy_service::psu::event::RequestData>,
+    S: event::Sender<power_policy_interface::psu::event::RequestData>,
+    R: event::Receiver<power_policy_interface::psu::event::RequestData>,
     V: FwOfferValidator,
 > where
     D::Inner: Controller,
@@ -100,8 +99,8 @@ impl<
     'device,
     M: RawMutex,
     D: Lockable,
-    S: event::Sender<power_policy_service::psu::event::RequestData>,
-    R: event::Receiver<power_policy_service::psu::event::RequestData>,
+    S: event::Sender<power_policy_interface::psu::event::RequestData>,
+    R: event::Receiver<power_policy_interface::psu::event::RequestData>,
     V: FwOfferValidator,
 > ControllerWrapper<'device, M, D, S, R, V>
 where
@@ -206,13 +205,13 @@ where
             info!("Plug inserted");
             power
                 .sender
-                .send(power_policy_service::psu::event::RequestData::Attached)
+                .send(power_policy_interface::psu::event::RequestData::Attached)
                 .await;
         } else {
             info!("Plug removed");
             power
                 .sender
-                .send(power_policy_service::psu::event::RequestData::Detached)
+                .send(power_policy_interface::psu::event::RequestData::Detached)
                 .await;
         }
 
@@ -650,8 +649,8 @@ impl<
     'device,
     M: RawMutex,
     C: Lockable,
-    S: event::Sender<power_policy_service::psu::event::RequestData>,
-    R: event::Receiver<power_policy_service::psu::event::RequestData>,
+    S: event::Sender<power_policy_interface::psu::event::RequestData>,
+    R: event::Receiver<power_policy_interface::psu::event::RequestData>,
     V: FwOfferValidator,
 > Lockable for ControllerWrapper<'device, M, C, S, R, V>
 where

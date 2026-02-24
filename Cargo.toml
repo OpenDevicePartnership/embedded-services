@@ -22,6 +22,7 @@ members = [
     "debug-service",
     "debug-service-messages",
     "keyboard-service",
+    "power-policy-interface",
 ]
 exclude = ["examples/*"]
 
@@ -86,6 +87,7 @@ embedded-usb-pd = { git = "https://github.com/OpenDevicePartnership/embedded-usb
 mctp-rs = { git = "https://github.com/dymk/mctp-rs" }
 num_enum = { version = "0.7.5", default-features = false }
 portable-atomic = { version = "1.11", default-features = false }
+power-policy-interface = { path = "./power-policy-interface" }
 paste = "1.0.15"
 fixed = "1.23.1"
 heapless = "0.8.*"

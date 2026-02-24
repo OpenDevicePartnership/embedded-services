@@ -221,7 +221,7 @@ dependencies = [
  "heapless",
  "log",
  "mctp-rs",
- "power-policy-service",
+ "power-policy-interface",
  "zerocopy",
 ]
 
@@ -232,6 +232,7 @@ dependencies = [
  "defmt 0.3.100",
  "embedded-batteries-async",
  "embedded-services",
+ "log",
  "num_enum",
 ]
 
@@ -1840,6 +1841,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "power-policy-interface"
+version = "0.1.0"
+dependencies = [
+ "bitfield 0.17.0",
+ "defmt 0.3.100",
+ "embassy-futures",
+ "embassy-sync",
+ "embedded-batteries-async",
+ "embedded-services",
+ "heapless",
+ "log",
+ "num_enum",
+]
+
+[[package]]
 name = "power-policy-service"
 version = "0.1.0"
 dependencies = [
@@ -1855,6 +1871,7 @@ dependencies = [
  "heapless",
  "log",
  "num_enum",
+ "power-policy-interface",
  "static_cell",
  "tokio",
 ]
@@ -2511,6 +2528,7 @@ dependencies = [
  "embedded-usb-pd",
  "heapless",
  "log",
+ "power-policy-interface",
  "power-policy-service",
  "static_cell",
  "tokio",

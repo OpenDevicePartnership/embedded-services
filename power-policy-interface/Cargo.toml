@@ -1,0 +1,25 @@
+[package]
+name = "power-policy-interface"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+defmt = { workspace = true, optional = true }
+embassy-sync.workspace = true
+embedded-services.workspace = true
+embassy-futures.workspace = true
+num_enum.workspace = true
+bitfield.workspace = true
+log = { workspace = true, optional = true }
+heapless.workspace = true
+embedded-batteries-async.workspace = true
+
+[features]
+default = []
+defmt = ["dep:defmt", "embedded-services/defmt", "embassy-sync/defmt"]
+log = ["dep:log", "embedded-services/log", "embassy-sync/log"]

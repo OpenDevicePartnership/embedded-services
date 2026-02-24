@@ -1,7 +1,7 @@
 #![allow(clippy::unwrap_used)]
 use embassy_sync::signal::Signal;
 use embedded_services::{GlobalRawMutex, event, info};
-use power_policy_service::{
+use power_policy_interface::{
     capability::{ConsumerFlags, ConsumerPowerCapability, PowerCapability, ProviderPowerCapability},
     psu::{Error, InternalState, Psu, event::RequestData},
 };

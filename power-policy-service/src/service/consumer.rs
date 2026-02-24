@@ -4,9 +4,9 @@ use embedded_services::{debug, error};
 
 use super::*;
 
-use crate::capability::ConsumerFlags;
-use crate::charger::Device as ChargerDevice;
-use crate::{capability::ConsumerPowerCapability, charger::PolicyEvent, psu::State};
+use power_policy_interface::capability::ConsumerFlags;
+use power_policy_interface::charger::Device as ChargerDevice;
+use power_policy_interface::{capability::ConsumerPowerCapability, charger::PolicyEvent, psu::State};
 
 /// State of the current consumer
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -134,7 +134,7 @@ where
         for node in self.context.charger_devices() {
             let device = node.data::<ChargerDevice>().ok_or(Error::InvalidDevice)?;
             // Chargers should be powered at this point, but in case they are not...
-            if let crate::charger::ChargerResponseData::UnpoweredAck = device
+            if let power_policy_interface::charger::ChargerResponseData::UnpoweredAck = device
                 .execute_command(PolicyEvent::PolicyConfiguration(
                     connected_consumer.consumer_power_capability,
                 ))
@@ -167,7 +167,7 @@ where
     pub(super) async fn disconnect_chargers(&self) -> Result<(), Error> {
         for node in self.context.charger_devices() {
             let device = node.data::<ChargerDevice>().ok_or(Error::InvalidDevice)?;
-            if let crate::charger::ChargerResponseData::UnpoweredAck = device
+            if let power_policy_interface::charger::ChargerResponseData::UnpoweredAck = device
                 .execute_command(PolicyEvent::PolicyConfiguration(ConsumerPowerCapability {
                     capability: PowerCapability {
                         voltage_mv: 0,

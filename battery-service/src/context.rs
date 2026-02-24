@@ -9,7 +9,7 @@ use embassy_time::{Duration, with_timeout};
 use embedded_services::GlobalRawMutex;
 use embedded_services::comms::MailboxDelegateError;
 use embedded_services::{IntrusiveList, debug, error, info, intrusive_list, trace, warn};
-use power_policy_service::capability::PowerCapability;
+use power_policy_interface::capability::PowerCapability;
 
 use core::ops::DerefMut;
 use core::sync::atomic::AtomicUsize;
@@ -519,7 +519,7 @@ impl Context {
 
     pub(crate) fn set_power_info(
         &self,
-        power_info: &power_policy_service::service::event::CommsData,
+        power_info: &power_policy_interface::service::event::CommsData,
     ) -> Result<(), MailboxDelegateError> {
         let mut guard = self
             .power_info
@@ -529,13 +529,13 @@ impl Context {
         let psu_state = guard.deref_mut();
 
         match power_info {
-            power_policy_service::service::event::CommsData::ConsumerDisconnected(_) => {
+            power_policy_interface::service::event::CommsData::ConsumerDisconnected(_) => {
                 *psu_state = PsuState {
                     psu_connected: false,
                     power_capability: None,
                 }
             }
-            power_policy_service::service::event::CommsData::ConsumerConnected(_device_id, power_capability) => {
+            power_policy_interface::service::event::CommsData::ConsumerConnected(_device_id, power_capability) => {
                 *psu_state = PsuState {
                     psu_connected: true,
                     power_capability: Some(power_capability.capability),

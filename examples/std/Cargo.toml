@@ -29,6 +29,9 @@ embedded-services = { path = "../../embedded-service", features = ["log"] }
 power-policy-service = { path = "../../power-policy-service", features = [
     "log",
 ] }
+power-policy-interface = { path = "../../power-policy-interface", features = [
+    "log",
+] }
 cfu-service = { path = "../../cfu-service", features = ["log"] }
 embedded-cfu-protocol = { git = "https://github.com/OpenDevicePartnership/embedded-cfu" }
 

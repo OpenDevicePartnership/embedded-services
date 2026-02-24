@@ -13,7 +13,7 @@ log = { workspace = true, optional = true }
 embedded-mcu-hal.workspace = true
 embedded-services.workspace = true
 num_enum.workspace = true
-zerocopy.workspace = true
+zerocopy = { workspace = true, features = ["derive"] }
 
 [features]
 defmt = ["dep:defmt", "embedded-mcu-hal/defmt"]

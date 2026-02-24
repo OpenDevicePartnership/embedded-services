@@ -1,6 +1,6 @@
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use embassy_sync::channel::{Channel, DynamicReceiver, DynamicSender};
-use power_policy_service::psu::{CommandData as PolicyCommandData, InternalResponseData as PolicyResponseData, Psu};
+use power_policy_interface::psu::{CommandData as PolicyCommandData, InternalResponseData as PolicyResponseData, Psu};
 
 pub struct PowerProxyChannel<M: RawMutex> {
     command_channel: Channel<M, PolicyCommandData, 1>,
@@ -72,14 +72,14 @@ impl<'a> PowerProxyDevice<'a> {
 }
 
 impl<'a> Psu for PowerProxyDevice<'a> {
-    async fn disconnect(&mut self) -> Result<(), power_policy_service::psu::Error> {
+    async fn disconnect(&mut self) -> Result<(), power_policy_interface::psu::Error> {
         self.execute(PolicyCommandData::Disconnect).await?.complete_or_err()
     }
 
     async fn connect_provider(
         &mut self,
-        capability: power_policy_service::capability::ProviderPowerCapability,
-    ) -> Result<(), power_policy_service::psu::Error> {
+        capability: power_policy_interface::capability::ProviderPowerCapability,
+    ) -> Result<(), power_policy_interface::psu::Error> {
         self.execute(PolicyCommandData::ConnectAsProvider(capability))
             .await?
             .complete_or_err()
@@ -87,8 +87,8 @@ impl<'a> Psu for PowerProxyDevice<'a> {
 
     async fn connect_consumer(
         &mut self,
-        capability: power_policy_service::capability::ConsumerPowerCapability,
-    ) -> Result<(), power_policy_service::psu::Error> {
+        capability: power_policy_interface::capability::ConsumerPowerCapability,
+    ) -> Result<(), power_policy_interface::psu::Error> {
         self.execute(PolicyCommandData::ConnectAsConsumer(capability))
             .await?
             .complete_or_err()

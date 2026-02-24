@@ -2,7 +2,6 @@
 pub mod config;
 pub mod consumer;
 pub mod context;
-pub mod event;
 pub mod provider;
 pub mod task;
 
@@ -10,34 +9,17 @@ pub use context::init;
 use embassy_sync::mutex::Mutex;
 use embedded_services::{GlobalRawMutex, comms, error, event::Receiver, info, sync::Lockable};
 
-use crate::{
+use power_policy_interface::{
     capability::{ConsumerPowerCapability, PowerCapability, ProviderPowerCapability},
     psu::{
         DeviceId, Error, Psu, RegistrationEntry,
         event::{Request, RequestData},
     },
-    service::event::{CommsData, CommsMessage},
+    service::{
+        UnconstrainedState,
+        event::{CommsData, CommsMessage},
+    },
 };
-
-/// Unconstrained state information
-#[derive(Debug, Clone, Default, Copy, PartialEq, Eq)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct UnconstrainedState {
-    /// Unconstrained state
-    pub unconstrained: bool,
-    /// Available unconstrained devices
-    pub available: usize,
-}
-
-impl UnconstrainedState {
-    /// Create a new unconstrained state
-    pub fn new(unconstrained: bool, available: usize) -> Self {
-        Self {
-            unconstrained,
-            available,
-        }
-    }
-}
 
 const MAX_CONNECTED_PROVIDERS: usize = 4;
 

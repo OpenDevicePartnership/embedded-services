@@ -28,9 +28,9 @@ pub const MAX_NUM_DATA_OBJECTS: usize = 7; // 7 VDOs of 4 bytes each
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct PortStatus {
     /// Current available source contract
-    pub available_source_contract: Option<power_policy_service::capability::PowerCapability>,
+    pub available_source_contract: Option<power_policy_interface::capability::PowerCapability>,
     /// Current available sink contract
-    pub available_sink_contract: Option<power_policy_service::capability::PowerCapability>,
+    pub available_sink_contract: Option<power_policy_interface::capability::PowerCapability>,
     /// Current connection state
     pub connection_state: Option<ConnectionState>,
     /// Port partner supports dual-power roles

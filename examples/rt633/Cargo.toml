@@ -49,6 +49,9 @@ mimxrt600-fcb = "0.2.0"
 rand = { version = "0.8.5", default-features = false }
 espi-service = { path = "../../espi-service", features = ["defmt"] }
 embedded-services = { path = "../../embedded-service", features = ["defmt"] }
+power-policy-interface = { path = "../../power-policy-interface", features = [
+    "defmt",
+] }
 
 embedded-batteries-async = { version = "0.3", features = ["defmt"] }
 bq25773 = { git = "https://github.com/OpenDevicePartnership/bq25773" }

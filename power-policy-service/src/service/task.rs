@@ -1,6 +1,6 @@
 use embedded_services::{comms, error, event::Receiver, info, sync::Lockable};
 
-use crate::psu::{Psu, event::RequestData};
+use power_policy_interface::psu::{Psu, event::RequestData};
 
 use super::Service;
 

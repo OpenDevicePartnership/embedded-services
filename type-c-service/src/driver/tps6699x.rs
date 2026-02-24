@@ -278,9 +278,8 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
     ///
     /// Drop safety: All state changes happen after await point
     async fn clear_port_events(&mut self, port: LocalPortId) -> Result<PortEvent, Error<Self::BusError>> {
-        Ok(core::mem::replace(
+        Ok(core::mem::take(
             self.port_events.get_mut(port.0 as usize).ok_or(PdError::InvalidPort)?,
-            PortEvent::none(),
         ))
     }
 
