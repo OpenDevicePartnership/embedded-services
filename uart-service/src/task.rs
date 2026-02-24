@@ -1,18 +1,13 @@
 use crate::{Error, Service};
 use embedded_io_async::Read as UartRead;
 use embedded_io_async::Write as UartWrite;
-use embedded_services::comms;
 use embedded_services::error;
+use embedded_services::relay::mctp::RelayHandler;
 
-pub async fn uart_service<T: UartRead + UartWrite>(
-    uart_service: &'static Service<'_>,
+pub async fn uart_service<R: RelayHandler, T: UartRead + UartWrite>(
+    uart_service: &'static Service<'_, R>,
     mut uart: T,
 ) -> Result<embedded_services::Never, Error> {
-    // Register uart-service as the host service
-    comms::register_endpoint(uart_service, &uart_service.endpoint)
-        .await
-        .map_err(|_| Error::Comms)?;
-
     // Note: eSPI service uses `select!` to seemingly allow asyncrhonous `responses` from services,
     // but there are concerns around async cancellation here at least for UART service.
     //
@@ -23,7 +18,7 @@ pub async fn uart_service<T: UartRead + UartWrite>(
             error!("uart-service request error: {:?}", e);
         } else {
             let host_msg = uart_service.wait_for_response().await;
-            if let Err(e) = uart_service.process_response(&mut uart, &host_msg).await {
+            if let Err(e) = uart_service.process_response(&mut uart, host_msg).await {
                 error!("uart-service response error: {:?}", e)
             }
         }

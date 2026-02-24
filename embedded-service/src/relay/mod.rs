@@ -811,7 +811,8 @@ pub mod mctp {
                     }
                 } // end mod __odp_impl
 
-                use [< _odp_impl_ $relay_type_name:snake >]::$relay_type_name;
+                // Allows this generated relay type to be publicly re-exported
+                pub use [< _odp_impl_ $relay_type_name:snake >]::$relay_type_name;
 
             } // end paste!
         }; // end macro arm

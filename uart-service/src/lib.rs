@@ -8,17 +8,15 @@
 //! provide GPIO pin we can use).
 #![no_std]
 
-mod mctp;
 pub mod task;
 
-use crate::mctp::{HostRequest, HostResult, OdpHeader, OdpMessageType, OdpService};
 use core::borrow::BorrowMut;
 use embassy_sync::channel::Channel;
 use embedded_io_async::Read as UartRead;
 use embedded_io_async::Write as UartWrite;
 use embedded_services::GlobalRawMutex;
 use embedded_services::buffer::OwnedRef;
-use embedded_services::comms::{self, Endpoint, EndpointID, External};
+use embedded_services::relay::mctp::{RelayHandler, RelayHeader, RelayResponse};
 use embedded_services::trace;
 use mctp_rs::smbus_espi::SmbusEspiMedium;
 use mctp_rs::smbus_espi::SmbusEspiReplyContext;
@@ -33,9 +31,9 @@ embedded_services::define_static_buffer!(assembly_buf, u8, [0u8; BUF_SIZE]);
 
 #[derive(Clone)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub(crate) struct HostResponseMessage {
-    pub source_endpoint: EndpointID,
-    pub message: HostResult,
+pub(crate) struct HostResultMessage<R: RelayHandler> {
+    pub handler_service_id: R::ServiceIdType,
+    pub message: R::ResultEnumType,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -55,32 +53,30 @@ pub enum Error {
     Buffer(embedded_services::buffer::Error),
 }
 
-pub struct Service<'a> {
-    endpoint: Endpoint,
-    host_tx_queue: Channel<GlobalRawMutex, HostResponseMessage, HOST_TX_QUEUE_SIZE>,
+pub struct Service<'a, R: RelayHandler> {
+    host_tx_queue: Channel<GlobalRawMutex, HostResultMessage<R>, HOST_TX_QUEUE_SIZE>,
     assembly_buf_owned_ref: OwnedRef<'a, u8>,
+    relay_handler: R,
 }
 
-impl Service<'_> {
-    pub fn new() -> Result<Self, Error> {
+impl<'a, R: RelayHandler> Service<'a, R> {
+    pub fn new(relay_handler: R) -> Result<Self, Error> {
         Ok(Self {
-            endpoint: Endpoint::uninit(EndpointID::External(External::Host)),
             host_tx_queue: Channel::new(),
             assembly_buf_owned_ref: assembly_buf::get_mut()
                 .ok_or(Error::Buffer(embedded_services::buffer::Error::InvalidRange))?,
+            relay_handler,
         })
     }
 
-    async fn process_response<T: UartWrite>(&self, uart: &mut T, response: &HostResponseMessage) -> Result<(), Error> {
+    async fn process_response<T: UartWrite>(&self, uart: &mut T, response: HostResultMessage<R>) -> Result<(), Error> {
         let mut assembly_buf_access = self.assembly_buf_owned_ref.borrow_mut().map_err(Error::Buffer)?;
         let pkt_ctx_buf = assembly_buf_access.borrow_mut();
         let mut mctp_ctx = mctp_rs::MctpPacketContext::new(SmbusEspiMedium, pkt_ctx_buf);
 
-        let source_service: OdpService = OdpService::try_from(response.source_endpoint).map_err(|_| Error::Comms)?;
-
         let reply_context: mctp_rs::MctpReplyContext<SmbusEspiMedium> = mctp_rs::MctpReplyContext {
             source_endpoint_id: mctp_rs::EndpointId::Id(0x80),
-            destination_endpoint_id: mctp_rs::EndpointId::Id(source_service.into()),
+            destination_endpoint_id: mctp_rs::EndpointId::Id(response.handler_service_id.into()),
             packet_sequence_number: mctp_rs::MctpSequenceNumber::new(0),
             message_tag: mctp_rs::MctpMessageTag::try_from(3).map_err(Error::Serialize)?,
             medium_context: SmbusEspiReplyContext {
@@ -89,17 +85,9 @@ impl Service<'_> {
             }, // Medium-specific context
         };
 
-        let header = OdpHeader {
-            message_type: OdpMessageType::Result {
-                is_error: !response.message.is_ok(),
-            },
-            is_datagram: false,
-            service: source_service,
-            message_id: response.message.discriminant(),
-        };
-
+        let header = response.message.create_header(&response.handler_service_id);
         let mut packet_state = mctp_ctx
-            .serialize_packet(reply_context, (header, response.message.clone()))
+            .serialize_packet(reply_context, (header, response.message))
             .map_err(Error::Mctp)?;
 
         while let Some(packet_result) = packet_state.next() {
@@ -139,35 +127,21 @@ impl Service<'_> {
             .map_err(Error::Mctp)?
             .ok_or(Error::Serialize("Partial message not supported"))?;
 
-        let (header, host_request) = message.parse_as::<HostRequest>().map_err(Error::Mctp)?;
-        let target_endpoint: EndpointID = header.service.get_endpoint_id();
-        trace!(
-            "Host Request: Service {:?}, Command {:?}",
-            target_endpoint, header.message_id,
-        );
+        let (header, body) = message.parse_as::<R::RequestEnumType>().map_err(Error::Mctp)?;
+        trace!("Received host request");
 
-        host_request
-            .send_to_endpoint(&self.endpoint, target_endpoint)
-            .await
+        let response = self.relay_handler.process_request(body).await;
+        self.host_tx_queue
+            .try_send(HostResultMessage {
+                handler_service_id: header.get_service_id(),
+                message: response,
+            })
             .map_err(|_| Error::Comms)?;
 
         Ok(())
     }
 
-    async fn wait_for_response(&self) -> HostResponseMessage {
+    async fn wait_for_response(&self) -> HostResultMessage<R> {
         self.host_tx_queue.receive().await
-    }
-}
-
-impl comms::MailboxDelegate for Service<'_> {
-    fn receive(&self, message: &comms::Message) -> Result<(), comms::MailboxDelegateError> {
-        crate::mctp::send_to_comms(message, |source_endpoint, message| {
-            self.host_tx_queue
-                .try_send(HostResponseMessage {
-                    source_endpoint,
-                    message,
-                })
-                .map_err(|_| comms::MailboxDelegateError::BufferFull)
-        })
     }
 }
