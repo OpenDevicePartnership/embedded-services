@@ -4,10 +4,9 @@
 /// Implementations of RunnableService should have an init() function to construct the service that
 /// returns a Runner, which the user is expected to spawn a task for.
 pub trait RunnableService<'hw>: Sized {
-    /// A token type used to restrict users from spawning more than one service runner.  Services will generally
-    /// define this as a zero-sized type and only provide a constructor for it that is private to the service module,
-    /// which prevents users from constructing their own tokens and spawning multiple runners.
-    /// Most services should consider using the `impl_runner_creation_token!` macro to do this automatically.
+    /// A type that can be used to run the service. This is returned by the init() function and the user is
+    /// expected to call its run() method in an embassy task (or similar parallel execution context on other
+    /// async runtimes).
     type Runner: ServiceRunner<'hw>;
 
     /// The error type that your `init` function can return on failure.
@@ -19,7 +18,7 @@ pub trait RunnableService<'hw>: Sized {
     /// Initializes an instance of the service in the provided OnceLock and returns a reference to the service and
     /// a runner that can be used to run the service.
     fn init(
-        storage: &'hw embassy_sync::once_lock::OnceLock<Self>, // TODO could be resources?
+        storage: &'hw embassy_sync::once_lock::OnceLock<Self>,
         params: Self::InitParams,
     ) -> impl core::future::Future<Output = Result<(&'hw Self, Self::Runner), Self::ErrorType>>;
 }
@@ -30,12 +29,6 @@ pub trait RunnableService<'hw>: Sized {
 pub trait ServiceRunner<'hw> {
     /// Run the service event loop. This future never completes.
     fn run(self) -> impl core::future::Future<Output = crate::Never> + 'hw;
-    // TODO: Do we want to take &mut self instead of consuming self? I think the difference is that it allows for the possibility of
-    //       the user select!()ing over the ServiceRunner and something else, then having that other thing complete and bailing
-    //       out of execution. In the consume-self version, the user can't restart afterward, but in the &mut self version they could
-    //       potentially restart the runner.  It's not clear to me if we have any use cases for the 'restartable runner' version, and if
-    //       we don't then the consume-self version more clearly telegraphs the fact that the runner is not meant to be restarted or
-    //       reused after it's started and lets the implementor care less about drop safety on the future
 }
 
 /// Initializes a service, creates an embassy task to run it, and spawns that task.
