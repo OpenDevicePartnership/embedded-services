@@ -1,27 +1,23 @@
 use core::borrow::{Borrow, BorrowMut};
 
 use debug_service_messages::{DebugError, DebugResponse};
-use embedded_services::comms;
 
-use crate::{debug_service_entry, defmt_ring_logger::DEFMT_BUFFER, frame_available, shared_buffer};
+use crate::{debug_service_entry, defmt_ring_logger::DEFMT_BUFFER, frame_available, frame_ready_signal, shared_buffer};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Error {
     Buffer(embedded_services::buffer::Error),
 }
 
-pub async fn debug_service(endpoint: comms::Endpoint) {
-    debug_service_entry(endpoint).await;
+pub async fn debug_service() {
+    debug_service_entry().await;
 }
 
 pub async fn defmt_to_host_task() -> Result<embedded_services::Never, Error> {
     embedded_services::info!("defmt to host task start");
-    use crate::debug_service::{host_endpoint_id, response_notify_signal};
-    use embedded_services::comms::{self, EndpointID, Internal};
+    use crate::debug_service::response_notify_signal;
 
     let framed_consumer = DEFMT_BUFFER.framed_consumer();
-
-    let host_ep = host_endpoint_id().await;
 
     // Acquire the staging buffer once; we own it for the task lifetime.
     let acpi_owned = crate::owned_buffer();
@@ -71,7 +67,7 @@ pub async fn defmt_to_host_task() -> Result<embedded_services::Never, Error> {
                     slice.try_into().unwrap()
                 },
             };
-            let _ = comms::send(EndpointID::Internal(Internal::Debug), host_ep, &msg).await;
+            frame_ready_signal().signal(Ok(msg));
             embedded_services::trace!("sent {} defmt bytes to host", copy_len);
         }
 
@@ -88,10 +84,7 @@ pub async fn no_avail_to_host_task() -> Result<embedded_services::Never, Error> 
     embedded_services::define_static_buffer!(no_avail_acpi_buf, u8, [0u8; 12]);
 
     embedded_services::info!("no avail to host task start");
-    use crate::debug_service::{host_endpoint_id, no_avail_notify_signal};
-    use embedded_services::comms::{self, EndpointID, Internal};
-
-    let host_ep = host_endpoint_id().await;
+    use crate::debug_service::no_avail_notify_signal;
 
     let acpi_owned = no_avail_acpi_buf::get_mut().expect("defmt staging buffer already initialized elsewhere");
     {
@@ -106,6 +99,6 @@ pub async fn no_avail_to_host_task() -> Result<embedded_services::Never, Error> 
     // Send DEADBEEF if host requests frame but non available
     loop {
         no_avail_notify_signal().wait().await;
-        let _ = comms::send(EndpointID::Internal(Internal::Debug), host_ep, &msg).await;
+        frame_ready_signal().signal(msg);
     }
 }

@@ -1,6 +1,5 @@
 /// This example is supposed to init a debug service and a mock eSPI service to demonstrate sending defmt messages from the debug service to the eSPI service
 use embassy_executor::{Executor, Spawner};
-use embedded_services::comms::{Endpoint, EndpointID, External};
 use embedded_services::info;
 use static_cell::StaticCell;
 
@@ -181,7 +180,7 @@ async fn init_task(spawner: Spawner) {
 
 #[embassy_executor::task]
 async fn debug_service() -> ! {
-    debug_service::task::debug_service(Endpoint::uninit(EndpointID::External(External::Host))).await;
+    debug_service::task::debug_service().await;
     unreachable!()
 }
 
