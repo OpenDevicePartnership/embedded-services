@@ -9,6 +9,7 @@ mod test {
     use embassy_sync::once_lock::OnceLock;
     use embassy_time::Timer;
     use embedded_mcu_hal::time::{Datetime, DatetimeClock};
+    use embedded_services::service::{RunnableService, ServiceRunner};
 
     use time_alarm_service_messages as msg;
 
@@ -23,16 +24,18 @@ mod test {
         let mut dc_pol_storage = MockNvramStorage::new(0);
 
         let mut clock = MockDatetimeClock::new_running();
-
         let storage = OnceLock::new();
-        let service = time_alarm_service::Service::init(
+
+        let (service, runner) = time_alarm_service::Service::init(
             &storage,
-            &mut clock,
-            &mut tz_storage,
-            &mut ac_exp_storage,
-            &mut ac_pol_storage,
-            &mut dc_exp_storage,
-            &mut dc_pol_storage,
+            time_alarm_service::ServiceInitParams {
+                backing_clock: &mut clock,
+                tz_storage: &mut tz_storage,
+                ac_expiration_storage: &mut ac_exp_storage,
+                ac_policy_storage: &mut ac_pol_storage,
+                dc_expiration_storage: &mut dc_exp_storage,
+                dc_policy_storage: &mut dc_pol_storage,
+            },
         )
         .await
         .unwrap();
@@ -45,7 +48,7 @@ mod test {
         // return !, so we should go until the test arm completes and then shut down.
         //
         tokio::select! {
-            _ = time_alarm_service::task::run_service(service) => unreachable!("time alarm service task finished unexpectedly"),
+            _ = runner.run() => unreachable!("time alarm service task finished unexpectedly"),
             _ = async {
                 let delay_secs = 2;
                 let begin = service.get_real_time().unwrap();
@@ -74,20 +77,23 @@ mod test {
             .unwrap();
 
         let storage = OnceLock::new();
-        let service = time_alarm_service::Service::init(
+
+        let (service, runner) = time_alarm_service::Service::init(
             &storage,
-            &mut clock,
-            &mut tz_storage,
-            &mut ac_exp_storage,
-            &mut ac_pol_storage,
-            &mut dc_exp_storage,
-            &mut dc_pol_storage,
+            time_alarm_service::ServiceInitParams {
+                backing_clock: &mut clock,
+                tz_storage: &mut tz_storage,
+                ac_expiration_storage: &mut ac_exp_storage,
+                ac_policy_storage: &mut ac_pol_storage,
+                dc_expiration_storage: &mut dc_exp_storage,
+                dc_policy_storage: &mut dc_pol_storage,
+            },
         )
         .await
         .unwrap();
 
         tokio::select! {
-            _ = time_alarm_service::task::run_service(service) => unreachable!("time alarm service task finished unexpectedly"),
+            _ = runner.run() => unreachable!("time alarm service task finished unexpectedly"),
             _ = async {
                 // Clock is paused, so time shouldn't advance unless we set it.
                 let begin = service.get_real_time().unwrap();

@@ -1,7 +1,6 @@
 #![no_std]
 #![no_main]
 
-use embassy_sync::once_lock::OnceLock;
 use embedded_mcu_hal::{
     Nvram,
     time::{Datetime, Month, UncheckedDatetime},
@@ -24,25 +23,19 @@ async fn main(spawner: embassy_executor::Spawner) {
     embedded_services::init().await;
     info!("services initialized");
 
-    static TIME_SERVICE: OnceLock<time_alarm_service::Service> = OnceLock::new();
-    let time_service = time_alarm_service::Service::init(
-        &TIME_SERVICE,
-        dt_clock,
-        tz,
-        ac_expiration,
-        ac_policy,
-        dc_expiration,
-        dc_policy,
+    let time_service = embedded_services::spawn_service!(
+        spawner,
+        time_alarm_service::Service<'static>,
+        time_alarm_service::ServiceInitParams {
+            backing_clock: dt_clock,
+            tz_storage: tz,
+            ac_expiration_storage: ac_expiration,
+            ac_policy_storage: ac_policy,
+            dc_expiration_storage: dc_expiration,
+            dc_policy_storage: dc_policy
+        }
     )
-    .await
-    .expect("Failed to initialize time-alarm service");
-
-    #[embassy_executor::task]
-    async fn time_alarm_task(service: &'static time_alarm_service::Service<'static>) {
-        time_alarm_service::task::run_service(service).await
-    }
-
-    spawner.must_spawn(time_alarm_task(time_service));
+    .expect("Failed to spawn time alarm service");
 
     use embedded_services::relay::mctp::impl_odp_mctp_relay_handler;
     impl_odp_mctp_relay_handler!(

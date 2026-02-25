@@ -75,32 +75,68 @@ pub struct Service<RelayHandler: embedded_services::relay::mctp::RelayHandler> {
 //
 
 ///////// COMMON FUNCTIONS ///////////
-impl<RelayHandler: embedded_services::relay::mctp::RelayHandler> Service<RelayHandler> {
+
+pub struct Runner<'hw, RelayHandler: embedded_services::relay::mctp::RelayHandler> {
+    service: &'hw Service<RelayHandler>,
+}
+
+impl<'hw, RelayHandler: embedded_services::relay::mctp::RelayHandler> embedded_services::service::ServiceRunner<'hw>
+    for Runner<'hw, RelayHandler>
+{
+    async fn run(self) -> embedded_services::Never {
+        self.service.run().await
+    }
+}
+
+pub struct ServiceInitParams<RelayHandler: embedded_services::relay::mctp::RelayHandler> {
+    pub espi: espi::Espi<'static>,
+    pub relay_handler: RelayHandler,
+}
+
+impl<'hw, RelayHandler: embedded_services::relay::mctp::RelayHandler + 'hw>
+    embedded_services::service::RunnableService<'hw> for Service<RelayHandler>
+where
+    'hw: 'static, // TODO we should be able to relax this constraint when we remove the dependency on the comms service
+{
     // TODO a lot of the input lifetimes here have to be static because we have a dependency on the comms system, which requires
     //      that everything that talks over it is 'static. Once we eliminate that dependency, we should be able to relax these lifetimes.
-    pub async fn init(
-        service_storage: &'static OnceLock<Self>,
-        mut espi: espi::Espi<'static>,
-        relay_handler: RelayHandler,
-    ) -> &'static Self {
-        espi.wait_for_plat_reset().await;
+    async fn init(
+        service_storage: &'hw OnceLock<Self>,
+        mut params: Self::InitParams,
+    ) -> Result<(&'hw Self, Runner<'hw, RelayHandler>), core::convert::Infallible> {
+        params.espi.wait_for_plat_reset().await;
 
-        let result = service_storage.get_or_init(|| Service {
+        let service = service_storage.get_or_init(|| Service {
             endpoint: DEPRECATED_comms::Endpoint::uninit(DEPRECATED_comms::EndpointID::External(
                 DEPRECATED_comms::External::Host,
             )),
-            espi: Mutex::new(espi),
+            espi: Mutex::new(params.espi),
             host_tx_queue: Channel::new(),
-            relay_handler,
+            relay_handler: params.relay_handler,
         });
 
-        DEPRECATED_comms::register_endpoint(result, &result.endpoint)
+        DEPRECATED_comms::register_endpoint(service, &service.endpoint)
             .await
             .unwrap();
-        result
+
+        Ok((service, Runner { service }))
     }
 
-    pub(crate) async fn run_service(&self) -> ! {
+    type ErrorType = core::convert::Infallible;
+    type InitParams = ServiceInitParams<RelayHandler>;
+    type Runner = Runner<'hw, RelayHandler>;
+}
+
+impl<RelayHandler: embedded_services::relay::mctp::RelayHandler> Service<RelayHandler> {
+    // TODO The notification system was not actually used, so this is currently dead code.
+    //      We need to implement some interface for triggering notifications from other subsystems, and it may do something like this:
+    //
+    // async fn process_notification_to_host(&self, espi: &mut espi::Espi<'_>, notification: &NotificationMsg) {
+    //     espi.irq_push(notification.offset).await;
+    //     info!("espi: Notification id {} sent to Host!", notification.offset);
+    // }
+
+    async fn run(&self) -> embedded_services::Never {
         let mut espi = self.espi.lock().await;
         loop {
             let event = select(espi.wait_for_event(), self.host_tx_queue.receive()).await;
@@ -119,14 +155,6 @@ impl<RelayHandler: embedded_services::relay::mctp::RelayHandler> Service<RelayHa
             }
         }
     }
-
-    // TODO The notification system was not actually used, so this is currently dead code.
-    //      We need to implement some interface for triggering notifications from other subsystems, and it may do something like this:
-    //
-    // async fn process_notification_to_host(&self, espi: &mut espi::Espi<'_>, notification: &NotificationMsg) {
-    //     espi.irq_push(notification.offset).await;
-    //     info!("espi: Notification id {} sent to Host!", notification.offset);
-    // }
 
     fn write_to_hw(&self, espi: &mut espi::Espi<'static>, packet: &[u8]) -> Result<(), embassy_imxrt::espi::Error> {
         // Send packet via your transport medium
