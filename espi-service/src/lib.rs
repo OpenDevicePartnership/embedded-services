@@ -23,9 +23,6 @@
 mod espi_service;
 
 #[cfg(not(test))]
-mod mctp;
-
-#[cfg(not(test))]
 pub mod task;
 
 #[cfg(not(test))]
