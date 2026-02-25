@@ -75,32 +75,14 @@ pub struct Service<RelayHandler: embedded_services::relay::mctp::RelayHandler> {
 //
 
 ///////// COMMON FUNCTIONS ///////////
-impl<RelayHandler: embedded_services::relay::mctp::RelayHandler> Service<RelayHandler> {
-    // TODO a lot of the input lifetimes here have to be static because we have a dependency on the comms system, which requires
-    //      that everything that talks over it is 'static. Once we eliminate that dependency, we should be able to relax these lifetimes.
-    pub async fn init(
-        service_storage: &'static OnceLock<Self>,
-        mut espi: espi::Espi<'static>,
-        relay_handler: RelayHandler,
-    ) -> &'static Self {
-        espi.wait_for_plat_reset().await;
 
-        let result = service_storage.get_or_init(|| Service {
-            endpoint: DEPRECATED_comms::Endpoint::uninit(DEPRECATED_comms::EndpointID::External(
-                DEPRECATED_comms::External::Host,
-            )),
-            espi: Mutex::new(espi),
-            host_tx_queue: Channel::new(),
-            relay_handler,
-        });
+embedded_services::impl_runner_creation_token!(RunnerCreationToken);
 
-        DEPRECATED_comms::register_endpoint(result, &result.endpoint)
-            .await
-            .unwrap();
-        result
-    }
-
-    pub(crate) async fn run_service(&self) -> ! {
+impl<'hw, RelayHandler: embedded_services::relay::mctp::RelayHandler> embedded_services::service::RunnableService<'hw>
+    for Service<RelayHandler>
+{
+    type RunnerCreationToken = RunnerCreationToken;
+    async fn run(&'hw self, _: Self::RunnerCreationToken) -> embedded_services::Never {
         let mut espi = self.espi.lock().await;
         loop {
             let event = select(espi.wait_for_event(), self.host_tx_queue.receive()).await;
@@ -118,6 +100,37 @@ impl<RelayHandler: embedded_services::relay::mctp::RelayHandler> Service<RelayHa
                 }
             }
         }
+    }
+}
+
+impl<RelayHandler: embedded_services::relay::mctp::RelayHandler> Service<RelayHandler> {
+    // TODO a lot of the input lifetimes here have to be static because we have a dependency on the comms system, which requires
+    //      that everything that talks over it is 'static. Once we eliminate that dependency, we should be able to relax these lifetimes.
+    pub async fn init(
+        service_storage: &'static OnceLock<Self>,
+        mut espi: espi::Espi<'static>,
+        relay_handler: RelayHandler,
+    ) -> Result<(&'static Self, embedded_services::service::ServiceRunner<'static, Self>), core::convert::Infallible>
+    {
+        espi.wait_for_plat_reset().await;
+
+        let service = service_storage.get_or_init(|| Service {
+            endpoint: DEPRECATED_comms::Endpoint::uninit(DEPRECATED_comms::EndpointID::External(
+                DEPRECATED_comms::External::Host,
+            )),
+            espi: Mutex::new(espi),
+            host_tx_queue: Channel::new(),
+            relay_handler,
+        });
+
+        DEPRECATED_comms::register_endpoint(service, &service.endpoint)
+            .await
+            .unwrap();
+
+        Ok((
+            service,
+            embedded_services::service::ServiceRunner::new(service, RunnerCreationToken::new()),
+        ))
     }
 
     // TODO The notification system was not actually used, so this is currently dead code.

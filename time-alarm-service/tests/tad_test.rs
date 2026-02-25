@@ -25,7 +25,7 @@ mod test {
         let mut clock = MockDatetimeClock::new_running();
 
         let storage = OnceLock::new();
-        let service = time_alarm_service::Service::init(
+        let (service, runner) = time_alarm_service::Service::init(
             &storage,
             &mut clock,
             &mut tz_storage,
@@ -45,7 +45,7 @@ mod test {
         // return !, so we should go until the test arm completes and then shut down.
         //
         tokio::select! {
-            _ = time_alarm_service::task::run_service(service) => unreachable!("time alarm service task finished unexpectedly"),
+            _ = runner.run() => unreachable!("time alarm service task finished unexpectedly"),
             _ = async {
                 let delay_secs = 2;
                 let begin = service.get_real_time().unwrap();
@@ -74,7 +74,7 @@ mod test {
             .unwrap();
 
         let storage = OnceLock::new();
-        let service = time_alarm_service::Service::init(
+        let (service, runner) = time_alarm_service::Service::init(
             &storage,
             &mut clock,
             &mut tz_storage,
@@ -87,7 +87,7 @@ mod test {
         .unwrap();
 
         tokio::select! {
-            _ = time_alarm_service::task::run_service(service) => unreachable!("time alarm service task finished unexpectedly"),
+            _ = runner.run() => unreachable!("time alarm service task finished unexpectedly"),
             _ = async {
                 // Clock is paused, so time shouldn't advance unless we set it.
                 let begin = service.get_real_time().unwrap();
