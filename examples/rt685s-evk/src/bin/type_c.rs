@@ -101,7 +101,7 @@ async fn main(spawner: Spawner) {
     let device = I2cDevice::new(bus);
 
     static CONTROLLER: StaticCell<Controller<'static>> = StaticCell::new();
-    let controller = CONTROLLER.init(Controller::new_tps66994(device, ADDR1).unwrap());
+    let controller = CONTROLLER.init(Controller::new_tps66994(device, ADDR1, Default::default()).unwrap());
     let (mut tps6699x, interrupt) = controller.make_parts();
 
     info!("Resetting PD controller");

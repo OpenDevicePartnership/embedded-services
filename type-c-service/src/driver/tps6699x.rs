@@ -52,10 +52,11 @@ struct FwUpdateState<'a, M: RawMutex, B: I2c> {
 /// The method used to control USB capabilities.
 ///
 /// This required method may vary based on the TI firmware version of the TPS6699x.
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Default)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum UsbControlMethod {
     /// Set USB capabilities through [`tps6699x::registers::tx_identity`].
+    #[default]
     TxIdentity,
 
     /// Set USB capabilities through [`tps6699x::registers::field_sets::DpConfig`].
@@ -70,7 +71,7 @@ pub enum UsbControlMethod {
     TbtConfig,
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Default)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct Config {
     pub usb_control_method: UsbControlMethod,
