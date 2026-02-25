@@ -225,7 +225,11 @@ async fn main(spawner: Spawner) {
 
     info!("Spawining PD controller task");
     static CONTROLLER_MUTEX: StaticCell<Tps6699xMutex<'_>> = StaticCell::new();
-    let controller_mutex = CONTROLLER_MUTEX.init(Mutex::new(tps6699x_drv::tps66994(tps6699x, Default::default())));
+    let controller_mutex = CONTROLLER_MUTEX.init(Mutex::new(tps6699x_drv::tps66994(
+        tps6699x,
+        Default::default(),
+        Default::default(),
+    )));
 
     static WRAPPER: StaticCell<Wrapper> = StaticCell::new();
     let wrapper =
