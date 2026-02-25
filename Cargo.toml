@@ -22,6 +22,7 @@ members = [
     "debug-service",
     "debug-service-messages",
     "keyboard-service",
+    "soc-manager-service",
 ]
 exclude = ["examples/*"]
 
