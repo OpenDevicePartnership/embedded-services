@@ -101,7 +101,7 @@ async fn main(spawner: Spawner) {
     let device = I2cDevice::new(bus);
 
     static CONTROLLER: StaticCell<Controller<'static>> = StaticCell::new();
-    let controller = CONTROLLER.init(Controller::new_tps66994(device, ADDR1, Default::default()).unwrap());
+    let controller = CONTROLLER.init(Controller::new_tps66994(device, ADDR1).unwrap());
     let (mut tps6699x, interrupt) = controller.make_parts();
 
     info!("Resetting PD controller");
@@ -141,7 +141,11 @@ async fn main(spawner: Spawner) {
 
     info!("Spawining PD controller task");
     static CONTROLLER_MUTEX: StaticCell<Tps6699xMutex<'_>> = StaticCell::new();
-    let controller_mutex = CONTROLLER_MUTEX.init(Mutex::new(tps6699x_drv::tps66994(tps6699x, Default::default())));
+    let controller_mutex = CONTROLLER_MUTEX.init(Mutex::new(tps6699x_drv::tps66994(
+        tps6699x,
+        Default::default(),
+        Default::default(),
+    )));
 
     static WRAPPER: StaticCell<Wrapper> = StaticCell::new();
     let wrapper =
