@@ -5,7 +5,7 @@ use embedded_services::error;
 use embedded_services::relay::mctp::RelayHandler;
 
 pub async fn uart_service<R: RelayHandler, T: UartRead + UartWrite>(
-    uart_service: &'static Service<'_, R>,
+    uart_service: &Service<R>,
     mut uart: T,
 ) -> Result<embedded_services::Never, Error> {
     // Note: eSPI service uses `select!` to seemingly allow asyncrhonous `responses` from services,

@@ -10,12 +10,10 @@
 
 pub mod task;
 
-use core::borrow::BorrowMut;
 use embassy_sync::channel::Channel;
 use embedded_io_async::Read as UartRead;
 use embedded_io_async::Write as UartWrite;
 use embedded_services::GlobalRawMutex;
-use embedded_services::buffer::OwnedRef;
 use embedded_services::relay::mctp::{RelayHandler, RelayHeader, RelayResponse};
 use embedded_services::trace;
 use mctp_rs::smbus_espi::SmbusEspiMedium;
@@ -26,8 +24,6 @@ const BUF_SIZE: usize = 256;
 const HOST_TX_QUEUE_SIZE: usize = 5;
 const SMBUS_HEADER_SIZE: usize = 4;
 const SMBUS_LEN_IDX: usize = 2;
-
-embedded_services::define_static_buffer!(assembly_buf, u8, [0u8; BUF_SIZE]);
 
 #[derive(Clone)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
@@ -53,26 +49,22 @@ pub enum Error {
     Buffer(embedded_services::buffer::Error),
 }
 
-pub struct Service<'a, R: RelayHandler> {
+pub struct Service<R: RelayHandler> {
     host_tx_queue: Channel<GlobalRawMutex, HostResultMessage<R>, HOST_TX_QUEUE_SIZE>,
-    assembly_buf_owned_ref: OwnedRef<'a, u8>,
     relay_handler: R,
 }
 
-impl<'a, R: RelayHandler> Service<'a, R> {
+impl<R: RelayHandler> Service<R> {
     pub fn new(relay_handler: R) -> Result<Self, Error> {
         Ok(Self {
             host_tx_queue: Channel::new(),
-            assembly_buf_owned_ref: assembly_buf::get_mut()
-                .ok_or(Error::Buffer(embedded_services::buffer::Error::InvalidRange))?,
             relay_handler,
         })
     }
 
     async fn process_response<T: UartWrite>(&self, uart: &mut T, response: HostResultMessage<R>) -> Result<(), Error> {
-        let mut assembly_buf_access = self.assembly_buf_owned_ref.borrow_mut().map_err(Error::Buffer)?;
-        let pkt_ctx_buf = assembly_buf_access.borrow_mut();
-        let mut mctp_ctx = mctp_rs::MctpPacketContext::new(SmbusEspiMedium, pkt_ctx_buf);
+        let mut assembly_buf = [0u8; BUF_SIZE];
+        let mut mctp_ctx = mctp_rs::MctpPacketContext::new(SmbusEspiMedium, &mut assembly_buf);
 
         let reply_context: mctp_rs::MctpReplyContext<SmbusEspiMedium> = mctp_rs::MctpReplyContext {
             source_endpoint_id: mctp_rs::EndpointId::Id(0x80),
@@ -103,9 +95,8 @@ impl<'a, R: RelayHandler> Service<'a, R> {
     }
 
     async fn wait_for_request<T: UartRead>(&self, uart: &mut T) -> Result<(), Error> {
-        let mut assembly_access = self.assembly_buf_owned_ref.borrow_mut().map_err(Error::Buffer)?;
-        let mut mctp_ctx =
-            mctp_rs::MctpPacketContext::<SmbusEspiMedium>::new(SmbusEspiMedium, assembly_access.borrow_mut());
+        let mut assembly_buf = [0u8; BUF_SIZE];
+        let mut mctp_ctx = mctp_rs::MctpPacketContext::<SmbusEspiMedium>::new(SmbusEspiMedium, &mut assembly_buf);
 
         // First wait for SMBUS header, which tells us how big the incoming packet is
         let mut buf = [0; BUF_SIZE];
