@@ -294,9 +294,9 @@ pub struct Resources<'hw> {
     inner: Option<ServiceInner<'hw>>,
 }
 
-impl<'hw> embedded_services::service::ServiceResources for Resources<'hw> {
+impl<'hw> Default for Resources<'hw> {
     /// Allocate storage for the service's resources.
-    fn new() -> Self {
+    fn default() -> Self {
         Resources { inner: None }
     }
 }

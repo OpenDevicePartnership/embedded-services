@@ -11,7 +11,7 @@ pub trait Service<'hw>: Sized {
 
     /// Any memory resources that your service needs.  This is typically an opaque types that is only used by the service
     /// and is not interacted with by users of the service. Must be default-constructible for spawn_service!() to work.
-    type Resources: ServiceResources;
+    type Resources: Default;
 
     /// The error type that your `init` function can return on failure.
     type ErrorType;
@@ -25,13 +25,6 @@ pub trait Service<'hw>: Sized {
         storage: &'hw mut Self::Resources,
         params: Self::InitParams,
     ) -> impl core::future::Future<Output = Result<(Self, Self::Runner), Self::ErrorType>>;
-}
-
-/// Represents the memory resources that a service needs to run. This is typically an opaque type that is only used by the service.
-/// Must be default-constructible; the service is expected to populate its contents in its init() function.
-pub trait ServiceResources {
-    /// Creates a new instance of the service's resources.
-    fn new() -> Self;
 }
 
 /// A trait for a run handle used to execute a service's event loop.  This is returned by Service::init()
@@ -70,10 +63,9 @@ pub trait ServiceRunner<'hw> {
 #[macro_export]
 macro_rules! spawn_service {
     ($spawner:expr, $service_ty:ty, $init_arg:expr) => {{
-        use $crate::service::{Service, ServiceResources, ServiceRunner};
+        use $crate::service::{Service, ServiceRunner};
         static SERVICE_RESOURCES: StaticCell<(<$service_ty as Service>::Resources)> = StaticCell::new();
-        let service_resources =
-            SERVICE_RESOURCES.init(<<$service_ty as Service>::Resources as ServiceResources>::new());
+        let service_resources = SERVICE_RESOURCES.init(<<$service_ty as Service>::Resources as Default>::default());
 
         #[embassy_executor::task]
         async fn service_task_fn(runner: <$service_ty as $crate::service::Service<'static>>::Runner) {

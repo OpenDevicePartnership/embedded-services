@@ -36,10 +36,8 @@ pub struct Resources<'hw, RelayHandler: embedded_services::relay::mctp::RelayHan
     inner: Option<ServiceInner<'hw, RelayHandler>>,
 }
 
-impl<'hw, RelayHandler: embedded_services::relay::mctp::RelayHandler> embedded_services::service::ServiceResources
-    for Resources<'hw, RelayHandler>
-{
-    fn new() -> Self {
+impl<'hw, RelayHandler: embedded_services::relay::mctp::RelayHandler> Default for Resources<'hw, RelayHandler> {
+    fn default() -> Self {
         Self { inner: None }
     }
 }

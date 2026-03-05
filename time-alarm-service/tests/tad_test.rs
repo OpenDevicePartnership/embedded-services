@@ -8,7 +8,7 @@ mod common;
 mod test {
     use embassy_time::Timer;
     use embedded_mcu_hal::time::{Datetime, DatetimeClock};
-    use embedded_services::service::{Service, ServiceResources, ServiceRunner};
+    use embedded_services::service::{Service, ServiceRunner};
 
     use time_alarm_service_messages as msg;
 
@@ -23,7 +23,7 @@ mod test {
         let mut dc_pol_storage = MockNvramStorage::new(0);
 
         let mut clock = MockDatetimeClock::new_running();
-        let mut storage = time_alarm_service::Resources::new();
+        let mut storage = Default::default();
 
         let (service, runner) = time_alarm_service::Service::new(
             &mut storage,
@@ -75,7 +75,7 @@ mod test {
             .set_current_datetime(&Datetime::from_unix_time_seconds(TEST_UNIX_TIME))
             .unwrap();
 
-        let mut storage = time_alarm_service::Resources::new();
+        let mut storage = Default::default();
 
         let (service, runner) = time_alarm_service::Service::new(
             &mut storage,
