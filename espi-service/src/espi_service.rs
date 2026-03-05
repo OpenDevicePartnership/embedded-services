@@ -4,7 +4,6 @@ use embassy_futures::select::select;
 use embassy_imxrt::espi;
 use embassy_sync::channel::Channel;
 use embassy_sync::mutex::Mutex;
-use embassy_sync::once_lock::OnceLock;
 use embedded_services::{GlobalRawMutex, error, info, trace};
 use mctp_rs::smbus_espi::SmbusEspiMedium;
 use mctp_rs::smbus_espi::SmbusEspiReplyContext;
@@ -32,28 +31,75 @@ pub enum Error {
     Buffer(embedded_services::buffer::Error),
 }
 
+/// The memory required by the eSPI service to run
+pub struct Resources<'hw, RelayHandler: embedded_services::relay::mctp::RelayHandler> {
+    inner: Option<ServiceInner<'hw, RelayHandler>>,
+}
+
+impl<'hw, RelayHandler: embedded_services::relay::mctp::RelayHandler> Default for Resources<'hw, RelayHandler> {
+    fn default() -> Self {
+        Self { inner: None }
+    }
+}
+
+/// Service runner for the eSPI service.  Users must call the run() method on the service to start processing events.
+pub struct Runner<'hw, RelayHandler: embedded_services::relay::mctp::RelayHandler> {
+    inner: &'hw ServiceInner<'hw, RelayHandler>,
+}
+
+impl<'hw, RelayHandler: embedded_services::relay::mctp::RelayHandler> embedded_services::service::ServiceRunner<'hw>
+    for Runner<'hw, RelayHandler>
+{
+    /// Run the service event loop.
+    async fn run(self) -> embedded_services::Never {
+        self.inner.run().await
+    }
+}
+
 pub struct Service<'hw, RelayHandler: embedded_services::relay::mctp::RelayHandler> {
+    _inner: &'hw ServiceInner<'hw, RelayHandler>,
+}
+
+impl<'hw, RelayHandler: embedded_services::relay::mctp::RelayHandler> embedded_services::service::Service<'hw>
+    for Service<'hw, RelayHandler>
+{
+    type Resources = Resources<'hw, RelayHandler>;
+    type Runner = Runner<'hw, RelayHandler>;
+    type ErrorType = core::convert::Infallible;
+    type InitParams = InitParams<'hw, RelayHandler>;
+
+    async fn new(
+        resources: &'hw mut Self::Resources,
+        params: InitParams<'hw, RelayHandler>,
+    ) -> Result<(Self, Self::Runner), core::convert::Infallible> {
+        let inner = resources.inner.insert(ServiceInner::new(params).await);
+        Ok((Self { _inner: inner }, Runner { inner }))
+    }
+}
+
+pub struct InitParams<'hw, RelayHandler: embedded_services::relay::mctp::RelayHandler> {
+    pub espi: espi::Espi<'hw>,
+    pub relay_handler: RelayHandler,
+}
+
+struct ServiceInner<'hw, RelayHandler: embedded_services::relay::mctp::RelayHandler> {
     espi: Mutex<GlobalRawMutex, espi::Espi<'hw>>,
     host_tx_queue: Channel<GlobalRawMutex, HostResultMessage<RelayHandler>, HOST_TX_QUEUE_SIZE>,
     relay_handler: RelayHandler,
 }
 
-impl<'hw, RelayHandler: embedded_services::relay::mctp::RelayHandler> Service<'hw, RelayHandler> {
-    pub async fn init(
-        service_storage: &'hw OnceLock<Self>,
-        mut espi: espi::Espi<'hw>,
-        relay_handler: RelayHandler,
-    ) -> &'hw Self {
-        espi.wait_for_plat_reset().await;
+impl<'hw, RelayHandler: embedded_services::relay::mctp::RelayHandler> ServiceInner<'hw, RelayHandler> {
+    async fn new(mut init_params: InitParams<'hw, RelayHandler>) -> Self {
+        init_params.espi.wait_for_plat_reset().await;
 
-        service_storage.get_or_init(|| Service {
-            espi: Mutex::new(espi),
+        Self {
+            espi: Mutex::new(init_params.espi),
             host_tx_queue: Channel::new(),
-            relay_handler,
-        })
+            relay_handler: init_params.relay_handler,
+        }
     }
 
-    pub(crate) async fn run_service(&self) -> ! {
+    async fn run(&self) -> embedded_services::Never {
         let mut espi = self.espi.lock().await;
         loop {
             let event = select(espi.wait_for_event(), self.host_tx_queue.receive()).await;
@@ -180,9 +226,7 @@ impl<'hw, RelayHandler: embedded_services::relay::mctp::RelayHandler> Service<'h
         }
         Ok(())
     }
-}
 
-impl<'hw, RelayHandler: embedded_services::relay::mctp::RelayHandler> Service<'hw, RelayHandler> {
     async fn process_request_to_ec(
         &self,
         (header, body): (
