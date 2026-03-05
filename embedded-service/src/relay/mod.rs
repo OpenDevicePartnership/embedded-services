@@ -164,6 +164,9 @@ pub mod mctp {
         type ResultEnumType: for<'buf> mctp_rs::MctpMessageTrait<'buf, Header = Self::HeaderType>
             + RelayResponse<Self::ServiceIdType, Self::HeaderType>;
 
+        /// Returns a reference to the notification `Listener`.
+        fn notification_listener(&self) -> &crate::relay::notifications::Listener<'_>;
+
         /// Process the provided request and yield a result.
         fn process_request<'a>(
             &'a self,
@@ -449,6 +452,7 @@ pub mod mctp {
 
 
                     pub struct $relay_type_name<'hw> {
+                        listener: $crate::relay::notifications::Listener<'hw>,
                         $(
                             [<$service_name:snake _handler>]: &'hw $service_handler_type,
                         )+
@@ -456,11 +460,13 @@ pub mod mctp {
 
                     impl<'hw> $relay_type_name<'hw> {
                         pub fn new(
+                            listener: $crate::relay::notifications::Listener<'hw>,
                             $(
                                 [<$service_name:snake _handler>]: &'hw $service_handler_type,
                             )+
                         ) -> Self {
                             Self {
+                                listener,
                                 $(
                                     [<$service_name:snake _handler>],
                                 )+
@@ -473,6 +479,10 @@ pub mod mctp {
                         type HeaderType = OdpHeader;
                         type RequestEnumType = HostRequest;
                         type ResultEnumType = HostResult;
+
+                        fn notification_listener(&self) -> & $crate::relay::notifications::Listener<'_> {
+                            &self.listener
+                        }
 
                         fn process_request<'a>(
                             &'a self,
@@ -500,4 +510,130 @@ pub mod mctp {
     } // end macro
 
     pub use impl_odp_mctp_relay_handler;
+}
+
+/// Relay service notification support.
+pub mod notifications {
+    use crate::GlobalRawMutex;
+    use core::sync::atomic::{AtomicBool, Ordering};
+    use embassy_sync::channel;
+
+    /// Notification error.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    #[cfg_attr(feature = "defmt", derive(defmt::Format))]
+    pub enum Error {
+        /// A notification is currently being processed.
+        Busy,
+        /// A [`Listener`] has already been instantiated.
+        ListenerInstantiated,
+    }
+
+    /// Notifier.
+    ///
+    /// Used by services to send notifications to the relay service.
+    pub struct Notifier<'ch> {
+        id: u8,
+        sender: channel::Sender<'ch, GlobalRawMutex, u8, 1>,
+    }
+
+    impl<'ch> Notifier<'ch> {
+        /// Notify the relay service that the service holding this [`Notifier`] needs attention from the host.
+        ///
+        /// This will wait if a different notification is currently being processed.
+        pub async fn notify(&self) {
+            self.sender.send(self.id).await
+        }
+
+        /// Try to notify the relay service that the service holding this [`Notifier`] needs attention from the host.
+        ///
+        /// # Errors
+        ///
+        /// Returns [`Error::Busy`] if a different notification is currently being processed.
+        pub fn try_notify(&self) -> Result<(), Error> {
+            self.sender.try_send(self.id).map_err(|_| Error::Busy)
+        }
+    }
+
+    /// Listener.
+    pub struct Listener<'ch> {
+        receiver: channel::Receiver<'ch, GlobalRawMutex, u8, 1>,
+    }
+
+    impl<'ch> Listener<'ch> {
+        /// Wait for a notification from any service, then returns the id associated with that notification.
+        pub async fn listen(&self) -> u8 {
+            self.receiver.receive().await
+        }
+
+        /// Try to listen for a notification from any service.
+        ///
+        /// Returns [`None`] if no notification is currently available.
+        pub fn try_listen(&self) -> Option<u8> {
+            self.receiver.try_receive().ok()
+        }
+    }
+
+    /// Notification handler.
+    pub struct NotificationHandler {
+        // The channel size is fixed to 1 (and not exposed as a configurable generic) so that
+        // it does not need to be exposed to consumers of `Notifier` and `Listener`.
+        //
+        // This is reasonable because notifications are expected to be handled quickly,
+        // and it is unlikely that multiple services will need to notify the host simultaneously.
+        //
+        // In the event that they do, the channel still provides backpressure so no notifications
+        // will be lost and the expected latency is minimal.
+        channel: channel::Channel<GlobalRawMutex, u8, 1>,
+        listener_instantiated: AtomicBool,
+    }
+
+    impl Default for NotificationHandler {
+        fn default() -> Self {
+            Self::new()
+        }
+    }
+
+    impl NotificationHandler {
+        /// Create a new [`NotificationHandler`] instance.
+        ///
+        /// This handler allows as many [`Notifier`]s to be created as needed,
+        /// but only one [`Listener`] may be created.
+        pub fn new() -> Self {
+            Self {
+                channel: channel::Channel::new(),
+                listener_instantiated: AtomicBool::new(false),
+            }
+        }
+
+        /// Create a new [`Notifier`] instance with given id.
+        ///
+        /// This [`Notifier`] is then typically passed to services upon instantiation.
+        ///
+        /// The meaning of the id is platform specific and is opaque to services,
+        /// but expectation is that the relay service understands how to interpret the id.
+        ///
+        /// Thus, the caller should ensure the given id matches what the relay service expects.
+        pub fn new_notifier(&self, id: u8) -> Notifier<'_> {
+            Notifier {
+                id,
+                sender: self.channel.sender(),
+            }
+        }
+
+        /// Create a new [`Listener`] instance.
+        ///
+        /// # Errors
+        ///
+        /// Only one [`Listener`] may exist.
+        /// Attempting to create another will return [`Error::ListenerInstantiated`].
+        pub fn new_listener(&self) -> Result<Listener<'_>, Error> {
+            if !self.listener_instantiated.swap(true, Ordering::Relaxed) {
+                Ok(Listener {
+                    receiver: self.channel.receiver(),
+                })
+            } else {
+                Err(Error::ListenerInstantiated)
+            }
+        }
+    }
 }

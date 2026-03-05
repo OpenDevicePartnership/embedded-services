@@ -4,6 +4,7 @@
 #![allow(clippy::unwrap_used)]
 
 use embedded_sensors_hal_async::temperature::DegreesCelsius;
+use embedded_services::relay::notifications::Notifier;
 use thermal_service_messages::{ThermalRequest, ThermalResult};
 
 mod context;
@@ -36,6 +37,7 @@ pub enum Event {
 
 pub struct Service<'hw> {
     context: context::Context<'hw>,
+    notifier: Notifier<'hw>,
 }
 
 impl<'hw> Service<'hw> {
@@ -43,14 +45,21 @@ impl<'hw> Service<'hw> {
         service_storage: &'hw embassy_sync::once_lock::OnceLock<Service<'hw>>,
         sensors: &'hw [&'hw sensor::Device],
         fans: &'hw [&'hw fan::Device],
+        notifier: Notifier<'hw>,
     ) -> &'hw Self {
         service_storage.get_or_init(|| Self {
             context: context::Context::new(sensors, fans),
+            notifier,
         })
     }
 
     /// Send a thermal event
     pub async fn send_event(&self, event: Event) {
+        // If a threshold event is triggered, we want to notify host
+        if matches!(event, Event::ThresholdExceeded(_, _, _) | Event::ThresholdCleared(_, _)) {
+            self.notifier.notify().await;
+        }
+
         self.context.send_event(event).await
     }
 
