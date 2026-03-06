@@ -3,11 +3,10 @@ use embassy_sync::{
     mutex::Mutex,
     pubsub::{DynImmediatePublisher, DynSubscriber},
 };
-use embedded_services::{
-    GlobalRawMutex, debug, error, event::Receiver, info, intrusive_list, ipc::deferred, sync::Lockable, trace,
-};
+use embedded_services::{GlobalRawMutex, debug, error, info, intrusive_list, ipc::deferred, sync::Lockable, trace};
 use embedded_usb_pd::GlobalPortId;
 use embedded_usb_pd::PdError as Error;
+use power_policy_interface::psu;
 
 use crate::type_c::{
     self, Cached, comms,
@@ -43,7 +42,10 @@ struct State {
 ///
 /// Constructing a Service is the first step in using the Type-C service.
 /// Arguments should be an initialized context
-pub struct Service<'a> {
+pub struct Service<'a, PSU: Lockable>
+where
+    PSU::Inner: psu::Psu,
+{
     /// Type-C context
     context: &'a type_c::controller::Context,
     /// Controller intrusive list
@@ -56,14 +58,14 @@ pub struct Service<'a> {
     ///
     /// This is the corresponding publisher to [`Self::power_policy_event_subscriber`], power policy events
     /// will be buffered in the channel until they are brought into the event loop with the subscriber.
-    power_policy_event_publisher:
-        embedded_services::broadcaster::immediate::Receiver<'a, power_policy_interface::service::event::CommsMessage>,
+    _power_policy_event_publisher:
+        embedded_services::broadcaster::immediate::Receiver<'a, power_policy_interface::service::event::Event<'a, PSU>>,
     /// Power policy event subscriber
     ///
     /// This is the corresponding subscriber to [`Self::power_policy_event_publisher`], needs to be a mutex because getting a message
     /// from the channel requires mutable access.
     power_policy_event_subscriber:
-        Mutex<GlobalRawMutex, DynSubscriber<'a, power_policy_interface::service::event::CommsMessage>>,
+        Mutex<GlobalRawMutex, DynSubscriber<'a, power_policy_interface::service::event::Event<'a, PSU>>>,
 }
 
 /// Power policy events
@@ -91,20 +93,23 @@ pub enum Event<'a> {
     PowerPolicy(PowerPolicyEvent),
 }
 
-impl<'a> Service<'a> {
+impl<'a, PSU: Lockable> Service<'a, PSU>
+where
+    PSU::Inner: psu::Psu,
+{
     /// Create a new service the given configuration
     pub fn create(
         config: config::Config,
         context: &'a crate::type_c::controller::Context,
         controller_list: &'a intrusive_list::IntrusiveList,
-        power_policy_publisher: DynImmediatePublisher<'a, power_policy_interface::service::event::CommsMessage>,
-        power_policy_subscriber: DynSubscriber<'a, power_policy_interface::service::event::CommsMessage>,
+        power_policy_publisher: DynImmediatePublisher<'a, power_policy_interface::service::event::Event<'a, PSU>>,
+        power_policy_subscriber: DynSubscriber<'a, power_policy_interface::service::event::Event<'a, PSU>>,
     ) -> Self {
         Self {
             context,
             state: Mutex::new(State::default()),
             config,
-            power_policy_event_publisher: power_policy_publisher.into(),
+            _power_policy_event_publisher: power_policy_publisher.into(),
             power_policy_event_subscriber: Mutex::new(power_policy_subscriber),
             controllers: controller_list,
         }
@@ -249,20 +254,6 @@ impl<'a> Service<'a> {
     pub async fn process_next_event(&self) -> Result<(), Error> {
         let event = self.wait_next().await?;
         self.process_event(event).await
-    }
-
-    /// Register the Type-C service with the power policy service
-    pub fn register_comms<
-        PD: Lockable + 'static,
-        PR: Receiver<power_policy_interface::psu::event::RequestData> + 'static,
-    >(
-        &'static self,
-        power_policy_context: &power_policy_service::service::context::Context<PD, PR>,
-    ) -> Result<(), intrusive_list::Error>
-    where
-        PD::Inner: power_policy_interface::psu::Psu,
-    {
-        power_policy_context.register_message_receiver(&self.power_policy_event_publisher)
     }
 
     pub(crate) fn controllers(&self) -> &'a intrusive_list::IntrusiveList {

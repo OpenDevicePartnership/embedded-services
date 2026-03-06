@@ -1898,7 +1898,6 @@ dependencies = [
  "heapless",
  "log",
  "power-policy-interface",
- "power-policy-service",
  "tps6699x",
 ]
 

@@ -7,7 +7,6 @@ use embassy_sync::channel::TrySendError;
 use embassy_sync::mutex::Mutex;
 use embassy_time::{Duration, with_timeout};
 use embedded_services::GlobalRawMutex;
-use embedded_services::comms::MailboxDelegateError;
 use embedded_services::{IntrusiveList, debug, error, info, intrusive_list, trace, warn};
 use power_policy_interface::capability::PowerCapability;
 
@@ -517,7 +516,9 @@ impl Context {
         *self.power_info.lock().await
     }
 
-    pub(crate) fn set_power_info(
+    // TODO: bring this back after moving away from comms for power policy
+    // See https://github.com/OpenDevicePartnership/embedded-services/issues/742
+    /*pub(crate) fn set_power_info(
         &self,
         power_info: &power_policy_interface::service::event::CommsData,
     ) -> Result<(), MailboxDelegateError> {
@@ -546,7 +547,7 @@ impl Context {
 
         trace!("Battery: PSU state: {:?}", psu_state);
         Ok(())
-    }
+    }*/
 }
 
 impl Default for Context {

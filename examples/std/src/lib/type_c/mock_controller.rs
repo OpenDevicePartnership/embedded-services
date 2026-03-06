@@ -342,7 +342,6 @@ pub type Wrapper<'a> = type_c_service::wrapper::ControllerWrapper<
     'a,
     GlobalRawMutex,
     Mutex<GlobalRawMutex, Controller<'a>>,
-    channel::DynamicSender<'a, power_policy_interface::psu::event::RequestData>,
-    channel::DynamicReceiver<'a, power_policy_interface::psu::event::RequestData>,
+    channel::DynamicSender<'a, power_policy_interface::psu::event::EventData>,
     Validator,
 >;

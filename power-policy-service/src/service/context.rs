@@ -1,64 +1,27 @@
 //! Context for any power policy implementations
-use core::marker::PhantomData;
-use core::pin::pin;
-
-use embassy_futures::select::select_slice;
-use embedded_services::broadcaster::immediate as broadcaster;
-use embedded_services::event::Receiver;
-use embedded_services::sync::Lockable;
-use power_policy_interface::charger;
-use power_policy_interface::psu::Psu;
-use power_policy_interface::psu::event::Request;
-
 use embedded_services::{error, intrusive_list};
+use power_policy_interface::charger;
 use power_policy_interface::charger::ChargerResponse;
-use power_policy_interface::psu::{self, DeviceId, Error, event::RequestData};
-use power_policy_interface::service::event::CommsMessage;
+use power_policy_interface::psu::Error;
 
 /// Power policy context
-pub struct Context<D: Lockable, R: Receiver<RequestData>>
-where
-    D::Inner: Psu,
-{
-    /// Registered devices
-    psu_devices: intrusive_list::IntrusiveList,
+pub struct Context {
     /// Registered chargers
     charger_devices: intrusive_list::IntrusiveList,
-    /// Message broadcaster
-    broadcaster: broadcaster::Immediate<CommsMessage>,
-    _phantom: PhantomData<(D, R)>,
 }
 
-impl<D: Lockable + 'static, R: Receiver<RequestData> + 'static> Default for Context<D, R>
-where
-    D::Inner: Psu,
-{
+impl Default for Context {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<D: Lockable + 'static, R: Receiver<RequestData> + 'static> Context<D, R>
-where
-    D::Inner: Psu,
-{
+impl Context {
     /// Construct a new power policy Context
     pub const fn new() -> Self {
         Self {
-            psu_devices: intrusive_list::IntrusiveList::new(),
             charger_devices: intrusive_list::IntrusiveList::new(),
-            broadcaster: broadcaster::Immediate::new(),
-            _phantom: PhantomData,
         }
-    }
-
-    /// Register a power device with the service
-    pub fn register_psu(&self, psu: &'static impl psu::PsuContainer<D, R>) -> Result<(), intrusive_list::Error> {
-        let psu = psu.get_power_policy_device();
-        if self.get_psu(psu.id()).is_ok() {
-            return Err(intrusive_list::Error::NodeAlreadyInList);
-        }
-        self.psu_devices.push(psu)
     }
 
     /// Register a charger with the power policy service
@@ -72,35 +35,6 @@ where
         }
 
         self.charger_devices.push(charger)
-    }
-
-    /// Get a PSU by its ID
-    pub fn get_psu(&self, id: DeviceId) -> Result<&'static psu::RegistrationEntry<'static, D, R>, Error> {
-        for psu in &self.psu_devices {
-            if let Some(data) = psu.data::<psu::RegistrationEntry<'static, D, R>>() {
-                if data.id() == id {
-                    return Ok(data);
-                }
-            } else {
-                error!("Non-device located in devices list");
-            }
-        }
-
-        Err(Error::InvalidDevice)
-    }
-
-    /// Returns the total amount of power that is being supplied to external devices
-    pub async fn compute_total_provider_power_mw(&self) -> u32 {
-        let mut total = 0;
-        for psu in self.psu_devices.iter_only::<psu::RegistrationEntry<'static, D, R>>() {
-            if let Some(capability) = psu.provider_capability().await {
-                if psu.is_provider().await {
-                    total += capability.capability.max_power_mw();
-                }
-            }
-        }
-
-        total
     }
 
     /// Get a charger by its ID
@@ -142,14 +76,6 @@ where
         Ok(charger::ChargerResponseData::Ack)
     }
 
-    /// Register a message receiver for power policy messages
-    pub fn register_message_receiver(
-        &self,
-        receiver: &'static broadcaster::Receiver<'_, CommsMessage>,
-    ) -> intrusive_list::Result<()> {
-        self.broadcaster.register_receiver(receiver)
-    }
-
     /// Initialize Policy charger devices
     pub async fn init(&self) -> Result<(), Error> {
         // Check if the chargers are powered and able to communicate
@@ -160,48 +86,8 @@ where
         Ok(())
     }
 
-    /// Provides access to the PSU device list
-    pub fn psu_devices(&self) -> &intrusive_list::IntrusiveList {
-        &self.psu_devices
-    }
-
     /// Provides access to the charger list
     pub fn charger_devices(&self) -> &intrusive_list::IntrusiveList {
         &self.charger_devices
     }
-
-    /// Broadcast a power policy message to all subscribers
-    pub async fn broadcast_message(&self, message: CommsMessage) {
-        self.broadcaster.broadcast(message).await;
-    }
-
-    /// Get the next pending device event
-    pub async fn wait_request(&self) -> Request {
-        let mut futures = heapless::Vec::<_, 16>::new();
-        for psu in self.psu_devices().iter_only::<psu::RegistrationEntry<'static, D, R>>() {
-            // TODO: Validate Vec size at compile time
-            if futures
-                .push(async { psu.receiver.lock().await.wait_next().await })
-                .is_err()
-            {
-                error!("Futures vec overflow");
-            }
-        }
-
-        let (event, index) = select_slice(pin!(&mut futures)).await;
-        // Panic safety: The index is guaranteed to be within bounds since it comes from the select_slice result
-        #[allow(clippy::unwrap_used)]
-        let psu = self
-            .psu_devices()
-            .iter_only::<psu::RegistrationEntry<'static, D, R>>()
-            .nth(index)
-            .unwrap();
-        Request {
-            id: psu.id(),
-            data: event,
-        }
-    }
 }
-
-/// Init power policy service
-pub fn init() {}

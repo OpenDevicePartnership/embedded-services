@@ -1,220 +1,230 @@
 //! Power policy related data structures and messages
+use core::ptr;
+
 pub mod config;
 pub mod consumer;
 pub mod context;
 pub mod provider;
 pub mod task;
 
-pub use context::init;
-use embassy_sync::mutex::Mutex;
-use embedded_services::{GlobalRawMutex, comms, error, event::Receiver, info, sync::Lockable};
+use embedded_services::{error, info, sync::Lockable};
 
 use power_policy_interface::{
     capability::{ConsumerPowerCapability, PowerCapability, ProviderPowerCapability},
     psu::{
-        DeviceId, Error, Psu, RegistrationEntry,
-        event::{Request, RequestData},
+        Error, Psu,
+        event::{Event as PsuEvent, EventData as PsuEventData},
     },
-    service::{
-        UnconstrainedState,
-        event::{CommsData, CommsMessage},
-    },
+    service::{UnconstrainedState, event::Event as ServiceEvent},
 };
 
 const MAX_CONNECTED_PROVIDERS: usize = 4;
 
-#[derive(Clone, Default)]
-struct InternalState {
+#[derive(Clone)]
+struct InternalState<'device, D: Lockable>
+where
+    D::Inner: Psu,
+{
     /// Current consumer state, if any
-    current_consumer_state: Option<consumer::AvailableConsumer>,
+    current_consumer_state: Option<consumer::AvailableConsumer<'device, D>>,
     /// Current provider global state
     current_provider_state: provider::State,
     /// System unconstrained power
     unconstrained: UnconstrainedState,
     /// Connected providers
-    connected_providers: heapless::FnvIndexSet<DeviceId, MAX_CONNECTED_PROVIDERS>,
+    connected_providers: heapless::FnvIndexSet<usize, MAX_CONNECTED_PROVIDERS>,
 }
 
-/// Power policy service
-pub struct Service<'a, D: Lockable, R: Receiver<RequestData>>
+impl<D: Lockable> Default for InternalState<'_, D>
 where
     D::Inner: Psu,
 {
+    fn default() -> Self {
+        Self {
+            current_consumer_state: None,
+            current_provider_state: provider::State::default(),
+            unconstrained: UnconstrainedState::default(),
+            connected_providers: heapless::FnvIndexSet::new(),
+        }
+    }
+}
+
+/// Power policy service
+pub struct Service<'a, PSU: Lockable>
+where
+    PSU::Inner: Psu,
+{
     /// Power policy context
-    pub context: &'a context::Context<D, R>,
+    pub context: &'a context::Context,
+    /// PSU devices
+    psu_devices: &'a [&'a PSU],
     /// State
-    state: Mutex<GlobalRawMutex, InternalState>,
-    /// Comms endpoint
-    tp: comms::Endpoint,
+    state: InternalState<'a, PSU>,
     /// Config
     config: config::Config,
 }
 
-impl<'a, D: Lockable + 'static, R: Receiver<RequestData> + 'static> Service<'a, D, R>
+impl<'a, PSU: Lockable> Service<'a, PSU>
 where
-    D::Inner: Psu,
+    PSU::Inner: Psu,
 {
     /// Create a new power policy
-    pub fn new(context: &'a context::Context<D, R>, config: config::Config) -> Self {
+    pub fn new(psu_devices: &'a [&'a PSU], context: &'a context::Context, config: config::Config) -> Self {
         Self {
             context,
-            state: Mutex::new(InternalState::default()),
-            tp: comms::Endpoint::uninit(comms::EndpointID::Internal(comms::Internal::Power)),
+            psu_devices,
+            state: InternalState::default(),
             config,
         }
     }
 
-    async fn process_notify_attach(&self, device: &RegistrationEntry<'_, D, R>) {
-        if let Err(e) = device.state.lock().await.attach() {
-            error!("Device{}: Invalid state for attach: {:#?}", device.id().0, e);
+    /// Returns the total amount of power that is being supplied to external devices
+    pub async fn compute_total_provider_power_mw(&self) -> u32 {
+        let mut total = 0;
+
+        for psu in self.psu_devices.iter() {
+            let psu = psu.lock().await;
+            total += psu
+                .state()
+                .connected_provider_capability()
+                .map(|cap| cap.capability.max_power_mw())
+                .unwrap_or(0);
+        }
+
+        total
+    }
+
+    async fn process_notify_attach(&self, device: &PSU) {
+        let mut device = device.lock().await;
+        info!("({}): Received notify attached", device.name());
+        if let Err(e) = device.state_mut().attach() {
+            error!("({}): Invalid state for attach: {:#?}", device.name(), e);
         }
     }
 
-    async fn process_notify_detach(&self, device: &RegistrationEntry<'_, D, R>) -> Result<(), Error> {
-        device.state.lock().await.detach();
+    async fn process_notify_detach(&mut self, device: &PSU) -> Result<(), Error> {
+        {
+            let mut device = device.lock().await;
+            info!("({}): Received notify detached", device.name());
+            device.state_mut().detach();
+        }
         self.update_current_consumer().await
     }
 
     async fn process_notify_consumer_power_capability(
-        &self,
-        device: &RegistrationEntry<'_, D, R>,
+        &mut self,
+        device: &PSU,
         capability: Option<ConsumerPowerCapability>,
     ) -> Result<(), Error> {
-        if let Err(e) = device.state.lock().await.update_consumer_power_capability(capability) {
-            error!(
-                "Device{}: Invalid state for notify consumer capability, catching up: {:#?}",
-                device.id().0,
-                e,
+        {
+            let mut device = device.lock().await;
+            info!(
+                "({}): Received notify consumer capability: {:#?}",
+                device.name(),
+                capability,
             );
+            if let Err(e) = device.state_mut().update_consumer_power_capability(capability) {
+                error!(
+                    "({}): Invalid state for notify consumer capability, catching up: {:#?}",
+                    device.name(),
+                    e,
+                );
+            }
         }
 
         self.update_current_consumer().await
     }
 
     async fn process_request_provider_power_capabilities(
-        &self,
-        device: &RegistrationEntry<'_, D, R>,
+        &mut self,
+        requester: &'a PSU,
         capability: Option<ProviderPowerCapability>,
     ) -> Result<(), Error> {
-        if let Err(e) = device
-            .state
-            .lock()
-            .await
-            .update_requested_provider_power_capability(capability)
         {
-            error!(
-                "Device{}: Invalid state for notify consumer capability, catching up: {:#?}",
-                device.id().0,
-                e,
+            let mut requester = requester.lock().await;
+            info!(
+                "({}): Received request provider capability: {:#?}",
+                requester.name(),
+                capability,
             );
+            if let Err(e) = requester
+                .state_mut()
+                .update_requested_provider_power_capability(capability)
+            {
+                error!(
+                    "({}): Invalid state for notify consumer capability, catching up: {:#?}",
+                    requester.name(),
+                    e,
+                );
+            }
         }
 
-        self.connect_provider(device.id()).await
+        self.connect_provider(requester).await
     }
 
-    async fn process_notify_disconnect(&self, device: &RegistrationEntry<'_, D, R>) -> Result<(), Error> {
-        if let Err(e) = device.state.lock().await.disconnect(true) {
+    async fn process_notify_disconnect(&mut self, device: &'a PSU) -> Result<(), Error> {
+        let mut locked_device = device.lock().await;
+        info!("({}): Received notify disconnect", locked_device.name());
+
+        if let Err(e) = locked_device.state_mut().disconnect(true) {
             error!(
-                "Device{}: Invalid state for notify disconnect, catching up: {:#?}",
-                device.id().0,
+                "({}): Invalid state for notify disconnect, catching up: {:#?}",
+                locked_device.name(),
                 e,
             );
         }
 
         if self
             .state
-            .lock()
-            .await
             .current_consumer_state
-            .is_some_and(|current| current.device_id == device.id())
+            .as_ref()
+            .is_some_and(|current| ptr::eq(current.psu, device))
         {
-            info!("Device{}: Connected consumer disconnected", device.id().0);
+            info!("({}): Connected consumer disconnected", locked_device.name());
             self.disconnect_chargers().await?;
 
-            self.comms_notify(CommsMessage {
-                data: CommsData::ConsumerDisconnected(device.id()),
-            })
-            .await;
+            self.broadcast_event(ServiceEvent::ConsumerDisconnected(device)).await;
         }
 
-        self.remove_connected_provider(device.id()).await;
+        self.remove_connected_provider(device).await;
         self.update_current_consumer().await?;
         Ok(())
     }
 
-    /// Send a notification with the comms service
-    async fn comms_notify(&self, message: CommsMessage) {
-        self.context.broadcast_message(message).await;
-        let _ = self
-            .tp
-            .send(comms::EndpointID::Internal(comms::Internal::Battery), &message)
-            .await;
+    /// Send an event to all registered listeners
+    async fn broadcast_event(&mut self, _message: ServiceEvent<'a, PSU>) {
+        // TODO: Add this back as part of the migration away from comms
+        // See https://github.com/OpenDevicePartnership/embedded-services/issues/742
     }
 
     /// Common logic for when a provider is disconnected
     ///
     /// Returns true if the device was operating as a provider
-    async fn remove_connected_provider(&self, device_id: DeviceId) -> bool {
-        if self.state.lock().await.connected_providers.remove(&device_id) {
-            self.comms_notify(CommsMessage {
-                data: CommsData::ProviderDisconnected(device_id),
-            })
-            .await;
+    async fn remove_connected_provider(&mut self, psu: &'a PSU) -> bool {
+        if self.state.connected_providers.remove(&(psu as *const PSU as usize)) {
+            self.broadcast_event(ServiceEvent::ProviderDisconnected(psu)).await;
             true
         } else {
             false
         }
     }
 
-    async fn wait_request(&self) -> Request {
-        self.context.wait_request().await
-    }
-
-    async fn process_request(&self, request: Request) -> Result<(), Error> {
-        let device = self.context.get_psu(request.id)?;
-
-        match request.data {
-            RequestData::Attached => {
-                info!("Received notify attached from device {}", device.id().0);
+    pub async fn process_psu_event(&mut self, event: PsuEvent<'a, PSU>) -> Result<(), Error> {
+        let device = event.psu;
+        match event.event {
+            PsuEventData::Attached => {
                 self.process_notify_attach(device).await;
                 Ok(())
             }
-            RequestData::Detached => {
-                info!("Received notify detached from device {}", device.id().0);
-                self.process_notify_detach(device).await
-            }
-            RequestData::UpdatedConsumerCapability(capability) => {
-                info!(
-                    "Device{}: Received notify consumer capability: {:#?}",
-                    device.id().0,
-                    capability,
-                );
+            PsuEventData::Detached => self.process_notify_detach(device).await,
+            PsuEventData::UpdatedConsumerCapability(capability) => {
                 self.process_notify_consumer_power_capability(device, capability).await
             }
-            RequestData::RequestedProviderCapability(capability) => {
-                info!(
-                    "Device{}: Received request provider capability: {:#?}",
-                    device.id().0,
-                    capability,
-                );
+            PsuEventData::RequestedProviderCapability(capability) => {
                 self.process_request_provider_power_capabilities(device, capability)
                     .await
             }
-            RequestData::Disconnected => {
-                info!("Received notify disconnect from device {}", device.id().0);
-                self.process_notify_disconnect(device).await
-            }
+            PsuEventData::Disconnected => self.process_notify_disconnect(device).await,
         }
     }
-
-    /// Top-level event loop function
-    pub async fn process(&self) -> Result<(), Error> {
-        let request = self.wait_request().await;
-        self.process_request(request).await
-    }
-}
-
-impl<D: Lockable + 'static, R: Receiver<RequestData> + 'static> comms::MailboxDelegate for Service<'_, D, R> where
-    D::Inner: Psu
-{
 }

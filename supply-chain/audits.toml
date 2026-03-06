@@ -254,10 +254,20 @@ who = "Robert Zieba <robertzieba@microsoft.com>"
 criteria = "safe-to-run"
 version = "0.2.18"
 
+[[audits.jiff]]
+who = "Robert Zieba <robertzieba@microsoft.com>"
+criteria = "safe-to-run"
+version = "0.2.20"
+
 [[audits.jiff-static]]
 who = "Robert Zieba <robertzieba@microsoft.com>"
 criteria = "safe-to-run"
 version = "0.2.18"
+
+[[audits.jiff-static]]
+who = "Robert Zieba <robertzieba@microsoft.com>"
+criteria = "safe-to-run"
+version = "0.2.20"
 
 [[audits.libc]]
 who = "Robert Zieba <robertzieba@microsoft.com>"
@@ -360,6 +370,11 @@ version = "1.11.1"
 who = "Robert Zieba <robertzieba@microsoft.com>"
 criteria = "safe-to-run"
 version = "0.2.4"
+
+[[audits.portable-atomic-util]]
+who = "Robert Zieba <robertzieba@microsoft.com>"
+criteria = "safe-to-run"
+version = "0.2.5"
 
 [[audits.proc-macro-error]]
 who = "Jerry Xie <jerryxie@microsoft.com>"

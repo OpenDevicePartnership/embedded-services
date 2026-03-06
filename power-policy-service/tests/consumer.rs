@@ -2,12 +2,13 @@
 use embassy_sync::{channel::DynamicSender, mutex::Mutex, signal::Signal};
 use embassy_time::{Duration, TimeoutError, with_timeout};
 use embedded_services::GlobalRawMutex;
+use embedded_services::info;
 use power_policy_interface::capability::{ConsumerFlags, ConsumerPowerCapability};
-use power_policy_interface::psu::event::RequestData;
 
 mod common;
 
 use common::LOW_POWER;
+use power_policy_interface::psu::event::EventData;
 
 use crate::common::{
     DEFAULT_TIMEOUT, HIGH_POWER,
@@ -19,9 +20,12 @@ const PER_CALL_TIMEOUT: Duration = Duration::from_millis(1000);
 
 /// Test the basic consumer flow with a single device.
 async fn test_single(
-    device0: &'static Mutex<GlobalRawMutex, Mock<'static, DynamicSender<'static, RequestData>>>,
-    device0_signal: &'static Signal<GlobalRawMutex, (usize, FnCall)>,
+    device0: &Mutex<GlobalRawMutex, Mock<'_, DynamicSender<'_, EventData>>>,
+    device0_signal: &Signal<GlobalRawMutex, (usize, FnCall)>,
+    _device1: &Mutex<GlobalRawMutex, Mock<'_, DynamicSender<'_, EventData>>>,
+    _device1_signal: &Signal<GlobalRawMutex, (usize, FnCall)>,
 ) {
+    info!("Running test_single");
     // Test initial connection
     {
         device0.lock().await.simulate_consumer_connection(LOW_POWER).await;
@@ -53,11 +57,12 @@ async fn test_single(
 
 /// Test swapping to a higher powered device.
 async fn test_swap_higher(
-    device0: &'static Mutex<GlobalRawMutex, Mock<'static, DynamicSender<'static, RequestData>>>,
-    device0_signal: &'static Signal<GlobalRawMutex, (usize, FnCall)>,
-    device1: &'static Mutex<GlobalRawMutex, Mock<'static, DynamicSender<'static, RequestData>>>,
-    device1_signal: &'static Signal<GlobalRawMutex, (usize, FnCall)>,
+    device0: &Mutex<GlobalRawMutex, Mock<'_, DynamicSender<'_, EventData>>>,
+    device0_signal: &Signal<GlobalRawMutex, (usize, FnCall)>,
+    device1: &Mutex<GlobalRawMutex, Mock<'_, DynamicSender<'_, EventData>>>,
+    device1_signal: &Signal<GlobalRawMutex, (usize, FnCall)>,
 ) {
+    info!("Running test_swap_higher");
     // Device0 connection at low power
     {
         device0.lock().await.simulate_consumer_connection(LOW_POWER).await;
@@ -120,15 +125,13 @@ async fn test_swap_higher(
     }
 }
 
-/// Run all tests, this is temporary to deal with 'static lifetimes until the intrusive list refactor is done.
 #[tokio::test]
 async fn run_all_tests() {
-    run_test(
-        DEFAULT_TIMEOUT,
-        |device0, device0_signal, device1, device1_signal| async move {
-            test_single(device0, device0_signal).await;
-            test_swap_higher(device0, device0_signal, device1, device1_signal).await;
-        },
-    )
-    .await;
+    run_test(DEFAULT_TIMEOUT, test_swap_higher).await;
+}
+
+/// Run all tests, this is temporary to deal with 'static lifetimes until the intrusive list refactor is done.
+#[tokio::test]
+async fn run_test_single() {
+    run_test(DEFAULT_TIMEOUT, test_single).await;
 }

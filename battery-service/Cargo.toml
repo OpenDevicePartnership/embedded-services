@@ -32,17 +32,17 @@ defmt = [
     "dep:defmt",
     "battery-service-messages/defmt",
     "embedded-services/defmt",
-    "power-policy-interface/defmt",
     "embassy-time/defmt",
     "embassy-sync/defmt",
     "embedded-batteries-async/defmt",
     "mctp-rs/defmt",
+    "power-policy-interface/defmt",
 ]
 log = [
     "dep:log",
     "embedded-services/log",
-    "power-policy-interface/log",
     "embassy-time/log",
     "embassy-sync/log",
+    "power-policy-interface/log",
 ]
 mock = []

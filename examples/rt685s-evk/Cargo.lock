@@ -1683,7 +1683,6 @@ dependencies = [
  "embedded-usb-pd",
  "heapless",
  "power-policy-interface",
- "power-policy-service",
  "tps6699x",
 ]
 

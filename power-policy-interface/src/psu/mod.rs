@@ -1,10 +1,5 @@
 //! Device struct and methods
-use embassy_sync::mutex::Mutex;
-
 use crate::capability::{ConsumerPowerCapability, PowerCapability, ProviderPowerCapability};
-use embedded_services::event::Receiver;
-use embedded_services::sync::Lockable;
-use embedded_services::{GlobalRawMutex, intrusive_list};
 
 pub mod event;
 
@@ -34,11 +29,6 @@ pub enum Error {
     Failed,
 }
 
-/// Device ID new type
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct DeviceId(pub u8);
-
 /// Most basic device states
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
@@ -56,7 +46,7 @@ pub enum StateKind {
 /// Current state of the power device
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub enum State {
+pub enum PsuState {
     /// Device is attached, but is not currently providing or consuming power
     Idle,
     /// Device is attached and is currently providing power
@@ -67,14 +57,14 @@ pub enum State {
     Detached,
 }
 
-impl State {
-    /// Returns the correpsonding state kind
+impl PsuState {
+    /// Returns the corresponding state kind
     pub fn kind(&self) -> StateKind {
         match self {
-            State::Idle => StateKind::Idle,
-            State::ConnectedProvider(_) => StateKind::ConnectedProvider,
-            State::ConnectedConsumer(_) => StateKind::ConnectedConsumer,
-            State::Detached => StateKind::Detached,
+            PsuState::Idle => StateKind::Idle,
+            PsuState::ConnectedProvider(_) => StateKind::ConnectedProvider,
+            PsuState::ConnectedConsumer(_) => StateKind::ConnectedConsumer,
+            PsuState::Detached => StateKind::Detached,
         }
     }
 }
@@ -89,34 +79,34 @@ impl State {
 /// end up catching up to this state anyway.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct InternalState {
+pub struct State {
     /// Current state of the device
-    state: State,
+    pub psu_state: PsuState,
     /// Current consumer capability
-    consumer_capability: Option<ConsumerPowerCapability>,
+    pub consumer_capability: Option<ConsumerPowerCapability>,
     /// Current requested provider capability
-    requested_provider_capability: Option<ProviderPowerCapability>,
+    pub requested_provider_capability: Option<ProviderPowerCapability>,
 }
 
-impl Default for InternalState {
+impl Default for State {
     fn default() -> Self {
         Self {
-            state: State::Detached,
+            psu_state: PsuState::Detached,
             consumer_capability: None,
             requested_provider_capability: None,
         }
     }
 }
 
-impl InternalState {
+impl State {
     /// Attach the device
     pub fn attach(&mut self) -> Result<(), Error> {
-        let result = if self.state == State::Detached {
+        let result = if self.psu_state == PsuState::Detached {
             Ok(())
         } else {
-            Err(Error::InvalidState(&[StateKind::Detached], self.state.kind()))
+            Err(Error::InvalidState(&[StateKind::Detached], self.psu_state.kind()))
         };
-        self.state = State::Idle;
+        self.psu_state = PsuState::Idle;
         result
     }
 
@@ -124,22 +114,25 @@ impl InternalState {
     ///
     /// Detach is always a valid transition
     pub fn detach(&mut self) {
-        self.state = State::Detached;
+        self.psu_state = PsuState::Detached;
         self.consumer_capability = None;
         self.requested_provider_capability = None;
     }
 
     /// Disconnect this device
     pub fn disconnect(&mut self, clear_caps: bool) -> Result<(), Error> {
-        let result = if matches!(self.state, State::ConnectedConsumer(_) | State::ConnectedProvider(_)) {
+        let result = if matches!(
+            self.psu_state,
+            PsuState::ConnectedConsumer(_) | PsuState::ConnectedProvider(_)
+        ) {
             Ok(())
         } else {
             Err(Error::InvalidState(
                 &[StateKind::ConnectedConsumer, StateKind::ConnectedProvider],
-                self.state.kind(),
+                self.psu_state.kind(),
             ))
         };
-        self.state = State::Idle;
+        self.psu_state = PsuState::Idle;
         if clear_caps {
             self.consumer_capability = None;
             self.requested_provider_capability = None;
@@ -152,15 +145,15 @@ impl InternalState {
         &mut self,
         capability: Option<ConsumerPowerCapability>,
     ) -> Result<(), Error> {
-        let result = match self.state {
-            State::Idle | State::ConnectedConsumer(_) | State::ConnectedProvider(_) => Ok(()),
+        let result = match self.psu_state {
+            PsuState::Idle | PsuState::ConnectedConsumer(_) | PsuState::ConnectedProvider(_) => Ok(()),
             _ => Err(Error::InvalidState(
                 &[
                     StateKind::Idle,
                     StateKind::ConnectedConsumer,
                     StateKind::ConnectedProvider,
                 ],
-                self.state.kind(),
+                self.psu_state.kind(),
             )),
         };
         self.consumer_capability = capability;
@@ -177,15 +170,15 @@ impl InternalState {
             return Ok(());
         }
 
-        let result = match self.state {
-            State::Idle | State::ConnectedConsumer(_) | State::ConnectedProvider(_) => Ok(()),
+        let result = match self.psu_state {
+            PsuState::Idle | PsuState::ConnectedConsumer(_) | PsuState::ConnectedProvider(_) => Ok(()),
             _ => Err(Error::InvalidState(
                 &[
                     StateKind::Idle,
                     StateKind::ConnectedProvider,
                     StateKind::ConnectedConsumer,
                 ],
-                self.state.kind(),
+                self.psu_state.kind(),
             )),
         };
 
@@ -193,44 +186,50 @@ impl InternalState {
         result
     }
 
+    /// Check if a request to connect as a consumer from the policy is valid given the current state
+    /// Returns () or the error with information about why the request is invalid
+    pub fn can_connect_consumer(&self) -> Result<(), Error> {
+        match self.psu_state {
+            PsuState::Idle | PsuState::ConnectedConsumer(_) => Ok(()),
+            _ => Err(Error::InvalidState(
+                &[StateKind::Idle, StateKind::ConnectedConsumer],
+                self.psu_state.kind(),
+            )),
+        }
+    }
+
     /// Handle a request to connect as a consumer from the policy
     pub fn connect_consumer(&mut self, capability: ConsumerPowerCapability) -> Result<(), Error> {
-        let result = if self.state == State::Idle {
-            Ok(())
-        } else {
-            Err(Error::InvalidState(&[StateKind::Idle], self.state.kind()))
-        };
-        self.state = State::ConnectedConsumer(capability);
-        result
+        self.can_connect_consumer()?;
+        self.psu_state = PsuState::ConnectedConsumer(capability);
+        Ok(())
+    }
+
+    /// Check if a request to connect as a provider from the policy is valid given the current state
+    /// Returns () or the error with information about why the request is invalid
+    pub fn can_connect_provider(&self) -> Result<(), Error> {
+        match self.psu_state {
+            PsuState::Idle | PsuState::ConnectedProvider(_) => Ok(()),
+            _ => Err(Error::InvalidState(
+                &[StateKind::Idle, StateKind::ConnectedProvider],
+                self.psu_state.kind(),
+            )),
+        }
     }
 
     /// Handle a request to connect as a provider from the policy
     pub fn connect_provider(&mut self, capability: ProviderPowerCapability) -> Result<(), Error> {
-        let result = if matches!(self.state, State::Idle | State::ConnectedProvider(_)) {
-            Ok(())
-        } else {
-            Err(Error::InvalidState(
-                &[StateKind::Idle, StateKind::ConnectedProvider],
-                self.state.kind(),
-            ))
-        };
-        self.state = State::ConnectedProvider(capability);
-        result
+        self.can_connect_provider()?;
+        self.psu_state = PsuState::ConnectedProvider(capability);
+        Ok(())
     }
 
-    /// Returns the current state machine state
-    pub fn state(&self) -> State {
-        self.state
-    }
-
-    /// Returns the current consumer capability
-    pub fn consumer_capability(&self) -> Option<ConsumerPowerCapability> {
-        self.consumer_capability
-    }
-
-    /// Returns the requested provider capability
-    pub fn requested_provider_capability(&self) -> Option<ProviderPowerCapability> {
-        self.requested_provider_capability
+    /// Returns the current provider capability if the PSU is connected as a provider
+    pub fn connected_provider_capability(&self) -> Option<ProviderPowerCapability> {
+        match self.psu_state {
+            PsuState::ConnectedProvider(capability) => Some(capability),
+            _ => None,
+        }
     }
 }
 
@@ -250,8 +249,6 @@ pub enum CommandData {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct Command {
-    /// Target device
-    pub id: DeviceId,
     /// Request data
     pub data: CommandData,
 }
@@ -278,8 +275,6 @@ pub type InternalResponseData = Result<ResponseData, Error>;
 
 /// Response from a device to the power policy service
 pub struct Response {
-    /// Target device
-    pub id: DeviceId,
     /// Response data
     pub data: ResponseData,
 }
@@ -292,102 +287,10 @@ pub trait Psu {
     fn connect_provider(&mut self, capability: ProviderPowerCapability) -> impl Future<Output = Result<(), Error>>;
     /// Connect this device to consume power from an external connection
     fn connect_consumer(&mut self, capability: ConsumerPowerCapability) -> impl Future<Output = Result<(), Error>>;
-}
-
-/// PSU registration struct
-pub struct RegistrationEntry<'a, D: Lockable, R: Receiver<event::RequestData>>
-where
-    D::Inner: Psu,
-{
-    /// Intrusive list node
-    node: intrusive_list::Node,
-    /// Device ID
-    id: DeviceId,
-    /// Current state of the device
-    pub state: Mutex<GlobalRawMutex, InternalState>,
-    /// Reference to hardware
-    pub device: &'a D,
-    /// Event receiver
-    pub receiver: Mutex<GlobalRawMutex, R>,
-}
-
-impl<'a, D: Lockable, R: Receiver<event::RequestData>> RegistrationEntry<'a, D, R>
-where
-    D::Inner: Psu,
-{
-    /// Create a new device
-    pub fn new(id: DeviceId, device: &'a D, receiver: R) -> Self {
-        Self {
-            node: intrusive_list::Node::uninit(),
-            id,
-            state: Mutex::new(InternalState {
-                state: State::Detached,
-                consumer_capability: None,
-                requested_provider_capability: None,
-            }),
-            device,
-            receiver: Mutex::new(receiver),
-        }
-    }
-
-    /// Get the device ID
-    pub fn id(&self) -> DeviceId {
-        self.id
-    }
-
-    /// Returns the current consumer capability of the device
-    pub async fn consumer_capability(&self) -> Option<ConsumerPowerCapability> {
-        self.state.lock().await.consumer_capability
-    }
-
-    /// Returns true if the device is currently consuming power
-    pub async fn is_consumer(&self) -> bool {
-        self.state.lock().await.state.kind() == StateKind::ConnectedConsumer
-    }
-
-    /// Returns current provider power capability
-    pub async fn provider_capability(&self) -> Option<ProviderPowerCapability> {
-        match self.state.lock().await.state {
-            State::ConnectedProvider(capability) => Some(capability),
-            _ => None,
-        }
-    }
-
-    /// Returns the current requested provider capability
-    pub async fn requested_provider_capability(&self) -> Option<ProviderPowerCapability> {
-        self.state.lock().await.requested_provider_capability
-    }
-
-    /// Returns true if the device is currently providing power
-    pub async fn is_provider(&self) -> bool {
-        self.state.lock().await.state.kind() == StateKind::ConnectedProvider
-    }
-}
-
-impl<D: Lockable, R: Receiver<event::RequestData> + 'static> intrusive_list::NodeContainer
-    for RegistrationEntry<'static, D, R>
-where
-    D::Inner: Psu,
-{
-    fn get_node(&self) -> &intrusive_list::Node {
-        &self.node
-    }
-}
-
-/// Trait for any container that holds a device
-pub trait PsuContainer<D: Lockable, R: Receiver<event::RequestData>>
-where
-    D::Inner: Psu,
-{
-    /// Get the underlying device struct
-    fn get_power_policy_device(&self) -> &RegistrationEntry<'_, D, R>;
-}
-
-impl<D: Lockable, R: Receiver<event::RequestData>> PsuContainer<D, R> for RegistrationEntry<'_, D, R>
-where
-    D::Inner: Psu,
-{
-    fn get_power_policy_device(&self) -> &RegistrationEntry<'_, D, R> {
-        self
-    }
+    /// Return an immutable reference to the current PSU state
+    fn state(&self) -> &State;
+    /// Return a mutable reference to the current PSU state
+    fn state_mut(&mut self) -> &mut State;
+    /// Return the name of the PSU
+    fn name(&self) -> &'static str;
 }

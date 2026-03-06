@@ -10,7 +10,10 @@ use crate::type_c::{
     external,
 };
 
-impl<'a> Service<'a> {
+impl<'a, PSU: Lockable> Service<'a, PSU>
+where
+    PSU::Inner: psu::Psu,
+{
     /// Wait for port flags
     pub(super) async fn wait_port_flags(&self) -> PortEventStreamer {
         if let Some(ref streamer) = self.state.lock().await.port_event_streaming_state {

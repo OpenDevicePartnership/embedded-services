@@ -1,10 +1,15 @@
 //! Messages originating from a PSU
-use crate::capability::{ConsumerPowerCapability, ProviderPowerCapability};
+use embedded_services::sync::Lockable;
 
-/// Data for a power policy request
+use crate::{
+    capability::{ConsumerPowerCapability, ProviderPowerCapability},
+    psu,
+};
+
+/// Data for an event broadcast from a PSU.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub enum RequestData {
+pub enum EventData {
     /// Notify that a device has attached
     Attached,
     /// Notify that available power for consumption has changed
@@ -17,14 +22,17 @@ pub enum RequestData {
     Detached,
 }
 
-/// Request to the power policy service
+/// Event broadcast from a PSU.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct Request {
+pub struct Event<'a, D: Lockable>
+where
+    D::Inner: psu::Psu,
+{
     /// Device that sent this request
-    pub id: super::DeviceId,
-    /// Request data
-    pub data: RequestData,
+    pub psu: &'a D,
+    /// Event data
+    pub event: EventData,
 }
 
 /// Data for a power policy response
@@ -48,8 +56,6 @@ impl ResponseData {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct Response {
-    /// Target device
-    pub id: super::DeviceId,
     /// Response data
     pub data: ResponseData,
 }

@@ -1,9 +1,9 @@
 #![allow(clippy::unwrap_used)]
 use embassy_sync::signal::Signal;
-use embedded_services::{GlobalRawMutex, event, info};
+use embedded_services::{GlobalRawMutex, event::Sender, info};
 use power_policy_interface::{
     capability::{ConsumerFlags, ConsumerPowerCapability, PowerCapability, ProviderPowerCapability},
-    psu::{Error, InternalState, Psu, event::RequestData},
+    psu::{Error, Psu, State, event::EventData},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -15,16 +15,18 @@ pub enum FnCall {
     Reset,
 }
 
-pub struct Mock<'a, S: event::Sender<RequestData>> {
+pub struct Mock<'a, S: Sender<EventData>> {
     sender: S,
     fn_call: &'a Signal<GlobalRawMutex, (usize, FnCall)>,
     // Internal state
-    pub state: InternalState,
+    pub state: State,
+    name: &'static str,
 }
 
-impl<'a, S: event::Sender<RequestData>> Mock<'a, S> {
-    pub fn new(sender: S, fn_call: &'a Signal<GlobalRawMutex, (usize, FnCall)>) -> Self {
+impl<'a, S: Sender<EventData>> Mock<'a, S> {
+    pub fn new(name: &'static str, sender: S, fn_call: &'a Signal<GlobalRawMutex, (usize, FnCall)>) -> Self {
         Self {
+            name,
             sender,
             fn_call,
             state: Default::default(),
@@ -41,27 +43,21 @@ impl<'a, S: event::Sender<RequestData>> Mock<'a, S> {
     }
 
     pub async fn simulate_consumer_connection(&mut self, capability: PowerCapability) {
-        self.state.attach().unwrap();
-
-        self.sender.send(RequestData::Attached).await;
+        self.sender.send(EventData::Attached).await;
 
         let capability = Some(ConsumerPowerCapability {
             capability,
             flags: ConsumerFlags::none(),
         });
-        self.state.update_consumer_power_capability(capability).unwrap();
-        self.sender
-            .send(RequestData::UpdatedConsumerCapability(capability))
-            .await;
+        self.sender.send(EventData::UpdatedConsumerCapability(capability)).await;
     }
 
     pub async fn simulate_detach(&mut self) {
-        self.state.detach();
-        self.sender.send(RequestData::Detached).await;
+        self.sender.send(EventData::Detached).await;
     }
 }
 
-impl<'a, S: event::Sender<RequestData>> Psu for Mock<'a, S> {
+impl<'a, S: Sender<EventData>> Psu for Mock<'a, S> {
     async fn connect_consumer(&mut self, capability: ConsumerPowerCapability) -> Result<(), Error> {
         info!("Connect consumer {:#?}", capability);
         self.record_fn_call(FnCall::ConnectConsumer(capability));
@@ -78,5 +74,17 @@ impl<'a, S: event::Sender<RequestData>> Psu for Mock<'a, S> {
         info!("Disconnect");
         self.record_fn_call(FnCall::Disconnect);
         Ok(())
+    }
+
+    fn state(&self) -> &State {
+        &self.state
+    }
+
+    fn state_mut(&mut self) -> &mut State {
+        &mut self.state
+    }
+
+    fn name(&self) -> &'static str {
+        self.name
     }
 }
