@@ -11,7 +11,7 @@ pub trait Service<'hw>: Sized {
     /// and is not interacted with by users of the service. Must be default-constructible for spawn_service!() to work.
     type Resources: Default;
 
-    /// The error type that your `init` function can return on failure.
+    /// The error type that your `new` function can return on failure.
     type ErrorType;
 
     /// Any initialization parameters that your service needs to run.

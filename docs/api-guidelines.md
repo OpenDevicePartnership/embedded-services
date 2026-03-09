@@ -91,10 +91,10 @@ impl<'hw> Foo<'hw> {
 
 ### Use runner objects for concurrency
 
-Don't declare embassy tasks in your module - instead, have the constructor for your type return a `(Self, Runner)` tuple. The `Runner` object should have a single method `run(self) -> !` that the entity that instantiated your object must execute.  You should have only one `Runner` object returned. Use the `odp-service-common::runnable_service::Service` trait to enforce this patttern.
+Don't declare embassy tasks in your module - instead, have the constructor for your type return a `(Self, Runner)` tuple. The `Runner` object should have a single method `run(self) -> !` that the entity that instantiated your object must execute.  You should have only one `Runner` object returned. Use the `odp-service-common::runnable_service::Service` trait to enforce this pattern.
 
 __Reason__: Declarations of embassy tasks are functionally static memory allocations. They can't be generic and you have to declare at declaration time a maximum number of instances that can be run concurrently. They also commit you to running on embassy, which is not necessarily desirable in test contexts.  Pushing responsibility for the allocation out of your module allows your types to be generic.  
-However, it also means that your caller needs to be able to declare a task that can run your runner, and if you have multiple things that each need different pieces of state and need to run concurrently, setting up those tasks can make your API unwieldly and brittle.
+However, it also means that your caller needs to be able to declare a task that can run your runner, and if you have multiple things that each need different pieces of state and need to run concurrently, setting up those tasks can make your API unwieldy and brittle.
 Returning a simple `Runner` object at the same time as your object makes it difficult to forget to execute the runner.
 Allowing only a single `Runner` with only one method that takes no external arguments makes it difficult to misuse the runner.
 
