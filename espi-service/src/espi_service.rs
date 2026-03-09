@@ -47,8 +47,8 @@ pub struct Runner<'hw, RelayHandler: embedded_services::relay::mctp::RelayHandle
     inner: &'hw ServiceInner<'hw, RelayHandler>,
 }
 
-impl<'hw, RelayHandler: embedded_services::relay::mctp::RelayHandler> odp_service_common::runnable_service::ServiceRunner<'hw>
-    for Runner<'hw, RelayHandler>
+impl<'hw, RelayHandler: embedded_services::relay::mctp::RelayHandler>
+    odp_service_common::runnable_service::ServiceRunner<'hw> for Runner<'hw, RelayHandler>
 {
     /// Run the service event loop.
     async fn run(self) -> embedded_services::Never {

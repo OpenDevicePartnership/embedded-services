@@ -290,15 +290,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "debug-service-messages"
-version = "0.1.0"
-dependencies = [
- "defmt 0.3.100",
- "embedded-services",
- "num_enum",
-]
-
-[[package]]
 name = "defmt"
 version = "0.3.100"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -716,11 +707,9 @@ dependencies = [
 name = "espi-service"
 version = "0.1.0"
 dependencies = [
- "battery-service-messages",
  "bitfield 0.17.0",
  "cortex-m",
  "cortex-m-rt",
- "debug-service-messages",
  "defmt 0.3.100",
  "embassy-futures",
  "embassy-imxrt",
@@ -730,8 +719,6 @@ dependencies = [
  "mctp-rs",
  "num_enum",
  "odp-service-common",
- "thermal-service-messages",
- "time-alarm-service-messages",
 ]
 
 [[package]]
@@ -1285,16 +1272,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "55937e1799185b12863d447f42597ed69d9928686b8d88a1df17376a097d8369"
 
 [[package]]
-name = "thermal-service-messages"
-version = "0.1.0"
-dependencies = [
- "defmt 0.3.100",
- "embedded-services",
- "num_enum",
- "uuid",
-]
-
-[[package]]
 name = "thiserror"
 version = "2.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1312,18 +1289,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
-]
-
-[[package]]
-name = "time-alarm-service-messages"
-version = "0.1.0"
-dependencies = [
- "bitfield 0.17.0",
- "defmt 0.3.100",
- "embedded-mcu-hal",
- "embedded-services",
- "num_enum",
- "zerocopy",
 ]
 
 [[package]]

@@ -1,15 +1,13 @@
 //! This module contains helper traits and functions for services that run on the EC.
 
-/// A trait for a service that can be run on the EC.
-/// Implementations of Service should have an init() function to construct the service that
-/// returns a Runner, which the user is expected to spawn a task for.
+/// A trait for a service that requires the caller to launch a long-running task on its behalf to operate.
 pub trait Service<'hw>: Sized {
-    /// A type that can be used to run the service. This is returned by the init() function and the user is
+    /// A type that can be used to run the service. This is returned by the new() function and the user is
     /// expected to call its run() method in an embassy task (or similar parallel execution context on other
     /// async runtimes).
     type Runner: ServiceRunner<'hw>;
 
-    /// Any memory resources that your service needs.  This is typically an opaque types that is only used by the service
+    /// Any memory resources that your service needs.  This is typically an opaque type that is only used by the service
     /// and is not interacted with by users of the service. Must be default-constructible for spawn_service!() to work.
     type Resources: Default;
 
@@ -38,23 +36,23 @@ pub trait ServiceRunner<'hw> {
 /// Initializes a service, creates an embassy task to run it, and spawns that task.
 ///
 /// This macro handles the boilerplate of:
-/// 1. Creating a `static` [`OnceLock`](embassy_sync::once_lock::OnceLock) to hold the service
-/// 2. Calling the service's `init()` method
+/// 1. Creating a `static` [`StaticCell`](static_cell::StaticCell) to hold the service
+/// 2. Calling the service's `new()` method
 /// 3. Defining an embassy_executor::task to run the service
 /// 4. Spawning the task on the provided executor
 ///
-/// Returns a Result<reference-to-service, Error> where Error is the error type of $service_ty::init().
+/// Returns a Result<&Service, Error> where Error is the error type of $service_ty::new().
 ///
 /// Arguments
 ///
 /// - spawner:    An embassy_executor::Spawner.
 /// - service_ty: The service type that implements Service that you want to create and run.
-/// - init_arg:   The init argument type to pass to `Service::init()`
+/// - init_arg:   The init argument type to pass to `Service::new()`
 ///
 /// Example:
 ///
 /// ```ignore
-/// let time_service = embedded_services::spawn_service!(
+/// let time_service = odp_service_common::runnable_service::spawn_service!(
 ///     spawner,
 ///     time_alarm_service::Service<'static>,
 ///     time_alarm_service::ServiceInitParams { dt_clock, tz, ac_expiration, ac_policy, dc_expiration, dc_policy }
@@ -64,7 +62,8 @@ pub trait ServiceRunner<'hw> {
 macro_rules! spawn_service {
     ($spawner:expr, $service_ty:ty, $init_arg:expr) => {{
         use $crate::runnable_service::{Service, ServiceRunner};
-        static SERVICE_RESOURCES: StaticCell<(<$service_ty as Service>::Resources)> = StaticCell::new();
+        static SERVICE_RESOURCES: static_cell::StaticCell<(<$service_ty as Service>::Resources)> =
+            static_cell::StaticCell::new();
         let service_resources = SERVICE_RESOURCES.init(<<$service_ty as Service>::Resources as Default>::default());
 
         #[embassy_executor::task]
