@@ -1716,6 +1716,7 @@ name = "odp-service-common"
 version = "0.1.0"
 dependencies = [
  "embedded-services",
+ "static_cell",
 ]
 
 [[package]]

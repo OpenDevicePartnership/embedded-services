@@ -7,6 +7,7 @@ repository.workspace = true
 
 [dependencies]
 embedded-services.workspace = true
+static_cell.workspace = true
 
 [lints]
 workspace = true
