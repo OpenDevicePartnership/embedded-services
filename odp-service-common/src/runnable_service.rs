@@ -25,7 +25,7 @@ pub trait Service<'hw>: Sized {
     ) -> impl core::future::Future<Output = Result<(Self, Self::Runner), Self::ErrorType>>;
 }
 
-/// A trait for a run handle used to execute a service's event loop.  This is returned by Service::init()
+/// A trait for a run handle used to execute a service's event loop.  This is returned by Service::new()
 /// and the user is expected to call its run() method in an embassy task (or similar parallel execution context
 /// on other async runtimes).
 pub trait ServiceRunner<'hw> {
