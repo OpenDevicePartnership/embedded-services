@@ -228,8 +228,8 @@ Customizability - if an OEM needs to insert a special behavior, they can substit
 __Example__:
 Instead of
 ```rust
-pub struct MyService { /* */ }
-impl MyService {
+pub struct ExampleService { /* */ }
+impl ExampleService {
     fn foo(&mut self) -> Result<()> { /* ... */ }
     fn bar(&mut self) -> Result<()> { /* ... */ }
     fn baz(&mut self) -> Result<()> { /* ... */ }
@@ -239,16 +239,16 @@ impl MyService {
 Consider:
 ```rust
 // In the embedded-services crate
-pub trait MyServiceInterface {
+pub trait ExampleService {
     fn foo(&mut self) -> Result<()>;
     fn bar(&mut self) -> Result<()>;
     fn baz(&mut self) -> Result<()>;
 }
 
 // In the reference implementation crate
-pub struct MyService { /* ... */ }
+pub struct OdpExampleService { /* ... */ }
 
-impl embedded_services::MyServiceInterface for MyService {
+impl embedded_services::ExampleService for OdpExampleService {
     fn foo(&mut self) -> Result<()> { /* ... */ }
     fn bar(&mut self) -> Result<()> { /* ... */ }
     fn baz(&mut self) -> Result<()> { /* ... */ }
