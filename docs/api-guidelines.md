@@ -219,6 +219,8 @@ Notice that most of the complexity has been moved into internal implementation d
 
 In most cases, public APIs in this repo should be exposed in terms of traits rather than methods directly on the object, and objects that need references to other embedded-services objects should reference them by trait rather than by name.  This does not apply to public methods used to construct or initialize a service, because those generally need to know something about the concrete implementation type to properly initialize it.
 
+These traits should be defined in the `embedded-services` crate.
+
 __Reason__: Improved testability and customizability.
 Testability - if all our types interact with each other via traits rather than direct dependencies on the type, it makes it much easier to mock out individual components.
 Customizability - if an OEM needs to insert a special behavior, they can substitute in a different implementation of that trait and continue using the rest of the embedded-services code without modification.
