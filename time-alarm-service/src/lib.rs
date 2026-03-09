@@ -290,15 +290,9 @@ impl<'hw> ServiceInner<'hw> {
 }
 
 /// The memory resources required by the time/alarm service.
+#[derive(Default)]
 pub struct Resources<'hw> {
     inner: Option<ServiceInner<'hw>>,
-}
-
-impl<'hw> Default for Resources<'hw> {
-    /// Allocate storage for the service's resources.
-    fn default() -> Self {
-        Resources { inner: None }
-    }
 }
 
 /// A task runner for the time/alarm service. Users of the service must run this object in an embassy task or similar async execution context.
