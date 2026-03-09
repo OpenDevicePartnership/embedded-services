@@ -32,7 +32,7 @@ pub trait Service<'hw>: Sized {
 /// on other async runtimes).
 pub trait ServiceRunner<'hw> {
     /// Run the service event loop. This future never completes.
-    fn run(self) -> impl core::future::Future<Output = crate::Never> + 'hw;
+    fn run(self) -> impl core::future::Future<Output = embedded_services::Never> + 'hw;
 }
 
 /// Initializes a service, creates an embassy task to run it, and spawns that task.
@@ -63,12 +63,12 @@ pub trait ServiceRunner<'hw> {
 #[macro_export]
 macro_rules! spawn_service {
     ($spawner:expr, $service_ty:ty, $init_arg:expr) => {{
-        use $crate::service::{Service, ServiceRunner};
+        use $crate::runnable_service::{Service, ServiceRunner};
         static SERVICE_RESOURCES: StaticCell<(<$service_ty as Service>::Resources)> = StaticCell::new();
         let service_resources = SERVICE_RESOURCES.init(<<$service_ty as Service>::Resources as Default>::default());
 
         #[embassy_executor::task]
-        async fn service_task_fn(runner: <$service_ty as $crate::service::Service<'static>>::Runner) {
+        async fn service_task_fn(runner: <$service_ty as $crate::runnable_service::Service<'static>>::Runner) {
             runner.run().await;
         }
 

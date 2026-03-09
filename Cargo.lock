@@ -1104,11 +1104,9 @@ dependencies = [
 name = "espi-service"
 version = "0.1.0"
 dependencies = [
- "battery-service-messages",
  "bitfield 0.17.0",
  "cortex-m",
  "cortex-m-rt",
- "debug-service-messages",
  "defmt 0.3.100",
  "embassy-futures",
  "embassy-imxrt",
@@ -1118,8 +1116,7 @@ dependencies = [
  "log",
  "mctp-rs",
  "num_enum",
- "thermal-service-messages",
- "time-alarm-service-messages",
+ "odp-service-common",
 ]
 
 [[package]]
@@ -1712,6 +1709,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "62948e14d923ea95ea2c7c86c71013138b66525b86bdc08d2dcc262bdb497b87"
 dependencies = [
  "memchr",
+]
+
+[[package]]
+name = "odp-service-common"
+version = "0.1.0"
+dependencies = [
+ "embedded-services",
 ]
 
 [[package]]
@@ -2346,6 +2350,7 @@ dependencies = [
  "embedded-mcu-hal",
  "embedded-services",
  "log",
+ "odp-service-common",
  "time-alarm-service-messages",
  "tokio",
  "zerocopy",

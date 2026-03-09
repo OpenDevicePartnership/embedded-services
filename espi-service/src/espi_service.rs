@@ -47,7 +47,7 @@ pub struct Runner<'hw, RelayHandler: embedded_services::relay::mctp::RelayHandle
     inner: &'hw ServiceInner<'hw, RelayHandler>,
 }
 
-impl<'hw, RelayHandler: embedded_services::relay::mctp::RelayHandler> embedded_services::service::ServiceRunner<'hw>
+impl<'hw, RelayHandler: embedded_services::relay::mctp::RelayHandler> odp_service_common::runnable_service::ServiceRunner<'hw>
     for Runner<'hw, RelayHandler>
 {
     /// Run the service event loop.
@@ -60,7 +60,7 @@ pub struct Service<'hw, RelayHandler: embedded_services::relay::mctp::RelayHandl
     _inner: &'hw ServiceInner<'hw, RelayHandler>,
 }
 
-impl<'hw, RelayHandler: embedded_services::relay::mctp::RelayHandler> embedded_services::service::Service<'hw>
+impl<'hw, RelayHandler: embedded_services::relay::mctp::RelayHandler> odp_service_common::runnable_service::Service<'hw>
     for Service<'hw, RelayHandler>
 {
     type Resources = Resources<'hw, RelayHandler>;

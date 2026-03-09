@@ -1232,6 +1232,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "odp-service-common"
+version = "0.1.0"
+dependencies = [
+ "embedded-services",
+]
+
+[[package]]
 name = "once_cell"
 version = "1.21.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1409,6 +1416,7 @@ dependencies = [
  "futures",
  "mimxrt600-fcb 0.1.0",
  "mimxrt685s-pac 0.4.0",
+ "odp-service-common",
  "panic-probe",
  "platform-service",
  "power-button-service",
@@ -1628,6 +1636,7 @@ dependencies = [
  "embassy-time",
  "embedded-mcu-hal",
  "embedded-services",
+ "odp-service-common",
  "time-alarm-service-messages",
  "zerocopy",
 ]

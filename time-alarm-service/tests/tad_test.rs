@@ -8,7 +8,7 @@ mod common;
 mod test {
     use embassy_time::Timer;
     use embedded_mcu_hal::time::{Datetime, DatetimeClock};
-    use embedded_services::service::{Service, ServiceRunner};
+    use odp_service_common::runnable_service::{Service, ServiceRunner};
 
     use time_alarm_service_messages as msg;
 

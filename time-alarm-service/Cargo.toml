@@ -16,6 +16,7 @@ embassy-sync.workspace = true
 embassy-time.workspace = true
 embedded-mcu-hal.workspace = true
 embedded-services.workspace = true
+odp-service-common.workspace = true
 time-alarm-service-messages.workspace = true
 zerocopy.workspace = true
 
@@ -36,6 +37,6 @@ workspace = true
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt", "macros", "time"] }
-critical-section = { version = "1.1", features = ["std"]}
+critical-section = { version = "1.1", features = ["std"] }
 embassy-time = { workspace = true, features = ["std", "generic-queue-8"] }
 embassy-time-driver = { workspace = true }

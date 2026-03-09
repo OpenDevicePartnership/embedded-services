@@ -23,7 +23,7 @@ async fn main(spawner: embassy_executor::Spawner) {
     embedded_services::init().await;
     info!("services initialized");
 
-    let time_service = embedded_services::spawn_service!(
+    let time_service = odp_service_common::spawn_service!(
         spawner,
         time_alarm_service::Service<'static>,
         time_alarm_service::InitParams {

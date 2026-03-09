@@ -23,6 +23,7 @@ members = [
     "debug-service-messages",
     "keyboard-service",
     "power-policy-interface",
+    "odp-service-common",
 ]
 exclude = ["examples/*"]
 
@@ -86,6 +87,7 @@ embedded-storage-async = "0.4.1"
 embedded-usb-pd = { git = "https://github.com/OpenDevicePartnership/embedded-usb-pd", default-features = false }
 mctp-rs = { git = "https://github.com/dymk/mctp-rs" }
 num_enum = { version = "0.7.5", default-features = false }
+odp-service-common = { path = "./odp-service-common" }
 portable-atomic = { version = "1.11", default-features = false }
 power-policy-interface = { path = "./power-policy-interface" }
 paste = "1.0.15"

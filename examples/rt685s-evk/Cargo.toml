@@ -51,6 +51,7 @@ mimxrt685s-pac = { version = "*", features = ["rt", "critical-section"] }
 
 embedded-cfu-protocol = { git = "https://github.com/OpenDevicePartnership/embedded-cfu" }
 embedded-services = { path = "../../embedded-service", features = ["defmt"] }
+odp-service-common = { path = "../../odp-service-common" }
 power-button-service = { path = "../../power-button-service", features = [
     "defmt",
 ] }

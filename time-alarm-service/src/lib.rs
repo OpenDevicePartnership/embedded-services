@@ -300,7 +300,7 @@ pub struct Runner<'hw> {
     service: &'hw ServiceInner<'hw>,
 }
 
-impl<'hw> embedded_services::service::ServiceRunner<'hw> for Runner<'hw> {
+impl<'hw> odp_service_common::runnable_service::ServiceRunner<'hw> for Runner<'hw> {
     /// Run the service.
     async fn run(self) -> embedded_services::Never {
         loop {
@@ -373,7 +373,7 @@ impl<'hw> Service<'hw> {
     }
 }
 
-impl<'hw> embedded_services::service::Service<'hw> for Service<'hw> {
+impl<'hw> odp_service_common::runnable_service::Service<'hw> for Service<'hw> {
     type Runner = Runner<'hw>;
     type ErrorType = DatetimeClockError;
     type InitParams = InitParams<'hw>;
