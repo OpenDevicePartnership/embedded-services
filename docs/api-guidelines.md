@@ -33,7 +33,7 @@ trait Subscriber {}
 struct Notifier<'sub> { subscriber: &'sub Subscriber }
 //             ^^^^^^               ^^^^^
 
-impl Notifier {
+impl<'sub> Notifier<'sub> {
     fn new(subscriber: &'sub Subscriber) -> Self {
         //             ^^^^^
         Self { subscriber }
