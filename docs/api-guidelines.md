@@ -16,11 +16,11 @@ __Example__:
 Instead of this:
 ```rust
 trait Subscriber {}
-struct Notifier { subscriber: &'static Subscriber }
+struct Notifier { subscriber: &'static dyn Subscriber }
 //                            ^^^^^^^^
 
 impl Notifier {
-    fn new(subscriber: &'static Subscriber) -> Self {
+    fn new(subscriber: &'static dyn Subscriber) -> Self {
         //             ^^^^^^^^
         Self { subscriber }
     }
@@ -30,13 +30,28 @@ impl Notifier {
 Consider something like this:
 ```rust
 trait Subscriber {}
-struct Notifier<'sub> { subscriber: &'sub Subscriber }
+struct Notifier<'sub> { subscriber: &'sub dyn Subscriber }
 //             ^^^^^^               ^^^^^
 
 impl<'sub> Notifier<'sub> {
-    fn new(subscriber: &'sub Subscriber) -> Self {
+    fn new(subscriber: &'sub dyn Subscriber) -> Self {
         //             ^^^^^
         Self { subscriber }
+    }
+}
+```
+In cases like this, if you know that there will only be one concrete type for your reference, consider being generic over the type rather than taking it as `dyn`. This is particularly common for HAL trait implementations.  This allows the compiler to inline and simplify code, which can result in performance and code size improvements in some circumstances.
+
+Alternatively, if you can take an owned `Subscriber` rather than a reference, something like this is probably better:
+```rust
+trait Subscriber {}
+struct Notifier<S> {
+    sub: S,
+}
+
+impl<S: Subscriber> Notifier<S> {
+    const fn new(sub: S) -> Self {
+        Self { sub }
     }
 }
 ```
@@ -45,31 +60,37 @@ impl<'sub> Notifier<'sub> {
 
 Memory allocation should always be the role of the caller of the API.  If you need memory, have your caller pass it into your constructor.  Do not have things like `static INSTANCE: OnceLock<MyService>` in your service module.
 
+If you don't need dynamic dispatch over user-provided types, additionally consider being generic over those user-provided types rather than taking `dyn` arguments - this is only possible if you have external memory allocation.
+
 Note that while this applies to code in this repo, it does not necessarily apply to other ODP repos (e.g. HAL crates that know exactly how many instances of peripheral X are available on the platform).
 
 __Reason__: Most code in this repos is expected to run primarily in environments that don't have a heap.  In heapless environments, your options are either to have your caller provide you memory or to allocate it as a static variable in your module.  Allocating it as a static variable in your module has negative impacts on flexibility, testability, performance, and code size.
 Flexibility - Memory allocation in your module rather than by your caller means that the size of your object must be known when the module is compiled rather than when you're instantiated. This prevents you from storing any owned caller-provided types in your object (since you can't know those types when your module is compiled).
-Testability - if you have a private singleton instance, tests can't arbitrary destroy and recreate that state.  This makes it difficult to test multiple startup paths.
-Performance - if you can't be generic over a type, the only way you can interact with user-provided types is by dyn references to trait impls.  This means you have to pay for dynamic dispatch and the compiler can't optimize or inline across that dyn boundary.
-Code size - The compiler has to generate a bunch of code to handle dynamic dispatch, even if there's only ever a single concrete type that implements the trait you want to be generic over.
+Testability - if you have a private singleton instance, tests can't arbitrarily destroy and recreate that state.  This makes it difficult to test multiple startup paths.
+Performance - if you can't be generic over a type, the only way you can interact with user-provided types is by dyn references to trait impls.  External memory allocation allows you to be generic over a type, which means you don't have to pay for dynamic dispatch and the compiler can potentially inline code / optimize the interaction between your code and the user-provided type's code.
+Code size - The compiler has to generate a bunch of code to handle dynamic dispatch, even if there's only ever a single concrete type that implements the trait you want to be generic over, which is common with HAL traits.
 
 __Example__:
-Note that in the below example, the `OnceLock` / external `Resources` is only necessary if you need to hand out references to the contents of the `OnceLock` / `FooInner`. That's elided in the example and assumed to be implemented in the `/* ... */` blocks for simplicity.
+Note that in the below example, the `OnceLock` / external `Resources` is only necessary if you need to hand out references to the contents of the `OnceLock` / `FooInner`. That's elided in the example and assumed to be implemented in the `/* .. */` blocks for simplicity.
 ```rust
-pub struct Foo { /* ... */ }
+pub struct Foo { /* .. */ }
 
 static INSTANCE: OnceLock<Foo> = OnceLock::new();
 
 impl Foo {
-    async fn init(/* ... */) -> &'static Foo {
-        INSTANCE.get_or_init(|| Foo{ /* ... */ }).await
+    async fn init(/* .. */) -> &'static Foo {
+        let instance = INSTANCE.get_or_init(|| Foo{ /* .. */ }).await;
+
+        // Create another reference to some state in 'inner' - perhaps by passing it to something in /* .. */
+
+        instance
     }
 }
 ```
 
 Consider something like this:
 ```rust
-struct FooInner<'hw> { /* ... */ }
+struct FooInner<'hw> { /* .. */ }
 
 #[derive(Default)]
 pub struct Resources<'hw> {
@@ -81,8 +102,14 @@ pub struct Foo<'hw> {
 }
 
 impl<'hw> Foo<'hw> {
-    fn new(resources: &'hw mut Resources, /* ... */) -> Self {
-        let inner = resources.insert(FooInner::new(/* ... */));
+    fn new(resources: &'hw mut Resources, /* .. */) -> Self {
+        let inner = resources.insert(FooInner::new(/* .. */));
+
+        // Create another reference to some state in `inner` here that outlasts this function - perhaps by returning
+        // a `Runner` that contains a reference to `inner` or passing a reference to `inner` to one of the elided
+        // arguments in /* .. */.  See the 'Use runner objects for concurrency' section for a concrete example of this.
+        // If you don't have a requirement to do this, you don't need the indirection / external `Resources` object at all.
+
         Self{ inner }
     }
 }
@@ -102,10 +129,10 @@ __Example__:
 Instead of this:
 ```rust
 ///// Your type's definition /////
-struct MyRunnableTypeInner { /* ... */ }
+struct MyRunnableTypeInner { /* .. */ }
 
 impl<'hw> MyRunnableTypeInner<'hw> {
-    /* ... */
+    /* .. */
 }
 
 #[derive(Default)]
@@ -118,23 +145,23 @@ pub struct MyRunnableType<'hw> {
 }
 
 impl<'hw> MyRunnableType<'hw> {
-    fn new(resources: &mut Resources, /* ... */ ) -> Self {
-        let inner = resources.insert(RunnableTypeInner::new(/* ... */))
-        /* ... */ 
+    fn new(resources: &mut Resources, /* .. */ ) -> Self {
+        let inner = resources.insert(RunnableTypeInner::new(/* .. */))
+        /* .. */ 
         Self { inner }
     }
 }
 
 mod tasks {
-    pub async fn run_task_1<'hw>(runnable: &'hw MyRunnableType, foo: Foo) -> ! { /* ... */ }
-    pub async fn run_task_2<'hw>(runnable: &'hw MyRunnableType, bar: Bar) -> ! { /* ... */ }
-    pub async fn run_task_3<'hw>(runnable: &'hw MyRunnableType, baz: Baz) -> ! { /* ... */ }
+    pub async fn run_task_1<'hw>(runnable: &'hw MyRunnableType, foo: Foo) -> ! { /* .. */ }
+    pub async fn run_task_2<'hw>(runnable: &'hw MyRunnableType, bar: Bar) -> ! { /* .. */ }
+    pub async fn run_task_3<'hw>(runnable: &'hw MyRunnableType, baz: Baz) -> ! { /* .. */ }
 }
 
 ///// End-user code /////
 
 fn main() {
-    let instance = MyRunnableType::new(/* ... */);
+    let instance = MyRunnableType::new(/* .. */);
     #[embassy_task]
     fn runner_1(runnable: &'static MyRunnableType, foo: Foo) -> ! {
         my_runnable_type::tasks::run_task_1(runnable, foo).await
@@ -148,9 +175,9 @@ fn main() {
         my_runnable_type::tasks::run_task_3(runnable, baz).await
     }
 
-    spawner.must_spawn(runner_1(&instance, Foo::new( /* ... */ )));
-    spawner.must_spawn(runner_1(&instance, Bar::new( /* ... */ )));
-    spawner.must_spawn(runner_1(&instance, Baz::new( /* ... */ )));
+    spawner.must_spawn(runner_1(&instance, Foo::new( /* .. */ )));
+    spawner.must_spawn(runner_1(&instance, Bar::new( /* .. */ )));
+    spawner.must_spawn(runner_1(&instance, Baz::new( /* .. */ )));
 }
 
 ```
@@ -158,12 +185,12 @@ fn main() {
 Consider something like this:
 ```rust
 ///// Your type's definition /////
-struct MyRunnableTypeInner { /* ... */ }
+struct MyRunnableTypeInner { /* .. */ }
 
 impl<'hw> MyRunnableTypeInner<'hw> {
-    async fn task_1(&self, foo: Foo) -> ! { /* ... */ }
-    async fn task_2(&self, bar: Bar) -> ! { /* ... */ }
-    async fn task_3(&self, baz: Baz) -> ! { /* ... */ }
+    async fn task_1(&self, foo: Foo) -> ! { /* .. */ }
+    async fn task_2(&self, bar: Bar) -> ! { /* .. */ }
+    async fn task_3(&self, baz: Baz) -> ! { /* .. */ }
 }
 
 #[derive(Default)]
@@ -195,8 +222,8 @@ impl<'hw> Runner<'hw> {
 }
 
 impl<'hw> MyRunnableType<'hw> {
-    fn new(resources: &mut Resources, foo: Foo, bar: Bar, baz: Baz /* ... */ ) -> (Self, Runner) {
-        let inner = resources.insert(RunnableTypeInner::new( /* ... */ ));
+    fn new(resources: &mut Resources, foo: Foo, bar: Bar, baz: Baz /* .. */ ) -> (Self, Runner) {
+        let inner = resources.insert(RunnableTypeInner::new( /* .. */ ));
         (Self { inner }, Runner { inner, foo, bar, baz })
     }
 }
@@ -204,7 +231,7 @@ impl<'hw> MyRunnableType<'hw> {
 ///// End-user code /////
 
 fn main() {
-    let (instance, runner) = MyRunnableType::new(/* ... */);
+    let (instance, runner) = MyRunnableType::new(/* .. */);
     #[embassy_task]
     fn runner_fn(runner: Runner) {
         runner.run().await
@@ -230,9 +257,9 @@ Instead of
 ```rust
 pub struct ExampleService { /* */ }
 impl ExampleService {
-    fn foo(&mut self) -> Result<()> { /* ... */ }
-    fn bar(&mut self) -> Result<()> { /* ... */ }
-    fn baz(&mut self) -> Result<()> { /* ... */ }
+    fn foo(&mut self) -> Result<()> { /* .. */ }
+    fn bar(&mut self) -> Result<()> { /* .. */ }
+    fn baz(&mut self) -> Result<()> { /* .. */ }
 }
 ```
 
@@ -246,11 +273,11 @@ pub trait ExampleService {
 }
 
 // In the reference implementation crate
-pub struct OdpExampleService { /* ... */ }
+pub struct OdpExampleService { /* .. */ }
 
 impl embedded_services::ExampleService for OdpExampleService {
-    fn foo(&mut self) -> Result<()> { /* ... */ }
-    fn bar(&mut self) -> Result<()> { /* ... */ }
-    fn baz(&mut self) -> Result<()> { /* ... */ }
+    fn foo(&mut self) -> Result<()> { /* .. */ }
+    fn bar(&mut self) -> Result<()> { /* .. */ }
+    fn baz(&mut self) -> Result<()> { /* .. */ }
 }
 ```
