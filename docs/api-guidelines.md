@@ -153,9 +153,9 @@ impl<'hw> MyRunnableType<'hw> {
 }
 
 mod tasks {
-    pub async fn run_task_1<'hw>(runnable: &'hw MyRunnableType, foo: Foo) -> ! { /* .. */ }
-    pub async fn run_task_2<'hw>(runnable: &'hw MyRunnableType, bar: Bar) -> ! { /* .. */ }
-    pub async fn run_task_3<'hw>(runnable: &'hw MyRunnableType, baz: Baz) -> ! { /* .. */ }
+    pub async fn run_task_1(runnable: &MyRunnableType, foo: Foo) -> ! { /* .. */ }
+    pub async fn run_task_2(runnable: &MyRunnableType, bar: Bar) -> ! { /* .. */ }
+    pub async fn run_task_3(runnable: &MyRunnableType, baz: Baz) -> ! { /* .. */ }
 }
 
 ///// End-user code /////
@@ -244,9 +244,9 @@ Notice that most of the complexity has been moved into internal implementation d
 
 ### Use traits for public methods expected to be used at run time whenever possible
 
-In most cases, public APIs in this repo should be exposed in terms of traits rather than methods directly on the object, and objects that need references to other embedded-services objects should reference them by trait rather than by name.  This does not apply to public methods used to construct or initialize a service, because those generally need to know something about the concrete implementation type to properly initialize it.
+In most cases, public APIs in this repo should be exposed in terms of traits rather than methods directly on the object, and objects that need to interact with other embedded-services objects should refer to them by trait rather than by name.  This does not apply to public methods used to construct or initialize a service, because those generally need to know something about the concrete implementation type to properly initialize it.
 
-These traits should be defined in the `embedded-services` crate.
+These traits should be defined in standalone 'interface' crates (i.e. `battery-service-interface`) alongside any support types needed for the interface (e.g. an Error enum)
 
 __Reason__: Improved testability and customizability.
 Testability - if all our types interact with each other via traits rather than direct dependencies on the type, it makes it much easier to mock out individual components.
@@ -265,7 +265,7 @@ impl ExampleService {
 
 Consider:
 ```rust
-// In the embedded-services crate
+// In a standalone interface crate
 pub trait ExampleService {
     fn foo(&mut self) -> Result<()>;
     fn bar(&mut self) -> Result<()>;
