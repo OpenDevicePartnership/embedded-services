@@ -64,7 +64,7 @@ If you don't need dynamic dispatch over user-provided types, additionally consid
 
 Note that while this applies to code in this repo, it does not necessarily apply to other ODP repos (e.g. HAL crates that know exactly how many instances of peripheral X are available on the platform).
 
-__Reason__: Most code in this repos is expected to run primarily in environments that don't have a heap.  In heapless environments, your options are either to have your caller provide you memory or to allocate it as a static variable in your module.  Allocating it as a static variable in your module has negative impacts on flexibility, testability, performance, and code size.
+__Reason__: Most code in this repo is expected to run primarily in environments that don't have a heap.  In heapless environments, your options are either to have your caller provide you memory or to allocate it as a static variable in your module.  Allocating it as a static variable in your module has negative impacts on flexibility, testability, performance, and code size.
 Flexibility - Memory allocation in your module rather than by your caller means that the size of your object must be known when the module is compiled rather than when you're instantiated. This prevents you from storing any owned caller-provided types in your object (since you can't know those types when your module is compiled).
 Testability - if you have a private singleton instance, tests can't arbitrarily destroy and recreate that state.  This makes it difficult to test multiple startup paths.
 Performance - if you can't be generic over a type, the only way you can interact with user-provided types is by dyn references to trait impls.  External memory allocation allows you to be generic over a type, which means you don't have to pay for dynamic dispatch and the compiler can potentially inline code / optimize the interaction between your code and the user-provided type's code.
@@ -145,7 +145,7 @@ pub struct MyRunnableType<'hw> {
 }
 
 impl<'hw> MyRunnableType<'hw> {
-    fn new(resources: &mut Resources, /* .. */ ) -> Self {
+    pub fn new(resources: &mut Resources, /* .. */ ) -> Self {
         let inner = resources.insert(RunnableTypeInner::new(/* .. */))
         /* .. */ 
         Self { inner }
@@ -176,8 +176,8 @@ fn main() {
     }
 
     spawner.must_spawn(runner_1(&instance, Foo::new( /* .. */ )));
-    spawner.must_spawn(runner_1(&instance, Bar::new( /* .. */ )));
-    spawner.must_spawn(runner_1(&instance, Baz::new( /* .. */ )));
+    spawner.must_spawn(runner_2(&instance, Bar::new( /* .. */ )));
+    spawner.must_spawn(runner_3(&instance, Baz::new( /* .. */ )));
 }
 
 ```
@@ -210,7 +210,7 @@ pub struct Runner<'hw> {
 }
 
 impl<'hw> Runner<'hw> {
-    fn run(self) -> ! {
+    pub async fn run(self) -> ! {
         loop {
             embassy_sync::join::join3(
                 self.inner.task_1(self.foo),
@@ -222,7 +222,7 @@ impl<'hw> Runner<'hw> {
 }
 
 impl<'hw> MyRunnableType<'hw> {
-    fn new(resources: &mut Resources, foo: Foo, bar: Bar, baz: Baz /* .. */ ) -> (Self, Runner) {
+    pub fn new(resources: &mut Resources, foo: Foo, bar: Bar, baz: Baz /* .. */ ) -> (Self, Runner) {
         let inner = resources.insert(RunnableTypeInner::new( /* .. */ ));
         (Self { inner }, Runner { inner, foo, bar, baz })
     }
