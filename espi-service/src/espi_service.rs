@@ -42,7 +42,7 @@ impl<'hw, RelayHandler: embedded_services::relay::mctp::RelayHandler> Default fo
     }
 }
 
-/// Service runner for the eSPI service.  Users must call the run() method on the service to start processing events.
+/// Service runner for the eSPI service.  Users must call the run() method on the runner for the service to start processing events.
 pub struct Runner<'hw, RelayHandler: embedded_services::relay::mctp::RelayHandler> {
     inner: &'hw ServiceInner<'hw, RelayHandler>,
 }
