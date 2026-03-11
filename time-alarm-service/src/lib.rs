@@ -2,6 +2,7 @@
 
 use core::cell::RefCell;
 use embassy_sync::blocking_mutex::Mutex;
+use embassy_sync::pubsub::DynPublisher;
 use embassy_sync::signal::Signal;
 use embedded_mcu_hal::NvramStorage;
 use embedded_mcu_hal::time::{Datetime, DatetimeClock, DatetimeClockError};
@@ -110,6 +111,7 @@ pub struct InitParams<'hw> {
     pub ac_policy_storage: &'hw mut dyn NvramStorage<'hw, u32>,
     pub dc_expiration_storage: &'hw mut dyn NvramStorage<'hw, u32>,
     pub dc_policy_storage: &'hw mut dyn NvramStorage<'hw, u32>,
+    pub message_publisher: DynPublisher<'hw, TimeAlarmMessage>,
 }
 
 /// The main service implementation.  Users will interact with this via the Service struct, which is a thin wrapper around this that allows
@@ -123,6 +125,8 @@ struct ServiceInner<'hw> {
     timers: Timers<'hw>,
 
     capabilities: TimeAlarmDeviceCapabilities,
+
+    message_publisher: DynPublisher<'hw, TimeAlarmMessage>,
 }
 
 impl<'hw> ServiceInner<'hw> {
@@ -153,6 +157,7 @@ impl<'hw> ServiceInner<'hw> {
                 caps.set_dc_s5_wake_supported(true);
                 caps
             },
+            message_publisher: init_params.message_publisher,
         }
     }
 
@@ -284,7 +289,9 @@ impl<'hw> ServiceInner<'hw> {
                 "[Time/Alarm] Timer {:?} expired and would trigger a wake now, but the power service is not yet implemented so will currently do nothing",
                 timer_id
             );
-            // TODO [COMMS] We can't currently trigger a wake because the power service isn't implemented yet - when it is, we need to notify it here
+
+            // TAS notifies anyone who is interested that a timer has expired (including relay and power service)
+            self.message_publisher.publish(TimeAlarmMessage::TimerExpired).await;
         }
     }
 }
@@ -397,6 +404,7 @@ impl<'hw> odp_service_common::runnable_service::Service<'hw> for Service<'hw> {
 impl<'hw> embedded_services::relay::mctp::RelayServiceHandlerTypes for Service<'hw> {
     type RequestType = AcpiTimeAlarmRequest;
     type ResultType = AcpiTimeAlarmResult;
+    type MessageType = TimeAlarmMessage;
 }
 
 impl<'hw> embedded_services::relay::mctp::RelayServiceHandler for Service<'hw> {
@@ -431,5 +439,9 @@ impl<'hw> embedded_services::relay::mctp::RelayServiceHandler for Service<'hw> {
                 Ok(AcpiTimeAlarmResponse::TimerSeconds(self.get_timer_value(timer_id)?))
             }
         }
+    }
+
+    fn is_notification(message: &Self::MessageType) -> bool {
+        matches!(message, TimeAlarmMessage::TimerExpired)
     }
 }

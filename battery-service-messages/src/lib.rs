@@ -675,3 +675,8 @@ fn safe_put_bytes(buffer: &mut [u8], index: usize, bytes: &[u8]) -> Result<usize
         .copy_from_slice(bytes);
     Ok(bytes.len())
 }
+
+/// Message type for the Battery service.
+#[derive(Clone, Copy, PartialEq, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct BatteryMessage;

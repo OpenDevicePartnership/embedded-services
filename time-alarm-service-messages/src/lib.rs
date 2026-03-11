@@ -386,3 +386,10 @@ fn safe_get_u32(buffer: &[u8], index: usize) -> Result<u32, MessageSerialization
         .map_err(|_| MessageSerializationError::BufferTooSmall)?;
     Ok(u32::from_le_bytes(bytes))
 }
+
+/// Notification type for the Time Alarm service.
+#[derive(Clone, Copy, PartialEq, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum TimeAlarmMessage {
+    TimerExpired,
+}

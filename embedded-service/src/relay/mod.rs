@@ -116,6 +116,9 @@ pub mod mctp {
 
         /// The result type that this service handler processes
         type ResultType: super::SerializableResult;
+
+        /// The message type that this service broadcasts
+        type MessageType;
     }
 
     /// Trait for a service that can be relayed over an external bus (e.g. battery service, thermal service, time-alarm service)
@@ -125,7 +128,10 @@ pub mod mctp {
         fn process_request<'a>(
             &'a self,
             request: Self::RequestType,
-        ) -> impl core::future::Future<Output = Self::ResultType> + Send + 'a;
+        ) -> impl core::future::Future<Output = Self::ResultType> + 'a;
+
+        /// Returns whether the given message should be treated as a relay notification.
+        fn is_notification(message: &Self::MessageType) -> bool;
     }
 
     // Traits below this point are intended for consumption by relay services (e.g. the eSPI service), not individual services that want their messages relayed.
@@ -168,7 +174,10 @@ pub mod mctp {
         fn process_request<'a>(
             &'a self,
             message: Self::RequestEnumType,
-        ) -> impl core::future::Future<Output = Self::ResultEnumType> + Send + 'a;
+        ) -> impl core::future::Future<Output = Self::ResultEnumType> + 'a;
+
+        /// Wait for a notification from any service and return the associated service notification ID.
+        fn wait_for_notification<'a>(&'a mut self) -> impl core::future::Future<Output = u8> + 'a;
     }
 
     /// This macro generates a relay type over a collection of message types, which can be used by a relay service to
@@ -184,11 +193,12 @@ pub mod mctp {
     ///   relay_type_name: The name of the relay type to generate. This is arbitrary. The macro will emit a type with this name.
     ///
     /// Followed by a list of any number of service entries, which are specified by the following inputs:
-    ///   service_name:         A name to assign to generated identifiers associated with the service, e.g. "Battery".
-    ///                         This can be arbitrary.
-    ///   service_id:           A unique u8 that addresses that service on the EC.
-    ///   service_handler_type: A type that implements the RelayServiceHandler trait, which will be used to process messages
-    ///                         for this service.
+    ///   service_name:            A name to assign to generated identifiers associated with the service, e.g. "Battery".
+    ///                            This can be arbitrary.
+    ///   service_id:              A unique u8 that addresses that service on the EC.
+    ///   service_notification_id: A unique u8 identifying notifications from this service, distinct from service_id.
+    ///   service_handler_type:    A type that implements the RelayServiceHandler trait, which will be used to process messages
+    ///                            for this service.
     ///
     /// Example usage:
     ///
@@ -196,8 +206,8 @@ pub mod mctp {
     ///
     ///     impl_odp_mctp_relay_handler!(
     ///         MyRelayHanderType;
-    ///         Battery,   0x9, battery_service::Service<'static>;
-    ///         TimeAlarm, 0xB, time_alarm_service::Service<'static>;
+    ///         Battery,   0x9, 0, battery_service::Service<'static>;
+    ///         TimeAlarm, 0xB, 1, time_alarm_service::Service<'static>;
     ///     );
     ///
     ///     let relay_handler = MyRelayHandlerType::new(battery_service_instance, time_alarm_service_instance);
@@ -213,6 +223,7 @@ pub mod mctp {
             $(
                 $service_name:ident,
                 $service_id:expr,
+                $service_notification_id:expr,
                 $service_handler_type:ty;
             )+
         ) => {
@@ -451,6 +462,7 @@ pub mod mctp {
                     pub struct $relay_type_name<'hw> {
                         $(
                             [<$service_name:snake _handler>]: &'hw $service_handler_type,
+                            [<$service_name:snake _subscriber>]: $crate::_macro_internal::embassy_sync::pubsub::DynSubscriber<'hw, <$service_handler_type as $crate::relay::mctp::RelayServiceHandlerTypes>::MessageType>,
                         )+
                     }
 
@@ -458,11 +470,13 @@ pub mod mctp {
                         pub fn new(
                             $(
                                 [<$service_name:snake _handler>]: &'hw $service_handler_type,
+                                [<$service_name:snake _subscriber>]: $crate::_macro_internal::embassy_sync::pubsub::DynSubscriber<'hw, <$service_handler_type as $crate::relay::mctp::RelayServiceHandlerTypes>::MessageType>,
                             )+
                         ) -> Self {
                             Self {
                                 $(
                                     [<$service_name:snake _handler>],
+                                    [<$service_name:snake _subscriber>],
                                 )+
                             }
                         }
@@ -477,7 +491,7 @@ pub mod mctp {
                         fn process_request<'a>(
                             &'a self,
                             message: HostRequest,
-                        ) -> impl core::future::Future<Output = HostResult> + Send + 'a {
+                        ) -> impl core::future::Future<Output = HostResult> + 'a {
                             async move {
                                 match message {
                                     $(
@@ -486,6 +500,49 @@ pub mod mctp {
                                             HostResult::$service_name(result)
                                         }
                                     )+
+                                }
+                            }
+                        }
+
+                        // This waits for any relayable service to publish a message, then it checks if the message is a notification.
+                        // If it is, it returns associated notification ID as defined by the macro.
+                        // The relay service can then use this ID to determine how to notify the host SoC.
+                        fn wait_for_notification<'a>(&'a mut self) -> impl core::future::Future<Output = u8> + 'a {
+                            async move {
+                                loop {
+                                    $(
+                                        let mut [<$service_name:snake _fut>] = core::pin::pin!(
+                                            self.[<$service_name:snake _subscriber>].next_message()
+                                        );
+                                    )+
+
+                                    let result = core::future::poll_fn(|cx| {
+                                        $(
+                                            if let core::task::Poll::Ready(wait_result) = [<$service_name:snake _fut>].as_mut().poll(cx) {
+                                                match wait_result {
+                                                    $crate::_macro_internal::embassy_sync::pubsub::WaitResult::Message(msg) => {
+                                                        if <$service_handler_type as $crate::relay::mctp::RelayServiceHandler>::is_notification(&msg) {
+                                                            return core::task::Poll::Ready(Some($service_notification_id));
+                                                        } else {
+                                                            return core::task::Poll::Ready(None);
+                                                        }
+                                                    }
+                                                    $crate::_macro_internal::embassy_sync::pubsub::WaitResult::Lagged(count) => {
+                                                        // Revisit: This can only happen if other services use a `publish_immediate` on their channel, which can result in older messages getting discarded.
+                                                        // We really don't want notifications potentially getting lost, so we could change `SinglePublisherChannel` to not allow immediate publishing,
+                                                        // or we could just keep the burden on services so they have the flexibility to use `publish_immediate` if they want to at the risk of their own notifications being lost.
+                                                        $crate::error!("[Relay] {} subscriber lagged by {} messages, notifications may have been lost", stringify!($service_name), count);
+                                                        return core::task::Poll::Ready(None);
+                                                    }
+                                                }
+                                            }
+                                        )+
+                                        core::task::Poll::Pending
+                                    }).await;
+
+                                    if let Some(id) = result {
+                                        return id;
+                                    }
                                 }
                             }
                         }
