@@ -21,12 +21,12 @@ use power_policy_interface::{
 const MAX_CONNECTED_PROVIDERS: usize = 4;
 
 #[derive(Clone)]
-struct InternalState<'device, D: Lockable>
+struct InternalState<'device, PSU: Lockable>
 where
-    D::Inner: Psu,
+    PSU::Inner: Psu,
 {
     /// Current consumer state, if any
-    current_consumer_state: Option<consumer::AvailableConsumer<'device, D>>,
+    current_consumer_state: Option<consumer::AvailableConsumer<'device, PSU>>,
     /// Current provider global state
     current_provider_state: provider::State,
     /// System unconstrained power
@@ -35,9 +35,9 @@ where
     connected_providers: heapless::FnvIndexSet<usize, MAX_CONNECTED_PROVIDERS>,
 }
 
-impl<D: Lockable> Default for InternalState<'_, D>
+impl<PSU: Lockable> Default for InternalState<'_, PSU>
 where
-    D::Inner: Psu,
+    PSU::Inner: Psu,
 {
     fn default() -> Self {
         Self {

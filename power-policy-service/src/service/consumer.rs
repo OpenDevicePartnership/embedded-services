@@ -11,26 +11,26 @@ use power_policy_interface::{capability::ConsumerPowerCapability, charger::Polic
 /// State of the current consumer
 #[derive(Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct AvailableConsumer<'device, D: Lockable>
+pub struct AvailableConsumer<'device, PSU: Lockable>
 where
-    D::Inner: Psu,
+    PSU::Inner: Psu,
 {
     /// Device reference
-    pub psu: &'device D,
+    pub psu: &'device PSU,
     /// The power capability of the currently connected consumer
     pub consumer_power_capability: ConsumerPowerCapability,
 }
 
-impl<'device, D: Lockable> Clone for AvailableConsumer<'device, D>
+impl<'device, PSU: Lockable> Clone for AvailableConsumer<'device, PSU>
 where
-    D::Inner: Psu,
+    PSU::Inner: Psu,
 {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<'device, D: Lockable> Copy for AvailableConsumer<'device, D> where D::Inner: Psu {}
+impl<'device, PSU: Lockable> Copy for AvailableConsumer<'device, PSU> where PSU::Inner: Psu {}
 
 /// Compare two consumer capabilities to determine which one is better
 ///
