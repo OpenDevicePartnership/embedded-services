@@ -50,26 +50,30 @@ where
 }
 
 /// Power policy service
-pub struct Service<'a, PSU: Lockable>
+pub struct Service<'device, 'device_storage, PSU: Lockable>
 where
     PSU::Inner: Psu,
 {
     /// Power policy context
-    pub context: &'a context::Context,
+    pub context: &'device context::Context,
     /// PSU devices
-    psu_devices: &'a [&'a PSU],
+    psu_devices: &'device_storage [&'device PSU],
     /// State
-    state: InternalState<'a, PSU>,
+    state: InternalState<'device, PSU>,
     /// Config
     config: config::Config,
 }
 
-impl<'a, PSU: Lockable> Service<'a, PSU>
+impl<'device, 'device_storage, PSU: Lockable> Service<'device, 'device_storage, PSU>
 where
     PSU::Inner: Psu,
 {
     /// Create a new power policy
-    pub fn new(psu_devices: &'a [&'a PSU], context: &'a context::Context, config: config::Config) -> Self {
+    pub fn new(
+        psu_devices: &'device_storage [&'device PSU],
+        context: &'device context::Context,
+        config: config::Config,
+    ) -> Self {
         Self {
             context,
             psu_devices,
@@ -137,7 +141,7 @@ where
 
     async fn process_request_provider_power_capabilities(
         &mut self,
-        requester: &'a PSU,
+        requester: &'device PSU,
         capability: Option<ProviderPowerCapability>,
     ) -> Result<(), Error> {
         {
@@ -162,7 +166,7 @@ where
         self.connect_provider(requester).await
     }
 
-    async fn process_notify_disconnect(&mut self, device: &'a PSU) -> Result<(), Error> {
+    async fn process_notify_disconnect(&mut self, device: &'device PSU) -> Result<(), Error> {
         let mut locked_device = device.lock().await;
         info!("({}): Received notify disconnect", locked_device.name());
 
@@ -192,7 +196,7 @@ where
     }
 
     /// Send an event to all registered listeners
-    async fn broadcast_event(&mut self, _message: ServiceEvent<'a, PSU>) {
+    async fn broadcast_event(&mut self, _message: ServiceEvent<'device, PSU>) {
         // TODO: Add this back as part of the migration away from comms
         // See https://github.com/OpenDevicePartnership/embedded-services/issues/742
     }
@@ -200,7 +204,7 @@ where
     /// Common logic for when a provider is disconnected
     ///
     /// Returns true if the device was operating as a provider
-    async fn remove_connected_provider(&mut self, psu: &'a PSU) -> bool {
+    async fn remove_connected_provider(&mut self, psu: &'device PSU) -> bool {
         if self.state.connected_providers.remove(&(psu as *const PSU as usize)) {
             self.broadcast_event(ServiceEvent::ProviderDisconnected(psu)).await;
             true
@@ -209,7 +213,7 @@ where
         }
     }
 
-    pub async fn process_psu_event(&mut self, event: PsuEvent<'a, PSU>) -> Result<(), Error> {
+    pub async fn process_psu_event(&mut self, event: PsuEvent<'device, PSU>) -> Result<(), Error> {
         let device = event.psu;
         match event.event {
             PsuEventData::Attached => {

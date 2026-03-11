@@ -134,8 +134,9 @@ async fn run(spawner: Spawner) {
     static POWER_POLICY_PSU_REGISTRATION: StaticCell<[&DeviceType; 2]> = StaticCell::new();
     let psu_registration = POWER_POLICY_PSU_REGISTRATION.init([device0, device1]);
 
-    static SERVICE: StaticCell<Mutex<GlobalRawMutex, power_policy_service::service::Service<'static, DeviceType>>> =
-        StaticCell::new();
+    static SERVICE: StaticCell<
+        Mutex<GlobalRawMutex, power_policy_service::service::Service<'static, 'static, DeviceType>>,
+    > = StaticCell::new();
     let service = SERVICE.init(Mutex::new(power_policy_service::service::Service::new(
         psu_registration.as_slice(),
         service_context,
@@ -281,7 +282,7 @@ async fn power_policy_task(
         DeviceType,
         channel::DynamicReceiver<'static, power_policy_interface::psu::event::EventData>,
     >,
-    power_policy: &'static Mutex<GlobalRawMutex, power_policy_service::service::Service<'static, DeviceType>>,
+    power_policy: &'static Mutex<GlobalRawMutex, power_policy_service::service::Service<'static, 'static, DeviceType>>,
 ) {
     power_policy_service::service::task::task(psu_events, power_policy).await;
 }

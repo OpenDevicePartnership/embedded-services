@@ -38,12 +38,12 @@ pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(15);
 const EVENT_CHANNEL_SIZE: usize = 4;
 
 pub type DeviceType<'a> = Mutex<GlobalRawMutex, Mock<'a, DynamicSender<'a, EventData>>>;
-pub type ServiceType<'a> = Service<'a, DeviceType<'a>>;
+pub type ServiceType<'device, 'device_storage> = Service<'device, 'device_storage, DeviceType<'device>>;
 
-async fn power_policy_task<'a, const N: usize>(
-    completion_signal: &'a Signal<GlobalRawMutex, ()>,
-    mut power_policy: ServiceType<'a>,
-    mut event_receivers: EventReceivers<'a, N, DeviceType<'a>, DynamicReceiver<'a, EventData>>,
+async fn power_policy_task<'device, 'device_storage, const N: usize>(
+    completion_signal: &'device Signal<GlobalRawMutex, ()>,
+    mut power_policy: ServiceType<'device, 'device_storage>,
+    mut event_receivers: EventReceivers<'device, N, DeviceType<'device>, DynamicReceiver<'device, EventData>>,
 ) {
     while let Either::First(result) = select(event_receivers.wait_event(), completion_signal.wait()).await {
         power_policy.process_psu_event(result).await.unwrap();

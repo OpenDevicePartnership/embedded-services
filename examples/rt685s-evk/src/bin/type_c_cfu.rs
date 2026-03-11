@@ -165,7 +165,7 @@ async fn fw_update_task() {
 #[embassy_executor::task]
 async fn power_policy_task(
     psu_events: EventReceivers<'static, 2, DeviceType, DynamicReceiver<'static, psu::event::EventData>>,
-    power_policy: &'static Mutex<GlobalRawMutex, power_policy_service::service::Service<'static, DeviceType>>,
+    power_policy: &'static Mutex<GlobalRawMutex, power_policy_service::service::Service<'static, 'static, DeviceType>>,
 ) {
     power_policy_service::service::task::task(psu_events, power_policy).await;
 }

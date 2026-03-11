@@ -46,12 +46,12 @@ fn cmp_consumer_capability(
     (a.capability, a_is_current).cmp(&(b.capability, b_is_current))
 }
 
-impl<'a, PSU: Lockable> Service<'a, PSU>
+impl<'device, 'device_storage, PSU: Lockable> Service<'device, 'device_storage, PSU>
 where
     PSU::Inner: Psu,
 {
     /// Iterate over all devices to determine what is best power port provides the highest power
-    async fn find_best_consumer(&self) -> Result<Option<AvailableConsumer<'a, PSU>>, Error> {
+    async fn find_best_consumer(&self) -> Result<Option<AvailableConsumer<'device, PSU>>, Error> {
         let mut best_consumer = None;
         let current_consumer = self.state.current_consumer_state.as_ref().map(|f| f.psu);
 
@@ -133,7 +133,10 @@ where
     }
 
     /// Common logic to execute after a consumer is connected
-    async fn post_consumer_connected(&mut self, connected_consumer: AvailableConsumer<'a, PSU>) -> Result<(), Error> {
+    async fn post_consumer_connected(
+        &mut self,
+        connected_consumer: AvailableConsumer<'device, PSU>,
+    ) -> Result<(), Error> {
         self.state.current_consumer_state = Some(connected_consumer);
         // todo: review the delay time
         embassy_time::Timer::after_millis(800).await;
@@ -191,7 +194,7 @@ where
     }
 
     /// Connect to a new consumer
-    async fn connect_new_consumer(&mut self, new_consumer: AvailableConsumer<'a, PSU>) -> Result<(), Error> {
+    async fn connect_new_consumer(&mut self, new_consumer: AvailableConsumer<'device, PSU>) -> Result<(), Error> {
         // Handle our current consumer
         if let Some(current_consumer) = self.state.current_consumer_state {
             if ptr::eq(current_consumer.psu, new_consumer.psu)

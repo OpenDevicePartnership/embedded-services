@@ -27,12 +27,12 @@ pub(super) struct State {
     state: PowerState,
 }
 
-impl<'a, PSU: Lockable> Service<'a, PSU>
+impl<'device, 'device_storage, PSU: Lockable> Service<'device, 'device_storage, PSU>
 where
     PSU::Inner: Psu,
 {
     /// Attempt to connect the requester as a provider
-    pub(super) async fn connect_provider(&mut self, requester: &'a PSU) -> Result<(), Error> {
+    pub(super) async fn connect_provider(&mut self, requester: &'device PSU) -> Result<(), Error> {
         let requested_power_capability = {
             let requester = requester.lock().await;
             debug!("({}): Attempting to connect as provider", requester.name());
@@ -104,7 +104,7 @@ where
     }
 
     /// Common logic for after a provider has successfully connected
-    async fn post_provider_connected(&mut self, requester: &'a PSU, target_power: ProviderPowerCapability) {
+    async fn post_provider_connected(&mut self, requester: &'device PSU, target_power: ProviderPowerCapability) {
         let _ = self.state.connected_providers.insert(requester as *const PSU as usize);
         self.broadcast_event(ServiceEvent::ProviderConnected(requester, target_power))
             .await;

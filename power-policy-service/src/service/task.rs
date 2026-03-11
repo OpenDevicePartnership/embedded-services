@@ -8,17 +8,19 @@ use super::Service;
 
 /// Runs the power policy task.
 pub async fn task<
-    'a,
+    'device,
+    'device_storage,
     const PSU_COUNT: usize,
-    S: Lockable<Inner = Service<'a, PSU>>,
+    S: Lockable<Inner = Service<'device, 'device_storage, PSU>>,
     PSU: Lockable,
     R: Receiver<EventData>,
 >(
-    mut psu_events: crate::psu::EventReceivers<'a, PSU_COUNT, PSU, R>,
-    policy: &'a S,
+    mut psu_events: crate::psu::EventReceivers<'device, PSU_COUNT, PSU, R>,
+    policy: &'device S,
 ) -> !
 where
     PSU::Inner: Psu,
+    'device: 'device_storage,
 {
     info!("Starting power policy task");
     loop {
