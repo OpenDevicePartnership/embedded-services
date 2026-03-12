@@ -98,7 +98,7 @@ pub struct Resources<'hw> {
 }
 
 pub struct Foo<'hw> {
-    inner: &'hw FooInner
+    inner: &'hw FooInner<'hw>
 }
 
 impl<'hw> Foo<'hw> {
@@ -137,11 +137,11 @@ impl<'hw> MyRunnableTypeInner<'hw> {
 
 #[derive(Default)]
 pub struct Resources<'hw> {
-    inner: Option<MyRunnableTypeInner>
+    inner: Option<MyRunnableTypeInner<'hw>>
 }
 
 pub struct MyRunnableType<'hw> {
-    inner: &'hw MyRunnableTypeInner
+    inner: &'hw MyRunnableTypeInner<'hw>
 }
 
 impl<'hw> MyRunnableType<'hw> {
@@ -195,15 +195,15 @@ impl<'hw> MyRunnableTypeInner<'hw> {
 
 #[derive(Default)]
 pub struct Resources<'hw> {
-    inner: Option<MyRunnableTypeInner>
+    inner: Option<MyRunnableTypeInner<'hw>>
 }
 
 pub struct MyRunnableType<'hw> {
-    inner: &'hw MyRunnableTypeInner
+    inner: &'hw MyRunnableTypeInner<'hw>
 }
 
 pub struct Runner<'hw> {
-    inner: &'hw MyRunnableTypeInner,
+    inner: &'hw MyRunnableTypeInner<'hw>,
     foo: Foo,
     bar: Bar,
     baz: Baz
@@ -242,7 +242,7 @@ fn main() {
 ```
 Notice that most of the complexity has been moved into internal implementation details and the client doesn't have to think about it.  Also notice that if you want to add a new 'green thread', or change what state is available to which 'green threads' you can do that entirely in private code in the `run()` method, without requiring changes to your client.
 
-Note that this can change the order in which your tasks are scheduled compared to having dedicated tasks for each worker function. If your code was making any assumptions about a specific task scheduling order among these worker functions, this will break those assumptions. Ensure that if you need to emit events from your service that need to be emitted in a specific order, you explicitly enforce that ordering in your code (e.g. via emitting all events from the same task).
+Note that this can change the order in which your tasks are scheduled compared to having dedicated tasks for each worker function. If your code was making any assumptions about a specific task scheduling order among these worker functions, this will break those assumptions. Ensure that if you need to emit events from your service that need to be emitted in a specific order, you explicitly enforce that ordering in your code (e.g. via emitting all events from the same task or perhaps coordinating between tasks with channels or queues).
 
 ### Use traits for public methods expected to be used at run time whenever possible
 
