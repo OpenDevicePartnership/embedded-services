@@ -7,7 +7,7 @@ pub mod context;
 pub mod provider;
 pub mod task;
 
-use embedded_services::{error, info, sync::Lockable};
+use embedded_services::{error, event::Sender, info, sync::Lockable};
 
 use power_policy_interface::{
     capability::{ConsumerPowerCapability, PowerCapability, ProviderPowerCapability},
@@ -50,8 +50,13 @@ where
 }
 
 /// Power policy service
-pub struct Service<'device, 'device_storage, PSU: Lockable>
-where
+pub struct Service<
+    'device,
+    'device_storage,
+    'sender_storage,
+    PSU: Lockable,
+    EventSender: Sender<ServiceEvent<'device, PSU>>,
+> where
     PSU::Inner: Psu,
 {
     /// Power policy context
@@ -62,15 +67,19 @@ where
     state: InternalState<'device, PSU>,
     /// Config
     config: config::Config,
+    /// Senders for service events
+    event_senders: &'sender_storage mut [EventSender],
 }
 
-impl<'device, 'device_storage, PSU: Lockable> Service<'device, 'device_storage, PSU>
+impl<'device, 'device_storage, 'sender_storage, PSU: Lockable, EventSender: Sender<ServiceEvent<'device, PSU>>>
+    Service<'device, 'device_storage, 'sender_storage, PSU, EventSender>
 where
     PSU::Inner: Psu,
 {
     /// Create a new power policy
     pub fn new(
         psu_devices: &'device_storage [&'device PSU],
+        event_senders: &'sender_storage mut [EventSender],
         context: &'device context::Context,
         config: config::Config,
     ) -> Self {
@@ -79,6 +88,7 @@ where
             psu_devices,
             state: InternalState::default(),
             config,
+            event_senders,
         }
     }
 
@@ -196,9 +206,10 @@ where
     }
 
     /// Send an event to all registered listeners
-    async fn broadcast_event(&mut self, _message: ServiceEvent<'device, PSU>) {
-        // TODO: Add this back as part of the migration away from comms
-        // See https://github.com/OpenDevicePartnership/embedded-services/issues/742
+    async fn broadcast_event(&mut self, event: ServiceEvent<'device, PSU>) {
+        for sender in self.event_senders.iter_mut() {
+            sender.send(event).await;
+        }
     }
 
     /// Common logic for when a provider is disconnected

@@ -5,6 +5,7 @@ use embassy_sync::mutex::Mutex;
 use embassy_sync::once_lock::OnceLock;
 use embassy_sync::pubsub::PubSubChannel;
 use embassy_time::Timer;
+use embedded_services::event::DiscardSender;
 use embedded_services::{GlobalRawMutex, IntrusiveList};
 use embedded_usb_pd::GlobalPortId;
 use embedded_usb_pd::ado::Ado;
@@ -75,10 +76,18 @@ async fn task(spawner: Spawner) {
     static POWER_POLICY_PSU_REGISTRATION: StaticCell<[&DeviceType; 1]> = StaticCell::new();
     let psu_registration = POWER_POLICY_PSU_REGISTRATION.init([&wrapper.ports[0].proxy]);
 
-    static POWER_SERVICE: StaticCell<Mutex<GlobalRawMutex, power_policy_service::service::Service<DeviceType>>> =
-        StaticCell::new();
+    static POWER_POLICY_EVENT_SENDERS: StaticCell<[DiscardSender; 1]> = StaticCell::new();
+    let power_policy_event_senders = POWER_POLICY_EVENT_SENDERS.init([DiscardSender]);
+
+    static POWER_SERVICE: StaticCell<
+        Mutex<
+            GlobalRawMutex,
+            power_policy_service::service::Service<'static, 'static, 'static, DeviceType, DiscardSender>,
+        >,
+    > = StaticCell::new();
     let power_service = POWER_SERVICE.init(Mutex::new(power_policy_service::service::Service::new(
         psu_registration,
+        power_policy_event_senders.as_mut_slice(),
         power_service_context,
         power_policy_service::service::config::Config::default(),
     )));
@@ -144,7 +153,10 @@ async fn task(spawner: Spawner) {
 #[embassy_executor::task]
 async fn power_policy_task(
     psu_events: EventReceivers<'static, 1, DeviceType, DynamicReceiver<'static, psu::event::EventData>>,
-    power_policy: &'static Mutex<GlobalRawMutex, power_policy_service::service::Service<'static, 'static, DeviceType>>,
+    power_policy: &'static Mutex<
+        GlobalRawMutex,
+        power_policy_service::service::Service<'static, 'static, 'static, DeviceType, DiscardSender>,
+    >,
 ) {
     power_policy_service::service::task::task(psu_events, power_policy).await;
 }

@@ -27,7 +27,8 @@ pub(super) struct State {
     state: PowerState,
 }
 
-impl<'device, 'device_storage, PSU: Lockable> Service<'device, 'device_storage, PSU>
+impl<'device, 'device_storage, 'sender_storage, PSU: Lockable, EventSender: Sender<ServiceEvent<'device, PSU>>>
+    Service<'device, 'device_storage, 'sender_storage, PSU, EventSender>
 where
     PSU::Inner: Psu,
 {

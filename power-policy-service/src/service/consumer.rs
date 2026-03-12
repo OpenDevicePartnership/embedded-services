@@ -46,7 +46,8 @@ fn cmp_consumer_capability(
     (a.capability, a_is_current).cmp(&(b.capability, b_is_current))
 }
 
-impl<'device, 'device_storage, PSU: Lockable> Service<'device, 'device_storage, PSU>
+impl<'device, 'device_storage, 'sender_storage, PSU: Lockable, EventSender: Sender<ServiceEvent<'device, PSU>>>
+    Service<'device, 'device_storage, 'sender_storage, PSU, EventSender>
 where
     PSU::Inner: Psu,
 {

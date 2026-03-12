@@ -1,8 +1,9 @@
 use embedded_services::{error, info, sync::Lockable};
 
-use embedded_services::event::Receiver;
+use embedded_services::event::{Receiver, Sender};
 use power_policy_interface::psu::Psu;
 use power_policy_interface::psu::event::EventData;
+use power_policy_interface::service::event::Event as ServiceEvent;
 
 use super::Service;
 
@@ -10,10 +11,12 @@ use super::Service;
 pub async fn task<
     'device,
     'device_storage,
+    'sender_storage,
     const PSU_COUNT: usize,
-    S: Lockable<Inner = Service<'device, 'device_storage, PSU>>,
+    S: Lockable<Inner = Service<'device, 'device_storage, 'sender_storage, PSU, EventSender>>,
     PSU: Lockable,
     R: Receiver<EventData>,
+    EventSender: Sender<ServiceEvent<'device, PSU>> + 'sender_storage,
 >(
     mut psu_events: crate::psu::EventReceivers<'device, PSU_COUNT, PSU, R>,
     policy: &'device S,
