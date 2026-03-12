@@ -94,7 +94,7 @@ struct FooInner<'hw> { /* .. */ }
 
 #[derive(Default)]
 pub struct Resources<'hw> {
-    inner: Option<FooInner>
+    inner: Option<FooInner<'hw>>
 }
 
 pub struct Foo<'hw> {
@@ -146,8 +146,8 @@ pub struct MyRunnableType<'hw> {
 
 impl<'hw> MyRunnableType<'hw> {
     pub fn new(resources: &mut Resources, /* .. */ ) -> Self {
-        let inner = resources.insert(RunnableTypeInner::new(/* .. */))
-        /* .. */ 
+        let inner = resources.insert(RunnableTypeInner::new(/* .. */));
+        /* .. */
         Self { inner }
     }
 }
@@ -242,11 +242,13 @@ fn main() {
 ```
 Notice that most of the complexity has been moved into internal implementation details and the client doesn't have to think about it.  Also notice that if you want to add a new 'green thread', or change what state is available to which 'green threads' you can do that entirely in private code in the `run()` method, without requiring changes to your client.
 
+Note that this can change the order in which your tasks are scheduled compared to having dedicated tasks for each worker function. If your code was making any assumptions about a specific task scheduling order among these worker functions, this will break those assumptions. Ensure that if you need to emit events from your service that need to be emitted in a specific order, you explicitly enforce that ordering in your code (e.g. via emitting all events from the same task).
+
 ### Use traits for public methods expected to be used at run time whenever possible
 
 In most cases, public APIs in this repo should be exposed in terms of traits rather than methods directly on the object, and objects that need to interact with other embedded-services objects should refer to them by trait rather than by name.  This does not apply to public methods used to construct or initialize a service, because those generally need to know something about the concrete implementation type to properly initialize it.
 
-These traits should be defined in standalone 'interface' crates (i.e. `battery-service-interface`) alongside any support types needed for the interface (e.g. an Error enum)
+These traits should be defined in standalone 'interface' crates (e.g. `battery-service-interface`) alongside any support types needed for the interface (e.g. an Error enum).
 
 __Reason__: Improved testability and customizability.
 Testability - if all our types interact with each other via traits rather than direct dependencies on the type, it makes it much easier to mock out individual components.
