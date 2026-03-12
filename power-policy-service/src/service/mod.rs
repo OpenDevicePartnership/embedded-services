@@ -7,7 +7,8 @@ pub mod context;
 pub mod provider;
 pub mod task;
 
-use embedded_services::{error, info, sync::Lockable};
+use embedded_services::named::Named;
+use embedded_services::{error, event::Sender, info, sync::Lockable};
 
 use power_policy_interface::{
     capability::{ConsumerPowerCapability, PowerCapability, ProviderPowerCapability},
@@ -21,12 +22,12 @@ use power_policy_interface::{
 const MAX_CONNECTED_PROVIDERS: usize = 4;
 
 #[derive(Clone)]
-struct InternalState<'device, D: Lockable>
+struct InternalState<'device, PSU: Lockable>
 where
-    D::Inner: Psu,
+    PSU::Inner: Psu,
 {
     /// Current consumer state, if any
-    current_consumer_state: Option<consumer::AvailableConsumer<'device, D>>,
+    current_consumer_state: Option<consumer::AvailableConsumer<'device, PSU>>,
     /// Current provider global state
     current_provider_state: provider::State,
     /// System unconstrained power
@@ -35,9 +36,9 @@ where
     connected_providers: heapless::FnvIndexSet<usize, MAX_CONNECTED_PROVIDERS>,
 }
 
-impl<D: Lockable> Default for InternalState<'_, D>
+impl<PSU: Lockable> Default for InternalState<'_, PSU>
 where
-    D::Inner: Psu,
+    PSU::Inner: Psu,
 {
     fn default() -> Self {
         Self {
@@ -50,31 +51,45 @@ where
 }
 
 /// Power policy service
-pub struct Service<'a, PSU: Lockable>
-where
+pub struct Service<
+    'device,
+    'device_storage,
+    'sender_storage,
+    PSU: Lockable,
+    EventSender: Sender<ServiceEvent<'device, PSU>>,
+> where
     PSU::Inner: Psu,
 {
     /// Power policy context
-    pub context: &'a context::Context,
+    pub context: &'device context::Context,
     /// PSU devices
-    psu_devices: &'a [&'a PSU],
+    psu_devices: &'device_storage [&'device PSU],
     /// State
-    state: InternalState<'a, PSU>,
+    state: InternalState<'device, PSU>,
     /// Config
     config: config::Config,
+    /// Senders for service events
+    event_senders: &'sender_storage mut [EventSender],
 }
 
-impl<'a, PSU: Lockable> Service<'a, PSU>
+impl<'device, 'device_storage, 'sender_storage, PSU: Lockable, EventSender: Sender<ServiceEvent<'device, PSU>>>
+    Service<'device, 'device_storage, 'sender_storage, PSU, EventSender>
 where
     PSU::Inner: Psu,
 {
     /// Create a new power policy
-    pub fn new(psu_devices: &'a [&'a PSU], context: &'a context::Context, config: config::Config) -> Self {
+    pub fn new(
+        psu_devices: &'device_storage [&'device PSU],
+        event_senders: &'sender_storage mut [EventSender],
+        context: &'device context::Context,
+        config: config::Config,
+    ) -> Self {
         Self {
             context,
             psu_devices,
             state: InternalState::default(),
             config,
+            event_senders,
         }
     }
 
@@ -94,7 +109,7 @@ where
         total
     }
 
-    async fn process_notify_attach(&self, device: &PSU) {
+    async fn process_notify_attach(&self, device: &'device PSU) {
         let mut device = device.lock().await;
         info!("({}): Received notify attached", device.name());
         if let Err(e) = device.state_mut().attach() {
@@ -102,18 +117,21 @@ where
         }
     }
 
-    async fn process_notify_detach(&mut self, device: &PSU) -> Result<(), Error> {
+    async fn process_notify_detach(&mut self, device: &'device PSU) -> Result<(), Error> {
         {
             let mut device = device.lock().await;
             info!("({}): Received notify detached", device.name());
             device.state_mut().detach();
         }
-        self.update_current_consumer().await
+
+        self.remove_connected_provider(device).await;
+        self.update_current_consumer().await?;
+        Ok(())
     }
 
     async fn process_notify_consumer_power_capability(
         &mut self,
-        device: &PSU,
+        device: &'device PSU,
         capability: Option<ConsumerPowerCapability>,
     ) -> Result<(), Error> {
         {
@@ -137,7 +155,7 @@ where
 
     async fn process_request_provider_power_capabilities(
         &mut self,
-        requester: &'a PSU,
+        requester: &'device PSU,
         capability: Option<ProviderPowerCapability>,
     ) -> Result<(), Error> {
         {
@@ -152,7 +170,7 @@ where
                 .update_requested_provider_power_capability(capability)
             {
                 error!(
-                    "({}): Invalid state for notify consumer capability, catching up: {:#?}",
+                    "({}): Invalid state for notify provider capability, catching up: {:#?}",
                     requester.name(),
                     e,
                 );
@@ -162,7 +180,7 @@ where
         self.connect_provider(requester).await
     }
 
-    async fn process_notify_disconnect(&mut self, device: &'a PSU) -> Result<(), Error> {
+    async fn process_notify_disconnect(&mut self, device: &'device PSU) -> Result<(), Error> {
         let mut locked_device = device.lock().await;
         info!("({}): Received notify disconnect", locked_device.name());
 
@@ -192,24 +210,13 @@ where
     }
 
     /// Send an event to all registered listeners
-    async fn broadcast_event(&mut self, _message: ServiceEvent<'a, PSU>) {
-        // TODO: Add this back as part of the migration away from comms
-        // See https://github.com/OpenDevicePartnership/embedded-services/issues/742
-    }
-
-    /// Common logic for when a provider is disconnected
-    ///
-    /// Returns true if the device was operating as a provider
-    async fn remove_connected_provider(&mut self, psu: &'a PSU) -> bool {
-        if self.state.connected_providers.remove(&(psu as *const PSU as usize)) {
-            self.broadcast_event(ServiceEvent::ProviderDisconnected(psu)).await;
-            true
-        } else {
-            false
+    async fn broadcast_event(&mut self, event: ServiceEvent<'device, PSU>) {
+        for sender in self.event_senders.iter_mut() {
+            sender.send(event).await;
         }
     }
 
-    pub async fn process_psu_event(&mut self, event: PsuEvent<'a, PSU>) -> Result<(), Error> {
+    pub async fn process_psu_event(&mut self, event: PsuEvent<'device, PSU>) -> Result<(), Error> {
         let device = event.psu;
         match event.event {
             PsuEventData::Attached => {

@@ -5,7 +5,7 @@ use embassy_sync::{
     mutex::Mutex,
 };
 use embassy_time::{self as _, Timer};
-use embedded_services::GlobalRawMutex;
+use embedded_services::{GlobalRawMutex, event::DiscardSender, named::Named};
 use log::*;
 use power_policy_interface::psu::{Error, Psu};
 use power_policy_interface::{
@@ -96,7 +96,9 @@ impl Psu for ExampleDevice<'_> {
     fn state_mut(&mut self) -> &mut psu::State {
         &mut self.state
     }
+}
 
+impl Named for ExampleDevice<'_> {
     fn name(&self) -> &'static str {
         self.name
     }
@@ -134,10 +136,18 @@ async fn run(spawner: Spawner) {
     static POWER_POLICY_PSU_REGISTRATION: StaticCell<[&DeviceType; 2]> = StaticCell::new();
     let psu_registration = POWER_POLICY_PSU_REGISTRATION.init([device0, device1]);
 
-    static SERVICE: StaticCell<Mutex<GlobalRawMutex, power_policy_service::service::Service<'static, DeviceType>>> =
-        StaticCell::new();
+    static POWER_POLICY_EVENT_SENDERS: StaticCell<[DiscardSender; 1]> = StaticCell::new();
+    let power_policy_event_senders = POWER_POLICY_EVENT_SENDERS.init([DiscardSender]);
+
+    static SERVICE: StaticCell<
+        Mutex<
+            GlobalRawMutex,
+            power_policy_service::service::Service<'static, 'static, 'static, DeviceType, DiscardSender>,
+        >,
+    > = StaticCell::new();
     let service = SERVICE.init(Mutex::new(power_policy_service::service::Service::new(
         psu_registration.as_slice(),
+        power_policy_event_senders.as_mut_slice(),
         service_context,
         power_policy_service::service::config::Config::default(),
     )));
@@ -281,7 +291,10 @@ async fn power_policy_task(
         DeviceType,
         channel::DynamicReceiver<'static, power_policy_interface::psu::event::EventData>,
     >,
-    power_policy: &'static Mutex<GlobalRawMutex, power_policy_service::service::Service<'static, DeviceType>>,
+    power_policy: &'static Mutex<
+        GlobalRawMutex,
+        power_policy_service::service::Service<'static, 'static, 'static, DeviceType, DiscardSender>,
+    >,
 ) {
     power_policy_service::service::task::task(psu_events, power_policy).await;
 }

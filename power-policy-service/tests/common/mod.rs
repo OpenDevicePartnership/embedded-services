@@ -1,4 +1,8 @@
 #![allow(clippy::unwrap_used)]
+#![allow(dead_code)]
+#![allow(clippy::panic)]
+use std::mem::ManuallyDrop;
+
 use embassy_futures::{
     join::join,
     select::{Either, select},
@@ -11,8 +15,11 @@ use embassy_sync::{
 };
 use embassy_time::{Duration, with_timeout};
 use embedded_services::GlobalRawMutex;
-use power_policy_interface::capability::PowerCapability;
 use power_policy_interface::psu::event::EventData;
+use power_policy_interface::{
+    capability::{ConsumerPowerCapability, PowerCapability, ProviderPowerCapability},
+    service::{UnconstrainedState, event::Event as ServiceEvent},
+};
 use power_policy_service::psu::EventReceivers;
 use power_policy_service::service::Service;
 
@@ -38,12 +45,18 @@ pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(15);
 const EVENT_CHANNEL_SIZE: usize = 4;
 
 pub type DeviceType<'a> = Mutex<GlobalRawMutex, Mock<'a, DynamicSender<'a, EventData>>>;
-pub type ServiceType<'a> = Service<'a, DeviceType<'a>>;
+pub type ServiceType<'device, 'device_storage, 'sender_storage> = Service<
+    'device,
+    'device_storage,
+    'sender_storage,
+    DeviceType<'device>,
+    DynamicSender<'sender_storage, ServiceEvent<'device, DeviceType<'device>>>,
+>;
 
-async fn power_policy_task<'a, const N: usize>(
-    completion_signal: &'a Signal<GlobalRawMutex, ()>,
-    mut power_policy: ServiceType<'a>,
-    mut event_receivers: EventReceivers<'a, N, DeviceType<'a>, DynamicReceiver<'a, EventData>>,
+async fn power_policy_task<'device, 'device_storage, 'sender_storage, const N: usize>(
+    completion_signal: &'device Signal<GlobalRawMutex, ()>,
+    mut power_policy: ServiceType<'device, 'device_storage, 'sender_storage>,
+    mut event_receivers: EventReceivers<'device, N, DeviceType<'device>, DynamicReceiver<'device, EventData>>,
 ) {
     while let Either::First(result) = select(event_receivers.wait_event(), completion_signal.wait()).await {
         power_policy.process_psu_event(result).await.unwrap();
@@ -63,15 +76,16 @@ async fn power_policy_task<'a, const N: usize>(
 /// ```
 /// However, `impl (Future<Output = ()> + 'a)` is not real syntax. This could be done with the unstable feature type_alias_impl_trait,
 /// but we use this helper trait so as to not require use of nightly.
-pub trait TestArgsFnOnce<'a, Arg0: 'a, Arg1: 'a, Arg2: 'a, Arg3: 'a>:
-    FnOnce(Arg0, Arg1, Arg2, Arg3) -> Self::Fut
+pub trait TestArgsFnOnce<'a, Arg0: 'a, Arg1: 'a, Arg2: 'a, Arg3: 'a, Arg4: 'a>:
+    FnOnce(Arg0, Arg1, Arg2, Arg3, Arg4) -> Self::Fut
 {
     type Fut: Future<Output = ()>;
 }
 
-impl<'a, Arg0: 'a, Arg1: 'a, Arg2: 'a, Arg3: 'a, F, Fut> TestArgsFnOnce<'a, Arg0, Arg1, Arg2, Arg3> for F
+impl<'a, Arg0: 'a, Arg1: 'a, Arg2: 'a, Arg3: 'a, Arg4: 'a, F, Fut> TestArgsFnOnce<'a, Arg0, Arg1, Arg2, Arg3, Arg4>
+    for F
 where
-    F: FnOnce(Arg0, Arg1, Arg2, Arg3) -> Fut,
+    F: FnOnce(Arg0, Arg1, Arg2, Arg3, Arg4) -> Fut,
     Fut: Future<Output = ()>,
 {
     type Fut = Fut;
@@ -81,9 +95,10 @@ pub async fn run_test<F>(timeout: Duration, test: F)
 where
     for<'a> F: TestArgsFnOnce<
             'a,
-            &'a Mutex<GlobalRawMutex, Mock<'a, DynamicSender<'a, EventData>>>,
+            DynamicReceiver<'a, ServiceEvent<'a, DeviceType<'a>>>,
+            &'a DeviceType<'a>,
             &'a Signal<GlobalRawMutex, (usize, FnCall)>,
-            &'a Mutex<GlobalRawMutex, Mock<'a, DynamicSender<'a, EventData>>>,
+            &'a DeviceType<'a>,
             &'a Signal<GlobalRawMutex, (usize, FnCall)>,
         >,
 {
@@ -112,8 +127,23 @@ where
     let psu_registration = [&device0, &device1];
     let completion_signal = Signal::new();
 
-    let power_policy =
-        power_policy_service::service::Service::new(psu_registration.as_slice(), &service_context, Default::default());
+    // Ideally F would have two lifetime arguments: 'device and 'sender because the event type requires 'device: 'sender.
+    // But Rust doesn't currently support syntax like `for<'device, 'sender> ... where 'device: 'sender`. So we just
+    // use a single lifetime. However, the unified lifetime makes the drop-checker think that dropping the channel
+    // could be unsafe. We use ManuallyDrop to disable the drop and make the drop-checker happy. None of the types
+    // here do any clean-up in their Drop impls so we don't have to worry about any sort of leaks.
+    let service_event_channel: ManuallyDrop<
+        Channel<GlobalRawMutex, ServiceEvent<'_, DeviceType<'_>>, EVENT_CHANNEL_SIZE>,
+    > = ManuallyDrop::new(Channel::new());
+    let mut service_sender = [service_event_channel.dyn_sender()];
+    let _service_receiver = service_event_channel.dyn_receiver();
+
+    let power_policy = power_policy_service::service::Service::new(
+        psu_registration.as_slice(),
+        &mut service_sender,
+        &service_context,
+        Default::default(),
+    );
 
     with_timeout(
         timeout,
@@ -124,11 +154,65 @@ where
                 EventReceivers::new([&device0, &device1], [device0_receiver, device1_receiver]),
             ),
             async {
-                test(&device0, &device0_signal, &device1, &device1_signal).await;
+                test(_service_receiver, &device0, &device0_signal, &device1, &device1_signal).await;
                 completion_signal.signal(());
             },
         ),
     )
     .await
     .unwrap();
+}
+
+pub async fn assert_consumer_disconnected<'a>(
+    receiver: DynamicReceiver<'a, ServiceEvent<'a, DeviceType<'a>>>,
+    expected_device: &DeviceType<'a>,
+) {
+    let ServiceEvent::ConsumerDisconnected(device) = receiver.receive().await else {
+        panic!("Expected ConsumerDisconnected event");
+    };
+    assert_eq!(device as *const _, expected_device as *const _);
+}
+
+pub async fn assert_consumer_connected<'a>(
+    receiver: DynamicReceiver<'a, ServiceEvent<'a, DeviceType<'a>>>,
+    expected_device: &DeviceType<'a>,
+    expected_capability: ConsumerPowerCapability,
+) {
+    let ServiceEvent::ConsumerConnected(device, capability) = receiver.receive().await else {
+        panic!("Expected ConsumerConnected event");
+    };
+    assert_eq!(device as *const _, expected_device as *const _);
+    assert_eq!(capability, expected_capability);
+}
+
+pub async fn assert_provider_disconnected<'a>(
+    receiver: DynamicReceiver<'a, ServiceEvent<'a, DeviceType<'a>>>,
+    expected_device: &DeviceType<'a>,
+) {
+    let ServiceEvent::ProviderDisconnected(device) = receiver.receive().await else {
+        panic!("Expected ProviderDisconnected event");
+    };
+    assert_eq!(device as *const _, expected_device as *const _);
+}
+
+pub async fn assert_provider_connected<'a>(
+    receiver: DynamicReceiver<'a, ServiceEvent<'a, DeviceType<'a>>>,
+    expected_device: &DeviceType<'a>,
+    expected_capability: ProviderPowerCapability,
+) {
+    let ServiceEvent::ProviderConnected(device, capability) = receiver.receive().await else {
+        panic!("Expected ProviderConnected event");
+    };
+    assert_eq!(device as *const _, expected_device as *const _);
+    assert_eq!(capability, expected_capability);
+}
+
+pub async fn assert_unconstrained<'a>(
+    receiver: DynamicReceiver<'a, ServiceEvent<'a, DeviceType<'a>>>,
+    expected_state: UnconstrainedState,
+) {
+    let ServiceEvent::Unconstrained(state) = receiver.receive().await else {
+        panic!("Expected Unconstrained event");
+    };
+    assert_eq!(state, expected_state);
 }

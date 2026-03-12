@@ -1,7 +1,8 @@
 #![allow(clippy::unwrap_used)]
 use embassy_sync::channel::DynamicReceiver;
 use embassy_sync::signal::Signal;
-use embassy_time::{Duration, TimeoutError, with_timeout};
+use embassy_time::TimeoutError;
+use embassy_time::{Duration, with_timeout};
 use embedded_services::GlobalRawMutex;
 use embedded_services::info;
 use power_policy_interface::capability::{ConsumerFlags, ConsumerPowerCapability};
@@ -9,80 +10,29 @@ use power_policy_interface::capability::{ConsumerFlags, ConsumerPowerCapability}
 mod common;
 
 use common::LOW_POWER;
+use power_policy_interface::service::UnconstrainedState;
 use power_policy_interface::service::event::Event as ServiceEvent;
 
 use crate::common::DeviceType;
+use crate::common::HIGH_POWER;
 use crate::common::{
-    DEFAULT_TIMEOUT, HIGH_POWER, assert_consumer_connected, assert_consumer_disconnected, mock::FnCall, run_test,
+    DEFAULT_TIMEOUT, assert_consumer_connected, assert_consumer_disconnected, assert_unconstrained, mock::FnCall,
+    run_test,
 };
 
 const PER_CALL_TIMEOUT: Duration = Duration::from_millis(1000);
 
-/// Test the basic consumer flow with a single device.
-async fn test_single<'a>(
-    service_receiver: DynamicReceiver<'a, ServiceEvent<'a, DeviceType<'a>>>,
-    device0: &DeviceType<'a>,
-    device0_signal: &Signal<GlobalRawMutex, (usize, FnCall)>,
-    _device1: &DeviceType<'a>,
-    _device1_signal: &Signal<GlobalRawMutex, (usize, FnCall)>,
-) {
-    info!("Running test_single");
-    // Test initial connection
-    {
-        device0
-            .lock()
-            .await
-            .simulate_consumer_connection(LOW_POWER.into())
-            .await;
-
-        assert_eq!(
-            with_timeout(PER_CALL_TIMEOUT, device0_signal.wait()).await.unwrap(),
-            (
-                1,
-                FnCall::ConnectConsumer(ConsumerPowerCapability {
-                    capability: LOW_POWER,
-                    flags: ConsumerFlags::none(),
-                })
-            )
-        );
-        device0_signal.reset();
-
-        assert_consumer_connected(
-            service_receiver,
-            device0,
-            ConsumerPowerCapability {
-                capability: LOW_POWER,
-                flags: ConsumerFlags::none(),
-            },
-        )
-        .await;
-    }
-    // Test detach
-    {
-        device0.lock().await.simulate_detach().await;
-
-        // Power policy shouldn't call any functions on detach so we'll timeout
-        assert_eq!(
-            with_timeout(PER_CALL_TIMEOUT, device0_signal.wait()).await,
-            Err(TimeoutError)
-        );
-        device0_signal.reset();
-
-        assert_consumer_disconnected(service_receiver, device0).await;
-    }
-}
-
-/// Test swapping to a higher powered device.
-async fn test_swap_higher<'a>(
+/// Test unconstrained consumer flow with multiple devices.
+async fn test_unconstrained<'a>(
     service_receiver: DynamicReceiver<'a, ServiceEvent<'a, DeviceType<'a>>>,
     device0: &DeviceType<'a>,
     device0_signal: &Signal<GlobalRawMutex, (usize, FnCall)>,
     device1: &DeviceType<'a>,
     device1_signal: &Signal<GlobalRawMutex, (usize, FnCall)>,
 ) {
-    info!("Running test_swap_higher");
-    // Device0 connection at low power
+    info!("Running test_unconstrained");
     {
+        // Connect device0, without unconstrained,
         device0
             .lock()
             .await
@@ -110,13 +60,20 @@ async fn test_swap_higher<'a>(
             },
         )
         .await;
+
+        // Should not have any unconstrained events
+        assert!(service_receiver.try_receive().is_err());
     }
-    // Device1 connection at high power
+
     {
+        // Connect device1 with unconstrained at HIGH_POWER to force power policy to select this consumer.
         device1
             .lock()
             .await
-            .simulate_consumer_connection(HIGH_POWER.into())
+            .simulate_consumer_connection(ConsumerPowerCapability {
+                capability: HIGH_POWER,
+                flags: ConsumerFlags::none().with_unconstrained_power(),
+            })
             .await;
 
         assert_eq!(
@@ -131,7 +88,7 @@ async fn test_swap_higher<'a>(
                 1,
                 FnCall::ConnectConsumer(ConsumerPowerCapability {
                     capability: HIGH_POWER,
-                    flags: ConsumerFlags::none(),
+                    flags: ConsumerFlags::none().with_unconstrained_power(),
                 })
             )
         );
@@ -145,13 +102,23 @@ async fn test_swap_higher<'a>(
             device1,
             ConsumerPowerCapability {
                 capability: HIGH_POWER,
-                flags: ConsumerFlags::none(),
+                flags: ConsumerFlags::none().with_unconstrained_power(),
+            },
+        )
+        .await;
+
+        assert_unconstrained(
+            service_receiver,
+            UnconstrainedState {
+                unconstrained: true,
+                available: 1,
             },
         )
         .await;
     }
-    // Test detach device1, should reconnect device0
+
     {
+        // Test detach device1, unconstrained state should change
         device1.lock().await.simulate_detach().await;
 
         // Power policy shouldn't call any functions on detach so we'll timeout
@@ -184,15 +151,19 @@ async fn test_swap_higher<'a>(
             },
         )
         .await;
+
+        assert_unconstrained(
+            service_receiver,
+            UnconstrainedState {
+                unconstrained: false,
+                available: 0,
+            },
+        )
+        .await;
     }
 }
 
 #[tokio::test]
-async fn run_test_swap_higher() {
-    run_test(DEFAULT_TIMEOUT, test_swap_higher).await;
-}
-
-#[tokio::test]
-async fn run_test_single() {
-    run_test(DEFAULT_TIMEOUT, test_single).await;
+async fn run_test_unconstrained() {
+    run_test(DEFAULT_TIMEOUT, test_unconstrained).await;
 }
