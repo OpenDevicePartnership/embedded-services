@@ -125,3 +125,8 @@ impl SerializableMessage for DebugError {
 }
 
 pub type DebugResult = Result<DebugResponse, DebugError>;
+
+/// Message type for the Debug service.
+#[derive(Clone, Copy, PartialEq, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct DebugMessage;

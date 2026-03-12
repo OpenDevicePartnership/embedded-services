@@ -1,4 +1,4 @@
-use debug_service_messages::{DebugRequest, DebugResult};
+use debug_service_messages::{DebugMessage, DebugRequest, DebugResult};
 use embassy_sync::{once_lock::OnceLock, signal::Signal};
 use embedded_services::GlobalRawMutex;
 use embedded_services::buffer::{OwnedRef, SharedRef};
@@ -37,6 +37,7 @@ impl Service {
 impl embedded_services::relay::mctp::RelayServiceHandlerTypes for Service {
     type RequestType = DebugRequest;
     type ResultType = DebugResult;
+    type MessageType = DebugMessage;
 }
 
 impl embedded_services::relay::mctp::RelayServiceHandler for Service {
@@ -51,6 +52,10 @@ impl embedded_services::relay::mctp::RelayServiceHandler for Service {
         }
 
         frame_ready_signal().wait().await
+    }
+
+    fn is_notification(_message: &Self::MessageType) -> bool {
+        true
     }
 }
 

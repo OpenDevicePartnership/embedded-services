@@ -29,6 +29,7 @@ pub mod sync;
 #[doc(hidden)]
 pub mod _macro_internal {
     pub use bitfield;
+    pub use embassy_sync;
     pub use mctp_rs;
     pub use paste;
 }
