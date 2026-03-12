@@ -6,6 +6,7 @@
 use core::ptr;
 
 use embedded_services::debug;
+use embedded_services::named::Named;
 
 use super::*;
 

@@ -1,6 +1,6 @@
 #![allow(clippy::unwrap_used)]
 use embassy_sync::signal::Signal;
-use embedded_services::{GlobalRawMutex, event::Sender, info};
+use embedded_services::{GlobalRawMutex, event::Sender, info, named::Named};
 use power_policy_interface::{
     capability::{ConsumerFlags, ConsumerPowerCapability, PowerCapability, ProviderPowerCapability},
     psu::{Error, Psu, State, event::EventData},
@@ -83,7 +83,9 @@ impl<'a, S: Sender<EventData>> Psu for Mock<'a, S> {
     fn state_mut(&mut self) -> &mut State {
         &mut self.state
     }
+}
 
+impl<'a, S: Sender<EventData>> Named for Mock<'a, S> {
     fn name(&self) -> &'static str {
         self.name
     }

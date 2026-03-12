@@ -1,4 +1,5 @@
 use core::cmp::Ordering;
+use embedded_services::named::Named;
 use embedded_services::{debug, error};
 
 use super::*;

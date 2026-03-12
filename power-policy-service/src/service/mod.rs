@@ -7,6 +7,7 @@ pub mod context;
 pub mod provider;
 pub mod task;
 
+use embedded_services::named::Named;
 use embedded_services::{error, event::Sender, info, sync::Lockable};
 
 use power_policy_interface::{

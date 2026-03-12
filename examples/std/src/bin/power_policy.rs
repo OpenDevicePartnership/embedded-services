@@ -5,7 +5,7 @@ use embassy_sync::{
     mutex::Mutex,
 };
 use embassy_time::{self as _, Timer};
-use embedded_services::{GlobalRawMutex, event::DiscardSender};
+use embedded_services::{GlobalRawMutex, event::DiscardSender, named::Named};
 use log::*;
 use power_policy_interface::psu::{Error, Psu};
 use power_policy_interface::{
@@ -96,7 +96,9 @@ impl Psu for ExampleDevice<'_> {
     fn state_mut(&mut self) -> &mut psu::State {
         &mut self.state
     }
+}
 
+impl Named for ExampleDevice<'_> {
     fn name(&self) -> &'static str {
         self.name
     }
