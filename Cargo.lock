@@ -1877,6 +1877,7 @@ dependencies = [
  "log",
  "num_enum",
  "power-policy-interface",
+ "power-policy-service",
  "static_cell",
  "tokio",
 ]

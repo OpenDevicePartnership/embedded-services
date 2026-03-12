@@ -109,7 +109,7 @@ where
         total
     }
 
-    async fn process_notify_attach(&self, device: &PSU) {
+    async fn process_notify_attach(&self, device: &'device PSU) {
         let mut device = device.lock().await;
         info!("({}): Received notify attached", device.name());
         if let Err(e) = device.state_mut().attach() {
@@ -117,18 +117,21 @@ where
         }
     }
 
-    async fn process_notify_detach(&mut self, device: &PSU) -> Result<(), Error> {
+    async fn process_notify_detach(&mut self, device: &'device PSU) -> Result<(), Error> {
         {
             let mut device = device.lock().await;
             info!("({}): Received notify detached", device.name());
             device.state_mut().detach();
         }
-        self.update_current_consumer().await
+
+        self.remove_connected_provider(device).await;
+        self.update_current_consumer().await?;
+        Ok(())
     }
 
     async fn process_notify_consumer_power_capability(
         &mut self,
-        device: &PSU,
+        device: &'device PSU,
         capability: Option<ConsumerPowerCapability>,
     ) -> Result<(), Error> {
         {
@@ -210,18 +213,6 @@ where
     async fn broadcast_event(&mut self, event: ServiceEvent<'device, PSU>) {
         for sender in self.event_senders.iter_mut() {
             sender.send(event).await;
-        }
-    }
-
-    /// Common logic for when a provider is disconnected
-    ///
-    /// Returns true if the device was operating as a provider
-    async fn remove_connected_provider(&mut self, psu: &'device PSU) -> bool {
-        if self.state.connected_providers.remove(&(psu as *const PSU as usize)) {
-            self.broadcast_event(ServiceEvent::ProviderDisconnected(psu)).await;
-            true
-        } else {
-            false
         }
     }
 

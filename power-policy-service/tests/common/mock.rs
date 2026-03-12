@@ -1,8 +1,9 @@
 #![allow(clippy::unwrap_used)]
+#![allow(dead_code)]
 use embassy_sync::signal::Signal;
 use embedded_services::{GlobalRawMutex, event::Sender, info, named::Named};
 use power_policy_interface::{
-    capability::{ConsumerFlags, ConsumerPowerCapability, PowerCapability, ProviderPowerCapability},
+    capability::{ConsumerFlags, ConsumerPowerCapability, PowerCapability, ProviderFlags, ProviderPowerCapability},
     psu::{Error, Psu, State, event::EventData},
 };
 
@@ -54,6 +55,27 @@ impl<'a, S: Sender<EventData>> Mock<'a, S> {
 
     pub async fn simulate_detach(&mut self) {
         self.sender.send(EventData::Detached).await;
+    }
+
+    pub async fn simulate_provider_connection(&mut self, capability: PowerCapability) {
+        self.sender.send(EventData::Attached).await;
+
+        let capability = Some(ProviderPowerCapability {
+            capability,
+            flags: ProviderFlags::none(),
+        });
+        self.sender
+            .send(EventData::RequestedProviderCapability(capability))
+            .await;
+    }
+
+    pub async fn simulate_update_requested_provider_power_capability(
+        &mut self,
+        capability: Option<ProviderPowerCapability>,
+    ) {
+        self.sender
+            .send(power_policy_interface::psu::event::EventData::RequestedProviderCapability(capability))
+            .await
     }
 }
 

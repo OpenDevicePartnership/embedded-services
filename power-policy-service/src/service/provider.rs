@@ -111,4 +111,29 @@ where
         self.broadcast_event(ServiceEvent::ProviderConnected(requester, target_power))
             .await;
     }
+
+    /// Common logic for when a provider is disconnected
+    ///
+    /// Returns true if the device was operating as a provider
+    pub(super) async fn remove_connected_provider(&mut self, psu: &'device PSU) -> bool {
+        if self.state.connected_providers.remove(&(psu as *const PSU as usize)) {
+            // Determine total requested power draw
+            let mut total_power_mw = 0;
+            for psu in self.psu_devices.iter() {
+                let target_provider_cap = psu.lock().await.state().connected_provider_capability();
+                total_power_mw += target_provider_cap.map_or(0, |cap| cap.capability.max_power_mw());
+            }
+
+            if total_power_mw > self.config.limited_power_threshold_mw {
+                self.state.current_provider_state.state = PowerState::Limited;
+            } else {
+                self.state.current_provider_state.state = PowerState::Unlimited;
+            }
+
+            self.broadcast_event(ServiceEvent::ProviderDisconnected(psu)).await;
+            true
+        } else {
+            false
+        }
+    }
 }

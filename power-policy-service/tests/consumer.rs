@@ -195,7 +195,6 @@ async fn run_test_swap_higher() {
     run_test(DEFAULT_TIMEOUT, test_swap_higher).await;
 }
 
-/// Run all tests, this is temporary to deal with 'static lifetimes until the intrusive list refactor is done.
 #[tokio::test]
 async fn run_test_single() {
     run_test(DEFAULT_TIMEOUT, test_single).await;
