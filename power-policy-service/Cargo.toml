@@ -32,7 +32,7 @@ env_logger = "0.11.8"
 log = { workspace = true }
 # TODO: figure out why enabling the log feature here causes running tests at the workspace level to fail to compile
 # Uncomment this line to enable log output in tests
-power-policy-service = { workspace = true, features = ["log"] }
+# power-policy-service = { workspace = true, features = ["log"] }
 
 [features]
 default = []

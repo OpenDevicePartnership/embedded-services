@@ -1,4 +1,6 @@
 #![allow(clippy::unwrap_used)]
+#![allow(dead_code)]
+#![allow(clippy::panic)]
 use std::mem::ManuallyDrop;
 
 use embassy_futures::{
@@ -14,7 +16,10 @@ use embassy_sync::{
 use embassy_time::{Duration, with_timeout};
 use embedded_services::GlobalRawMutex;
 use power_policy_interface::psu::event::EventData;
-use power_policy_interface::{capability::PowerCapability, service::event::Event as ServiceEvent};
+use power_policy_interface::{
+    capability::{ConsumerPowerCapability, PowerCapability, ProviderPowerCapability},
+    service::{UnconstrainedState, event::Event as ServiceEvent},
+};
 use power_policy_service::psu::EventReceivers;
 use power_policy_service::service::Service;
 
@@ -156,4 +161,58 @@ where
     )
     .await
     .unwrap();
+}
+
+pub async fn assert_consumer_disconnected<'a>(
+    receiver: DynamicReceiver<'a, ServiceEvent<'a, DeviceType<'a>>>,
+    expected_device: &DeviceType<'a>,
+) {
+    let ServiceEvent::ConsumerDisconnected(device) = receiver.receive().await else {
+        panic!("Expected ConsumerDisconnected event");
+    };
+    assert_eq!(device as *const _, expected_device as *const _);
+}
+
+pub async fn assert_consumer_connected<'a>(
+    receiver: DynamicReceiver<'a, ServiceEvent<'a, DeviceType<'a>>>,
+    expected_device: &DeviceType<'a>,
+    expected_capability: ConsumerPowerCapability,
+) {
+    let ServiceEvent::ConsumerConnected(device, capability) = receiver.receive().await else {
+        panic!("Expected ConsumerConnected event");
+    };
+    assert_eq!(device as *const _, expected_device as *const _);
+    assert_eq!(capability, expected_capability);
+}
+
+pub async fn assert_provider_disconnected<'a>(
+    receiver: DynamicReceiver<'a, ServiceEvent<'a, DeviceType<'a>>>,
+    expected_device: &DeviceType<'a>,
+) {
+    let ServiceEvent::ProviderDisconnected(device) = receiver.receive().await else {
+        panic!("Expected ProviderDisconnected event");
+    };
+    assert_eq!(device as *const _, expected_device as *const _);
+}
+
+pub async fn assert_provider_connected<'a>(
+    receiver: DynamicReceiver<'a, ServiceEvent<'a, DeviceType<'a>>>,
+    expected_device: &DeviceType<'a>,
+    expected_capability: ProviderPowerCapability,
+) {
+    let ServiceEvent::ProviderConnected(device, capability) = receiver.receive().await else {
+        panic!("Expected ProviderConnected event");
+    };
+    assert_eq!(device as *const _, expected_device as *const _);
+    assert_eq!(capability, expected_capability);
+}
+
+pub async fn assert_unconstrained<'a>(
+    receiver: DynamicReceiver<'a, ServiceEvent<'a, DeviceType<'a>>>,
+    expected_state: UnconstrainedState,
+) {
+    let ServiceEvent::Unconstrained(state) = receiver.receive().await else {
+        panic!("Expected Unconstrained event");
+    };
+    assert_eq!(state, expected_state);
 }

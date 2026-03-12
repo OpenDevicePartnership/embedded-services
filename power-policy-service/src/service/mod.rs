@@ -170,7 +170,7 @@ where
                 .update_requested_provider_power_capability(capability)
             {
                 error!(
-                    "({}): Invalid state for notify consumer capability, catching up: {:#?}",
+                    "({}): Invalid state for notify provider capability, catching up: {:#?}",
                     requester.name(),
                     e,
                 );

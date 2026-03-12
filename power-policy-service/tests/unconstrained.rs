@@ -15,7 +15,10 @@ use power_policy_interface::service::event::Event as ServiceEvent;
 
 use crate::common::DeviceType;
 use crate::common::HIGH_POWER;
-use crate::common::{DEFAULT_TIMEOUT, mock::FnCall, run_test};
+use crate::common::{
+    DEFAULT_TIMEOUT, assert_consumer_connected, assert_consumer_disconnected, assert_unconstrained, mock::FnCall,
+    run_test,
+};
 
 const PER_CALL_TIMEOUT: Duration = Duration::from_millis(1000);
 
@@ -48,17 +51,15 @@ async fn test_unconstrained<'a>(
         );
         device0_signal.reset();
 
-        let ServiceEvent::ConsumerConnected(device, capability) = service_receiver.receive().await else {
-            panic!("Expected ConsumerConnected event");
-        };
-        assert_eq!(device as *const _, device0 as *const _);
-        assert_eq!(
-            capability,
+        assert_consumer_connected(
+            service_receiver,
+            device0,
             ConsumerPowerCapability {
                 capability: LOW_POWER,
                 flags: ConsumerFlags::none(),
-            }
-        );
+            },
+        )
+        .await;
 
         // Should not have any unconstrained events
         assert!(service_receiver.try_receive().is_err());
@@ -94,33 +95,26 @@ async fn test_unconstrained<'a>(
         device1_signal.reset();
 
         // Should receive a disconnect event from device0 first
-        let ServiceEvent::ConsumerDisconnected(device) = service_receiver.receive().await else {
-            panic!("Expected ConsumerDisconnect event");
-        };
-        assert_eq!(device as *const _, device0 as *const _);
+        assert_consumer_disconnected(service_receiver, device0).await;
 
-        let ServiceEvent::ConsumerConnected(device, capability) = service_receiver.receive().await else {
-            panic!("Expected ConsumerConnected event");
-        };
-        assert_eq!(device as *const _, device1 as *const _);
-        assert_eq!(
-            capability,
+        assert_consumer_connected(
+            service_receiver,
+            device1,
             ConsumerPowerCapability {
                 capability: HIGH_POWER,
                 flags: ConsumerFlags::none().with_unconstrained_power(),
-            }
-        );
+            },
+        )
+        .await;
 
-        let ServiceEvent::Unconstrained(unconstrained_state) = service_receiver.receive().await else {
-            panic!("Expected Unconstrained event");
-        };
-        assert_eq!(
-            unconstrained_state,
+        assert_unconstrained(
+            service_receiver,
             UnconstrainedState {
                 unconstrained: true,
                 available: 1,
-            }
-        );
+            },
+        )
+        .await;
     }
 
     {
@@ -145,34 +139,27 @@ async fn test_unconstrained<'a>(
         );
         device0_signal.reset();
 
-        // Should receive a disconnect event from device0 first
-        let ServiceEvent::ConsumerDisconnected(device) = service_receiver.receive().await else {
-            panic!("Expected ConsumerDisconnect event");
-        };
-        assert_eq!(device as *const _, device1 as *const _);
+        // Should receive a disconnect event from device1 first
+        assert_consumer_disconnected(service_receiver, device1).await;
 
-        let ServiceEvent::ConsumerConnected(device, capability) = service_receiver.receive().await else {
-            panic!("Expected ConsumerConnected event");
-        };
-        assert_eq!(device as *const _, device0 as *const _);
-        assert_eq!(
-            capability,
+        assert_consumer_connected(
+            service_receiver,
+            device0,
             ConsumerPowerCapability {
                 capability: LOW_POWER,
                 flags: ConsumerFlags::none(),
-            }
-        );
+            },
+        )
+        .await;
 
-        let ServiceEvent::Unconstrained(unconstrained_state) = service_receiver.receive().await else {
-            panic!("Expected Unconstrained event");
-        };
-        assert_eq!(
-            unconstrained_state,
+        assert_unconstrained(
+            service_receiver,
             UnconstrainedState {
                 unconstrained: false,
                 available: 0,
-            }
-        );
+            },
+        )
+        .await;
     }
 }
 

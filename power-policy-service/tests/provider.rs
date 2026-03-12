@@ -14,7 +14,7 @@ use power_policy_interface::service::event::Event as ServiceEvent;
 
 use crate::common::DeviceType;
 use crate::common::HIGH_POWER;
-use crate::common::{DEFAULT_TIMEOUT, mock::FnCall, run_test};
+use crate::common::{DEFAULT_TIMEOUT, assert_provider_connected, assert_provider_disconnected, mock::FnCall, run_test};
 
 const PER_CALL_TIMEOUT: Duration = Duration::from_millis(1000);
 
@@ -43,17 +43,15 @@ async fn test_single<'a>(
         );
         device0_signal.reset();
 
-        let ServiceEvent::ProviderConnected(device, capability) = service_receiver.receive().await else {
-            panic!("Expected ProviderConnected event");
-        };
-        assert_eq!(device as *const _, device0 as *const _);
-        assert_eq!(
-            capability,
+        assert_provider_connected(
+            service_receiver,
+            device0,
             ProviderPowerCapability {
                 capability: LOW_POWER,
                 flags: ProviderFlags::none(),
-            }
-        );
+            },
+        )
+        .await;
     }
     // Test detach
     {
@@ -66,10 +64,7 @@ async fn test_single<'a>(
         );
         device0_signal.reset();
 
-        let ServiceEvent::ProviderDisconnected(device) = service_receiver.receive().await else {
-            panic!("Expected ProviderDisconnected event");
-        };
-        assert_eq!(device as *const _, device0 as *const _);
+        assert_provider_disconnected(service_receiver, device0).await;
     }
 }
 
@@ -98,17 +93,15 @@ async fn test_upgrade<'a>(
         );
         device0_signal.reset();
 
-        let ServiceEvent::ProviderConnected(device, capability) = service_receiver.receive().await else {
-            panic!("Expected ProviderConnected event");
-        };
-        assert_eq!(device as *const _, device0 as *const _);
-        assert_eq!(
-            capability,
+        assert_provider_connected(
+            service_receiver,
+            device0,
             ProviderPowerCapability {
                 capability: HIGH_POWER,
                 flags: ProviderFlags::none(),
-            }
-        );
+            },
+        )
+        .await;
     }
 
     {
@@ -127,17 +120,15 @@ async fn test_upgrade<'a>(
         );
         device1_signal.reset();
 
-        let ServiceEvent::ProviderConnected(device, capability) = service_receiver.receive().await else {
-            panic!("Expected ProviderConnected event");
-        };
-        assert_eq!(device as *const _, device1 as *const _);
-        assert_eq!(
-            capability,
+        assert_provider_connected(
+            service_receiver,
+            device1,
             ProviderPowerCapability {
                 capability: LOW_POWER,
                 flags: ProviderFlags::none(),
-            }
-        );
+            },
+        )
+        .await;
     }
 
     {
@@ -161,17 +152,15 @@ async fn test_upgrade<'a>(
         );
         device1_signal.reset();
 
-        let ServiceEvent::ProviderConnected(device, capability) = service_receiver.receive().await else {
-            panic!("Expected ProviderConnected event");
-        };
-        assert_eq!(device as *const _, device1 as *const _);
-        assert_eq!(
-            capability,
+        assert_provider_connected(
+            service_receiver,
+            device1,
             ProviderPowerCapability {
                 capability: LOW_POWER,
                 flags: ProviderFlags::none(),
-            }
-        );
+            },
+        )
+        .await;
     }
 
     {
@@ -185,10 +174,7 @@ async fn test_upgrade<'a>(
         );
         device0_signal.reset();
 
-        let ServiceEvent::ProviderDisconnected(device) = service_receiver.receive().await else {
-            panic!("Expected ProviderDisconnected event");
-        };
-        assert_eq!(device as *const _, device0 as *const _);
+        assert_provider_disconnected(service_receiver, device0).await;
     }
 
     {
@@ -211,17 +197,15 @@ async fn test_upgrade<'a>(
         );
         device1_signal.reset();
 
-        let ServiceEvent::ProviderConnected(device, capability) = service_receiver.receive().await else {
-            panic!("Expected ProviderConnected event");
-        };
-        assert_eq!(device as *const _, device1 as *const _);
-        assert_eq!(
-            capability,
+        assert_provider_connected(
+            service_receiver,
+            device1,
             ProviderPowerCapability {
                 capability: HIGH_POWER,
                 flags: ProviderFlags::none(),
-            }
-        );
+            },
+        )
+        .await;
     }
 }
 

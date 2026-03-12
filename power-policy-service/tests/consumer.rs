@@ -12,7 +12,9 @@ use common::LOW_POWER;
 use power_policy_interface::service::event::Event as ServiceEvent;
 
 use crate::common::DeviceType;
-use crate::common::{DEFAULT_TIMEOUT, HIGH_POWER, mock::FnCall, run_test};
+use crate::common::{
+    DEFAULT_TIMEOUT, HIGH_POWER, assert_consumer_connected, assert_consumer_disconnected, mock::FnCall, run_test,
+};
 
 const PER_CALL_TIMEOUT: Duration = Duration::from_millis(1000);
 
@@ -45,17 +47,15 @@ async fn test_single<'a>(
         );
         device0_signal.reset();
 
-        let ServiceEvent::ConsumerConnected(device, capability) = service_receiver.receive().await else {
-            panic!("Expected ConsumerConnected event");
-        };
-        assert_eq!(device as *const _, device0 as *const _);
-        assert_eq!(
-            capability,
+        assert_consumer_connected(
+            service_receiver,
+            device0,
             ConsumerPowerCapability {
                 capability: LOW_POWER,
                 flags: ConsumerFlags::none(),
-            }
-        );
+            },
+        )
+        .await;
     }
     // Test detach
     {
@@ -68,10 +68,7 @@ async fn test_single<'a>(
         );
         device0_signal.reset();
 
-        let ServiceEvent::ConsumerDisconnected(device) = service_receiver.receive().await else {
-            panic!("Expected ConsumerDisconnect event");
-        };
-        assert_eq!(device as *const _, device0 as *const _);
+        assert_consumer_disconnected(service_receiver, device0).await;
     }
 }
 
@@ -104,17 +101,15 @@ async fn test_swap_higher<'a>(
         );
         device0_signal.reset();
 
-        let ServiceEvent::ConsumerConnected(device, capability) = service_receiver.receive().await else {
-            panic!("Expected ConsumerConnected event");
-        };
-        assert_eq!(device as *const _, device0 as *const _);
-        assert_eq!(
-            capability,
+        assert_consumer_connected(
+            service_receiver,
+            device0,
             ConsumerPowerCapability {
                 capability: LOW_POWER,
                 flags: ConsumerFlags::none(),
-            }
-        );
+            },
+        )
+        .await;
     }
     // Device1 connection at high power
     {
@@ -143,22 +138,17 @@ async fn test_swap_higher<'a>(
         device1_signal.reset();
 
         // Should receive a disconnect event from device0 first
-        let ServiceEvent::ConsumerDisconnected(device) = service_receiver.receive().await else {
-            panic!("Expected ConsumerDisconnect event");
-        };
-        assert_eq!(device as *const _, device0 as *const _);
+        assert_consumer_disconnected(service_receiver, device0).await;
 
-        let ServiceEvent::ConsumerConnected(device, capability) = service_receiver.receive().await else {
-            panic!("Expected ConsumerConnected event");
-        };
-        assert_eq!(device as *const _, device1 as *const _);
-        assert_eq!(
-            capability,
+        assert_consumer_connected(
+            service_receiver,
+            device1,
             ConsumerPowerCapability {
                 capability: HIGH_POWER,
                 flags: ConsumerFlags::none(),
-            }
-        );
+            },
+        )
+        .await;
     }
     // Test detach device1, should reconnect device0
     {
@@ -182,23 +172,18 @@ async fn test_swap_higher<'a>(
         );
         device0_signal.reset();
 
-        // Should receive a disconnect event from device0 first
-        let ServiceEvent::ConsumerDisconnected(device) = service_receiver.receive().await else {
-            panic!("Expected ConsumerDisconnect event");
-        };
-        assert_eq!(device as *const _, device1 as *const _);
+        // Should receive a disconnect event from device1 first
+        assert_consumer_disconnected(service_receiver, device1).await;
 
-        let ServiceEvent::ConsumerConnected(device, capability) = service_receiver.receive().await else {
-            panic!("Expected ConsumerConnected event");
-        };
-        assert_eq!(device as *const _, device0 as *const _);
-        assert_eq!(
-            capability,
+        assert_consumer_connected(
+            service_receiver,
+            device0,
             ConsumerPowerCapability {
                 capability: LOW_POWER,
                 flags: ConsumerFlags::none(),
-            }
-        );
+            },
+        )
+        .await;
     }
 }
 
