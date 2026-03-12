@@ -3,7 +3,7 @@
 use embassy_sync::signal::Signal;
 use embedded_services::{GlobalRawMutex, event::Sender, info, named::Named};
 use power_policy_interface::{
-    capability::{ConsumerFlags, ConsumerPowerCapability, PowerCapability, ProviderFlags, ProviderPowerCapability},
+    capability::{ConsumerPowerCapability, PowerCapability, ProviderFlags, ProviderPowerCapability},
     psu::{Error, Psu, State, event::EventData},
 };
 
@@ -43,14 +43,11 @@ impl<'a, S: Sender<EventData>> Mock<'a, S> {
         self.fn_call.signal((num_fn_calls + 1, fn_call));
     }
 
-    pub async fn simulate_consumer_connection(&mut self, capability: PowerCapability) {
+    pub async fn simulate_consumer_connection(&mut self, capability: ConsumerPowerCapability) {
         self.sender.send(EventData::Attached).await;
-
-        let capability = Some(ConsumerPowerCapability {
-            capability,
-            flags: ConsumerFlags::none(),
-        });
-        self.sender.send(EventData::UpdatedConsumerCapability(capability)).await;
+        self.sender
+            .send(EventData::UpdatedConsumerCapability(Some(capability)))
+            .await;
     }
 
     pub async fn simulate_detach(&mut self) {
