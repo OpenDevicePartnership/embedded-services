@@ -12,6 +12,12 @@ use time_alarm_service_interface::{
 };
 use {defmt_rtt as _, panic_probe as _};
 
+// Type aliases to make it easier to use the service and relay handler types without needing to write out all the generic parameters every time.
+// This is especially helpful for the relay handler, which has a lot of generic parameters due to the traits it needs to implement.
+//
+type TimeAlarmServiceType = time_alarm_service::Service<'static>;
+type TimeAlarmServiceRelayHandlerType = time_alarm_service_relay::TimeAlarmServiceRelayHandler<TimeAlarmServiceType>;
+
 #[embassy_executor::main]
 async fn main(spawner: embassy_executor::Spawner) {
     let p = embassy_imxrt::init(Default::default());
@@ -25,7 +31,6 @@ async fn main(spawner: embassy_executor::Spawner) {
     embedded_services::init().await;
     info!("services initialized");
 
-    type TimeAlarmServiceType = time_alarm_service::Service<'static>;
     let time_service = odp_service_common::spawn_service!(
         spawner,
         TimeAlarmServiceType,
@@ -40,19 +45,13 @@ async fn main(spawner: embassy_executor::Spawner) {
     )
     .expect("Failed to spawn time alarm service");
 
-    type TimeAlarmRelayHandlerType = time_alarm_service_relay::TimeAlarmServiceRelayHandler<TimeAlarmServiceType>;
-
     use embedded_services::relay::mctp::impl_odp_mctp_relay_handler;
-    // impl_odp_mctp_relay_handler!(
-    //     EspiRelayHandler;
-    //     TimeAlarm, 0x0B, TimeAlarmRelayHandlerType; // TODO why doesn't it like the aliases?
-    // );
     impl_odp_mctp_relay_handler!(
         EspiRelayHandler;
-        TimeAlarm, 0x0B, time_alarm_service_relay::TimeAlarmServiceRelayHandler<time_alarm_service::Service<'static>>;
+        TimeAlarm, 0x0B, crate::TimeAlarmServiceRelayHandlerType;
     );
 
-    let _relay_handler = EspiRelayHandler::new(TimeAlarmRelayHandlerType::new(time_service.clone()));
+    let _relay_handler = EspiRelayHandler::new(TimeAlarmServiceRelayHandlerType::new(time_service.clone()));
 
     // Here, you'd normally pass _relay_handler to your relay service (e.g. eSPI service).
     // In this example, we're not leveraging a relay service, so we'll just demonstrate some direct calls.
