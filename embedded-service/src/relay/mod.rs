@@ -125,7 +125,7 @@ pub mod mctp {
         fn process_request<'a>(
             &'a self,
             request: Self::RequestType,
-        ) -> impl core::future::Future<Output = Self::ResultType> + Send + 'a;
+        ) -> impl core::future::Future<Output = Self::ResultType> + 'a;
     }
 
     // Traits below this point are intended for consumption by relay services (e.g. the eSPI service), not individual services that want their messages relayed.
@@ -168,7 +168,7 @@ pub mod mctp {
         fn process_request<'a>(
             &'a self,
             message: Self::RequestEnumType,
-        ) -> impl core::future::Future<Output = Self::ResultEnumType> + Send + 'a;
+        ) -> impl core::future::Future<Output = Self::ResultEnumType> + 'a;
     }
 
     /// This macro generates a relay type over a collection of message types, which can be used by a relay service to
@@ -477,7 +477,7 @@ pub mod mctp {
                         fn process_request<'a>(
                             &'a self,
                             message: HostRequest,
-                        ) -> impl core::future::Future<Output = HostResult> + Send + 'a {
+                        ) -> impl core::future::Future<Output = HostResult> + 'a {
                             async move {
                                 match message {
                                     $(
