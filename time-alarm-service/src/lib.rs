@@ -315,6 +315,7 @@ impl<'hw> odp_service_common::runnable_service::ServiceRunner<'hw> for Runner<'h
 }
 
 /// Control handle for the time-alarm service.  Use this to manipulate the time on the service.
+#[derive(Clone, Copy)]
 pub struct Service<'hw> {
     inner: &'hw ServiceInner<'hw>,
 }

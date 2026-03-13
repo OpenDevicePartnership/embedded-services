@@ -7,7 +7,9 @@ use embedded_mcu_hal::{
 };
 use embedded_services::info;
 use static_cell::StaticCell;
-use time_alarm_service_messages::{AcpiDaylightSavingsTimeStatus, AcpiTimeZone, AcpiTimeZoneOffset, AcpiTimestamp};
+use time_alarm_service_interface::{
+    AcpiDaylightSavingsTimeStatus, AcpiTimeZone, AcpiTimeZoneOffset, AcpiTimestamp, TimeAlarmService,
+};
 use {defmt_rtt as _, panic_probe as _};
 
 #[embassy_executor::main]
@@ -23,9 +25,10 @@ async fn main(spawner: embassy_executor::Spawner) {
     embedded_services::init().await;
     info!("services initialized");
 
+    type TimeAlarmServiceType = time_alarm_service::Service<'static>;
     let time_service = odp_service_common::spawn_service!(
         spawner,
-        time_alarm_service::Service<'static>,
+        TimeAlarmServiceType,
         time_alarm_service::InitParams {
             backing_clock: dt_clock,
             tz_storage: tz,
@@ -37,13 +40,19 @@ async fn main(spawner: embassy_executor::Spawner) {
     )
     .expect("Failed to spawn time alarm service");
 
+    type TimeAlarmRelayHandlerType = time_alarm_service_relay::TimeAlarmServiceRelayHandler<TimeAlarmServiceType>;
+
     use embedded_services::relay::mctp::impl_odp_mctp_relay_handler;
+    // impl_odp_mctp_relay_handler!(
+    //     EspiRelayHandler;
+    //     TimeAlarm, 0x0B, TimeAlarmRelayHandlerType; // TODO why doesn't it like the aliases?
+    // );
     impl_odp_mctp_relay_handler!(
         EspiRelayHandler;
-        TimeAlarm, 0x0B, time_alarm_service::Service<'static>;
+        TimeAlarm, 0x0B, time_alarm_service_relay::TimeAlarmServiceRelayHandler<time_alarm_service::Service<'static>>;
     );
 
-    let _relay_handler = EspiRelayHandler::new(&time_service);
+    let _relay_handler = EspiRelayHandler::new(TimeAlarmRelayHandlerType::new(time_service.clone()));
 
     // Here, you'd normally pass _relay_handler to your relay service (e.g. eSPI service).
     // In this example, we're not leveraging a relay service, so we'll just demonstrate some direct calls.
