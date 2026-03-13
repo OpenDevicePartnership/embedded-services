@@ -125,7 +125,7 @@ pub mod mctp {
         fn process_request<'a>(
             &'a self,
             request: Self::RequestType,
-        ) -> impl core::future::Future<Output = Self::ResultType> + Send + 'a;
+        ) -> impl core::future::Future<Output = Self::ResultType> + 'a;
     }
 
     // Traits below this point are intended for consumption by relay services (e.g. the eSPI service), not individual services that want their messages relayed.
@@ -168,7 +168,7 @@ pub mod mctp {
         fn process_request<'a>(
             &'a self,
             message: Self::RequestEnumType,
-        ) -> impl core::future::Future<Output = Self::ResultEnumType> + Send + 'a;
+        ) -> impl core::future::Future<Output = Self::ResultEnumType> + 'a;
     }
 
     /// This macro generates a relay type over a collection of message types, which can be used by a relay service to
@@ -196,7 +196,7 @@ pub mod mctp {
     ///
     ///     impl_odp_mctp_relay_handler!(
     ///         MyRelayHanderType;
-    ///         Battery,   0x9, battery_service::Service<'static>;
+    ///         Battery,   0x9, battery_service::Service<'static>; // TODO update example to reflect new expectation for service handler
     ///         TimeAlarm, 0xB, time_alarm_service::Service<'static>;
     ///     );
     ///
@@ -210,6 +210,7 @@ pub mod mctp {
     macro_rules! impl_odp_mctp_relay_handler {
         (
             $relay_type_name:ident;
+            // TODO I think we may need to take a lifetime as an argument here if we want to allow individual handler types to have their generic lifetime parameters be a non-'static value, which is probably valuable for testing
             $(
                 $service_name:ident,
                 $service_id:expr,
@@ -448,16 +449,16 @@ pub mod mctp {
                     }
 
 
-                    pub struct $relay_type_name<'hw> {
+                    pub struct $relay_type_name {
                         $(
-                            [<$service_name:snake _handler>]: &'hw $service_handler_type,
+                            [<$service_name:snake _handler>]: $service_handler_type,
                         )+
                     }
 
-                    impl<'hw> $relay_type_name<'hw> {
+                    impl $relay_type_name {
                         pub fn new(
                             $(
-                                [<$service_name:snake _handler>]: &'hw $service_handler_type,
+                                [<$service_name:snake _handler>]: $service_handler_type,
                             )+
                         ) -> Self {
                             Self {
@@ -468,7 +469,7 @@ pub mod mctp {
                         }
                     }
 
-                    impl<'hw> $crate::relay::mctp::RelayHandler for $relay_type_name<'hw> {
+                    impl $crate::relay::mctp::RelayHandler for $relay_type_name {
                         type ServiceIdType = OdpService;
                         type HeaderType = OdpHeader;
                         type RequestEnumType = HostRequest;
@@ -477,7 +478,7 @@ pub mod mctp {
                         fn process_request<'a>(
                             &'a self,
                             message: HostRequest,
-                        ) -> impl core::future::Future<Output = HostResult> + Send + 'a {
+                        ) -> impl core::future::Future<Output = HostResult> + 'a {
                             async move {
                                 match message {
                                     $(

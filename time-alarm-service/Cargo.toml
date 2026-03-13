@@ -17,7 +17,7 @@ embassy-time.workspace = true
 embedded-mcu-hal.workspace = true
 embedded-services.workspace = true
 odp-service-common.workspace = true
-time-alarm-service-messages.workspace = true
+time-alarm-service-interface.workspace = true
 zerocopy.workspace = true
 
 [features]
@@ -27,7 +27,7 @@ defmt = [
     "embassy-time/defmt",
     "embassy-sync/defmt",
     "embassy-executor/defmt",
-    "time-alarm-service-messages/defmt",
+    "time-alarm-service-interface/defmt",
 ]
 
 log = ["dep:log", "embedded-services/log", "embassy-time/log"]

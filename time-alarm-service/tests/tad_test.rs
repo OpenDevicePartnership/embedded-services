@@ -10,7 +10,7 @@ mod test {
     use embedded_mcu_hal::time::{Datetime, DatetimeClock};
     use odp_service_common::runnable_service::{Service, ServiceRunner};
 
-    use time_alarm_service_messages as msg;
+    use time_alarm_service_interface::{AcpiDaylightSavingsTimeStatus, AcpiTimeZone, AcpiTimestamp, TimeAlarmService};
 
     use crate::common::mocks::*;
 
@@ -98,10 +98,10 @@ mod test {
                 let begin = service.get_real_time().unwrap();
                 assert_eq!(begin.datetime.to_unix_time_seconds(), TEST_UNIX_TIME);
 
-                let target_timestamp = msg::AcpiTimestamp {
+                let target_timestamp = AcpiTimestamp {
                     datetime: Datetime::from_unix_time_seconds(TEST_UNIX_TIME),
-                    time_zone: msg::AcpiTimeZone::Unknown,
-                    dst_status: msg::AcpiDaylightSavingsTimeStatus::Adjusted,
+                    time_zone: AcpiTimeZone::Unknown,
+                    dst_status: AcpiDaylightSavingsTimeStatus::Adjusted,
                 };
                 service.set_real_time(target_timestamp).unwrap();
 
