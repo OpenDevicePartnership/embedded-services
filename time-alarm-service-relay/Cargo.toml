@@ -14,7 +14,11 @@ num_enum.workspace = true
 time-alarm-service-interface.workspace = true
 
 [features]
-defmt = ["dep:defmt", "embedded-mcu-hal/defmt"]
+defmt = [
+    "dep:defmt",
+    "embedded-mcu-hal/defmt",
+    "time-alarm-service-interface/defmt",
+]
 log = ["dep:log", "embedded-services/log"]
 
 [lints]
