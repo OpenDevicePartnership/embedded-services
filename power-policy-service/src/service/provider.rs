@@ -107,7 +107,14 @@ where
 
     /// Common logic for after a provider has successfully connected
     async fn post_provider_connected(&mut self, requester: &'device PSU, target_power: ProviderPowerCapability) {
-        let _ = self.state.connected_providers.insert(requester as *const PSU as usize);
+        if self
+            .state
+            .connected_providers
+            .insert(requester as *const PSU as usize)
+            .is_err()
+        {
+            error!("Tracked providers set is full");
+        }
         self.broadcast_event(ServiceEvent::ProviderConnected(requester, target_power))
             .await;
     }

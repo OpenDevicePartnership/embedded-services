@@ -16,8 +16,8 @@ use power_policy_interface::service::event::Event as ServiceEvent;
 use crate::common::DeviceType;
 use crate::common::HIGH_POWER;
 use crate::common::{
-    DEFAULT_TIMEOUT, assert_consumer_connected, assert_consumer_disconnected, assert_unconstrained, mock::FnCall,
-    run_test,
+    DEFAULT_TIMEOUT, assert_consumer_connected, assert_consumer_disconnected, assert_no_event, assert_unconstrained,
+    mock::FnCall, run_test,
 };
 
 const PER_CALL_TIMEOUT: Duration = Duration::from_millis(1000);
@@ -161,6 +161,8 @@ async fn test_unconstrained<'a>(
         )
         .await;
     }
+
+    assert_no_event(service_receiver);
 }
 
 #[tokio::test]

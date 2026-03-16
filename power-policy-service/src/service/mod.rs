@@ -181,27 +181,17 @@ where
     }
 
     async fn process_notify_disconnect(&mut self, device: &'device PSU) -> Result<(), Error> {
-        let mut locked_device = device.lock().await;
-        info!("({}): Received notify disconnect", locked_device.name());
-
-        if let Err(e) = locked_device.state_mut().disconnect(true) {
-            error!(
-                "({}): Invalid state for notify disconnect, catching up: {:#?}",
-                locked_device.name(),
-                e,
-            );
-        }
-
-        if self
-            .state
-            .current_consumer_state
-            .as_ref()
-            .is_some_and(|current| ptr::eq(current.psu, device))
         {
-            info!("({}): Connected consumer disconnected", locked_device.name());
-            self.disconnect_chargers().await?;
+            let mut locked_device = device.lock().await;
+            info!("({}): Received notify disconnect", locked_device.name());
 
-            self.broadcast_event(ServiceEvent::ConsumerDisconnected(device)).await;
+            if let Err(e) = locked_device.state_mut().disconnect(true) {
+                error!(
+                    "({}): Invalid state for notify disconnect, catching up: {:#?}",
+                    locked_device.name(),
+                    e,
+                );
+            }
         }
 
         self.remove_connected_provider(device).await;

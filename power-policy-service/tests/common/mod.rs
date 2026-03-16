@@ -216,3 +216,7 @@ pub async fn assert_unconstrained<'a>(
     };
     assert_eq!(state, expected_state);
 }
+
+pub fn assert_no_event<'a>(receiver: DynamicReceiver<'a, ServiceEvent<'a, DeviceType<'a>>>) {
+    assert!(receiver.try_receive().is_err());
+}

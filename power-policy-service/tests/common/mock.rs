@@ -66,6 +66,10 @@ impl<'a, S: Sender<EventData>> Mock<'a, S> {
             .await;
     }
 
+    pub async fn simulate_disconnect(&mut self) {
+        self.sender.send(EventData::Disconnected).await;
+    }
+
     pub async fn simulate_update_requested_provider_power_capability(
         &mut self,
         capability: Option<ProviderPowerCapability>,

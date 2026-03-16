@@ -14,6 +14,7 @@ use power_policy_interface::service::event::Event as ServiceEvent;
 
 use crate::common::DeviceType;
 use crate::common::HIGH_POWER;
+use crate::common::assert_no_event;
 use crate::common::{DEFAULT_TIMEOUT, assert_provider_connected, assert_provider_disconnected, mock::FnCall, run_test};
 
 const PER_CALL_TIMEOUT: Duration = Duration::from_millis(1000);
@@ -66,6 +67,8 @@ async fn test_single<'a>(
 
         assert_provider_disconnected(service_receiver, device0).await;
     }
+
+    assert_no_event(service_receiver);
 }
 
 /// Test provider flow involving multiple devices and upgrading a provider's power capability.
@@ -207,6 +210,60 @@ async fn test_upgrade<'a>(
         )
         .await;
     }
+
+    assert_no_event(service_receiver);
+}
+
+/// Test the provider disconnect flow
+async fn test_disconnect<'a>(
+    service_receiver: DynamicReceiver<'a, ServiceEvent<'a, DeviceType<'a>>>,
+    device0: &DeviceType<'a>,
+    device0_signal: &Signal<GlobalRawMutex, (usize, FnCall)>,
+    _device1: &DeviceType<'a>,
+    _device1_signal: &Signal<GlobalRawMutex, (usize, FnCall)>,
+) {
+    info!("Running test_disconnect");
+    // Test initial connection
+    {
+        device0.lock().await.simulate_provider_connection(LOW_POWER).await;
+
+        assert_eq!(
+            with_timeout(PER_CALL_TIMEOUT, device0_signal.wait()).await.unwrap(),
+            (
+                1,
+                FnCall::ConnectProvider(ProviderPowerCapability {
+                    capability: LOW_POWER,
+                    flags: ProviderFlags::none(),
+                })
+            )
+        );
+        device0_signal.reset();
+
+        assert_provider_connected(
+            service_receiver,
+            device0,
+            ProviderPowerCapability {
+                capability: LOW_POWER,
+                flags: ProviderFlags::none(),
+            },
+        )
+        .await;
+    }
+    // Test disconnect
+    {
+        device0.lock().await.simulate_disconnect().await;
+
+        // Power policy shouldn't call any functions on disconnect so we'll timeout
+        assert_eq!(
+            with_timeout(PER_CALL_TIMEOUT, device0_signal.wait()).await,
+            Err(TimeoutError)
+        );
+        device0_signal.reset();
+
+        assert_provider_disconnected(service_receiver, device0).await;
+    }
+
+    assert_no_event(service_receiver);
 }
 
 #[tokio::test]
@@ -217,4 +274,9 @@ async fn run_test_single() {
 #[tokio::test]
 async fn run_test_upgrade() {
     run_test(DEFAULT_TIMEOUT, test_upgrade).await;
+}
+
+#[tokio::test]
+async fn run_test_disconnect() {
+    run_test(DEFAULT_TIMEOUT, test_disconnect).await;
 }
