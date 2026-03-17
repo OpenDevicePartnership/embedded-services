@@ -2352,6 +2352,7 @@ dependencies = [
  "embedded-services",
  "log",
  "odp-service-common",
+ "time-alarm-service",
  "time-alarm-service-messages",
  "tokio",
  "zerocopy",

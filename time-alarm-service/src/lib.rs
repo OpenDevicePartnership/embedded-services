@@ -1,4 +1,4 @@
-#![no_std]
+#![cfg_attr(not(test), no_std)]
 
 use core::cell::RefCell;
 use embassy_sync::blocking_mutex::Mutex;
@@ -11,6 +11,8 @@ use time_alarm_service_messages::*;
 
 mod timer;
 use timer::Timer;
+#[cfg(feature = "mock")]
+pub mod mock;
 
 // -------------------------------------------------
 

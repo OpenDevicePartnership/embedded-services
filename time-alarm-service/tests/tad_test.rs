@@ -2,8 +2,6 @@
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::expect_used)]
 
-mod common;
-
 #[cfg(test)]
 mod test {
     use embassy_time::Timer;
@@ -12,7 +10,7 @@ mod test {
 
     use time_alarm_service_messages as msg;
 
-    use crate::common::mocks::*;
+    use time_alarm_service::mock::*;
 
     #[tokio::test]
     async fn test_get_time() {
