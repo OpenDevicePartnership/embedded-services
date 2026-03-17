@@ -13,7 +13,6 @@ impl<E: NorFlashError + Debug> NorFlashError for Error<E> {
             Error::OutOfBounds => NorFlashErrorKind::OutOfBounds,
             Error::NotAligned => NorFlashErrorKind::NotAligned,
             Error::ReadOnly => NorFlashErrorKind::Other, // Note: actually unreachable, only thrown by other impls.
-            Error::Locked => NorFlashErrorKind::Other,
             Error::Inner(e) => e.kind(),
         }
     }

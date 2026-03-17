@@ -162,8 +162,6 @@ pub enum Error<E> {
     NotAligned,
     /// Tried to perform an Write or Erase operation on a read-only partition.
     ReadOnly,
-    /// Could not acquire the storage lock.
-    Locked,
     /// Underlying device returned an error.
     Inner(E),
 }
