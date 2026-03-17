@@ -7,7 +7,7 @@ use embassy_sync::once_lock::OnceLock;
 use embassy_sync::pubsub::PubSubChannel;
 use embedded_services::GlobalRawMutex;
 use embedded_services::IntrusiveList;
-use embedded_services::event::DiscardSender;
+use embedded_services::event::NoopSender;
 use embedded_usb_pd::GlobalPortId;
 use embedded_usb_pd::ucsi::lpm::get_connector_capability::OperationModeFlags;
 use embedded_usb_pd::ucsi::ppm::ack_cc_ci::Ack;
@@ -183,7 +183,7 @@ async fn power_policy_task(
     psu_events: EventReceivers<'static, 2, DeviceType, DynamicReceiver<'static, psu::event::EventData>>,
     power_policy: &'static Mutex<
         GlobalRawMutex,
-        power_policy_service::service::Service<'static, 'static, 'static, DeviceType, DiscardSender>,
+        power_policy_service::service::Service<'static, 'static, 'static, DeviceType, NoopSender>,
     >,
 ) {
     power_policy_service::service::task::task(psu_events, power_policy).await;
@@ -309,11 +309,11 @@ async fn task(spawner: Spawner) {
     static POWER_POLICY_PSU_REGISTRATION: StaticCell<[&DeviceType; 2]> = StaticCell::new();
     let psu_registration = POWER_POLICY_PSU_REGISTRATION.init([&wrapper0.ports[0].proxy, &wrapper1.ports[0].proxy]);
 
-    static POWER_POLICY_EVENT_SENDERS: StaticCell<[DiscardSender; 1]> = StaticCell::new();
-    let power_policy_event_senders = POWER_POLICY_EVENT_SENDERS.init([DiscardSender]);
+    static POWER_POLICY_EVENT_SENDERS: StaticCell<[NoopSender; 1]> = StaticCell::new();
+    let power_policy_event_senders = POWER_POLICY_EVENT_SENDERS.init([NoopSender]);
 
     static POWER_SERVICE: StaticCell<
-        Mutex<GlobalRawMutex, power_policy_service::service::Service<DeviceType, DiscardSender>>,
+        Mutex<GlobalRawMutex, power_policy_service::service::Service<DeviceType, NoopSender>>,
     > = StaticCell::new();
     let power_service = POWER_SERVICE.init(Mutex::new(power_policy_service::service::Service::new(
         psu_registration,

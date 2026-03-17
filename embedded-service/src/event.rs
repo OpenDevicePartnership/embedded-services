@@ -45,9 +45,9 @@ impl<E> Receiver<E> for DynamicReceiver<'_, E> {
 }
 
 /// A sender that discards all events sent to it.
-pub struct DiscardSender;
+pub struct NoopSender;
 
-impl<E> Sender<E> for DiscardSender {
+impl<E> Sender<E> for NoopSender {
     fn try_send(&mut self, _event: E) -> Option<()> {
         Some(())
     }
