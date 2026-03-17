@@ -28,13 +28,9 @@ pub(super) struct State {
     state: PowerState,
 }
 
-impl<'device, 'device_storage, 'sender_storage, PSU: Lockable, EventSender: Sender<ServiceEvent<'device, PSU>>>
-    Service<'device, 'device_storage, 'sender_storage, PSU, EventSender>
-where
-    PSU::Inner: Psu,
-{
+impl<'device, Reg: Registration<'device>> Service<'device, Reg> {
     /// Attempt to connect the requester as a provider
-    pub(super) async fn connect_provider(&mut self, requester: &'device PSU) -> Result<(), Error> {
+    pub(super) async fn connect_provider(&mut self, requester: &'device Reg::Psu) -> Result<(), Error> {
         let requested_power_capability = {
             let requester = requester.lock().await;
             debug!("({}): Attempting to connect as provider", requester.name());
@@ -50,7 +46,7 @@ where
 
         // Determine total requested power draw
         let mut total_power_mw = 0;
-        for psu in self.psu_devices.iter() {
+        for psu in self.registration.psus() {
             let target_provider_cap = if ptr::eq(*psu, requester) {
                 // Use the requester's requested power capability
                 // this handles both new connections and upgrade requests
@@ -106,11 +102,11 @@ where
     }
 
     /// Common logic for after a provider has successfully connected
-    async fn post_provider_connected(&mut self, requester: &'device PSU, target_power: ProviderPowerCapability) {
+    async fn post_provider_connected(&mut self, requester: &'device Reg::Psu, target_power: ProviderPowerCapability) {
         if self
             .state
             .connected_providers
-            .insert(requester as *const PSU as usize)
+            .insert(requester as *const Reg::Psu as usize)
             .is_err()
         {
             error!("Tracked providers set is full");
@@ -122,11 +118,15 @@ where
     /// Common logic for when a provider is disconnected
     ///
     /// Returns true if the device was operating as a provider
-    pub(super) async fn remove_connected_provider(&mut self, psu: &'device PSU) -> bool {
-        if self.state.connected_providers.remove(&(psu as *const PSU as usize)) {
+    pub(super) async fn remove_connected_provider(&mut self, psu: &'device Reg::Psu) -> bool {
+        if self
+            .state
+            .connected_providers
+            .remove(&(psu as *const Reg::Psu as usize))
+        {
             // Determine total requested power draw
             let mut total_power_mw = 0;
-            for psu in self.psu_devices.iter() {
+            for psu in self.registration.psus() {
                 let target_provider_cap = psu.lock().await.state().connected_provider_capability();
                 total_power_mw += target_provider_cap.map_or(0, |cap| cap.capability.max_power_mw());
             }

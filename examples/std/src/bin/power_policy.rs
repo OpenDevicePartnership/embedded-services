@@ -12,8 +12,13 @@ use power_policy_interface::{
     capability::{ConsumerFlags, ConsumerPowerCapability, PowerCapability, ProviderPowerCapability},
     psu,
 };
-use power_policy_service::psu::EventReceivers;
+use power_policy_service::{psu::EventReceivers, service::registration::ArrayRegistration};
 use static_cell::StaticCell;
+
+type ServiceType = Mutex<
+    GlobalRawMutex,
+    power_policy_service::service::Service<'static, ArrayRegistration<'static, DeviceType, 2, NoopSender, 1>>,
+>;
 
 const LOW_POWER: PowerCapability = PowerCapability {
     voltage_mv: 5000,
@@ -133,21 +138,14 @@ async fn run(spawner: Spawner) {
     static SERVICE_CONTEXT: StaticCell<power_policy_service::service::context::Context> = StaticCell::new();
     let service_context = SERVICE_CONTEXT.init(power_policy_service::service::context::Context::new());
 
-    static POWER_POLICY_PSU_REGISTRATION: StaticCell<[&DeviceType; 2]> = StaticCell::new();
-    let psu_registration = POWER_POLICY_PSU_REGISTRATION.init([device0, device1]);
+    let registration = ArrayRegistration {
+        psus: [device0, device1],
+        service_senders: [NoopSender],
+    };
 
-    static POWER_POLICY_EVENT_SENDERS: StaticCell<[NoopSender; 1]> = StaticCell::new();
-    let power_policy_event_senders = POWER_POLICY_EVENT_SENDERS.init([NoopSender]);
-
-    static SERVICE: StaticCell<
-        Mutex<
-            GlobalRawMutex,
-            power_policy_service::service::Service<'static, 'static, 'static, DeviceType, NoopSender>,
-        >,
-    > = StaticCell::new();
+    static SERVICE: StaticCell<ServiceType> = StaticCell::new();
     let service = SERVICE.init(Mutex::new(power_policy_service::service::Service::new(
-        psu_registration.as_slice(),
-        power_policy_event_senders.as_mut_slice(),
+        registration,
         service_context,
         power_policy_service::service::config::Config::default(),
     )));
@@ -291,10 +289,7 @@ async fn power_policy_task(
         DeviceType,
         channel::DynamicReceiver<'static, power_policy_interface::psu::event::EventData>,
     >,
-    power_policy: &'static Mutex<
-        GlobalRawMutex,
-        power_policy_service::service::Service<'static, 'static, 'static, DeviceType, NoopSender>,
-    >,
+    power_policy: &'static ServiceType,
 ) {
     power_policy_service::service::task::task(psu_events, power_policy).await;
 }

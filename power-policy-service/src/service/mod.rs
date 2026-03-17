@@ -5,6 +5,7 @@ pub mod config;
 pub mod consumer;
 pub mod context;
 pub mod provider;
+pub mod registration;
 pub mod task;
 
 use embedded_services::named::Named;
@@ -18,6 +19,8 @@ use power_policy_interface::{
     },
     service::{UnconstrainedState, event::Event as ServiceEvent},
 };
+
+use crate::service::registration::Registration;
 
 const MAX_CONNECTED_PROVIDERS: usize = 4;
 
@@ -51,45 +54,25 @@ where
 }
 
 /// Power policy service
-pub struct Service<
-    'device,
-    'device_storage,
-    'sender_storage,
-    PSU: Lockable,
-    EventSender: Sender<ServiceEvent<'device, PSU>>,
-> where
-    PSU::Inner: Psu,
-{
+pub struct Service<'device, Reg: Registration<'device>> {
+    /// Service registration
+    registration: Reg,
     /// Power policy context
     pub context: &'device context::Context,
-    /// PSU devices
-    psu_devices: &'device_storage [&'device PSU],
     /// State
-    state: InternalState<'device, PSU>,
+    state: InternalState<'device, Reg::Psu>,
     /// Config
     config: config::Config,
-    /// Senders for service events
-    event_senders: &'sender_storage mut [EventSender],
 }
 
-impl<'device, 'device_storage, 'sender_storage, PSU: Lockable, EventSender: Sender<ServiceEvent<'device, PSU>>>
-    Service<'device, 'device_storage, 'sender_storage, PSU, EventSender>
-where
-    PSU::Inner: Psu,
-{
+impl<'device, Reg: Registration<'device>> Service<'device, Reg> {
     /// Create a new power policy
-    pub fn new(
-        psu_devices: &'device_storage [&'device PSU],
-        event_senders: &'sender_storage mut [EventSender],
-        context: &'device context::Context,
-        config: config::Config,
-    ) -> Self {
+    pub fn new(registration: Reg, context: &'device context::Context, config: config::Config) -> Self {
         Self {
+            registration,
             context,
-            psu_devices,
             state: InternalState::default(),
             config,
-            event_senders,
         }
     }
 
@@ -97,7 +80,7 @@ where
     pub async fn compute_total_provider_power_mw(&self) -> u32 {
         let mut total = 0;
 
-        for psu in self.psu_devices.iter() {
+        for psu in self.registration.psus() {
             let psu = psu.lock().await;
             total += psu
                 .state()
@@ -109,7 +92,7 @@ where
         total
     }
 
-    async fn process_notify_attach(&self, device: &'device PSU) {
+    async fn process_notify_attach(&self, device: &'device Reg::Psu) {
         let mut device = device.lock().await;
         info!("({}): Received notify attached", device.name());
         if let Err(e) = device.state_mut().attach() {
@@ -117,7 +100,7 @@ where
         }
     }
 
-    async fn process_notify_detach(&mut self, device: &'device PSU) -> Result<(), Error> {
+    async fn process_notify_detach(&mut self, device: &'device Reg::Psu) -> Result<(), Error> {
         {
             let mut device = device.lock().await;
             info!("({}): Received notify detached", device.name());
@@ -131,7 +114,7 @@ where
 
     async fn process_notify_consumer_power_capability(
         &mut self,
-        device: &'device PSU,
+        device: &'device Reg::Psu,
         capability: Option<ConsumerPowerCapability>,
     ) -> Result<(), Error> {
         {
@@ -155,7 +138,7 @@ where
 
     async fn process_request_provider_power_capabilities(
         &mut self,
-        requester: &'device PSU,
+        requester: &'device Reg::Psu,
         capability: Option<ProviderPowerCapability>,
     ) -> Result<(), Error> {
         {
@@ -180,7 +163,7 @@ where
         self.connect_provider(requester).await
     }
 
-    async fn process_notify_disconnect(&mut self, device: &'device PSU) -> Result<(), Error> {
+    async fn process_notify_disconnect(&mut self, device: &'device Reg::Psu) -> Result<(), Error> {
         {
             let mut locked_device = device.lock().await;
             info!("({}): Received notify disconnect", locked_device.name());
@@ -200,13 +183,13 @@ where
     }
 
     /// Send an event to all registered listeners
-    async fn broadcast_event(&mut self, event: ServiceEvent<'device, PSU>) {
-        for sender in self.event_senders.iter_mut() {
+    async fn broadcast_event(&mut self, event: ServiceEvent<'device, Reg::Psu>) {
+        for sender in self.registration.event_senders() {
             sender.send(event).await;
         }
     }
 
-    pub async fn process_psu_event(&mut self, event: PsuEvent<'device, PSU>) -> Result<(), Error> {
+    pub async fn process_psu_event(&mut self, event: PsuEvent<'device, Reg::Psu>) -> Result<(), Error> {
         let device = event.psu;
         match event.event {
             PsuEventData::Attached => {

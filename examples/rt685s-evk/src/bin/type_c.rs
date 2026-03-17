@@ -21,6 +21,7 @@ use embedded_services::{error, info};
 use embedded_usb_pd::GlobalPortId;
 use power_policy_interface::psu;
 use power_policy_service::psu::EventReceivers;
+use power_policy_service::service::registration::ArrayRegistration;
 use static_cell::StaticCell;
 use tps6699x::asynchronous::embassy as tps6699x;
 use type_c_service::driver::tps6699x::{self as tps6699x_drv};
@@ -65,6 +66,11 @@ type Wrapper<'a> = ControllerWrapper<
 type Controller<'a> = tps6699x::controller::Controller<GlobalRawMutex, BusDevice<'a>>;
 type Interrupt<'a> = tps6699x::Interrupt<'a, GlobalRawMutex, BusDevice<'a>>;
 
+type PowerPolicyServiceType = Mutex<
+    GlobalRawMutex,
+    power_policy_service::service::Service<'static, ArrayRegistration<'static, DeviceType, 2, NoopSender, 1>>,
+>;
+
 #[embassy_executor::task]
 async fn pd_controller_task(controller: &'static Wrapper<'static>) {
     loop {
@@ -82,10 +88,7 @@ async fn interrupt_task(mut int_in: Input<'static>, mut interrupt: Interrupt<'st
 #[embassy_executor::task]
 async fn power_policy_task(
     psu_events: EventReceivers<'static, 2, DeviceType, DynamicReceiver<'static, psu::event::EventData>>,
-    power_policy: &'static Mutex<
-        GlobalRawMutex,
-        power_policy_service::service::Service<'static, 'static, 'static, DeviceType, NoopSender>,
-    >,
+    power_policy: &'static PowerPolicyServiceType,
 ) {
     power_policy_service::service::task::task(psu_events, power_policy).await;
 }
@@ -208,21 +211,14 @@ async fn main(spawner: Spawner) {
     static POWER_SERVICE_CONTEXT: StaticCell<power_policy_service::service::context::Context> = StaticCell::new();
     let power_service_context = POWER_SERVICE_CONTEXT.init(power_policy_service::service::context::Context::new());
 
-    static POWER_POLICY_PSU_REGISTRATION: StaticCell<[&DeviceType; 2]> = StaticCell::new();
-    let psu_registration = POWER_POLICY_PSU_REGISTRATION.init([&wrapper.ports[0].proxy, &wrapper.ports[1].proxy]);
+    let power_policy_registration = ArrayRegistration {
+        psus: [&wrapper.ports[0].proxy, &wrapper.ports[1].proxy],
+        service_senders: [NoopSender],
+    };
 
-    static POWER_POLICY_EVENT_SENDERS: StaticCell<[NoopSender; 1]> = StaticCell::new();
-    let power_policy_event_senders = POWER_POLICY_EVENT_SENDERS.init([NoopSender]);
-
-    static POWER_SERVICE: StaticCell<
-        Mutex<
-            GlobalRawMutex,
-            power_policy_service::service::Service<'static, 'static, 'static, DeviceType, NoopSender>,
-        >,
-    > = StaticCell::new();
+    static POWER_SERVICE: StaticCell<PowerPolicyServiceType> = StaticCell::new();
     let power_service = POWER_SERVICE.init(Mutex::new(power_policy_service::service::Service::new(
-        psu_registration,
-        power_policy_event_senders.as_mut_slice(),
+        power_policy_registration,
         power_service_context,
         power_policy_service::service::config::Config::default(),
     )));

@@ -1,30 +1,23 @@
 use embedded_services::{error, info, sync::Lockable};
 
-use embedded_services::event::{Receiver, Sender};
-use power_policy_interface::psu::Psu;
+use embedded_services::event::Receiver;
 use power_policy_interface::psu::event::EventData;
-use power_policy_interface::service::event::Event as ServiceEvent;
+
+use crate::service::registration::Registration;
 
 use super::Service;
 
 /// Runs the power policy task.
 pub async fn task<
     'device,
-    'device_storage,
-    'sender_storage,
     const PSU_COUNT: usize,
-    S: Lockable<Inner = Service<'device, 'device_storage, 'sender_storage, PSU, EventSender>>,
-    PSU: Lockable,
-    R: Receiver<EventData>,
-    EventSender: Sender<ServiceEvent<'device, PSU>> + 'sender_storage,
+    S: Lockable<Inner = Service<'device, Reg>>,
+    Reg: Registration<'device>,
+    PsuReceiver: Receiver<EventData>,
 >(
-    mut psu_events: crate::psu::EventReceivers<'device, PSU_COUNT, PSU, R>,
+    mut psu_events: crate::psu::EventReceivers<'device, PSU_COUNT, Reg::Psu, PsuReceiver>,
     policy: &'device S,
-) -> !
-where
-    PSU::Inner: Psu,
-    'device: 'device_storage,
-{
+) -> ! {
     info!("Starting power policy task");
     loop {
         let event = psu_events.wait_event().await;

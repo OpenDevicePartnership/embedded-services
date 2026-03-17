@@ -6,32 +6,27 @@ use super::*;
 
 use power_policy_interface::capability::ConsumerFlags;
 use power_policy_interface::charger::Device as ChargerDevice;
+use power_policy_interface::psu;
 use power_policy_interface::service::event::Event as ServiceEvent;
 use power_policy_interface::{capability::ConsumerPowerCapability, charger::PolicyEvent, psu::PsuState};
 
 /// State of the current consumer
 #[derive(Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct AvailableConsumer<'device, PSU: Lockable>
-where
-    PSU::Inner: Psu,
-{
+pub struct AvailableConsumer<'device, Psu: Lockable<Inner: psu::Psu>> {
     /// Device reference
-    pub psu: &'device PSU,
+    pub psu: &'device Psu,
     /// The power capability of the currently connected consumer
     pub consumer_power_capability: ConsumerPowerCapability,
 }
 
-impl<'device, PSU: Lockable> Clone for AvailableConsumer<'device, PSU>
-where
-    PSU::Inner: Psu,
-{
+impl<'device, Psu: Lockable<Inner: psu::Psu>> Clone for AvailableConsumer<'device, Psu> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<'device, PSU: Lockable> Copy for AvailableConsumer<'device, PSU> where PSU::Inner: Psu {}
+impl<'device, Psu: Lockable<Inner: psu::Psu>> Copy for AvailableConsumer<'device, Psu> {}
 
 /// Compare two consumer capabilities to determine which one is better
 ///
@@ -47,17 +42,13 @@ fn cmp_consumer_capability(
     (a.capability, a_is_current).cmp(&(b.capability, b_is_current))
 }
 
-impl<'device, 'device_storage, 'sender_storage, PSU: Lockable, EventSender: Sender<ServiceEvent<'device, PSU>>>
-    Service<'device, 'device_storage, 'sender_storage, PSU, EventSender>
-where
-    PSU::Inner: Psu,
-{
+impl<'device, Reg: Registration<'device>> Service<'device, Reg> {
     /// Iterate over all devices to determine what is best power port provides the highest power
-    async fn find_best_consumer(&self) -> Result<Option<AvailableConsumer<'device, PSU>>, Error> {
+    async fn find_best_consumer(&self) -> Result<Option<AvailableConsumer<'device, Reg::Psu>>, Error> {
         let mut best_consumer = None;
         let current_consumer = self.state.current_consumer_state.as_ref().map(|f| f.psu);
 
-        for psu in self.psu_devices.iter() {
+        for psu in self.registration.psus() {
             let locked_psu = psu.lock().await;
             let consumer_capability = locked_psu.state().consumer_capability;
             // Don't consider consumers below minimum threshold
@@ -110,7 +101,7 @@ where
     async fn update_unconstrained_state(&mut self) -> Result<(), Error> {
         // Count how many available unconstrained devices we have
         let mut unconstrained_new = UnconstrainedState::default();
-        for psu in self.psu_devices.iter() {
+        for psu in self.registration.psus() {
             if let Some(capability) = psu.lock().await.state().consumer_capability {
                 if capability.flags.unconstrained_power() {
                     unconstrained_new.available += 1;
@@ -137,7 +128,7 @@ where
     /// Common logic to execute after a consumer is connected
     async fn post_consumer_connected(
         &mut self,
-        connected_consumer: AvailableConsumer<'device, PSU>,
+        connected_consumer: AvailableConsumer<'device, Reg::Psu>,
     ) -> Result<(), Error> {
         self.state.current_consumer_state = Some(connected_consumer);
         // todo: review the delay time
@@ -196,7 +187,7 @@ where
     }
 
     /// Connect to a new consumer
-    async fn connect_new_consumer(&mut self, new_consumer: AvailableConsumer<'device, PSU>) -> Result<(), Error> {
+    async fn connect_new_consumer(&mut self, new_consumer: AvailableConsumer<'device, Reg::Psu>) -> Result<(), Error> {
         // Handle our current consumer
         if let Some(current_consumer) = self.state.current_consumer_state {
             if ptr::eq(current_consumer.psu, new_consumer.psu)

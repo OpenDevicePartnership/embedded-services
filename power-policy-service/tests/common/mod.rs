@@ -20,8 +20,8 @@ use power_policy_interface::{
     capability::{ConsumerPowerCapability, PowerCapability, ProviderPowerCapability},
     service::{UnconstrainedState, event::Event as ServiceEvent},
 };
-use power_policy_service::psu::EventReceivers;
 use power_policy_service::service::Service;
+use power_policy_service::{psu::EventReceivers, service::registration::ArrayRegistration};
 
 pub mod mock;
 
@@ -45,17 +45,20 @@ pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(15);
 const EVENT_CHANNEL_SIZE: usize = 4;
 
 pub type DeviceType<'a> = Mutex<GlobalRawMutex, Mock<'a, DynamicSender<'a, EventData>>>;
-pub type ServiceType<'device, 'device_storage, 'sender_storage> = Service<
+pub type ServiceType<'device, 'sender> = Service<
     'device,
-    'device_storage,
-    'sender_storage,
-    DeviceType<'device>,
-    DynamicSender<'sender_storage, ServiceEvent<'device, DeviceType<'device>>>,
+    ArrayRegistration<
+        'device,
+        DeviceType<'device>,
+        2,
+        DynamicSender<'sender, ServiceEvent<'device, DeviceType<'device>>>,
+        1,
+    >,
 >;
 
-async fn power_policy_task<'device, 'device_storage, 'sender_storage, const N: usize>(
+async fn power_policy_task<'device, 'sender, const N: usize>(
     completion_signal: &'device Signal<GlobalRawMutex, ()>,
-    mut power_policy: ServiceType<'device, 'device_storage, 'sender_storage>,
+    mut power_policy: ServiceType<'device, 'sender>,
     mut event_receivers: EventReceivers<'device, N, DeviceType<'device>, DynamicReceiver<'device, EventData>>,
 ) {
     while let Either::First(result) = select(event_receivers.wait_event(), completion_signal.wait()).await {
@@ -124,7 +127,6 @@ where
     let device1 = Mutex::new(Mock::new("PSU1", device1_sender, &device1_signal));
 
     let service_context = power_policy_service::service::context::Context::new();
-    let psu_registration = [&device0, &device1];
     let completion_signal = Signal::new();
 
     // Ideally F would have two lifetime arguments: 'device and 'sender because the event type requires 'device: 'sender.
@@ -135,15 +137,15 @@ where
     let service_event_channel: ManuallyDrop<
         Channel<GlobalRawMutex, ServiceEvent<'_, DeviceType<'_>>, EVENT_CHANNEL_SIZE>,
     > = ManuallyDrop::new(Channel::new());
-    let mut service_sender = [service_event_channel.dyn_sender()];
-    let _service_receiver = service_event_channel.dyn_receiver();
+    let service_receiver = service_event_channel.dyn_receiver();
 
-    let power_policy = power_policy_service::service::Service::new(
-        psu_registration.as_slice(),
-        &mut service_sender,
-        &service_context,
-        Default::default(),
-    );
+    let power_policy_registration = ArrayRegistration {
+        psus: [&device0, &device1],
+        service_senders: [service_event_channel.dyn_sender()],
+    };
+
+    let power_policy =
+        power_policy_service::service::Service::new(power_policy_registration, &service_context, Default::default());
 
     with_timeout(
         timeout,
@@ -154,7 +156,7 @@ where
                 EventReceivers::new([&device0, &device1], [device0_receiver, device1_receiver]),
             ),
             async {
-                test(_service_receiver, &device0, &device0_signal, &device1, &device1_signal).await;
+                test(service_receiver, &device0, &device0_signal, &device1, &device1_signal).await;
                 completion_signal.signal(());
             },
         ),
