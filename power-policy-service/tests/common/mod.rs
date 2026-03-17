@@ -21,7 +21,7 @@ use power_policy_interface::{
     service::{UnconstrainedState, event::Event as ServiceEvent},
 };
 use power_policy_service::service::Service;
-use power_policy_service::{psu::EventReceivers, service::registration::ArrayRegistration};
+use power_policy_service::{psu::ArrayEventReceivers, service::registration::ArrayRegistration};
 
 pub mod mock;
 
@@ -59,7 +59,7 @@ pub type ServiceType<'device, 'sender> = Service<
 async fn power_policy_task<'device, 'sender, const N: usize>(
     completion_signal: &'device Signal<GlobalRawMutex, ()>,
     mut power_policy: ServiceType<'device, 'sender>,
-    mut event_receivers: EventReceivers<'device, N, DeviceType<'device>, DynamicReceiver<'device, EventData>>,
+    mut event_receivers: ArrayEventReceivers<'device, N, DeviceType<'device>, DynamicReceiver<'device, EventData>>,
 ) {
     while let Either::First(result) = select(event_receivers.wait_event(), completion_signal.wait()).await {
         power_policy.process_psu_event(result).await.unwrap();
@@ -153,7 +153,7 @@ where
             power_policy_task(
                 &completion_signal,
                 power_policy,
-                EventReceivers::new([&device0, &device1], [device0_receiver, device1_receiver]),
+                ArrayEventReceivers::new([&device0, &device1], [device0_receiver, device1_receiver]),
             ),
             async {
                 test(service_receiver, &device0, &device0_signal, &device1, &device1_signal).await;

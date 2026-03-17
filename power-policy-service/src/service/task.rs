@@ -15,7 +15,7 @@ pub async fn task<
     Reg: Registration<'device>,
     PsuReceiver: Receiver<EventData>,
 >(
-    mut psu_events: crate::psu::EventReceivers<'device, PSU_COUNT, Reg::Psu, PsuReceiver>,
+    mut psu_events: crate::psu::ArrayEventReceivers<'device, PSU_COUNT, Reg::Psu, PsuReceiver>,
     policy: &'device S,
 ) -> ! {
     info!("Starting power policy task");

@@ -14,7 +14,8 @@ use embedded_usb_pd::GlobalPortId;
 use log::*;
 use power_policy_interface::capability::PowerCapability;
 use power_policy_interface::psu;
-use power_policy_service::psu::EventReceivers;
+use power_policy_service::psu::ArrayEventReceivers;
+use power_policy_service::service::registration::ArrayRegistration;
 use static_cell::StaticCell;
 use std_examples::type_c::mock_controller;
 use type_c_service::service::Service;
@@ -39,6 +40,11 @@ const CFU2_ID: u8 = 0x02;
 const DELAY_MS: u64 = 1000;
 
 type DeviceType = Mutex<GlobalRawMutex, PowerProxyDevice<'static>>;
+
+type PowerPolicyServiceType = Mutex<
+    GlobalRawMutex,
+    power_policy_service::service::Service<'static, ArrayRegistration<'static, DeviceType, 3, NoopSender, 1>>,
+>;
 
 #[embassy_executor::task(pool_size = 3)]
 async fn controller_task(wrapper: &'static mock_controller::Wrapper<'static>) {
@@ -173,25 +179,18 @@ async fn task(spawner: Spawner) {
         crate::mock_controller::Validator,
     ));
 
-    static POWER_POLICY_PSU_REGISTRATION: StaticCell<[&DeviceType; 3]> = StaticCell::new();
-    let psu_registration = POWER_POLICY_PSU_REGISTRATION.init([
-        &wrapper0.ports[0].proxy,
-        &wrapper1.ports[0].proxy,
-        &wrapper2.ports[0].proxy,
-    ]);
+    let power_policy_registration = ArrayRegistration {
+        psus: [
+            &wrapper0.ports[0].proxy,
+            &wrapper1.ports[0].proxy,
+            &wrapper2.ports[0].proxy,
+        ],
+        service_senders: [NoopSender],
+    };
 
-    static POWER_POLICY_EVENT_SENDERS: StaticCell<[NoopSender; 1]> = StaticCell::new();
-    let power_policy_event_senders = POWER_POLICY_EVENT_SENDERS.init([NoopSender]);
-
-    static POWER_SERVICE: StaticCell<
-        Mutex<
-            GlobalRawMutex,
-            power_policy_service::service::Service<'static, 'static, 'static, DeviceType, NoopSender>,
-        >,
-    > = StaticCell::new();
+    static POWER_SERVICE: StaticCell<PowerPolicyServiceType> = StaticCell::new();
     let power_service = POWER_SERVICE.init(Mutex::new(power_policy_service::service::Service::new(
-        psu_registration,
-        power_policy_event_senders.as_mut_slice(),
+        power_policy_registration,
         power_service_context,
         power_policy_service::service::config::Config::default(),
     )));
@@ -221,7 +220,7 @@ async fn task(spawner: Spawner) {
     let cfu_client = CfuClient::new(&CFU_CLIENT).await;
 
     spawner.must_spawn(power_policy_task(
-        EventReceivers::new(
+        ArrayEventReceivers::new(
             [
                 &wrapper0.ports[0].proxy,
                 &wrapper1.ports[0].proxy,
@@ -292,11 +291,8 @@ async fn task(spawner: Spawner) {
 
 #[embassy_executor::task]
 async fn power_policy_task(
-    psu_events: EventReceivers<'static, 3, DeviceType, DynamicReceiver<'static, psu::event::EventData>>,
-    power_policy: &'static Mutex<
-        GlobalRawMutex,
-        power_policy_service::service::Service<'static, 'static, 'static, DeviceType, NoopSender>,
-    >,
+    psu_events: ArrayEventReceivers<'static, 3, DeviceType, DynamicReceiver<'static, psu::event::EventData>>,
+    power_policy: &'static PowerPolicyServiceType,
 ) {
     power_policy_service::service::task::task(psu_events, power_policy).await;
 }

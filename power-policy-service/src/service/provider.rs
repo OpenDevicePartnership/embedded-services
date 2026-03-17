@@ -115,10 +115,10 @@ impl<'device, Reg: Registration<'device>> Service<'device, Reg> {
             .await;
     }
 
-    /// Common logic for when a provider is disconnected
+    /// Common logic for when a provider is removed
     ///
     /// Returns true if the device was operating as a provider
-    pub(super) async fn remove_connected_provider(&mut self, psu: &'device Reg::Psu) -> bool {
+    pub(super) async fn post_provider_removed(&mut self, psu: &'device Reg::Psu) -> bool {
         if self
             .state
             .connected_providers

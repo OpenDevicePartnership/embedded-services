@@ -12,7 +12,7 @@ use power_policy_interface::{
     capability::{ConsumerFlags, ConsumerPowerCapability, PowerCapability, ProviderPowerCapability},
     psu,
 };
-use power_policy_service::{psu::EventReceivers, service::registration::ArrayRegistration};
+use power_policy_service::{psu::ArrayEventReceivers, service::registration::ArrayRegistration};
 use static_cell::StaticCell;
 
 type ServiceType = Mutex<
@@ -151,7 +151,7 @@ async fn run(spawner: Spawner) {
     )));
 
     spawner.must_spawn(power_policy_task(
-        EventReceivers::new(
+        ArrayEventReceivers::new(
             [device0, device1],
             [
                 device0_event_channel.dyn_receiver(),
@@ -283,7 +283,7 @@ async fn run(spawner: Spawner) {
 
 #[embassy_executor::task]
 async fn power_policy_task(
-    psu_events: EventReceivers<
+    psu_events: ArrayEventReceivers<
         'static,
         2,
         DeviceType,

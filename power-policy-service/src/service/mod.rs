@@ -107,7 +107,7 @@ impl<'device, Reg: Registration<'device>> Service<'device, Reg> {
             device.state_mut().detach();
         }
 
-        self.remove_connected_provider(device).await;
+        self.post_provider_removed(device).await;
         self.update_current_consumer().await?;
         Ok(())
     }
@@ -177,7 +177,7 @@ impl<'device, Reg: Registration<'device>> Service<'device, Reg> {
             }
         }
 
-        self.remove_connected_provider(device).await;
+        self.post_provider_removed(device).await;
         self.update_current_consumer().await?;
         Ok(())
     }

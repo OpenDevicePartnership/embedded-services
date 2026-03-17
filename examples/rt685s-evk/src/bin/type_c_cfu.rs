@@ -23,7 +23,7 @@ use embedded_services::{GlobalRawMutex, IntrusiveList};
 use embedded_services::{error, info};
 use embedded_usb_pd::GlobalPortId;
 use power_policy_interface::psu;
-use power_policy_service::psu::EventReceivers;
+use power_policy_service::psu::ArrayEventReceivers;
 use power_policy_service::service::registration::ArrayRegistration;
 use static_cell::StaticCell;
 use tps6699x::asynchronous::embassy as tps6699x;
@@ -171,7 +171,7 @@ async fn fw_update_task() {
 
 #[embassy_executor::task]
 async fn power_policy_task(
-    psu_events: EventReceivers<'static, 2, DeviceType, DynamicReceiver<'static, psu::event::EventData>>,
+    psu_events: ArrayEventReceivers<'static, 2, DeviceType, DynamicReceiver<'static, psu::event::EventData>>,
     power_policy: &'static PowerPolicyServiceType,
 ) {
     power_policy_service::service::task::task(psu_events, power_policy).await;
@@ -329,7 +329,7 @@ async fn main(spawner: Spawner) {
 
     info!("Spawining power policy task");
     spawner.must_spawn(power_policy_task(
-        EventReceivers::new(
+        ArrayEventReceivers::new(
             [&wrapper.ports[0].proxy, &wrapper.ports[1].proxy],
             [policy_receiver0, policy_receiver1],
         ),
