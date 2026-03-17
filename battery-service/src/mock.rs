@@ -6,7 +6,9 @@ use embedded_batteries_async::{
 use embedded_services::{GlobalRawMutex, error, info};
 
 // Convenience fns
-pub async fn init_state_machine(battery_service: &'static crate::Service) -> Result<(), crate::context::ContextError> {
+pub async fn init_state_machine<const N: usize>(
+    battery_service: &crate::Service<'_, N>,
+) -> Result<(), crate::context::ContextError> {
     battery_service
         .execute_event(crate::context::BatteryEvent {
             event: crate::context::BatteryEventInner::DoInit,
@@ -34,7 +36,7 @@ pub async fn init_state_machine(battery_service: &'static crate::Service) -> Res
     Ok(())
 }
 
-pub async fn recover_state_machine(battery_service: &'static crate::Service) -> Result<(), ()> {
+pub async fn recover_state_machine<const N: usize>(battery_service: &crate::Service<'_, N>) -> Result<(), ()> {
     loop {
         match battery_service
             .execute_event(crate::context::BatteryEvent {
