@@ -484,3 +484,90 @@ impl<T: Controller, const SAMPLE_BUF_LEN: usize> Sensor<T, SAMPLE_BUF_LEN> {
         }
     }
 }
+
+/// The memory resources required by the sensor.
+pub struct Resources<'hw, T: Controller, const SAMPLE_BUF_LEN: usize> {
+    inner: Option<ServiceInner<'hw, T, SAMPLE_BUF_LEN>>,
+}
+
+// Note: We can't derive Default unless we trait bound T by Default,
+// but we don't want that restriction since the default is just the None case
+impl<'hw, T: Controller, const SAMPLE_BUF_LEN: usize> Default for Resources<'hw, T, SAMPLE_BUF_LEN> {
+    fn default() -> Self {
+        Self { inner: None }
+    }
+}
+
+struct ServiceInner<'hw, T: Controller, const SAMPLE_BUF_LEN: usize> {
+    sensor: &'hw Sensor<T, SAMPLE_BUF_LEN>,
+    thermal_service: &'hw crate::Service<'hw>,
+}
+
+impl<'hw, T: Controller, const SAMPLE_BUF_LEN: usize> ServiceInner<'hw, T, SAMPLE_BUF_LEN> {
+    fn new(init_params: InitParams<'hw, T, SAMPLE_BUF_LEN>) -> Self {
+        Self {
+            sensor: init_params.sensor,
+            thermal_service: init_params.thermal_service,
+        }
+    }
+
+    fn sensor(&self) -> &Sensor<T, SAMPLE_BUF_LEN> {
+        self.sensor
+    }
+}
+
+/// A task runner for a sensor. Users must run this in an embassy task or similar async execution context.
+pub struct Runner<'hw, T: Controller, const SAMPLE_BUF_LEN: usize> {
+    service: &'hw ServiceInner<'hw, T, SAMPLE_BUF_LEN>,
+}
+
+impl<'hw, T: Controller, const SAMPLE_BUF_LEN: usize> odp_service_common::runnable_service::ServiceRunner<'hw>
+    for Runner<'hw, T, SAMPLE_BUF_LEN>
+{
+    async fn run(self) -> embedded_services::Never {
+        loop {
+            let _ = embassy_futures::join::join(
+                self.service.sensor.handle_rx(),
+                self.service.sensor.handle_sampling(self.service.thermal_service),
+            )
+            .await;
+        }
+    }
+}
+
+/// Sensor service control handle.
+pub struct Service<'hw, T: Controller, const SAMPLE_BUF_LEN: usize> {
+    inner: &'hw ServiceInner<'hw, T, SAMPLE_BUF_LEN>,
+}
+
+impl<'hw, T: Controller, const SAMPLE_BUF_LEN: usize> Service<'hw, T, SAMPLE_BUF_LEN> {
+    /// Get a reference to the inner sensor.
+    pub fn sensor(&self) -> &Sensor<T, SAMPLE_BUF_LEN> {
+        self.inner.sensor()
+    }
+}
+
+/// Parameters required to initialize a sensor service.
+pub struct InitParams<'hw, T: Controller, const SAMPLE_BUF_LEN: usize> {
+    /// The underlying `Sensor` wrapper this service will control.
+    pub sensor: &'hw Sensor<T, SAMPLE_BUF_LEN>,
+    /// The thermal service handle for this sensor to communicate events to.
+    pub thermal_service: &'hw crate::Service<'hw>,
+}
+
+impl<'hw, T: Controller, const SAMPLE_BUF_LEN: usize> odp_service_common::runnable_service::Service<'hw>
+    for Service<'hw, T, SAMPLE_BUF_LEN>
+{
+    type Runner = Runner<'hw, T, SAMPLE_BUF_LEN>;
+    type Resources = Resources<'hw, T, SAMPLE_BUF_LEN>;
+    type ErrorType = Error;
+    type InitParams = InitParams<'hw, T, SAMPLE_BUF_LEN>;
+
+    async fn new(
+        service_storage: &'hw mut Self::Resources,
+        init_params: Self::InitParams,
+    ) -> Result<(Self, Self::Runner), Self::ErrorType> {
+        let service = service_storage.inner.insert(ServiceInner::new(init_params));
+        Ok((Self { inner: service }, Runner { service }))
+    }
+}

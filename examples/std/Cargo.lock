@@ -1320,6 +1320,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "odp-service-common"
+version = "0.1.0"
+dependencies = [
+ "embedded-services",
+ "static_cell",
+]
+
+[[package]]
 name = "once_cell"
 version = "1.21.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1667,6 +1675,7 @@ dependencies = [
  "env_logger",
  "heapless",
  "log",
+ "odp-service-common",
  "power-policy-interface",
  "power-policy-service",
  "static_cell",
@@ -1736,6 +1745,7 @@ dependencies = [
  "heapless",
  "log",
  "mctp-rs",
+ "odp-service-common",
  "thermal-service-messages",
  "uuid",
 ]

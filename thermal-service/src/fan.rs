@@ -516,3 +516,91 @@ impl<T: Controller, const SAMPLE_BUF_LEN: usize> Fan<T, SAMPLE_BUF_LEN> {
         }
     }
 }
+
+/// The memory resources required by the fan.
+pub struct Resources<'hw, T: Controller, const SAMPLE_BUF_LEN: usize> {
+    inner: Option<ServiceInner<'hw, T, SAMPLE_BUF_LEN>>,
+}
+
+// Note: We can't derive Default unless we trait bound T by Default,
+// but we don't want that restriction since the default is just the None case
+impl<'hw, T: Controller, const SAMPLE_BUF_LEN: usize> Default for Resources<'hw, T, SAMPLE_BUF_LEN> {
+    fn default() -> Self {
+        Self { inner: None }
+    }
+}
+
+struct ServiceInner<'hw, T: Controller, const SAMPLE_BUF_LEN: usize> {
+    fan: &'hw Fan<T, SAMPLE_BUF_LEN>,
+    thermal_service: &'hw crate::Service<'hw>,
+}
+
+impl<'hw, T: Controller, const SAMPLE_BUF_LEN: usize> ServiceInner<'hw, T, SAMPLE_BUF_LEN> {
+    fn new(init_params: InitParams<'hw, T, SAMPLE_BUF_LEN>) -> Self {
+        Self {
+            fan: init_params.fan,
+            thermal_service: init_params.thermal_service,
+        }
+    }
+
+    fn fan(&self) -> &Fan<T, SAMPLE_BUF_LEN> {
+        self.fan
+    }
+}
+
+/// A task runner for a fan. Users must run this in an embassy task or similar async execution context.
+pub struct Runner<'hw, T: Controller, const SAMPLE_BUF_LEN: usize> {
+    service: &'hw ServiceInner<'hw, T, SAMPLE_BUF_LEN>,
+}
+
+impl<'hw, T: Controller, const SAMPLE_BUF_LEN: usize> odp_service_common::runnable_service::ServiceRunner<'hw>
+    for Runner<'hw, T, SAMPLE_BUF_LEN>
+{
+    async fn run(self) -> embedded_services::Never {
+        loop {
+            let _ = embassy_futures::join::join3(
+                self.service.fan.handle_rx(),
+                self.service.fan.handle_sampling(),
+                self.service.fan.handle_auto_control(self.service.thermal_service),
+            )
+            .await;
+        }
+    }
+}
+
+/// Fan service control handle.
+pub struct Service<'hw, T: Controller, const SAMPLE_BUF_LEN: usize> {
+    inner: &'hw ServiceInner<'hw, T, SAMPLE_BUF_LEN>,
+}
+
+impl<'hw, T: Controller, const SAMPLE_BUF_LEN: usize> Service<'hw, T, SAMPLE_BUF_LEN> {
+    /// Get a reference to the inner fan.
+    pub fn fan(&self) -> &Fan<T, SAMPLE_BUF_LEN> {
+        self.inner.fan()
+    }
+}
+
+/// Parameters required to initialize a fan service.
+pub struct InitParams<'hw, T: Controller, const SAMPLE_BUF_LEN: usize> {
+    /// The underlying `Fan` wrapper this service will control.
+    pub fan: &'hw Fan<T, SAMPLE_BUF_LEN>,
+    /// The thermal service handle for this fan to communicate with a sensor.
+    pub thermal_service: &'hw crate::Service<'hw>,
+}
+
+impl<'hw, T: Controller, const SAMPLE_BUF_LEN: usize> odp_service_common::runnable_service::Service<'hw>
+    for Service<'hw, T, SAMPLE_BUF_LEN>
+{
+    type Runner = Runner<'hw, T, SAMPLE_BUF_LEN>;
+    type Resources = Resources<'hw, T, SAMPLE_BUF_LEN>;
+    type ErrorType = Error;
+    type InitParams = InitParams<'hw, T, SAMPLE_BUF_LEN>;
+
+    async fn new(
+        service_storage: &'hw mut Self::Resources,
+        init_params: Self::InitParams,
+    ) -> Result<(Self, Self::Runner), Self::ErrorType> {
+        let service = service_storage.inner.insert(ServiceInner::new(init_params));
+        Ok((Self { inner: service }, Runner { service }))
+    }
+}
