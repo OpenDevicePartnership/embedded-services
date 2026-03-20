@@ -1,6 +1,6 @@
 use core::slice;
 
-use embassy_futures::select::select;
+use embassy_futures::select::select3;
 use embassy_imxrt::espi;
 use embassy_sync::channel::Channel;
 use embassy_sync::mutex::Mutex;
@@ -102,30 +102,31 @@ impl<'hw, RelayHandler: embedded_services::relay::mctp::RelayHandler> ServiceInn
     async fn run(&self) -> embedded_services::Never {
         let mut espi = self.espi.lock().await;
         loop {
-            let event = select(espi.wait_for_event(), self.host_tx_queue.receive()).await;
+            let event = select3(
+                espi.wait_for_event(),
+                self.host_tx_queue.receive(),
+                self.relay_handler.notification_listener().listen(),
+            )
+            .await;
 
             match event {
-                embassy_futures::select::Either::First(controller_event) => {
+                embassy_futures::select::Either3::First(controller_event) => {
                     self.process_controller_event(&mut espi, controller_event)
                         .await
                         .unwrap_or_else(|e| {
                             error!("Critical error processing eSPI controller event: {:?}", e);
                         });
                 }
-                embassy_futures::select::Either::Second(host_msg) => {
+                embassy_futures::select::Either3::Second(host_msg) => {
                     self.process_response_to_host(&mut espi, host_msg).await
+                }
+                embassy_futures::select::Either3::Third(id) => {
+                    espi.irq_push(id).await;
+                    info!("espi: Notification id {} sent to Host!", id);
                 }
             }
         }
     }
-
-    // TODO The notification system was not actually used, so this is currently dead code.
-    //      We need to implement some interface for triggering notifications from other subsystems, and it may do something like this:
-    //
-    // async fn process_notification_to_host(&self, espi: &mut espi::Espi<'_>, notification: &NotificationMsg) {
-    //     espi.irq_push(notification.offset).await;
-    //     info!("espi: Notification id {} sent to Host!", notification.offset);
-    // }
 
     fn write_to_hw(&self, espi: &mut espi::Espi<'hw>, packet: &[u8]) -> Result<(), embassy_imxrt::espi::Error> {
         // Send packet via your transport medium
