@@ -7,7 +7,7 @@ use power_policy_interface::psu::Psu;
 use power_policy_interface::psu::event::{Event, EventData};
 
 /// Struct used to contain PSU event receivers and manage mapping from a receiver to its corresponding device.
-pub struct EventReceivers<'a, const N: usize, PSU: Lockable, R: Receiver<EventData>>
+pub struct ArrayEventReceivers<'a, const N: usize, PSU: Lockable, R: Receiver<EventData>>
 where
     PSU::Inner: Psu,
 {
@@ -15,7 +15,7 @@ where
     pub receivers: [R; N],
 }
 
-impl<'a, const N: usize, PSU: Lockable, R: Receiver<EventData>> EventReceivers<'a, N, PSU, R>
+impl<'a, const N: usize, PSU: Lockable, R: Receiver<EventData>> ArrayEventReceivers<'a, N, PSU, R>
 where
     PSU::Inner: Psu,
 {

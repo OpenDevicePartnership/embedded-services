@@ -6,38 +6,73 @@ use crate::{
     service::UnconstrainedState,
 };
 
-/// Events broadcast from the service.
+/// Event data broadcast from the service.
+///
+/// This enum doesn't contain a reference to the device and is suitable
+/// for receivers that don't need to know which device triggered the event
+/// and allows for receivers that don't need to be generic over the device type.
 #[derive(Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub enum Event<'device, D: Lockable>
-where
-    D::Inner: Psu,
-{
+pub enum EventData {
     /// Consumer disconnected
-    ConsumerDisconnected(&'device D),
+    ConsumerDisconnected,
     /// Consumer connected
-    ConsumerConnected(&'device D, ConsumerPowerCapability),
+    ConsumerConnected(ConsumerPowerCapability),
     /// Provider disconnected
-    ProviderDisconnected(&'device D),
+    ProviderDisconnected,
     /// Provider connected
-    ProviderConnected(&'device D, ProviderPowerCapability),
+    ProviderConnected(ProviderPowerCapability),
     /// Unconstrained state changed
     Unconstrained(UnconstrainedState),
 }
 
-impl<'device, D> Clone for Event<'device, D>
+impl<'device, PSU: Lockable> From<Event<'device, PSU>> for EventData
 where
-    D: Lockable,
-    D::Inner: Psu,
+    PSU::Inner: Psu,
+{
+    fn from(value: Event<'device, PSU>) -> Self {
+        match value {
+            Event::ConsumerDisconnected(_) => EventData::ConsumerDisconnected,
+            Event::ConsumerConnected(_, capability) => EventData::ConsumerConnected(capability),
+            Event::ProviderDisconnected(_) => EventData::ProviderDisconnected,
+            Event::ProviderConnected(_, capability) => EventData::ProviderConnected(capability),
+            Event::Unconstrained(unconstrained) => EventData::Unconstrained(unconstrained),
+        }
+    }
+}
+
+/// Events broadcast from the service.
+#[derive(Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum Event<'device, PSU: Lockable>
+where
+    PSU::Inner: Psu,
+{
+    /// Consumer disconnected
+    ConsumerDisconnected(&'device PSU),
+    /// Consumer connected
+    ConsumerConnected(&'device PSU, ConsumerPowerCapability),
+    /// Provider disconnected
+    ProviderDisconnected(&'device PSU),
+    /// Provider connected
+    ProviderConnected(&'device PSU, ProviderPowerCapability),
+    /// Unconstrained state changed
+    Unconstrained(UnconstrainedState),
+}
+
+impl<'device, PSU> Clone for Event<'device, PSU>
+where
+    PSU: Lockable,
+    PSU::Inner: Psu,
 {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<'device, D> Copy for Event<'device, D>
+impl<'device, PSU> Copy for Event<'device, PSU>
 where
-    D: Lockable,
-    D::Inner: Psu,
+    PSU: Lockable,
+    PSU::Inner: Psu,
 {
 }
