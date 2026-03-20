@@ -2,12 +2,12 @@
 pub mod driver;
 pub mod service;
 pub mod task;
-pub mod type_c;
+pub mod util;
 pub mod wrapper;
 
 use core::future::Future;
 
-use type_c::event::{PortEvent, PortNotification, PortNotificationSingle, PortPendingIter, PortStatusChanged};
+use wrapper::event::{PortEvent, PortNotification, PortNotificationSingle, PortPendingIter, PortStatusChanged};
 
 /// Enum to contain all port event variants
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]

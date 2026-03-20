@@ -1,6 +1,6 @@
-use crate::type_c::Cached;
-use crate::type_c::controller::{InternalResponseData, Response};
 use crate::wrapper::backing::ControllerState;
+use crate::wrapper::controller::Cached;
+use crate::wrapper::controller::{InternalResponseData, Response};
 use embassy_futures::yield_now;
 use embassy_sync::pubsub::WaitResult;
 use embassy_time::{Duration, Timer};

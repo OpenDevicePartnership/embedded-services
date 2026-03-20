@@ -5,19 +5,21 @@ use embassy_sync::mutex::Mutex;
 use embassy_sync::once_lock::OnceLock;
 use embassy_sync::pubsub::PubSubChannel;
 use embassy_time::Timer;
+use embedded_services::event::NoopSender;
 use embedded_services::{GlobalRawMutex, IntrusiveList};
 use embedded_usb_pd::GlobalPortId;
 use embedded_usb_pd::ado::Ado;
 use embedded_usb_pd::type_c::Current;
 use log::*;
 use power_policy_interface::psu;
-use power_policy_service::psu::EventReceivers;
+use power_policy_service::psu::ArrayEventReceivers;
+use power_policy_service::service::registration::ArrayRegistration;
 use static_cell::StaticCell;
 use std_examples::type_c::mock_controller;
 use std_examples::type_c::mock_controller::Wrapper;
 use type_c_service::service::Service;
 use type_c_service::service::config::Config;
-use type_c_service::type_c::controller::Context;
+use type_c_service::service::context::Context;
 use type_c_service::type_c::{ControllerId, power_capability_from_current};
 use type_c_service::wrapper::backing::Storage;
 use type_c_service::wrapper::message::*;
@@ -29,6 +31,11 @@ const PORT0_ID: GlobalPortId = GlobalPortId(0);
 const DELAY_MS: u64 = 1000;
 
 type DeviceType = Mutex<GlobalRawMutex, PowerProxyDevice<'static>>;
+
+type PowerPolicyServiceType = Mutex<
+    GlobalRawMutex,
+    power_policy_service::service::Service<'static, ArrayRegistration<'static, DeviceType, 1, NoopSender, 1>>,
+>;
 
 #[embassy_executor::task]
 async fn controller_task(
@@ -67,18 +74,19 @@ async fn task(spawner: Spawner) {
     static POWER_SERVICE_CONTEXT: StaticCell<power_policy_service::service::context::Context> = StaticCell::new();
     let power_service_context = POWER_SERVICE_CONTEXT.init(power_policy_service::service::context::Context::new());
 
-    static CONTEXT: StaticCell<type_c_service::type_c::controller::Context> = StaticCell::new();
-    let controller_context = CONTEXT.init(type_c_service::type_c::controller::Context::new());
+    static CONTEXT: StaticCell<type_c_service::service::context::Context> = StaticCell::new();
+    let controller_context = CONTEXT.init(type_c_service::service::context::Context::new());
 
     let (wrapper, policy_receiver, controller, state) = create_wrapper(controller_context);
 
-    static POWER_POLICY_PSU_REGISTRATION: StaticCell<[&DeviceType; 1]> = StaticCell::new();
-    let psu_registration = POWER_POLICY_PSU_REGISTRATION.init([&wrapper.ports[0].proxy]);
+    let power_policy_registration = ArrayRegistration {
+        psus: [&wrapper.ports[0].proxy],
+        service_senders: [NoopSender],
+    };
 
-    static POWER_SERVICE: StaticCell<Mutex<GlobalRawMutex, power_policy_service::service::Service<DeviceType>>> =
-        StaticCell::new();
+    static POWER_SERVICE: StaticCell<PowerPolicyServiceType> = StaticCell::new();
     let power_service = POWER_SERVICE.init(Mutex::new(power_policy_service::service::Service::new(
-        psu_registration,
+        power_policy_registration,
         power_service_context,
         power_policy_service::service::config::Config::default(),
     )));
@@ -94,14 +102,10 @@ async fn task(spawner: Spawner) {
     // Guaranteed to not panic since we initialized the channel above
     let power_policy_subscriber = power_policy_channel.dyn_subscriber().unwrap();
 
-    static CONTROLLER_LIST: StaticCell<IntrusiveList> = StaticCell::new();
-    let controller_list = CONTROLLER_LIST.init(IntrusiveList::new());
-
     static TYPE_C_SERVICE: StaticCell<Service<'static, DeviceType>> = StaticCell::new();
     let type_c_service = TYPE_C_SERVICE.init(Service::create(
         Config::default(),
         controller_context,
-        controller_list,
         power_policy_publisher,
         power_policy_subscriber,
     ));
@@ -111,7 +115,7 @@ async fn task(spawner: Spawner) {
     let cfu_client = CfuClient::new(&CFU_CLIENT).await;
 
     spawner.must_spawn(power_policy_task(
-        EventReceivers::new([&wrapper.ports[0].proxy], [policy_receiver]),
+        ArrayEventReceivers::new([&wrapper.ports[0].proxy], [policy_receiver]),
         power_service,
     ));
     spawner.must_spawn(type_c_service_task(type_c_service, [wrapper], cfu_client));
@@ -143,8 +147,8 @@ async fn task(spawner: Spawner) {
 
 #[embassy_executor::task]
 async fn power_policy_task(
-    psu_events: EventReceivers<'static, 1, DeviceType, DynamicReceiver<'static, psu::event::EventData>>,
-    power_policy: &'static Mutex<GlobalRawMutex, power_policy_service::service::Service<'static, DeviceType>>,
+    psu_events: ArrayEventReceivers<'static, 1, DeviceType, DynamicReceiver<'static, psu::event::EventData>>,
+    power_policy: &'static PowerPolicyServiceType,
 ) {
     power_policy_service::service::task::task(psu_events, power_policy).await;
 }

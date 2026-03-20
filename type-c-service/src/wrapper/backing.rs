@@ -16,11 +16,8 @@ use embedded_cfu_protocol::protocol_definitions::ComponentId;
 use embedded_services::event;
 use embedded_usb_pd::{GlobalPortId, ado::Ado};
 
-use crate::type_c::{
-    ControllerId,
-    controller::PortStatus,
-    event::{PortEvent, PortStatusChanged},
-};
+use crate::wrapper::controller::{ControllerId, PortStatus};
+use crate::wrapper::event::{PortEvent, PortStatusChanged};
 
 use crate::{
     PortEventStreamer,
@@ -50,8 +47,8 @@ impl Default for ControllerState {
 
 /// Service registration objects
 pub struct Registration<'a, M: RawMutex> {
-    pub context: &'a crate::type_c::controller::Context,
-    pub pd_controller: &'a crate::type_c::controller::Device<'a>,
+    pub context: &'a crate::service::context::Context,
+    pub pd_controller: &'a crate::wrapper::controller::Device<'a>,
     pub cfu_device: &'a CfuDevice,
     pub power_devices: &'a [&'a Mutex<M, PowerProxyDevice<'a>>],
 }
@@ -68,7 +65,7 @@ const MAX_BUFFERED_PD_ALERTS: usize = 4;
 /// Base storage
 pub struct Storage<'a, const N: usize, M: RawMutex> {
     // Registration-related
-    context: &'a crate::type_c::controller::Context,
+    context: &'a crate::service::context::Context,
     controller_id: ControllerId,
     pd_ports: [GlobalPortId; N],
     cfu_device: CfuDevice,
@@ -80,7 +77,7 @@ pub struct Storage<'a, const N: usize, M: RawMutex> {
 
 impl<'a, const N: usize, M: RawMutex> Storage<'a, N, M> {
     pub fn new(
-        context: &'a crate::type_c::controller::Context,
+        context: &'a crate::service::context::Context,
         controller_id: ControllerId,
         cfu_id: ComponentId,
         pd_ports: [GlobalPortId; N],
@@ -200,14 +197,9 @@ impl<'a, const N: usize, M: RawMutex, S: event::Sender<power_policy_interface::p
 ///
 /// To simplify usage, we use interior mutability through a ref cell to avoid having to declare the state
 /// completely separately.
-pub struct ReferencedStorage<
-    'a,
-    const N: usize,
-    M: RawMutex,
-    S: event::Sender<power_policy_interface::psu::event::EventData>,
-> {
-    intermediate: &'a IntermediateStorage<'a, N, M, S>,
-    pd_controller: crate::type_c::controller::Device<'a>,
+pub struct ReferencedStorage<'a, const N: usize, M: RawMutex> {
+    intermediate: &'a IntermediateStorage<'a, N, M>,
+    pd_controller: crate::wrapper::controller::Device<'a>,
     power_devices: [&'a Mutex<M, PowerProxyDevice<'a>>; N],
 }
 
@@ -218,7 +210,7 @@ impl<'a, const N: usize, M: RawMutex, S: event::Sender<power_policy_interface::p
     fn try_from_intermediate(intermediate: &'a IntermediateStorage<'a, N, M, S>) -> Option<Self> {
         Some(Self {
             intermediate,
-            pd_controller: crate::type_c::controller::Device::new(
+            pd_controller: crate::wrapper::controller::Device::new(
                 intermediate.storage.controller_id,
                 intermediate.storage.pd_ports.as_slice(),
             ),

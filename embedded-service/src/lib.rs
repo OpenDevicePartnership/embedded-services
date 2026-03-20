@@ -21,6 +21,7 @@ pub mod hid;
 pub mod init;
 pub mod ipc;
 pub mod keyboard;
+pub mod named;
 pub mod relay;
 pub mod sync;
 

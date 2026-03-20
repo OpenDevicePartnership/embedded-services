@@ -5,9 +5,11 @@ pub mod config;
 pub mod consumer;
 pub mod context;
 pub mod provider;
+pub mod registration;
 pub mod task;
 
-use embedded_services::{error, info, sync::Lockable};
+use embedded_services::named::Named;
+use embedded_services::{error, event::Sender, info, sync::Lockable};
 
 use power_policy_interface::{
     capability::{ConsumerPowerCapability, PowerCapability, ProviderPowerCapability},
@@ -18,15 +20,17 @@ use power_policy_interface::{
     service::{UnconstrainedState, event::Event as ServiceEvent},
 };
 
+use crate::service::registration::Registration;
+
 const MAX_CONNECTED_PROVIDERS: usize = 4;
 
 #[derive(Clone)]
-struct InternalState<'device, D: Lockable>
+struct InternalState<'device, PSU: Lockable>
 where
-    D::Inner: Psu,
+    PSU::Inner: Psu,
 {
     /// Current consumer state, if any
-    current_consumer_state: Option<consumer::AvailableConsumer<'device, D>>,
+    current_consumer_state: Option<consumer::AvailableConsumer<'device, PSU>>,
     /// Current provider global state
     current_provider_state: provider::State,
     /// System unconstrained power
@@ -35,9 +39,9 @@ where
     connected_providers: heapless::FnvIndexSet<usize, MAX_CONNECTED_PROVIDERS>,
 }
 
-impl<D: Lockable> Default for InternalState<'_, D>
+impl<PSU: Lockable> Default for InternalState<'_, PSU>
 where
-    D::Inner: Psu,
+    PSU::Inner: Psu,
 {
     fn default() -> Self {
         Self {
@@ -50,29 +54,23 @@ where
 }
 
 /// Power policy service
-pub struct Service<'a, PSU: Lockable>
-where
-    PSU::Inner: Psu,
-{
+pub struct Service<'device, Reg: Registration<'device>> {
+    /// Service registration
+    registration: Reg,
     /// Power policy context
-    pub context: &'a context::Context,
-    /// PSU devices
-    psu_devices: &'a [&'a PSU],
+    pub context: &'device context::Context,
     /// State
-    state: InternalState<'a, PSU>,
+    state: InternalState<'device, Reg::Psu>,
     /// Config
     config: config::Config,
 }
 
-impl<'a, PSU: Lockable> Service<'a, PSU>
-where
-    PSU::Inner: Psu,
-{
+impl<'device, Reg: Registration<'device>> Service<'device, Reg> {
     /// Create a new power policy
-    pub fn new(psu_devices: &'a [&'a PSU], context: &'a context::Context, config: config::Config) -> Self {
+    pub fn new(registration: Reg, context: &'device context::Context, config: config::Config) -> Self {
         Self {
+            registration,
             context,
-            psu_devices,
             state: InternalState::default(),
             config,
         }
@@ -82,7 +80,7 @@ where
     pub async fn compute_total_provider_power_mw(&self) -> u32 {
         let mut total = 0;
 
-        for psu in self.psu_devices.iter() {
+        for psu in self.registration.psus() {
             let psu = psu.lock().await;
             total += psu
                 .state()
@@ -94,7 +92,7 @@ where
         total
     }
 
-    async fn process_notify_attach(&self, device: &PSU) {
+    async fn process_notify_attach(&self, device: &'device Reg::Psu) {
         let mut device = device.lock().await;
         info!("({}): Received notify attached", device.name());
         if let Err(e) = device.state_mut().attach() {
@@ -102,18 +100,21 @@ where
         }
     }
 
-    async fn process_notify_detach(&mut self, device: &PSU) -> Result<(), Error> {
+    async fn process_notify_detach(&mut self, device: &'device Reg::Psu) -> Result<(), Error> {
         {
             let mut device = device.lock().await;
             info!("({}): Received notify detached", device.name());
             device.state_mut().detach();
         }
-        self.update_current_consumer().await
+
+        self.post_provider_removed(device).await;
+        self.update_current_consumer().await?;
+        Ok(())
     }
 
     async fn process_notify_consumer_power_capability(
         &mut self,
-        device: &PSU,
+        device: &'device Reg::Psu,
         capability: Option<ConsumerPowerCapability>,
     ) -> Result<(), Error> {
         {
@@ -137,7 +138,7 @@ where
 
     async fn process_request_provider_power_capabilities(
         &mut self,
-        requester: &'a PSU,
+        requester: &'device Reg::Psu,
         capability: Option<ProviderPowerCapability>,
     ) -> Result<(), Error> {
         {
@@ -152,7 +153,7 @@ where
                 .update_requested_provider_power_capability(capability)
             {
                 error!(
-                    "({}): Invalid state for notify consumer capability, catching up: {:#?}",
+                    "({}): Invalid state for notify provider capability, catching up: {:#?}",
                     requester.name(),
                     e,
                 );
@@ -162,54 +163,33 @@ where
         self.connect_provider(requester).await
     }
 
-    async fn process_notify_disconnect(&mut self, device: &'a PSU) -> Result<(), Error> {
-        let mut locked_device = device.lock().await;
-        info!("({}): Received notify disconnect", locked_device.name());
-
-        if let Err(e) = locked_device.state_mut().disconnect(true) {
-            error!(
-                "({}): Invalid state for notify disconnect, catching up: {:#?}",
-                locked_device.name(),
-                e,
-            );
-        }
-
-        if self
-            .state
-            .current_consumer_state
-            .as_ref()
-            .is_some_and(|current| ptr::eq(current.psu, device))
+    async fn process_notify_disconnect(&mut self, device: &'device Reg::Psu) -> Result<(), Error> {
         {
-            info!("({}): Connected consumer disconnected", locked_device.name());
-            self.disconnect_chargers().await?;
+            let mut locked_device = device.lock().await;
+            info!("({}): Received notify disconnect", locked_device.name());
 
-            self.broadcast_event(ServiceEvent::ConsumerDisconnected(device)).await;
+            if let Err(e) = locked_device.state_mut().disconnect(true) {
+                error!(
+                    "({}): Invalid state for notify disconnect, catching up: {:#?}",
+                    locked_device.name(),
+                    e,
+                );
+            }
         }
 
-        self.remove_connected_provider(device).await;
+        self.post_provider_removed(device).await;
         self.update_current_consumer().await?;
         Ok(())
     }
 
     /// Send an event to all registered listeners
-    async fn broadcast_event(&mut self, _message: ServiceEvent<'a, PSU>) {
-        // TODO: Add this back as part of the migration away from comms
-        // See https://github.com/OpenDevicePartnership/embedded-services/issues/742
-    }
-
-    /// Common logic for when a provider is disconnected
-    ///
-    /// Returns true if the device was operating as a provider
-    async fn remove_connected_provider(&mut self, psu: &'a PSU) -> bool {
-        if self.state.connected_providers.remove(&(psu as *const PSU as usize)) {
-            self.broadcast_event(ServiceEvent::ProviderDisconnected(psu)).await;
-            true
-        } else {
-            false
+    async fn broadcast_event(&mut self, event: ServiceEvent<'device, Reg::Psu>) {
+        for sender in self.registration.event_senders() {
+            sender.send(event).await;
         }
     }
 
-    pub async fn process_psu_event(&mut self, event: PsuEvent<'a, PSU>) -> Result<(), Error> {
+    pub async fn process_psu_event(&mut self, event: PsuEvent<'device, Reg::Psu>) -> Result<(), Error> {
         let device = event.psu;
         match event.event {
             PsuEventData::Attached => {

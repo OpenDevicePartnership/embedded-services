@@ -15,18 +15,20 @@ use embassy_sync::once_lock::OnceLock;
 use embassy_sync::pubsub::PubSubChannel;
 use embassy_time::{self as _, Delay};
 use embedded_cfu_protocol::protocol_definitions::{FwUpdateOffer, FwUpdateOfferResponse, FwVersion, HostToken};
+use embedded_services::event::NoopSender;
 use embedded_services::{GlobalRawMutex, IntrusiveList};
 use embedded_services::{error, info};
 use embedded_usb_pd::GlobalPortId;
 use power_policy_interface::psu;
-use power_policy_service::psu::EventReceivers;
+use power_policy_service::psu::ArrayEventReceivers;
+use power_policy_service::service::registration::ArrayRegistration;
 use static_cell::StaticCell;
 use tps6699x::asynchronous::embassy as tps6699x;
 use type_c_service::driver::tps6699x::{self as tps6699x_drv};
 use type_c_service::service::Service;
-use type_c_service::type_c::{Cached, ControllerId};
 use type_c_service::wrapper::ControllerWrapper;
 use type_c_service::wrapper::backing::{IntermediateStorage, ReferencedStorage, Storage};
+use type_c_service::wrapper::controller::ControllerId;
 use type_c_service::wrapper::proxy::PowerProxyDevice;
 
 extern crate rt685s_evk_example;
@@ -64,6 +66,11 @@ type Wrapper<'a> = ControllerWrapper<
 type Controller<'a> = tps6699x::controller::Controller<GlobalRawMutex, BusDevice<'a>>;
 type Interrupt<'a> = tps6699x::Interrupt<'a, GlobalRawMutex, BusDevice<'a>>;
 
+type PowerPolicyServiceType = Mutex<
+    GlobalRawMutex,
+    power_policy_service::service::Service<'static, ArrayRegistration<'static, DeviceType, 2, NoopSender, 1>>,
+>;
+
 #[embassy_executor::task]
 async fn pd_controller_task(controller: &'static Wrapper<'static>) {
     loop {
@@ -80,8 +87,8 @@ async fn interrupt_task(mut int_in: Input<'static>, mut interrupt: Interrupt<'st
 
 #[embassy_executor::task]
 async fn power_policy_task(
-    psu_events: EventReceivers<'static, 2, DeviceType, DynamicReceiver<'static, psu::event::EventData>>,
-    power_policy: &'static Mutex<GlobalRawMutex, power_policy_service::service::Service<'static, DeviceType>>,
+    psu_events: ArrayEventReceivers<'static, 2, DeviceType, DynamicReceiver<'static, psu::event::EventData>>,
+    power_policy: &'static PowerPolicyServiceType,
 ) {
     power_policy_service::service::task::task(psu_events, power_policy).await;
 }
@@ -136,11 +143,8 @@ async fn main(spawner: Spawner) {
         .await
         .unwrap();
 
-    static CONTROLLER_CONTEXT: StaticCell<type_c_service::type_c::controller::Context> = StaticCell::new();
-    let controller_context = CONTROLLER_CONTEXT.init(type_c_service::type_c::controller::Context::new());
-
-    static CONTROLLER_LIST: StaticCell<IntrusiveList> = StaticCell::new();
-    let controller_list = CONTROLLER_LIST.init(IntrusiveList::new());
+    static CONTROLLER_CONTEXT: StaticCell<type_c_service::service::context::Context> = StaticCell::new();
+    let controller_context = CONTROLLER_CONTEXT.init(type_c_service::service::context::Context::new());
 
     static STORAGE: StaticCell<Storage<TPS66994_NUM_PORTS, GlobalRawMutex>> = StaticCell::new();
     let storage = STORAGE.init(Storage::new(
@@ -204,13 +208,14 @@ async fn main(spawner: Spawner) {
     static POWER_SERVICE_CONTEXT: StaticCell<power_policy_service::service::context::Context> = StaticCell::new();
     let power_service_context = POWER_SERVICE_CONTEXT.init(power_policy_service::service::context::Context::new());
 
-    static POWER_POLICY_PSU_REGISTRATION: StaticCell<[&DeviceType; 2]> = StaticCell::new();
-    let psu_registration = POWER_POLICY_PSU_REGISTRATION.init([&wrapper.ports[0].proxy, &wrapper.ports[1].proxy]);
+    let power_policy_registration = ArrayRegistration {
+        psus: [&wrapper.ports[0].proxy, &wrapper.ports[1].proxy],
+        service_senders: [NoopSender],
+    };
 
-    static POWER_SERVICE: StaticCell<Mutex<GlobalRawMutex, power_policy_service::service::Service<DeviceType>>> =
-        StaticCell::new();
+    static POWER_SERVICE: StaticCell<PowerPolicyServiceType> = StaticCell::new();
     let power_service = POWER_SERVICE.init(Mutex::new(power_policy_service::service::Service::new(
-        psu_registration,
+        power_policy_registration,
         power_service_context,
         power_policy_service::service::config::Config::default(),
     )));
@@ -219,7 +224,6 @@ async fn main(spawner: Spawner) {
     let type_c_service = TYPE_C_SERVICE.init(Service::create(
         Default::default(),
         controller_context,
-        controller_list,
         power_policy_publisher,
         power_policy_subscriber,
     ));
@@ -233,7 +237,7 @@ async fn main(spawner: Spawner) {
 
     info!("Spawining power policy task");
     spawner.must_spawn(power_policy_task(
-        EventReceivers::new(
+        ArrayEventReceivers::new(
             [&wrapper.ports[0].proxy, &wrapper.ports[1].proxy],
             [policy_receiver0, policy_receiver1],
         ),
@@ -241,31 +245,4 @@ async fn main(spawner: Spawner) {
     ));
 
     spawner.must_spawn(pd_controller_task(wrapper));
-
-    // Sync our internal state with the hardware
-    controller_context
-        .sync_controller_state_external(CONTROLLER0_ID)
-        .await
-        .unwrap();
-
-    embassy_time::Timer::after_secs(10).await;
-
-    let status = controller_context
-        .get_controller_status_external(CONTROLLER0_ID)
-        .await
-        .unwrap();
-
-    info!("Controller status: {:?}", status);
-
-    let status = controller_context
-        .get_port_status_external(PORT0_ID, Cached(true))
-        .await
-        .unwrap();
-    info!("Port status: {:?}", status);
-
-    let status = controller_context
-        .get_port_status_external(PORT1_ID, Cached(true))
-        .await
-        .unwrap();
-    info!("Port status: {:?}", status);
 }

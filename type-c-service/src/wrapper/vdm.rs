@@ -4,7 +4,7 @@ use embedded_usb_pd::{Error, LocalPortId, PdError};
 
 use crate::wrapper::message::vdm::OutputKind;
 
-use crate::type_c::{
+use crate::wrapper::{
     controller::Controller,
     event::{PortPending, VdmNotification},
 };

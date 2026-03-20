@@ -8,7 +8,7 @@ where
     PSU::Inner: psu::Psu,
 {
     /// Wait for a power policy event
-    pub(super) async fn wait_power_policy_event(&self) -> Event<'_> {
+    pub(super) async fn wait_power_policy_event(&self) -> Event {
         loop {
             match self.power_policy_event_subscriber.lock().await.next_message().await {
                 WaitResult::Lagged(lagged) => {
@@ -35,9 +35,9 @@ where
 
     /// Set the unconstrained state for all ports
     pub(super) async fn set_unconstrained_all(&self, unconstrained: bool) -> Result<(), Error> {
-        for port_index in 0..self.context.get_num_ports(self.controllers) {
+        for port_index in 0..self.context.get_num_ports() {
             self.context
-                .set_unconstrained_power(self.controllers, GlobalPortId(port_index as u8), unconstrained)
+                .set_unconstrained_power(GlobalPortId(port_index as u8), unconstrained)
                 .await?;
         }
         Ok(())
@@ -60,7 +60,7 @@ where
                 self.set_unconstrained_all(true).await?;
             } else {
                 // Only one unconstrained device is present, see if that's one of our ports
-                let num_ports = self.context.get_num_ports(self.controllers);
+                let num_ports = self.context.get_num_ports();
                 let unconstrained_port = state
                     .port_status
                     .iter()
@@ -77,11 +77,7 @@ where
                     );
                     for port_index in 0..num_ports {
                         self.context
-                            .set_unconstrained_power(
-                                self.controllers,
-                                GlobalPortId(port_index as u8),
-                                port_index != unconstrained_index,
-                            )
+                            .set_unconstrained_power(GlobalPortId(port_index as u8), port_index != unconstrained_index)
                             .await?;
                     }
                 } else {
