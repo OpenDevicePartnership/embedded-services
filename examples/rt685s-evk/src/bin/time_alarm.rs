@@ -51,7 +51,7 @@ async fn main(spawner: embassy_executor::Spawner) {
         TimeAlarm, 0x0B, crate::TimeAlarmServiceRelayHandlerType;
     );
 
-    let _relay_handler = EspiRelayHandler::new(TimeAlarmServiceRelayHandlerType::new(time_service.clone()));
+    let _relay_handler = EspiRelayHandler::new(TimeAlarmServiceRelayHandlerType::new(time_service));
 
     // Here, you'd normally pass _relay_handler to your relay service (e.g. eSPI service).
     // In this example, we're not leveraging a relay service, so we'll just demonstrate some direct calls.

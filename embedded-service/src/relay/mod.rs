@@ -195,7 +195,7 @@ pub mod mctp {
     /// ```ignore
     ///
     ///     impl_odp_mctp_relay_handler!(
-    ///         MyRelayHanderType;
+    ///         MyRelayHandlerType;
     ///         Battery,   0x9, battery_service::Service<'static>; // TODO update example to reflect new expectation for service handler
     ///         TimeAlarm, 0xB, time_alarm_service::Service<'static>;
     ///     );
