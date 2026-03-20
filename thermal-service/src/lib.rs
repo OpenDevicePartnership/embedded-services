@@ -4,7 +4,7 @@
 #![allow(clippy::unwrap_used)]
 
 use embedded_sensors_hal_async::temperature::DegreesCelsius;
-use thermal_service_messages::{ThermalRequest, ThermalResult};
+use thermal_service_messages::{ThermalMessage, ThermalRequest, ThermalResult};
 
 mod context;
 pub mod fan;
@@ -92,10 +92,15 @@ impl<'hw> Service<'hw> {
 impl<'hw> embedded_services::relay::mctp::RelayServiceHandlerTypes for Service<'hw> {
     type RequestType = ThermalRequest;
     type ResultType = ThermalResult;
+    type MessageType = ThermalMessage;
 }
 
 impl<'hw> embedded_services::relay::mctp::RelayServiceHandler for Service<'hw> {
     async fn process_request(&self, request: Self::RequestType) -> Self::ResultType {
         mptf::process_request(&request, self).await
+    }
+
+    fn is_notification(_message: &Self::MessageType) -> bool {
+        true
     }
 }

@@ -2,7 +2,7 @@
 
 use core::{any::Any, convert::Infallible};
 
-use battery_service_messages::{AcpiBatteryError, AcpiBatteryRequest, AcpiBatteryResult};
+use battery_service_messages::{AcpiBatteryError, AcpiBatteryRequest, AcpiBatteryResult, BatteryMessage};
 use context::BatteryEvent;
 use embedded_services::{
     comms::{self, EndpointID},
@@ -107,6 +107,7 @@ impl Default for Service {
 impl embedded_services::relay::mctp::RelayServiceHandlerTypes for Service {
     type RequestType = AcpiBatteryRequest;
     type ResultType = AcpiBatteryResult;
+    type MessageType = BatteryMessage;
 }
 
 impl embedded_services::relay::mctp::RelayServiceHandler for Service {
@@ -117,6 +118,10 @@ impl embedded_services::relay::mctp::RelayServiceHandler for Service {
             error!("Battery service command failed: {:?}", e)
         }
         response
+    }
+
+    fn is_notification(_message: &Self::MessageType) -> bool {
+        true
     }
 }
 

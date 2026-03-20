@@ -328,3 +328,8 @@ fn safe_put_uuid(buffer: &mut [u8], index: usize, uuid: uuid::Bytes) -> Result<u
         .copy_from_slice(&uuid);
     Ok(16)
 }
+
+/// Message type for the Thermal service.
+#[derive(Clone, Copy, PartialEq, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct ThermalMessage;
