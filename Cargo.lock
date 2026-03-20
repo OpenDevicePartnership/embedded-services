@@ -996,7 +996,6 @@ dependencies = [
  "cfg-if",
  "chrono",
  "cortex-m",
- "cortex-m-rt",
  "critical-section",
  "defmt 0.3.100",
  "document-features",
