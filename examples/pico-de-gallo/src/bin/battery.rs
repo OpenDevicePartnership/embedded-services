@@ -19,6 +19,7 @@
 use battery_service as bs;
 use bq40z50_rx::{BQ40Z50Error, Bq40z50R5};
 use embedded_batteries_async::smart_battery::{BatteryModeFields, SmartBattery};
+use odp_service_common::runnable_service::{Service, ServiceRunner};
 use static_cell::StaticCell;
 
 /// Platform specific battery errors.
@@ -151,35 +152,7 @@ impl bs::controller::Controller for Battery {
     }
 }
 
-async fn init_and_run_service(
-    battery_service: &'static battery_service::Service,
-    i2c: pico_de_gallo_hal::I2c,
-    delay: pico_de_gallo_hal::Delay,
-) -> ! {
-    embedded_services::debug!("Initializing battery service");
-    embedded_services::init().await;
-
-    static BATTERY_DEVICE: StaticCell<bs::device::Device> = StaticCell::new();
-    static BATTERY_WRAPPER: StaticCell<bs::wrapper::Wrapper<'static, Battery>> = StaticCell::new();
-    let device = BATTERY_DEVICE.init(bs::device::Device::new(bs::device::DeviceId(0)));
-
-    let wrapper = BATTERY_WRAPPER.init(bs::wrapper::Wrapper::new(
-        device,
-        Battery {
-            driver: Bq40z50R5::new(i2c, delay),
-        },
-    ));
-
-    // Run battery service
-    let _ = embassy_futures::join::join(
-        tokio::spawn(battery_service::task::task(battery_service, [device])),
-        tokio::spawn(wrapper.process()),
-    )
-    .await;
-    unreachable!()
-}
-
-async fn init_state_machine(battery_service: &'static bs::Service) -> Result<(), bs::context::ContextError> {
+async fn init_state_machine(battery_service: &bs::Service<'static, 1>) -> Result<(), bs::context::ContextError> {
     battery_service
         .execute_event(battery_service::context::BatteryEvent {
             event: battery_service::context::BatteryEventInner::DoInit,
@@ -207,7 +180,7 @@ async fn init_state_machine(battery_service: &'static bs::Service) -> Result<(),
     Ok(())
 }
 
-async fn recover_state_machine(battery_service: &'static battery_service::Service) -> Result<(), ()> {
+async fn recover_state_machine(battery_service: &battery_service::Service<'static, 1>) -> Result<(), ()> {
     loop {
         match battery_service
             .execute_event(battery_service::context::BatteryEvent {
@@ -238,10 +211,10 @@ async fn recover_state_machine(battery_service: &'static battery_service::Servic
     }
 }
 
-pub async fn run_app(battery_service: &'static battery_service::Service) {
+pub async fn run_app(battery_service: battery_service::Service<'static, 1>) {
     // Initialize battery state machine.
     let mut retries = 5;
-    while let Err(e) = init_state_machine(battery_service).await {
+    while let Err(e) = init_state_machine(&battery_service).await {
         retries -= 1;
         if retries <= 0 {
             embedded_services::error!("Failed to initialize Battery: {:?}", e);
@@ -281,7 +254,7 @@ pub async fn run_app(battery_service: &'static battery_service::Service) {
             failures = 0;
             count = 0;
             embedded_services::error!("FG: Too many errors, timing out and starting recovery...");
-            if recover_state_machine(battery_service).await.is_err() {
+            if recover_state_machine(&battery_service).await.is_err() {
                 embedded_services::error!("FG: Fatal error");
                 return;
             }
@@ -296,13 +269,39 @@ async fn main() {
     env_logger::builder().filter_level(log::LevelFilter::Info).init();
     embedded_services::info!("host: battery example started");
 
-    static BATTERY_SERVICE: bs::Service = bs::Service::new();
+    embedded_services::debug!("Initializing battery service");
+    embedded_services::init().await;
 
     let p = pico_de_gallo_hal::Hal::new();
 
-    let _ = embassy_futures::join::join(
-        tokio::spawn(run_app(&BATTERY_SERVICE)),
-        tokio::spawn(init_and_run_service(&BATTERY_SERVICE, p.i2c(), p.delay())),
+    static BATTERY_DEVICE: StaticCell<bs::device::Device> = StaticCell::new();
+    let device = BATTERY_DEVICE.init(bs::device::Device::new(bs::device::DeviceId(0)));
+
+    static BATTERY_WRAPPER: StaticCell<bs::wrapper::Wrapper<'static, Battery>> = StaticCell::new();
+    let wrapper = BATTERY_WRAPPER.init(bs::wrapper::Wrapper::new(
+        device,
+        Battery {
+            driver: Bq40z50R5::new(p.i2c(), p.delay()),
+        },
+    ));
+
+    static BATTERY_SERVICE: StaticCell<bs::Resources<1>> = StaticCell::new();
+    let (battery_service, runner) = bs::Service::new(
+        BATTERY_SERVICE.init(Default::default()),
+        bs::InitParams {
+            config: Default::default(),
+            devices: [device],
+        },
+    )
+    .await
+    .expect("failed to initialize battery service");
+
+    // Run battery service
+    let _ = embassy_futures::join::join3(
+        tokio::spawn(runner.run()),
+        tokio::spawn(wrapper.process()),
+        tokio::spawn(run_app(battery_service)),
     )
     .await;
+    unreachable!();
 }
