@@ -7,7 +7,9 @@ pub mod wrapper;
 
 use core::future::Future;
 
-use type_c_interface::port::event::{PortEvent, PortNotification, PortNotificationSingle, PortPendingIter, PortStatusChanged};
+use type_c_interface::port::event::{
+    PortEvent, PortNotification, PortNotificationSingle, PortPendingIter, PortStatusChanged,
+};
 
 /// Enum to contain all port event variants
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]

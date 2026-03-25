@@ -3,8 +3,8 @@ use embedded_services::{GlobalRawMutex, ipc::deferred};
 use embedded_usb_pd::{LocalPortId, ado::Ado};
 
 use type_c_interface::{
-    port::{self, DpStatus, PortStatus},
     port::event::{PortNotificationSingle, PortStatusChanged},
+    port::{self, DpStatus, PortStatus},
 };
 
 /// Port status changed event data

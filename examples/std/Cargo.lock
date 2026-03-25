@@ -1877,6 +1877,7 @@ dependencies = [
  "embassy-time",
  "embedded-services",
  "embedded-usb-pd",
+ "log",
  "power-policy-interface",
 ]
 

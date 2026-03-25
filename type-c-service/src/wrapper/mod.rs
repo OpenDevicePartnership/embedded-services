@@ -27,9 +27,9 @@ use embassy_sync::mutex::Mutex;
 use embassy_sync::signal::Signal;
 use embassy_time::Instant;
 use embedded_cfu_protocol::protocol_definitions::{FwUpdateOffer, FwUpdateOfferResponse, FwVersion};
+use embedded_services::event;
 use embedded_services::sync::Lockable;
 use embedded_services::{debug, error, info, trace, warn};
-use embedded_services::{event};
 use embedded_usb_pd::ado::Ado;
 use embedded_usb_pd::{Error, LocalPortId, PdError};
 
@@ -47,8 +47,8 @@ mod power;
 pub mod proxy;
 mod vdm;
 
-use type_c_interface::port::{Controller, PortStatus};
 use type_c_interface::port::event::{PortEvent, PortNotificationSingle, PortPending, PortStatusChanged};
+use type_c_interface::port::{Controller, PortStatus};
 
 /// Base interval for checking for FW update timeouts and recovery attempts
 pub const DEFAULT_FW_UPDATE_TICK_INTERVAL_MS: u64 = 5000;
