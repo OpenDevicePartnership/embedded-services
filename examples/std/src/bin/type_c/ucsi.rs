@@ -22,10 +22,10 @@ use power_policy_service::psu::ArrayEventReceivers;
 use power_policy_service::service::registration::ArrayRegistration;
 use static_cell::StaticCell;
 use std_examples::type_c::mock_controller;
+use type_c_interface::service::context::Context;
 use type_c_service::service::Service;
 use type_c_service::service::config::Config;
-use type_c_service::service::context::Context;
-use type_c_service::type_c::ControllerId;
+use type_c_interface::port::ControllerId;
 use type_c_service::wrapper::backing::Storage;
 use type_c_service::wrapper::proxy::PowerProxyDevice;
 

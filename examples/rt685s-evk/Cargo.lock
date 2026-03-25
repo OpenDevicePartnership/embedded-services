@@ -1426,6 +1426,7 @@ dependencies = [
  "time-alarm-service",
  "time-alarm-service-messages",
  "tps6699x",
+ "type-c-interface",
  "type-c-service",
 ]
 

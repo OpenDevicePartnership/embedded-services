@@ -5,8 +5,8 @@ use embedded_usb_pd::ucsi::lpm;
 use embedded_usb_pd::{GlobalPortId, PdError as Error};
 use log::*;
 use static_cell::StaticCell;
-use type_c_service::service::context::{Context, DeviceContainer};
-use type_c_service::type_c::{Cached, ControllerId, controller};
+use type_c_interface::port::{self, Cached, ControllerId};
+use type_c_interface::service::context::{Context, DeviceContainer};
 
 const CONTROLLER0_ID: ControllerId = ControllerId(0);
 const PORT0_ID: GlobalPortId = GlobalPortId(0);
@@ -14,16 +14,16 @@ const PORT1_ID: GlobalPortId = GlobalPortId(1);
 
 mod test_controller {
     use embedded_usb_pd::ucsi;
-    use type_c_service::type_c::controller::{ControllerStatus, PortStatus};
+    use type_c_interface::port::{ControllerStatus, PortStatus};
 
     use super::*;
 
     pub struct Controller<'a> {
-        pub controller: controller::Device<'a>,
+        pub controller: port::Device<'a>,
     }
 
     impl DeviceContainer for Controller<'_> {
-        fn get_pd_controller_device(&self) -> &controller::Device<'_> {
+        fn get_pd_controller_device(&self) -> &port::Device<'_> {
             &self.controller
         }
     }
@@ -31,31 +31,31 @@ mod test_controller {
     impl<'a> Controller<'a> {
         pub fn new(id: ControllerId, ports: &'a [GlobalPortId]) -> Self {
             Self {
-                controller: controller::Device::new(id, ports),
+                controller: port::Device::new(id, ports),
             }
         }
 
         async fn process_controller_command(
             &self,
-            command: controller::InternalCommandData,
-        ) -> Result<controller::InternalResponseData<'static>, Error> {
+            command: port::InternalCommandData,
+        ) -> Result<port::InternalResponseData<'static>, Error> {
             match command {
-                controller::InternalCommandData::Reset => {
+                port::InternalCommandData::Reset => {
                     info!("Reset controller");
-                    Ok(controller::InternalResponseData::Complete)
+                    Ok(port::InternalResponseData::Complete)
                 }
-                controller::InternalCommandData::Status => {
+                port::InternalCommandData::Status => {
                     info!("Get controller status");
-                    Ok(controller::InternalResponseData::Status(ControllerStatus {
+                    Ok(port::InternalResponseData::Status(ControllerStatus {
                         mode: "Test",
                         valid_fw_bank: true,
                         fw_version0: 0xbadf00d,
                         fw_version1: 0xdeadbeef,
                     }))
                 }
-                controller::InternalCommandData::SyncState => {
+                port::InternalCommandData::SyncState => {
                     info!("Sync controller state");
-                    Ok(controller::InternalResponseData::Complete)
+                    Ok(port::InternalResponseData::Complete)
                 }
             }
         }
@@ -79,18 +79,15 @@ mod test_controller {
             }
         }
 
-        async fn process_port_command(
-            &self,
-            command: controller::PortCommand,
-        ) -> Result<controller::PortResponseData, Error> {
+        async fn process_port_command(&self, command: port::PortCommand) -> Result<port::PortResponseData, Error> {
             Ok(match command.data {
-                controller::PortCommandData::PortStatus(Cached(true)) => {
+                port::PortCommandData::PortStatus(Cached(true)) => {
                     info!("Port status for port {}", command.port.0);
-                    controller::PortResponseData::PortStatus(PortStatus::new())
+                    port::PortResponseData::PortStatus(PortStatus::new())
                 }
                 _ => {
                     info!("Port command for port {}", command.port.0);
-                    controller::PortResponseData::Complete
+                    port::PortResponseData::Complete
                 }
             })
         }
@@ -98,15 +95,11 @@ mod test_controller {
         pub async fn process(&self) {
             let request = self.controller.receive().await;
             let response = match request.command {
-                controller::Command::Controller(command) => {
-                    controller::Response::Controller(self.process_controller_command(command).await)
+                port::Command::Controller(command) => {
+                    port::Response::Controller(self.process_controller_command(command).await)
                 }
-                controller::Command::Lpm(command) => {
-                    controller::Response::Ucsi(self.process_ucsi_command(&command).await)
-                }
-                controller::Command::Port(command) => {
-                    controller::Response::Port(self.process_port_command(command).await)
-                }
+                port::Command::Lpm(command) => port::Response::Ucsi(self.process_ucsi_command(&command).await),
+                port::Command::Port(command) => port::Response::Port(self.process_port_command(command).await),
             };
 
             request.respond(response);
