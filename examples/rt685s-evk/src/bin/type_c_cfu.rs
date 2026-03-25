@@ -19,6 +19,7 @@ use embassy_time::{self as _, Delay};
 use embedded_cfu_protocol::protocol_definitions::*;
 use embedded_cfu_protocol::protocol_definitions::{FwUpdateOffer, FwUpdateOfferResponse, FwVersion};
 use embedded_services::GlobalRawMutex;
+use embedded_services::event::NoopSender;
 use embedded_services::{error, info};
 use embedded_usb_pd::GlobalPortId;
 use power_policy_interface::psu;
@@ -26,11 +27,11 @@ use power_policy_service::psu::ArrayEventReceivers;
 use power_policy_service::service::registration::ArrayRegistration;
 use static_cell::StaticCell;
 use tps6699x::asynchronous::embassy as tps6699x;
+use type_c_interface::port::ControllerId;
 use type_c_service::driver::tps6699x::{self as tps6699x_drv};
 use type_c_service::service::Service;
 use type_c_service::wrapper::ControllerWrapper;
 use type_c_service::wrapper::backing::{IntermediateStorage, ReferencedStorage, Storage};
-use type_c_service::wrapper::controller::ControllerId;
 use type_c_service::wrapper::proxy::PowerProxyDevice;
 
 extern crate rt685s_evk_example;
@@ -226,8 +227,8 @@ async fn main(spawner: Spawner) {
         .await
         .unwrap();
 
-    static CONTROLLER_CONTEXT: StaticCell<type_c_service::service::context::Context> = StaticCell::new();
-    let controller_context = CONTROLLER_CONTEXT.init(type_c_service::service::context::Context::new());
+    static CONTROLLER_CONTEXT: StaticCell<type_c_interface::service::context::Context> = StaticCell::new();
+    let controller_context = CONTROLLER_CONTEXT.init(type_c_interface::service::context::Context::new());
 
     static STORAGE: StaticCell<Storage<TPS66994_NUM_PORTS, GlobalRawMutex>> = StaticCell::new();
     let storage = STORAGE.init(Storage::new(

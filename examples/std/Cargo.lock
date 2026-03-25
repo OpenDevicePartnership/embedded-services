@@ -1660,6 +1660,7 @@ dependencies = [
  "static_cell",
  "thermal-service",
  "thermal-service-messages",
+ "type-c-interface",
  "type-c-service",
 ]
 
