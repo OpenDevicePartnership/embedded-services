@@ -50,6 +50,7 @@ defmt = [
     "embedded-usb-pd/defmt",
     "cfu-service/defmt",
     "power-policy-interface/defmt",
+    "type-c-interface/defmt",
 ]
 log = [
     "dep:log",
@@ -59,4 +60,5 @@ log = [
     "tps6699x/log",
     "cfu-service/log",
     "power-policy-interface/log",
+    "type-c-interface/log",
 ]

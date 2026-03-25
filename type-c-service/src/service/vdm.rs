@@ -1,9 +1,9 @@
 //! VDM (Vendor Defined Messages) related functionality.
 
-use type_c_interface::port::{AttnVdm, OtherVdm};
 use embedded_services::sync::Lockable;
 use embedded_usb_pd::{GlobalPortId, PdError};
 use power_policy_interface::psu;
+use type_c_interface::port::{AttnVdm, OtherVdm};
 
 use super::Service;
 

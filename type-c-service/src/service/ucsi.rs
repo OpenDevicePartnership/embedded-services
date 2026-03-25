@@ -63,8 +63,7 @@ where
     fn process_get_capabilities(&self) -> ppm::ResponseData {
         debug!("Get PPM capabilities: {:?}", self.config.ucsi_capabilities);
         let mut capabilities = self.config.ucsi_capabilities;
-        // TODO: implement this when the refactoring stabilizes
-        capabilities.num_connectors = 0;
+        capabilities.num_connectors = self.context.get_num_ports() as u8;
         ppm::ResponseData::GetCapability(capabilities)
     }
 
@@ -184,7 +183,7 @@ where
         self.set_cci_connector_change(state, cci);
     }
 
-    /// Process an external UCSI command
+    /// Process a UCSI command
     pub async fn process_ucsi_command(&self, command: &GlobalCommand) -> UcsiResponse {
         let state = &mut self.state.lock().await;
         let mut next_input = Some(PpmInput::Command(command));

@@ -337,7 +337,7 @@ pub struct PortCommand {
 pub enum RetimerFwUpdateState {
     /// Retimer FW Update Inactive
     Inactive,
-    /// Revimer FW Update Active
+    /// Retimer FW Update Active
     Active,
 }
 
@@ -483,7 +483,7 @@ impl<'a> Device<'a> {
         self.lookup_local_port(port).is_ok()
     }
 
-    /// Covert a local port ID to a global port ID
+    /// Convert a local port ID to a global port ID
     pub fn lookup_global_port(&self, port: LocalPortId) -> Result<GlobalPortId, PdError> {
         Ok(*self.ports.get(port.0 as usize).ok_or(PdError::InvalidParams)?)
     }

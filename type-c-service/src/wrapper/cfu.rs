@@ -1,11 +1,11 @@
 //! CFU message bridge
 //! TODO: remove this once we have a more generic FW update implementation
 use crate::wrapper::backing::ControllerState;
-use type_c_interface::port::Controller;
 use cfu_service::component::{InternalResponseData, RequestData};
 use embassy_futures::select::{Either, select};
 use embedded_cfu_protocol::protocol_definitions::*;
 use embedded_services::{debug, error};
+use type_c_interface::port::Controller;
 
 use super::message::EventCfu;
 use super::*;
