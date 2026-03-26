@@ -444,7 +444,7 @@ pub struct ControllerStatus<'a> {
 /// PD controller
 pub struct Device<'a> {
     node: intrusive_list::Node,
-    pub(crate) id: ControllerId,
+    id: ControllerId,
     ports: &'a [GlobalPortId],
     num_ports: usize,
     command: deferred::Channel<GlobalRawMutex, Command, Response<'static>>,
