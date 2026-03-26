@@ -65,6 +65,9 @@ impl<'a> Service<'a> {
             external::PortCommandData::SetTypeCStateMachineConfig(state) => {
                 self.process_set_type_c_state_machine_config(command.port, state).await
             }
+            external::PortCommandData::ExecuteElectricalDisconnect => {
+                self.process_execute_electrical_disconnect(command.port).await
+            }
         }
     }
 
@@ -239,6 +242,16 @@ impl<'a> Service<'a> {
         let status = self.context.set_type_c_state_machine_config(port_id, state).await;
         if let Err(e) = status {
             error!("Error setting Type-C state-machine config: {:#?}", e);
+        }
+
+        external::Response::Port(status.map(|_| external::PortResponseData::Complete))
+    }
+
+    /// Process [`external::PortCommandData::ExecuteElectricalDisconnect`] command
+    async fn process_execute_electrical_disconnect(&self, port_id: GlobalPortId) -> external::Response<'static> {
+        let status = self.context.execute_electrical_disconnect(port_id).await;
+        if let Err(e) = status {
+            error!("Error executing electrical disconnect: {:#?}", e);
         }
 
         external::Response::Port(status.map(|_| external::PortResponseData::Complete))

@@ -810,6 +810,16 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
     ) -> Result<Option<lpm::ResponseData>, Error<Self::BusError>> {
         self.tps6699x.execute_ucsi_command(&command).await
     }
+
+    async fn execute_electrical_disconnect(&mut self, port: LocalPortId) -> Result<(), Error<Self::BusError>> {
+        match self.tps6699x.execute_disc(port, None).await? {
+            ReturnValue::Success => Ok(()),
+            r => {
+                debug!("Error executing DISC on port {}: {:#?}", port.0, r);
+                Err(Error::Pd(PdError::InvalidResponse))
+            }
+        }
+    }
 }
 
 impl<'a, M: RawMutex, BUS: I2c> AsRef<tps6699x_drv::Tps6699x<'a, M, BUS>> for Tps6699x<'a, M, BUS> {

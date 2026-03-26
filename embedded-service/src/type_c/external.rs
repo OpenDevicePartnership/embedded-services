@@ -91,6 +91,8 @@ pub enum PortCommandData {
     SetPdStateMachineConfig(PdStateMachineConfig),
     /// Set Type-C state-machine configuration
     SetTypeCStateMachineConfig(TypeCStateMachineState),
+    /// Execute electrical disconnect
+    ExecuteElectricalDisconnect,
 }
 
 /// Port-specific commands
@@ -349,6 +351,19 @@ pub async fn reconfigure_retimer(port: GlobalPortId) -> Result<(), PdError> {
 /// Execute a UCSI command
 pub async fn execute_ucsi_command(command: ucsi::GlobalCommand) -> UcsiResponse {
     execute_external_ucsi_command(command).await
+}
+
+/// Execute an electrical disconnect on the given port.
+pub async fn execute_electrical_disconnect(port: GlobalPortId) -> Result<(), PdError> {
+    match execute_external_controller_command(Command::Port(PortCommand {
+        port,
+        data: PortCommandData::ExecuteElectricalDisconnect,
+    }))
+    .await?
+    {
+        ControllerResponseData::Complete => Ok(()),
+        _ => Err(PdError::InvalidResponse),
+    }
 }
 
 /// Send vdm to the given port

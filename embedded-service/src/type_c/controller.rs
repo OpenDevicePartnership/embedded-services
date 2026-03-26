@@ -215,7 +215,7 @@ impl Default for SendVdm {
 pub struct UsbControlConfig {
     /// Enable USB2 data path
     pub usb2_enabled: bool,
-    /// Enable USB3 data path  
+    /// Enable USB3 data path
     pub usb3_enabled: bool,
     /// Enable USB4 data path
     pub usb4_enabled: bool,
@@ -309,6 +309,8 @@ pub enum PortCommandData {
     SetTypeCStateMachineConfig(TypeCStateMachineState),
     /// Execute the UCSI command
     ExecuteUcsiCommand(lpm::CommandData),
+    /// Execute electrical disconnect
+    ExecuteElectricalDisconnect,
 }
 
 /// Port-specific commands
@@ -662,6 +664,12 @@ pub trait Controller {
         &mut self,
         command: lpm::LocalCommand,
     ) -> impl Future<Output = Result<Option<lpm::ResponseData>, Error<Self::BusError>>>;
+
+    /// Execute an electrical disconnect on the given port, if supported by the controller.
+    fn execute_electrical_disconnect(
+        &mut self,
+        port: LocalPortId,
+    ) -> impl Future<Output = Result<(), Error<Self::BusError>>>;
 }
 
 /// Internal context for managing PD controllers
@@ -1203,6 +1211,17 @@ impl ContextToken {
             .await?
         {
             PortResponseData::UcsiResponse(response) => response,
+            _ => Err(PdError::InvalidResponse),
+        }
+    }
+
+    /// Execute an electrical disconnect on the given port.
+    pub async fn execute_electrical_disconnect(&self, port: GlobalPortId) -> Result<(), PdError> {
+        match self
+            .send_port_command(port, PortCommandData::ExecuteElectricalDisconnect)
+            .await?
+        {
+            PortResponseData::Complete => Ok(()),
             _ => Err(PdError::InvalidResponse),
         }
     }
