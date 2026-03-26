@@ -1,7 +1,7 @@
 //! This module contains the [`ControllerWrapper`] struct. This struct serves as a bridge between various service messages
 //! and the actual controller functions provided by [`type_c_interface::port::Controller`].
 //! # Supported service messaging
-//! This struct current currently supports messages from the following services:
+//! This struct currently supports messages from the following services:
 //! * Type-C: [`type_c_interface::port::Command`]
 //! * CFU: [`cfu_service::Request`]
 //! # Event loop
