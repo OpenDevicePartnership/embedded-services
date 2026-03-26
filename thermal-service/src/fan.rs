@@ -1,606 +1,405 @@
-//! Fan Device
-use crate::Event;
 use crate::utils::SampleBuf;
+use core::marker::PhantomData;
 use embassy_sync::mutex::Mutex;
 use embassy_sync::signal::Signal;
-use embassy_time::Timer;
-use embedded_fans_async::{self as fan_traits, Error as HardwareError};
+use embassy_time::{Duration, Timer};
+use embedded_fans_async::Error as _;
 use embedded_sensors_hal_async::temperature::DegreesCelsius;
-use embedded_services::GlobalRawMutex;
-use embedded_services::ipc::deferred as ipc;
-use embedded_services::{error, trace};
+use embedded_services::event::Sender;
+use embedded_services::{GlobalRawMutex, error, trace};
+use thermal_service_interface::{fan, sensor};
 
-/// Convenience type for Fan response result
-pub type Response = Result<ResponseData, Error>;
-
-/// Allows OEM to implement custom requests
-///
-/// The default response is to return an error on unrecognized requests
-pub trait CustomRequestHandler {
-    fn handle_custom_request(&self, _request: Request) -> impl core::future::Future<Output = Response> {
-        async { Err(Error::InvalidRequest) }
-    }
-}
-
-/// Allows OEMs to override the default linear response ramp response of fan
-pub trait RampResponseHandler: fan_traits::Fan + fan_traits::RpmSense {
-    fn handle_ramp_response(
-        &mut self,
-        profile: &Profile,
-        temp: DegreesCelsius,
-    ) -> impl core::future::Future<Output = Result<(), Self::Error>> {
-        let fan_ramp_temp = profile.ramp_temp;
-        let fan_max_temp = profile.max_temp;
-        let min_rpm = self.min_start_rpm();
-        let max_rpm = self.max_rpm();
-
-        // Provide a linear fan response between its min and max RPM relative to temperature between ramp start and max temp
-        let rpm = if temp <= fan_ramp_temp {
-            min_rpm
-        } else if temp >= fan_max_temp {
-            max_rpm
-        } else {
-            let ratio = (temp - fan_ramp_temp) / (fan_max_temp - fan_ramp_temp);
-            let range = (max_rpm - min_rpm) as f32;
-            min_rpm + (ratio * range) as u16
-        };
-
-        async move {
-            self.set_speed_rpm(rpm).await?;
-            Ok(())
-        }
-    }
-}
-
-/// Ensures all necessary traits are implemented for the controlling driver
-pub trait Controller: RampResponseHandler + CustomRequestHandler {}
-
-/// Fan error type
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Fan service configuration parameters.
+#[derive(Clone, Copy, Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub enum Error {
-    /// Invalid request
-    InvalidRequest,
-    /// Device encountered a hardware failure
-    Hardware,
-}
-
-/// Fan request
-#[derive(Debug, Clone, Copy, PartialEq)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub enum Request {
-    /// Most recent RPM measurement
-    GetRpm,
-    /// Average RPM measurement
-    GetAvgRpm,
-    /// Get Min RPM
-    GetMinRpm,
-    /// Get Max RPM
-    GetMaxRpm,
-    /// Set RPM manually and disable temperature-based control
-    SetRpm(u16),
-    /// Set duty cycle manually (in percent) and disable temperature-based control
-    SetDuty(u8),
-    /// Stop the fan and disable temperature-based control
-    Stop,
-    /// Enable temperature-based control
-    EnableAutoControl,
-    /// Set RPM sampling period (in ms)
-    SetSamplingPeriod(u64),
-    /// Set speed update period
-    SetSpeedUpdatePeriod(u64),
-    /// Get temperature which fan will turn on to minimum RPM (in degrees Celsius)
-    GetOnTemp,
-    /// Get temperature which fan will begin ramping (in degrees Celsius)
-    GetRampTemp,
-    /// Get temperature which fan will reach its max RPM (in degrees Celsius)
-    GetMaxTemp,
-    /// Set temperature which fan will turn on to minimum RPM (in degrees Celsius)
-    SetOnTemp(DegreesCelsius),
-    /// Set temperature which fan will begin ramping (in degrees Celsius)
-    SetRampTemp(DegreesCelsius),
-    /// Set temperature which fan will reach its max RPM (in degrees Celsius)
-    SetMaxTemp(DegreesCelsius),
-    /// Set hysteresis value between fan on and fan off (in degrees Celsius)
-    SetHysteresis(DegreesCelsius),
-    /// Get the profile associated with this fan
-    GetProfile,
-    /// Set the profile associated with this fan
-    SetProfile(Profile),
-    /// Custom-implemented command
-    Custom(u8, &'static [u8]),
-}
-
-/// Fan response
-#[derive(Debug, Clone, Copy, PartialEq)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub enum ResponseData {
-    /// Response for any request that is successful but does not require data
-    Success,
-    /// RPM
-    Rpm(u16),
-    /// Temperature
-    Temp(DegreesCelsius),
-    /// Profile
-    Profile(Profile),
-    /// Custom-implemented response
-    Custom(&'static [u8]),
-}
-
-#[derive(Debug, Clone, Copy)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-enum FanState {
-    Off,
-    On,
-    Ramping,
-    Max,
-}
-
-/// Fan device ID new type
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct DeviceId(pub u8);
-
-/// Fan device struct
-pub struct Device {
-    // Device ID
-    id: DeviceId,
-    // Channel for IPC requests and responses
-    ipc: ipc::Channel<GlobalRawMutex, Request, Response>,
-    // Signal for auto-control enable
-    auto_control_enable: Signal<GlobalRawMutex, ()>,
-}
-
-impl Device {
-    /// Create a new fan device
-    pub fn new(id: DeviceId) -> Self {
-        Self {
-            id,
-            ipc: ipc::Channel::new(),
-            auto_control_enable: Signal::new(),
-        }
-    }
-
-    /// Get the device ID
-    pub fn id(&self) -> DeviceId {
-        self.id
-    }
-
-    /// Execute request and wait for response
-    pub async fn execute_request(&self, request: Request) -> Response {
-        self.ipc.execute(request).await
-    }
-}
-
-/// Fan profile
-#[derive(Debug, Clone, Copy, PartialEq)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct Profile {
-    /// Profile ID
-    pub id: usize,
-    /// ID of sensor this fan will query for auto control
-    pub sensor_id: crate::sensor::DeviceId,
-    /// Period (in ms) fan will sample its RPM
-    pub sample_period: u64,
-    /// Period (in ms) fan will update its state during auto control
-    pub update_period: u64,
-    /// Whether fan is under automatic temperature-based control or not
+pub struct Config {
+    /// Rate at which to sample the fan RPM.
+    pub sample_period: Duration,
+    /// Rate at which to update the fan state based on temperature readings when auto control is enabled.
+    pub update_period: Duration,
+    /// Whether automatic fan control based on temperature is enabled.
     pub auto_control: bool,
-    /// Hysteresis value (in degrees Celsius) preventing fan from rapidly switching between states
+    /// Hysteresis value to prevent rapid toggling between fan states when temperature is around a state transition point.
     pub hysteresis: DegreesCelsius,
-    /// Temperature (in degrees Celsius) at which fan will turn on
-    pub on_temp: DegreesCelsius,
-    /// Temperature (in degrees Celsius) at which fan will begin its ramp response
+    /// Temperature at which the fan will turn on and begin running at its minimum RPM.
+    pub min_temp: DegreesCelsius,
+    /// Temperature at which the fan will follow a speed curve between its minimum and maximum RPM.
     pub ramp_temp: DegreesCelsius,
-    /// Temperature (in degrees Celsius) at which fan will run at its max speed
+    /// Temperature at which the fan will run at its maximum RPM.
     pub max_temp: DegreesCelsius,
 }
 
-impl Default for Profile {
+impl Default for Config {
     fn default() -> Self {
         Self {
-            id: 0,
-            sensor_id: crate::sensor::DeviceId(0),
-            sample_period: 1000,
-            update_period: 1000,
+            sample_period: Duration::from_secs(1),
+            update_period: Duration::from_secs(1),
             auto_control: true,
             hysteresis: 2.0,
-            on_temp: 39.0,
-            ramp_temp: 40.0,
-            max_temp: 44.0,
+            min_temp: 25.0,
+            ramp_temp: 35.0,
+            max_temp: 45.0,
         }
     }
 }
 
-/// Fan struct containing device for comms and driver
-pub struct Fan<T: Controller, const SAMPLE_BUF_LEN: usize> {
-    // Underlying device
-    device: Device,
-    // Underlying controller
-    controller: Mutex<GlobalRawMutex, T>,
-    // Fan profile
-    profile: Mutex<GlobalRawMutex, Profile>,
-    // RPM samples
+struct ServiceInner<T: fan::Driver, const SAMPLE_BUF_LEN: usize> {
+    driver: Mutex<GlobalRawMutex, T>,
+    state: Mutex<GlobalRawMutex, fan::State>,
+    en_signal: Signal<GlobalRawMutex, ()>,
+    config: Mutex<GlobalRawMutex, Config>,
     samples: Mutex<GlobalRawMutex, SampleBuf<u16, SAMPLE_BUF_LEN>>,
-    // State
-    state: Mutex<GlobalRawMutex, FanState>,
 }
 
-impl<T: Controller, const SAMPLE_BUF_LEN: usize> Fan<T, SAMPLE_BUF_LEN> {
-    /// New fan
-    ///
-    /// Sample buffer length MUST be a power of two
-    pub fn new(id: DeviceId, controller: T, profile: Profile) -> Self {
+impl<T: fan::Driver, const SAMPLE_BUF_LEN: usize> ServiceInner<T, SAMPLE_BUF_LEN> {
+    fn new(driver: T, config: Config) -> Self {
         Self {
-            device: Device::new(id),
-            controller: Mutex::new(controller),
-            profile: Mutex::new(profile),
+            driver: Mutex::new(driver),
+            state: Mutex::new(fan::State::Off),
+            en_signal: Signal::new(),
+            config: Mutex::new(config),
             samples: Mutex::new(SampleBuf::create()),
-            state: Mutex::new(FanState::Off),
         }
     }
 
-    /// Retrieve a reference to underlying device for registration with services
-    pub fn device(&self) -> &Device {
-        &self.device
-    }
-
-    /// Retrieve a Mutex wrapping the underlying controller
-    ///
-    /// Should only be used to update OEM specific state
-    pub fn controller(&self) -> &Mutex<GlobalRawMutex, T> {
-        &self.controller
-    }
-
-    /// Wait for fan to receive a request
-    pub async fn wait_request(&self) -> ipc::Request<'_, GlobalRawMutex, Request, Response> {
-        self.device.ipc.receive().await
-    }
-
-    /// Process fan request
-    pub async fn process_request(&self, request: Request) -> Response {
-        match request {
-            Request::GetRpm => {
-                let rpm = self.samples.lock().await.recent();
-                Ok(ResponseData::Rpm(rpm))
-            }
-            Request::GetAvgRpm => {
-                let rpm = self.samples.lock().await.average();
-                Ok(ResponseData::Rpm(rpm))
-            }
-            Request::SetRpm(rpm) => {
-                self.controller
-                    .lock()
-                    .await
-                    .set_speed_rpm(rpm)
-                    .await
-                    .map_err(|_| Error::Hardware)?;
-                self.profile.lock().await.auto_control = false;
-                Ok(ResponseData::Success)
-            }
-            Request::SetDuty(percent) => {
-                self.controller
-                    .lock()
-                    .await
-                    .set_speed_percent(percent)
-                    .await
-                    .map_err(|_| Error::Hardware)?;
-                self.profile.lock().await.auto_control = false;
-                Ok(ResponseData::Success)
-            }
-            Request::Stop => {
-                self.change_state(FanState::Off).await?;
-                self.profile.lock().await.auto_control = false;
-                Ok(ResponseData::Success)
-            }
-            Request::GetMinRpm => {
-                let min_rpm = self.controller.lock().await.min_rpm();
-                Ok(ResponseData::Rpm(min_rpm))
-            }
-            Request::GetMaxRpm => {
-                let max_rpm = self.controller.lock().await.max_rpm();
-                Ok(ResponseData::Rpm(max_rpm))
-            }
-            Request::SetSamplingPeriod(period) => {
-                self.profile.lock().await.sample_period = period;
-                Ok(ResponseData::Success)
-            }
-            Request::EnableAutoControl => {
-                // Make sure we actually transition to a known state
-                // Next iteration of handle auto control would then put it in actual correct state
-                self.change_state(FanState::Off).await?;
-                self.profile.lock().await.auto_control = true;
-                self.device.auto_control_enable.signal(());
-                Ok(ResponseData::Success)
-            }
-            Request::SetSpeedUpdatePeriod(period) => {
-                self.profile.lock().await.update_period = period;
-                Ok(ResponseData::Success)
-            }
-            Request::GetOnTemp => {
-                let temp = self.profile.lock().await.on_temp;
-                Ok(ResponseData::Temp(temp))
-            }
-            Request::GetRampTemp => {
-                let temp = self.profile.lock().await.ramp_temp;
-                Ok(ResponseData::Temp(temp))
-            }
-            Request::GetMaxTemp => {
-                let temp = self.profile.lock().await.max_temp;
-                Ok(ResponseData::Temp(temp))
-            }
-            Request::SetOnTemp(temp) => {
-                self.profile.lock().await.on_temp = temp;
-                Ok(ResponseData::Success)
-            }
-            Request::SetRampTemp(temp) => {
-                self.profile.lock().await.ramp_temp = temp;
-                Ok(ResponseData::Success)
-            }
-            Request::SetMaxTemp(temp) => {
-                self.profile.lock().await.max_temp = temp;
-                Ok(ResponseData::Success)
-            }
-            Request::SetHysteresis(temp) => {
-                self.profile.lock().await.hysteresis = temp;
-                Ok(ResponseData::Success)
-            }
-            Request::GetProfile => {
-                let profile = *self.profile.lock().await;
-                Ok(ResponseData::Profile(profile))
-            }
-            Request::SetProfile(profile) => {
-                *self.profile.lock().await = profile;
-                Ok(ResponseData::Success)
-            }
-            Request::Custom(_, _) => self.controller.lock().await.handle_custom_request(request).await,
-        }
-    }
-
-    /// Wait for fan to receive a request, process it, and send a response
-    pub async fn wait_and_process(&self) {
-        let request = self.wait_request().await;
-        let response = self.process_request(request.command).await;
-        request.respond(response);
-    }
-
-    /// Waits for a IPC request, then processes it
-    pub async fn handle_rx(&self) {
+    async fn handle_sampling(&self) {
         loop {
-            self.wait_and_process().await;
-        }
-    }
-
-    /// Periodically samples RPM from physical fan and caches it
-    pub async fn handle_sampling(&self) {
-        loop {
-            match self.controller.lock().await.rpm().await {
+            match self.driver.lock().await.rpm().await {
                 Ok(rpm) => self.samples.lock().await.push(rpm),
-                Err(e) => error!("Fan {} error sampling fan rpm: {:?}", self.device.id.0, e.kind()),
+                Err(e) => error!("Fan error sampling fan rpm: {:?}", e.kind()),
             }
 
-            let period = self.profile.lock().await.sample_period;
-            Timer::after_millis(period).await;
+            let period = self.config.lock().await.sample_period;
+            Timer::after(period).await;
         }
     }
 
-    pub async fn handle_auto_control<'hw>(&self, thermal_service: &crate::Service<'hw>) {
-        loop {
-            if self.profile.lock().await.auto_control {
-                let temp = match thermal_service
-                    .execute_sensor_request(self.profile.lock().await.sensor_id, crate::sensor::Request::GetTemp)
-                    .await
-                {
-                    Ok(crate::sensor::ResponseData::Temp(temp)) => temp,
-                    _ => {
-                        error!(
-                            "Fan {} failed to get temperature, disabling auto control and setting speed to max",
-                            self.device.id.0
-                        );
-
-                        self.profile.lock().await.auto_control = false;
-                        if self.controller.lock().await.set_speed_max().await.is_err() {
-                            error!("Fan {} failed to set speed to max!", self.device.id.0);
-                        }
-
-                        thermal_service
-                            .send_event(Event::FanFailure(self.device.id, Error::Hardware))
-                            .await;
-                        continue;
-                    }
-                };
-
-                if let Err(e) = self.handle_fan_state(temp).await {
-                    thermal_service.send_event(Event::FanFailure(self.device.id, e)).await;
-                    error!("Fan {} error handling fan state transition: {:?}", self.device.id.0, e);
-                }
-
-                let sleep_duration = self.profile.lock().await.update_period;
-                Timer::after_millis(sleep_duration).await;
-
-            // Sleep until auto control is re-enabled
-            } else {
-                self.device.auto_control_enable.wait().await;
-            }
-        }
-    }
-
-    async fn handle_fan_off_state(&self, temp: DegreesCelsius) -> Result<(), Error> {
-        let profile = self.profile.lock().await;
-
-        if temp >= profile.on_temp {
-            self.change_state(FanState::On).await?;
-        }
-
-        Ok(())
-    }
-
-    async fn handle_fan_on_state(&self, temp: DegreesCelsius) -> Result<(), Error> {
-        let profile = self.profile.lock().await;
-
-        if temp < (profile.on_temp - profile.hysteresis) {
-            self.change_state(FanState::Off).await?;
-        } else if temp >= profile.ramp_temp {
-            self.change_state(FanState::Ramping).await?;
-        }
-
-        Ok(())
-    }
-
-    async fn handle_fan_ramping_state(&self, temp: DegreesCelsius) -> Result<(), Error> {
-        let profile = self.profile.lock().await;
-
-        if temp < (profile.ramp_temp - profile.hysteresis) {
-            self.change_state(FanState::On).await?;
-        } else if temp >= profile.max_temp {
-            self.change_state(FanState::Max).await?;
-        } else {
-            self.controller
-                .lock()
-                .await
-                .handle_ramp_response(&profile, temp)
-                .await
-                .map_err(|_| Error::Hardware)?;
-        }
-
-        Ok(())
-    }
-
-    async fn handle_fan_max_state(&self, temp: DegreesCelsius) -> Result<(), Error> {
-        let profile = self.profile.lock().await;
-
-        if temp < (profile.max_temp - profile.hysteresis) {
-            self.change_state(FanState::Ramping).await?;
-        }
-
-        Ok(())
-    }
-
-    async fn change_state(&self, to: FanState) -> Result<(), Error> {
-        let mut controller = self.controller.lock().await;
+    async fn change_state(&self, to: fan::State) -> Result<(), fan::Error> {
+        let mut driver = self.driver.lock().await;
         match to {
-            FanState::Off => {
-                controller.stop().await.map_err(|_| Error::Hardware)?;
+            fan::State::Off => {
+                driver.stop().await.map_err(|_| fan::Error::Hardware)?;
             }
-            FanState::On => {
-                controller.start().await.map_err(|_| Error::Hardware)?;
+            fan::State::On(fan::OnState::Min) => {
+                driver.start().await.map_err(|_| fan::Error::Hardware)?;
             }
-            FanState::Ramping => {
+            fan::State::On(fan::OnState::Ramping) => {
                 // Ramp state will continuously update RPM according to its ramp response function
             }
-            FanState::Max => {
-                let max_rpm = controller.max_rpm();
-                let _ = controller.set_speed_rpm(max_rpm).await.map_err(|_| Error::Hardware)?;
+            fan::State::On(fan::OnState::Max) => {
+                let max_rpm = driver.max_rpm();
+                let _ = driver.set_speed_rpm(max_rpm).await.map_err(|_| fan::Error::Hardware)?;
             }
         }
-        drop(controller);
+        drop(driver);
 
-        let state = *self.state.lock().await;
-        trace!(
-            "Fan {} transitioned to {:?} state from {:?} state",
-            self.device.id.0, to, state
-        );
-        *self.state.lock().await = to;
+        let mut state = self.state.lock().await;
+        trace!("Fan transitioned to {:?} state from {:?} state", to, *state);
+        *state = to;
 
         Ok(())
     }
+}
 
-    async fn handle_fan_state(&self, temp: DegreesCelsius) -> Result<(), Error> {
-        // Must copy state here, if attempt to dereference in match, mutex is still held in match arms
-        let state = *self.state.lock().await;
-        match state {
-            FanState::Off => self.handle_fan_off_state(temp).await,
-            FanState::On => self.handle_fan_on_state(temp).await,
-            FanState::Ramping => self.handle_fan_ramping_state(temp).await,
-            FanState::Max => self.handle_fan_max_state(temp).await,
+/// Fan service control handle.
+pub struct Service<'hw, T: fan::Driver, S: sensor::SensorService, E: Sender<fan::Event>, const SAMPLE_BUF_LEN: usize> {
+    inner: &'hw ServiceInner<T, SAMPLE_BUF_LEN>,
+    _phantom: PhantomData<(S, E)>,
+}
+
+// Note: We can't derive these traits because the compiler thinks our generics then need to be Copy + Clone,
+// but we only hold a reference and don't actually need to be that strict
+impl<T: fan::Driver, S: sensor::SensorService, E: Sender<fan::Event>, const SAMPLE_BUF_LEN: usize> Clone
+    for Service<'_, T, S, E, SAMPLE_BUF_LEN>
+{
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<T: fan::Driver, S: sensor::SensorService, E: Sender<fan::Event>, const SAMPLE_BUF_LEN: usize> Copy
+    for Service<'_, T, S, E, SAMPLE_BUF_LEN>
+{
+}
+
+impl<'hw, T: fan::Driver, S: sensor::SensorService, E: Sender<fan::Event>, const SAMPLE_BUF_LEN: usize> fan::FanService
+    for Service<'hw, T, S, E, SAMPLE_BUF_LEN>
+{
+    async fn enable_auto_control(&self) -> Result<(), fan::Error> {
+        self.inner.change_state(fan::State::Off).await?;
+        self.inner.config.lock().await.auto_control = true;
+        self.inner.en_signal.signal(());
+        Ok(())
+    }
+
+    async fn rpm(&self) -> u16 {
+        self.inner.samples.lock().await.recent()
+    }
+
+    async fn min_rpm(&self) -> u16 {
+        self.inner.driver.lock().await.min_rpm()
+    }
+
+    async fn max_rpm(&self) -> u16 {
+        self.inner.driver.lock().await.max_rpm()
+    }
+
+    async fn rpm_average(&self) -> u16 {
+        self.inner.samples.lock().await.average()
+    }
+
+    async fn rpm_immediate(&self) -> Result<u16, fan::Error> {
+        self.inner
+            .driver
+            .lock()
+            .await
+            .rpm()
+            .await
+            .map_err(|_| fan::Error::Hardware)
+    }
+
+    async fn set_rpm(&self, rpm: u16) -> Result<(), fan::Error> {
+        self.inner
+            .driver
+            .lock()
+            .await
+            .set_speed_rpm(rpm)
+            .await
+            .map_err(|_| fan::Error::Hardware)?;
+        self.inner.config.lock().await.auto_control = false;
+        Ok(())
+    }
+
+    async fn set_duty_percent(&self, duty: u8) -> Result<(), fan::Error> {
+        self.inner
+            .driver
+            .lock()
+            .await
+            .set_speed_percent(duty)
+            .await
+            .map_err(|_| fan::Error::Hardware)?;
+        self.inner.config.lock().await.auto_control = false;
+        Ok(())
+    }
+
+    async fn stop(&self) -> Result<(), fan::Error> {
+        self.inner
+            .driver
+            .lock()
+            .await
+            .stop()
+            .await
+            .map_err(|_| fan::Error::Hardware)?;
+        self.inner.config.lock().await.auto_control = false;
+        Ok(())
+    }
+
+    async fn set_rpm_sampling_period(&self, period: Duration) {
+        self.inner.config.lock().await.sample_period = period;
+    }
+
+    async fn set_rpm_update_period(&self, period: Duration) {
+        self.inner.config.lock().await.update_period = period;
+    }
+
+    async fn state_temp(&self, on_state: fan::OnState) -> DegreesCelsius {
+        let config = self.inner.config.lock().await;
+        match on_state {
+            fan::OnState::Min => config.min_temp,
+            fan::OnState::Ramping => config.ramp_temp,
+            fan::OnState::Max => config.max_temp,
         }
     }
+
+    async fn set_state_temp(&self, on_state: fan::OnState, temp: DegreesCelsius) {
+        let mut config = self.inner.config.lock().await;
+        match on_state {
+            fan::OnState::Min => config.min_temp = temp,
+            fan::OnState::Ramping => config.ramp_temp = temp,
+            fan::OnState::Max => config.max_temp = temp,
+        }
+    }
+}
+
+/// Parameters required to initialize a fan service.
+pub struct InitParams<'hw, T: fan::Driver, S: sensor::SensorService, E: Sender<fan::Event>> {
+    /// The underlying fan driver this service will control.
+    pub driver: T,
+    /// Initial configuration for the fan service.
+    pub config: Config,
+    /// The sensor service this fan will use to get temperature readings.
+    pub sensor_service: S,
+    /// Event senders for fan events.
+    pub event_senders: &'hw mut [E],
 }
 
 /// The memory resources required by the fan.
-pub struct Resources<'hw, T: Controller, const SAMPLE_BUF_LEN: usize> {
-    inner: Option<ServiceInner<'hw, T, SAMPLE_BUF_LEN>>,
+pub struct Resources<T: fan::Driver, const SAMPLE_BUF_LEN: usize> {
+    inner: Option<ServiceInner<T, SAMPLE_BUF_LEN>>,
 }
 
 // Note: We can't derive Default unless we trait bound T by Default,
 // but we don't want that restriction since the default is just the None case
-impl<'hw, T: Controller, const SAMPLE_BUF_LEN: usize> Default for Resources<'hw, T, SAMPLE_BUF_LEN> {
+impl<T: fan::Driver, const SAMPLE_BUF_LEN: usize> Default for Resources<T, SAMPLE_BUF_LEN> {
     fn default() -> Self {
         Self { inner: None }
     }
 }
 
-struct ServiceInner<'hw, T: Controller, const SAMPLE_BUF_LEN: usize> {
-    fan: &'hw Fan<T, SAMPLE_BUF_LEN>,
-    thermal_service: &'hw crate::Service<'hw>,
-}
-
-impl<'hw, T: Controller, const SAMPLE_BUF_LEN: usize> ServiceInner<'hw, T, SAMPLE_BUF_LEN> {
-    fn new(init_params: InitParams<'hw, T, SAMPLE_BUF_LEN>) -> Self {
-        Self {
-            fan: init_params.fan,
-            thermal_service: init_params.thermal_service,
-        }
-    }
-
-    fn fan(&self) -> &Fan<T, SAMPLE_BUF_LEN> {
-        self.fan
-    }
-}
-
 /// A task runner for a fan. Users must run this in an embassy task or similar async execution context.
-pub struct Runner<'hw, T: Controller, const SAMPLE_BUF_LEN: usize> {
-    service: &'hw ServiceInner<'hw, T, SAMPLE_BUF_LEN>,
+pub struct Runner<'hw, T: fan::Driver, S: sensor::SensorService, E: Sender<fan::Event>, const SAMPLE_BUF_LEN: usize> {
+    service: &'hw ServiceInner<T, SAMPLE_BUF_LEN>,
+    sensor: S,
+    event_senders: &'hw mut [E],
 }
 
-impl<'hw, T: Controller, const SAMPLE_BUF_LEN: usize> odp_service_common::runnable_service::ServiceRunner<'hw>
-    for Runner<'hw, T, SAMPLE_BUF_LEN>
+impl<'hw, T: fan::Driver, S: sensor::SensorService, E: Sender<fan::Event>, const SAMPLE_BUF_LEN: usize>
+    Runner<'hw, T, S, E, SAMPLE_BUF_LEN>
 {
-    async fn run(self) -> embedded_services::Never {
+    async fn broadcast_event(&mut self, event: fan::Event) {
+        for sender in self.event_senders.iter_mut() {
+            sender.send(event).await;
+        }
+    }
+
+    async fn ramp_response(&self, temp: DegreesCelsius) -> Result<(), fan::Error> {
+        let config = *self.service.config.lock().await;
+
+        let mut driver = self.service.driver.lock().await;
+        let min_rpm = driver.min_start_rpm();
+        let max_rpm = driver.max_rpm();
+
+        // Provide a linear fan response between its min and max RPM relative to temperature between ramp start and max temp
+        let rpm = if temp <= config.ramp_temp {
+            min_rpm
+        } else if temp >= config.max_temp {
+            max_rpm
+        } else {
+            let ratio = (temp - config.ramp_temp) / (config.max_temp - config.ramp_temp);
+            let range = (max_rpm - min_rpm) as f32;
+            min_rpm + (ratio * range) as u16
+        };
+
+        driver
+            .set_speed_rpm(rpm)
+            .await
+            .map(|_| ())
+            .map_err(|_| fan::Error::Hardware)
+    }
+
+    async fn handle_fan_off_state(&self, temp: DegreesCelsius) -> Result<(), fan::Error> {
+        let config = *self.service.config.lock().await;
+
+        if temp >= config.min_temp {
+            self.service.change_state(fan::State::On(fan::OnState::Min)).await?;
+        }
+
+        Ok(())
+    }
+
+    async fn handle_fan_on_state(&self, temp: DegreesCelsius) -> Result<(), fan::Error> {
+        let config = *self.service.config.lock().await;
+
+        if temp < (config.min_temp - config.hysteresis) {
+            self.service.change_state(fan::State::Off).await?;
+        } else if temp >= config.ramp_temp {
+            self.service.change_state(fan::State::On(fan::OnState::Ramping)).await?;
+        }
+
+        Ok(())
+    }
+
+    async fn handle_fan_ramping_state(&self, temp: DegreesCelsius) -> Result<(), fan::Error> {
+        let config = *self.service.config.lock().await;
+
+        if temp < (config.ramp_temp - config.hysteresis) {
+            self.service.change_state(fan::State::On(fan::OnState::Min)).await?;
+        } else if temp >= config.max_temp {
+            self.service.change_state(fan::State::On(fan::OnState::Max)).await?;
+        } else {
+            self.ramp_response(temp).await?;
+        }
+
+        Ok(())
+    }
+
+    async fn handle_fan_max_state(&self, temp: DegreesCelsius) -> Result<(), fan::Error> {
+        let config = *self.service.config.lock().await;
+
+        if temp < (config.max_temp - config.hysteresis) {
+            self.service.change_state(fan::State::On(fan::OnState::Ramping)).await?;
+        }
+
+        Ok(())
+    }
+
+    async fn handle_fan_state(&self, temp: DegreesCelsius) -> Result<(), fan::Error> {
+        let state = *self.service.state.lock().await;
+        match state {
+            fan::State::Off => self.handle_fan_off_state(temp).await,
+            fan::State::On(fan::OnState::Min) => self.handle_fan_on_state(temp).await,
+            fan::State::On(fan::OnState::Ramping) => self.handle_fan_ramping_state(temp).await,
+            fan::State::On(fan::OnState::Max) => self.handle_fan_max_state(temp).await,
+        }
+    }
+
+    async fn handle_auto_control(&mut self) {
         loop {
-            let _ = embassy_futures::join::join3(
-                self.service.fan.handle_rx(),
-                self.service.fan.handle_sampling(),
-                self.service.fan.handle_auto_control(self.service.thermal_service),
-            )
-            .await;
+            if self.service.config.lock().await.auto_control {
+                let temp = self.sensor.temperature().await;
+                if let Err(e) = self.handle_fan_state(temp).await {
+                    error!("Error handling fan state transition, disabling auto control: {:?}", e);
+                    self.service.config.lock().await.auto_control = false;
+                    self.broadcast_event(fan::Event::Failure(e)).await;
+                }
+
+                let sleep_duration = self.service.config.lock().await.update_period;
+                Timer::after(sleep_duration).await;
+
+            // Sleep until auto control is re-enabled
+            } else {
+                self.service.en_signal.wait().await;
+            }
         }
     }
 }
 
-/// Fan service control handle.
-pub struct Service<'hw, T: Controller, const SAMPLE_BUF_LEN: usize> {
-    inner: &'hw ServiceInner<'hw, T, SAMPLE_BUF_LEN>,
-}
-
-impl<'hw, T: Controller, const SAMPLE_BUF_LEN: usize> Service<'hw, T, SAMPLE_BUF_LEN> {
-    /// Get a reference to the inner fan.
-    pub fn fan(&self) -> &Fan<T, SAMPLE_BUF_LEN> {
-        self.inner.fan()
+impl<'hw, T: fan::Driver, S: sensor::SensorService + 'hw, E: Sender<fan::Event> + 'hw, const SAMPLE_BUF_LEN: usize>
+    odp_service_common::runnable_service::ServiceRunner<'hw> for Runner<'hw, T, S, E, SAMPLE_BUF_LEN>
+{
+    async fn run(mut self) -> embedded_services::Never {
+        let service = self.service;
+        loop {
+            let _ = embassy_futures::join::join(service.handle_sampling(), self.handle_auto_control()).await;
+        }
     }
 }
 
-/// Parameters required to initialize a fan service.
-pub struct InitParams<'hw, T: Controller, const SAMPLE_BUF_LEN: usize> {
-    /// The underlying `Fan` wrapper this service will control.
-    pub fan: &'hw Fan<T, SAMPLE_BUF_LEN>,
-    /// The thermal service handle for this fan to communicate with a sensor.
-    pub thermal_service: &'hw crate::Service<'hw>,
-}
-
-impl<'hw, T: Controller, const SAMPLE_BUF_LEN: usize> odp_service_common::runnable_service::Service<'hw>
-    for Service<'hw, T, SAMPLE_BUF_LEN>
+impl<'hw, T: fan::Driver, S: sensor::SensorService + 'hw, E: Sender<fan::Event> + 'hw, const SAMPLE_BUF_LEN: usize>
+    odp_service_common::runnable_service::Service<'hw> for Service<'hw, T, S, E, SAMPLE_BUF_LEN>
 {
-    type Runner = Runner<'hw, T, SAMPLE_BUF_LEN>;
-    type Resources = Resources<'hw, T, SAMPLE_BUF_LEN>;
-    type ErrorType = Error;
-    type InitParams = InitParams<'hw, T, SAMPLE_BUF_LEN>;
+    type Runner = Runner<'hw, T, S, E, SAMPLE_BUF_LEN>;
+    type Resources = Resources<T, SAMPLE_BUF_LEN>;
+    type ErrorType = fan::Error;
+    type InitParams = InitParams<'hw, T, S, E>;
 
     async fn new(
         service_storage: &'hw mut Self::Resources,
         init_params: Self::InitParams,
     ) -> Result<(Self, Self::Runner), Self::ErrorType> {
-        let service = service_storage.inner.insert(ServiceInner::new(init_params));
-        Ok((Self { inner: service }, Runner { service }))
+        let service = service_storage
+            .inner
+            .insert(ServiceInner::new(init_params.driver, init_params.config));
+        Ok((
+            Self {
+                inner: service,
+                _phantom: PhantomData,
+            },
+            Runner {
+                service,
+                sensor: init_params.sensor_service,
+                event_senders: init_params.event_senders,
+            },
+        ))
     }
 }

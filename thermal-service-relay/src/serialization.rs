@@ -1,20 +1,7 @@
-#![no_std]
-
+use crate::DeciKelvin;
 use embedded_services::relay::{MessageSerializationError, SerializableMessage};
 
-/// 16-bit variable length
-pub type VarLen = u16;
-
-/// Instance ID
-pub type InstanceId = u8;
-
-/// Time in milliseconds
-pub type Milliseconds = u32;
-
-/// MPTF expects temperatures in tenth Kelvins
-pub type DeciKelvin = u32;
-
-/// Standard MPTF requests expected by the thermal subsystem
+// Standard MPTF requests expected by the thermal subsystem
 #[derive(num_enum::IntoPrimitive, num_enum::TryFromPrimitive, Copy, Clone, Debug, PartialEq)]
 #[repr(u16)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
@@ -67,7 +54,7 @@ pub enum ThermalRequest {
     },
     ThermalSetThrsRequest {
         instance_id: u8,
-        timeout: Milliseconds,
+        timeout: u32,
         low: DeciKelvin,
         high: DeciKelvin,
     },
@@ -82,18 +69,17 @@ pub enum ThermalRequest {
     },
     ThermalGetVarRequest {
         instance_id: u8,
-        len: VarLen, // TODO why is there a len here? as far as I can tell we're always discarding it, and I think values are only u32?
+        len: u16,
         var_uuid: uuid::Bytes,
     },
     ThermalSetVarRequest {
         instance_id: u8,
-        len: VarLen, // TODO why is there a len here? as far as I can tell we're always discarding it, and I think values are only u32?
+        len: u16,
         var_uuid: uuid::Bytes,
         set_var: u32,
     },
 }
 
-// TODO this is essentially a hand-written reinterpret_cast - can we codegen some of this instead?
 impl SerializableMessage for ThermalRequest {
     fn serialize(self, buffer: &mut [u8]) -> Result<usize, MessageSerializationError> {
         match self {
@@ -105,8 +91,8 @@ impl SerializableMessage for ThermalRequest {
                 high,
             } => Ok(safe_put_u8(buffer, 0, instance_id)?
                 + safe_put_dword(buffer, 1, timeout)?
-                + safe_put_dword(buffer, 5, low)?
-                + safe_put_dword(buffer, 9, high)?),
+                + safe_put_dword(buffer, 5, low.0)?
+                + safe_put_dword(buffer, 9, high.0)?),
             Self::ThermalGetThrsRequest { instance_id } => safe_put_u8(buffer, 0, instance_id),
             Self::ThermalSetScpRequest {
                 instance_id,
@@ -147,8 +133,8 @@ impl SerializableMessage for ThermalRequest {
                 ThermalCmd::SetThrs => Self::ThermalSetThrsRequest {
                     instance_id: safe_get_u8(buffer, 0)?,
                     timeout: safe_get_dword(buffer, 1)?,
-                    low: safe_get_dword(buffer, 5)?,
-                    high: safe_get_dword(buffer, 9)?,
+                    low: DeciKelvin(safe_get_dword(buffer, 5)?),
+                    high: DeciKelvin(safe_get_dword(buffer, 9)?),
                 },
                 ThermalCmd::GetThrs => Self::ThermalGetThrsRequest {
                     instance_id: safe_get_u8(buffer, 0)?,
@@ -188,7 +174,7 @@ pub enum ThermalResponse {
     },
     ThermalSetThrsResponse,
     ThermalGetThrsResponse {
-        timeout: Milliseconds,
+        timeout: u32,
         low: DeciKelvin,
         high: DeciKelvin,
     },
@@ -202,10 +188,10 @@ pub enum ThermalResponse {
 impl SerializableMessage for ThermalResponse {
     fn serialize(self, buffer: &mut [u8]) -> Result<usize, MessageSerializationError> {
         match self {
-            Self::ThermalGetTmpResponse { temperature } => safe_put_dword(buffer, 0, temperature),
+            Self::ThermalGetTmpResponse { temperature } => safe_put_dword(buffer, 0, temperature.0),
             Self::ThermalGetThrsResponse { timeout, low, high } => Ok(safe_put_dword(buffer, 0, timeout)?
-                + safe_put_dword(buffer, 4, low)?
-                + safe_put_dword(buffer, 8, high)?),
+                + safe_put_dword(buffer, 4, low.0)?
+                + safe_put_dword(buffer, 8, high.0)?),
             Self::ThermalGetVarResponse { val } => safe_put_dword(buffer, 0, val),
             Self::ThermalSetVarResponse | Self::ThermalSetScpResponse | Self::ThermalSetThrsResponse => Ok(0),
         }
@@ -217,13 +203,13 @@ impl SerializableMessage for ThermalResponse {
                 .map_err(|_| MessageSerializationError::UnknownMessageDiscriminant(discriminant))?
             {
                 ThermalCmd::GetTmp => Self::ThermalGetTmpResponse {
-                    temperature: safe_get_dword(buffer, 0)?,
+                    temperature: DeciKelvin(safe_get_dword(buffer, 0)?),
                 },
                 ThermalCmd::SetThrs => Self::ThermalSetThrsResponse,
                 ThermalCmd::GetThrs => Self::ThermalGetThrsResponse {
                     timeout: safe_get_dword(buffer, 0)?,
-                    low: safe_get_dword(buffer, 4)?,
-                    high: safe_get_dword(buffer, 8)?,
+                    low: DeciKelvin(safe_get_dword(buffer, 4)?),
+                    high: DeciKelvin(safe_get_dword(buffer, 8)?),
                 },
                 ThermalCmd::SetScp => Self::ThermalSetScpResponse,
                 ThermalCmd::GetVar => Self::ThermalGetVarResponse {

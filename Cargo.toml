@@ -5,7 +5,8 @@ members = [
     "battery-service-interface",
     "battery-service-relay",
     "thermal-service",
-    "thermal-service-messages",
+    "thermal-service-interface",
+    "thermal-service-relay",
     "cfu-service",
     "embedded-service",
     "espi-service",
@@ -107,7 +108,8 @@ rstest = { version = "0.26.1", default-features = false }
 serde = { version = "1.0.*", default-features = false }
 static_cell = "2.1.0"
 toml = { version = "0.8", default-features = false }
-thermal-service-messages = { path = "./thermal-service-messages" }
+thermal-service-interface = { path = "./thermal-service-interface" }
+thermal-service-relay = { path = "./thermal-service-relay" }
 time-alarm-service-interface = { path = "./time-alarm-service-interface" }
 time-alarm-service-relay = { path = "./time-alarm-service-relay" }
 type-c-interface = { path = "./type-c-interface" }

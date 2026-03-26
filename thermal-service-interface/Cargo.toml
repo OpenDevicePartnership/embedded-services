@@ -1,0 +1,23 @@
+[package]
+name = "thermal-service-interface"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+defmt = { workspace = true, optional = true }
+embassy-time.workspace = true
+embedded-fans-async = "0.2.0"
+embedded-sensors-hal-async = "0.3.0"
+
+[features]
+defmt = [
+    "dep:defmt",
+    "embassy-time/defmt",
+    "embedded-fans-async/defmt",
+    "embedded-sensors-hal-async/defmt",
+]

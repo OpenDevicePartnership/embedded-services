@@ -1656,7 +1656,7 @@ dependencies = [
  "power-policy-service",
  "static_cell",
  "thermal-service",
- "thermal-service-messages",
+ "thermal-service-interface",
  "type-c-interface",
  "type-c-service",
 ]
@@ -1715,25 +1715,21 @@ dependencies = [
  "embassy-sync",
  "embassy-time",
  "embedded-fans-async",
- "embedded-hal 1.0.0",
- "embedded-hal-async",
  "embedded-sensors-hal-async",
  "embedded-services",
  "heapless",
  "log",
- "mctp-rs",
  "odp-service-common",
- "thermal-service-messages",
- "uuid",
+ "thermal-service-interface",
 ]
 
 [[package]]
-name = "thermal-service-messages"
+name = "thermal-service-interface"
 version = "0.1.0"
 dependencies = [
- "embedded-services",
- "num_enum",
- "uuid",
+ "embassy-time",
+ "embedded-fans-async",
+ "embedded-sensors-hal-async",
 ]
 
 [[package]]
