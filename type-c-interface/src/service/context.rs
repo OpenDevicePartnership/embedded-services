@@ -32,6 +32,9 @@ impl DeviceContainer for Device<'_> {
     }
 }
 
+/// Type-C service context
+///
+/// This struct is going to be merged into the service implementation and removed from here.
 pub struct Context {
     port_events: Signal<GlobalRawMutex, PortPending>,
     /// Event broadcaster
@@ -85,7 +88,7 @@ impl Context {
             .into_iter()
             .find(|node| {
                 if let Some(controller) = node.data::<Device>() {
-                    controller.id == controller_id
+                    controller.id() == controller_id
                 } else {
                     false
                 }
