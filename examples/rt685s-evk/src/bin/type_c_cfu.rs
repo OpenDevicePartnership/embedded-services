@@ -29,7 +29,7 @@ use static_cell::StaticCell;
 use tps6699x::asynchronous::embassy as tps6699x;
 use type_c_interface::port::ControllerId;
 use type_c_service::driver::tps6699x::{self as tps6699x_drv};
-use type_c_service::service::Service;
+use type_c_service::service::{EventReceiver, Service};
 use type_c_service::wrapper::ControllerWrapper;
 use type_c_service::wrapper::backing::{IntermediateStorage, ReferencedStorage, Storage};
 use type_c_service::wrapper::proxy::PowerProxyDevice;
@@ -73,6 +73,8 @@ type PowerPolicySenderType = MapSender<
     ) -> power_policy_interface::service::event::EventData,
 >;
 
+type PowerPolicyReceiverType = DynSubscriber<'static, power_policy_interface::service::event::EventData>;
+
 type PowerPolicyServiceType = Mutex<
     GlobalRawMutex,
     power_policy_service::service::Service<
@@ -81,7 +83,7 @@ type PowerPolicyServiceType = Mutex<
     >,
 >;
 
-type ServiceType = Service<'static, DynSubscriber<'static, power_policy_interface::service::event::EventData>>;
+type ServiceType = Service<'static>;
 
 const NUM_PD_CONTROLLERS: usize = 1;
 const CONTROLLER0_ID: ControllerId = ControllerId(0);
@@ -193,12 +195,13 @@ async fn power_policy_task(
 
 #[embassy_executor::task]
 async fn type_c_service_task(
-    service: &'static ServiceType,
+    service: &'static Mutex<GlobalRawMutex, ServiceType>,
+    event_receiver: EventReceiver<'static, PowerPolicyReceiverType>,
     wrappers: [&'static Wrapper<'static>; NUM_PD_CONTROLLERS],
     cfu_client: &'static CfuClient,
 ) {
     info!("Starting type-c task");
-    type_c_service::task::task(service, wrappers, cfu_client).await;
+    type_c_service::task::task(service, event_receiver, wrappers, cfu_client).await;
 }
 
 #[embassy_executor::main]
@@ -323,19 +326,20 @@ async fn main(spawner: Spawner) {
         power_policy_service::service::config::Config::default(),
     )));
 
-    static TYPE_C_SERVICE: StaticCell<ServiceType> = StaticCell::new();
-    let type_c_service = TYPE_C_SERVICE.init(Service::create(
-        Default::default(),
-        controller_context,
-        power_policy_subscriber,
-    ));
+    static TYPE_C_SERVICE: StaticCell<Mutex<GlobalRawMutex, ServiceType>> = StaticCell::new();
+    let type_c_service = TYPE_C_SERVICE.init(Mutex::new(Service::create(Default::default(), controller_context)));
 
     // Spin up CFU service
     static CFU_CLIENT: OnceLock<CfuClient> = OnceLock::new();
     let cfu_client = CfuClient::new(&CFU_CLIENT).await;
 
     info!("Spawining type-c service task");
-    spawner.must_spawn(type_c_service_task(type_c_service, [wrapper], cfu_client));
+    spawner.must_spawn(type_c_service_task(
+        type_c_service,
+        EventReceiver::new(controller_context, power_policy_subscriber),
+        [wrapper],
+        cfu_client,
+    ));
 
     info!("Spawining power policy task");
     spawner.must_spawn(power_policy_task(

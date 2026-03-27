@@ -1,31 +1,10 @@
 use power_policy_interface::service as power_policy;
-use power_policy_interface::service::event::EventData as PowerPolicyEventData;
 
 use super::*;
 
-impl<'a, PowerReceiver: Receiver<PowerPolicyEventData>> Service<'a, PowerReceiver> {
-    /// Wait for a power policy event
-    pub(super) async fn wait_power_policy_event(&self) -> Event {
-        loop {
-            match self.power_policy_event_subscriber.lock().await.wait_next().await {
-                power_policy_interface::service::event::EventData::Unconstrained(state) => {
-                    return Event::PowerPolicy(PowerPolicyEvent::Unconstrained(state));
-                }
-                power_policy_interface::service::event::EventData::ConsumerDisconnected => {
-                    return Event::PowerPolicy(PowerPolicyEvent::ConsumerDisconnected);
-                }
-                power_policy_interface::service::event::EventData::ConsumerConnected(_) => {
-                    return Event::PowerPolicy(PowerPolicyEvent::ConsumerConnected);
-                }
-                _ => {
-                    // No other events currently implemented
-                }
-            }
-        }
-    }
-
+impl Service<'_> {
     /// Set the unconstrained state for all ports
-    pub(super) async fn set_unconstrained_all(&self, unconstrained: bool) -> Result<(), Error> {
+    pub(super) async fn set_unconstrained_all(&mut self, unconstrained: bool) -> Result<(), Error> {
         for port_index in 0..self.context.get_num_ports() {
             self.context
                 .set_unconstrained_power(GlobalPortId(port_index as u8), unconstrained)
@@ -36,12 +15,10 @@ impl<'a, PowerReceiver: Receiver<PowerPolicyEventData>> Service<'a, PowerReceive
 
     /// Processed unconstrained state change
     pub(super) async fn process_unconstrained_state_change(
-        &self,
+        &mut self,
         unconstrained_state: &power_policy::UnconstrainedState,
     ) -> Result<(), Error> {
         if unconstrained_state.unconstrained {
-            let state = self.state.lock().await;
-
             if unconstrained_state.available > 1 {
                 // There are multiple available unconstrained consumers, set all ports to unconstrained
                 // TODO: determine if we need to consider if we need to consider
@@ -52,7 +29,8 @@ impl<'a, PowerReceiver: Receiver<PowerPolicyEventData>> Service<'a, PowerReceive
             } else {
                 // Only one unconstrained device is present, see if that's one of our ports
                 let num_ports = self.context.get_num_ports();
-                let unconstrained_port = state
+                let unconstrained_port = self
+                    .state
                     .port_status
                     .iter()
                     .take(num_ports)
@@ -88,21 +66,19 @@ impl<'a, PowerReceiver: Receiver<PowerPolicyEventData>> Service<'a, PowerReceive
     }
 
     /// Process power policy events
-    pub(super) async fn process_power_policy_event(&self, message: &PowerPolicyEvent) -> Result<(), Error> {
+    pub(super) async fn process_power_policy_event(&mut self, message: &PowerPolicyEvent) -> Result<(), Error> {
         match message {
             PowerPolicyEvent::Unconstrained(state) => self.process_unconstrained_state_change(state).await,
             PowerPolicyEvent::ConsumerDisconnected => {
-                let mut state = self.state.lock().await;
-                state.ucsi.psu_connected = false;
+                self.state.ucsi.psu_connected = false;
                 // Notify OPM because this can affect battery charging capability status
-                self.pend_ucsi_connected_ports(&mut state).await;
+                self.pend_ucsi_connected_ports().await;
                 Ok(())
             }
             PowerPolicyEvent::ConsumerConnected => {
-                let mut state = self.state.lock().await;
-                state.ucsi.psu_connected = true;
+                self.state.ucsi.psu_connected = true;
                 // Notify OPM because this can affect battery charging capability status
-                self.pend_ucsi_connected_ports(&mut state).await;
+                self.pend_ucsi_connected_ports().await;
                 Ok(())
             }
         }
