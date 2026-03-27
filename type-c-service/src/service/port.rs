@@ -1,3 +1,5 @@
+use core::num::NonZeroU8;
+
 use embedded_services::{
     debug, error,
     type_c::{
@@ -65,8 +67,9 @@ impl<'a> Service<'a> {
             external::PortCommandData::SetTypeCStateMachineConfig(state) => {
                 self.process_set_type_c_state_machine_config(command.port, state).await
             }
-            external::PortCommandData::ExecuteElectricalDisconnect => {
-                self.process_execute_electrical_disconnect(command.port).await
+            external::PortCommandData::ExecuteElectricalDisconnect { reconnect_time_s } => {
+                self.process_execute_electrical_disconnect(command.port, reconnect_time_s)
+                    .await
             }
         }
     }
@@ -248,8 +251,18 @@ impl<'a> Service<'a> {
     }
 
     /// Process [`external::PortCommandData::ExecuteElectricalDisconnect`] command
-    async fn process_execute_electrical_disconnect(&self, port_id: GlobalPortId) -> external::Response<'static> {
-        let status = self.context.execute_electrical_disconnect(port_id).await;
+    ///
+    /// The `reconnect_time_s` parameter specifies the time, in seconds, after which the port should automatically reconnect.
+    /// If [`None`], the port will not automatically reconnect.
+    async fn process_execute_electrical_disconnect(
+        &self,
+        port_id: GlobalPortId,
+        reconnect_time_s: Option<NonZeroU8>,
+    ) -> external::Response<'static> {
+        let status = self
+            .context
+            .execute_electrical_disconnect(port_id, reconnect_time_s)
+            .await;
         if let Err(e) = status {
             error!("Error executing electrical disconnect: {:#?}", e);
         }

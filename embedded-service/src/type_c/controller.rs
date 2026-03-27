@@ -1,5 +1,6 @@
 //! PD controller related code
 use core::future::Future;
+use core::num::NonZeroU8;
 use core::sync::atomic::{AtomicBool, Ordering};
 
 use embassy_sync::signal::Signal;
@@ -310,7 +311,12 @@ pub enum PortCommandData {
     /// Execute the UCSI command
     ExecuteUcsiCommand(lpm::CommandData),
     /// Execute electrical disconnect
-    ExecuteElectricalDisconnect,
+    ExecuteElectricalDisconnect {
+        /// The time, in seconds, after which the port should automatically reconnect.
+        ///
+        /// If [`None`], the port will not automatically reconnect.
+        reconnect_time_s: Option<NonZeroU8>,
+    },
 }
 
 /// Port-specific commands
@@ -666,9 +672,13 @@ pub trait Controller {
     ) -> impl Future<Output = Result<Option<lpm::ResponseData>, Error<Self::BusError>>>;
 
     /// Execute an electrical disconnect on the given port, if supported by the controller.
+    ///
+    /// If `reconnect_time_s` is provided, the controller should automatically reconnect the port after the specified time
+    /// has elapsed. If `reconnect_time_s` is [`None`], the port should remain disconnected until manually reconnected.
     fn execute_electrical_disconnect(
         &mut self,
         port: LocalPortId,
+        reconnect_time_s: Option<NonZeroU8>,
     ) -> impl Future<Output = Result<(), Error<Self::BusError>>>;
 }
 
@@ -1216,9 +1226,13 @@ impl ContextToken {
     }
 
     /// Execute an electrical disconnect on the given port.
-    pub async fn execute_electrical_disconnect(&self, port: GlobalPortId) -> Result<(), PdError> {
+    pub async fn execute_electrical_disconnect(
+        &self,
+        port: GlobalPortId,
+        reconnect_time_s: Option<NonZeroU8>,
+    ) -> Result<(), PdError> {
         match self
-            .send_port_command(port, PortCommandData::ExecuteElectricalDisconnect)
+            .send_port_command(port, PortCommandData::ExecuteElectricalDisconnect { reconnect_time_s })
             .await?
         {
             PortResponseData::Complete => Ok(()),

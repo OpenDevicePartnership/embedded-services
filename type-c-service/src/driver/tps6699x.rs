@@ -6,6 +6,7 @@ use bitflags::bitflags;
 use core::array::from_fn;
 use core::future::Future;
 use core::iter::zip;
+use core::num::NonZeroU8;
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use embassy_time::Delay;
 use embedded_hal_async::i2c::I2c;
@@ -811,8 +812,13 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
         self.tps6699x.execute_ucsi_command(&command).await
     }
 
-    async fn execute_electrical_disconnect(&mut self, port: LocalPortId) -> Result<(), Error<Self::BusError>> {
-        match self.tps6699x.execute_disc(port, None).await? {
+    async fn execute_electrical_disconnect(
+        &mut self,
+        port: LocalPortId,
+        reconnect_time_s: Option<NonZeroU8>,
+    ) -> Result<(), Error<Self::BusError>> {
+        let reconnect_time_s = reconnect_time_s.map(|t| t.get());
+        match self.tps6699x.execute_disc(port, reconnect_time_s).await? {
             ReturnValue::Success => Ok(()),
             r => {
                 debug!("Error executing DISC on port {}: {:#?}", port.0, r);

@@ -403,8 +403,11 @@ where
                         }),
                 ))
             }
-            controller::PortCommandData::ExecuteElectricalDisconnect => {
-                match controller.execute_electrical_disconnect(local_port).await {
+            controller::PortCommandData::ExecuteElectricalDisconnect { reconnect_time_s } => {
+                match controller
+                    .execute_electrical_disconnect(local_port, reconnect_time_s)
+                    .await
+                {
                     Ok(()) => Ok(controller::PortResponseData::Complete),
                     Err(e) => match e {
                         Error::Bus(_) => Err(PdError::Failed),
