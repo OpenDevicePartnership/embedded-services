@@ -321,6 +321,19 @@ impl embedded_services::type_c::controller::Controller for Controller<'_> {
             _ => Err(PdError::UnrecognizedCommand.into()),
         }
     }
+
+    async fn execute_electrical_disconnect(
+        &mut self,
+        port: LocalPortId,
+        reconnect_time_s: Option<NonZeroU8>,
+    ) -> Result<(), Error<Self::BusError>> {
+        debug!(
+            "Execute electrical disconnect for port {:?} with reconnect time {:?}",
+            port, reconnect_time_s
+        );
+
+        Ok(())
+    }
 }
 
 pub struct Validator;
