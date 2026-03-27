@@ -69,6 +69,7 @@ embedded-usb-pd = { git = "https://github.com/OpenDevicePartnership/embedded-usb
     "defmt",
 ] }
 type-c-service = { path = "../../type-c-service", features = ["defmt"] }
+type-c-interface = { path = "../../type-c-interface", features = ["defmt"] }
 time-alarm-service = { path = "../../time-alarm-service", features = ["defmt"] }
 time-alarm-service-messages = { path = "../../time-alarm-service-messages", features = [
     "defmt",

@@ -27,7 +27,7 @@ pub async fn task_closure<
     PSU::Inner: psu::Psu,
     S: event::Sender<power_policy_interface::psu::event::EventData>,
     V: crate::wrapper::FwOfferValidator,
-    D::Inner: crate::type_c::controller::Controller,
+    D::Inner: type_c_interface::port::Controller,
 {
     info!("Starting type-c task");
 
@@ -35,7 +35,7 @@ pub async fn task_closure<
     // See https://github.com/OpenDevicePartnership/embedded-services/issues/742
 
     for controller_wrapper in wrappers {
-        if controller_wrapper.register(service.controllers(), cfu_client).is_err() {
+        if controller_wrapper.register(cfu_client).is_err() {
             error!("Failed to register a controller");
             return;
         }
@@ -57,7 +57,7 @@ pub async fn task<'a, M, D, PSU: Lockable, S, V, const N: usize>(
     PSU::Inner: psu::Psu,
     S: event::Sender<power_policy_interface::psu::event::EventData>,
     V: crate::wrapper::FwOfferValidator,
-    <D as embedded_services::sync::Lockable>::Inner: crate::type_c::controller::Controller,
+    <D as embedded_services::sync::Lockable>::Inner: type_c_interface::port::Controller,
 {
     task_closure(service, wrappers, cfu_client, |service: &Service<'_, PSU>| async {
         if let Err(e) = service.process_next_event().await {

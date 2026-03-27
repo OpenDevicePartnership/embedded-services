@@ -7,8 +7,21 @@ use embedded_usb_pd::ucsi::ppm::state_machine::{
 };
 use embedded_usb_pd::ucsi::{GlobalCommand, ResponseData, lpm, ppm};
 use embedded_usb_pd::{PdError, PowerRole};
+use type_c_interface::service::event::{Event, UsciChangeIndicator};
 
 use super::*;
+
+/// UCSI command response
+#[derive(Copy, Clone, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct UcsiResponse {
+    /// Notify the OPM, the function call
+    pub notify_opm: bool,
+    /// Response CCI
+    pub cci: GlobalCci,
+    /// UCSI response data
+    pub data: Result<Option<ucsi::ResponseData>, PdError>,
+}
 
 /// UCSI state
 #[derive(Default)]
@@ -47,10 +60,10 @@ where
     }
 
     /// PPM get capabilities implementation
-    fn process_get_capabilities(&self, controllers: &intrusive_list::IntrusiveList) -> ppm::ResponseData {
+    fn process_get_capabilities(&self) -> ppm::ResponseData {
         debug!("Get PPM capabilities: {:?}", self.config.ucsi_capabilities);
         let mut capabilities = self.config.ucsi_capabilities;
-        capabilities.num_connectors = external::get_num_ports(controllers) as u8;
+        capabilities.num_connectors = self.context.get_num_ports() as u8;
         ppm::ResponseData::GetCapability(capabilities)
     }
 
@@ -58,14 +71,13 @@ where
         &self,
         state: &mut State,
         command: &ucsi::ppm::Command,
-        controllers: &intrusive_list::IntrusiveList,
     ) -> Result<Option<ppm::ResponseData>, PdError> {
         match command {
             ppm::Command::SetNotificationEnable(enable) => {
                 self.process_set_notification_enable(state, enable.notification_enable);
                 Ok(None)
             }
-            ppm::Command::GetCapability => Ok(Some(self.process_get_capabilities(controllers))),
+            ppm::Command::GetCapability => Ok(Some(self.process_get_capabilities())),
             _ => Ok(None), // Other commands are currently no-ops
         }
     }
@@ -101,7 +113,6 @@ where
         &self,
         state: &mut super::State,
         command: &ucsi::lpm::GlobalCommand,
-        controllers: &intrusive_list::IntrusiveList,
     ) -> Result<Option<lpm::ResponseData>, PdError> {
         debug!("Processing LPM command: {:?}", command);
         match command.operation() {
@@ -110,11 +121,11 @@ where
                 if let Some(capabilities) = &self.config.ucsi_port_capabilities {
                     Ok(Some(lpm::ResponseData::GetConnectorCapability(*capabilities)))
                 } else {
-                    self.context.execute_ucsi_command(controllers, *command).await
+                    self.context.execute_ucsi_command(*command).await
                 }
             }
             lpm::CommandData::GetConnectorStatus => {
-                let mut response = self.context.execute_ucsi_command(controllers, *command).await;
+                let mut response = self.context.execute_ucsi_command(*command).await;
                 if let Ok(Some(lpm::ResponseData::GetConnectorStatus(lpm::get_connector_status::ResponseData {
                     status_change: ref mut states_change,
                     status:
@@ -134,7 +145,7 @@ where
 
                 response
             }
-            _ => self.context.execute_ucsi_command(controllers, *command).await,
+            _ => self.context.execute_ucsi_command(*command).await,
         }
     }
 
@@ -156,7 +167,7 @@ where
             if let Some(next_port) = state.pending_ports.front() {
                 debug!("ACK_CCI processed, next pending port: {:?}", next_port);
                 self.context
-                    .broadcast_message(comms::CommsMessage::UcsiCci(comms::UsciChangeIndicator {
+                    .broadcast_message(Event::UcsiCci(UsciChangeIndicator {
                         port: *next_port,
                         // False here because the OPM gets notified by the CCI, don't need a separate notification
                         notify_opm: false,
@@ -172,15 +183,11 @@ where
         self.set_cci_connector_change(state, cci);
     }
 
-    /// Process an external UCSI command
-    pub(super) async fn process_ucsi_command(
-        &self,
-        controllers: &intrusive_list::IntrusiveList,
-        command: &GlobalCommand,
-    ) -> external::UcsiResponse {
+    /// Process a UCSI command
+    pub async fn process_ucsi_command(&self, command: &GlobalCommand) -> UcsiResponse {
         let state = &mut self.state.lock().await;
         let mut next_input = Some(PpmInput::Command(command));
-        let mut response: external::UcsiResponse = external::UcsiResponse {
+        let mut response = UcsiResponse {
             notify_opm: false,
             cci: Cci::default(),
             data: Ok(None),
@@ -194,7 +201,7 @@ where
                 state.ucsi.ppm_state_machine.consume(next_input)
             } else {
                 error!("Unexpected end of state machine processing");
-                return external::UcsiResponse {
+                return UcsiResponse {
                     notify_opm: true,
                     cci: Cci::new_error(),
                     data: Err(PdError::InvalidMode),
@@ -205,7 +212,7 @@ where
                 Ok(output) => output,
                 Err(e @ InvalidTransition { .. }) => {
                     error!("PPM state machine transition failed: {:#?}", e);
-                    return external::UcsiResponse {
+                    return UcsiResponse {
                         notify_opm: true,
                         cci: Cci::new_error(),
                         data: Err(PdError::Failed),
@@ -221,12 +228,12 @@ where
                         match command {
                             ucsi::GlobalCommand::PpmCommand(ppm_command) => {
                                 response.data = self
-                                    .process_ppm_command(&mut state.ucsi, ppm_command, controllers)
+                                    .process_ppm_command(&mut state.ucsi, ppm_command)
                                     .map(|inner| inner.map(ResponseData::Ppm));
                             }
                             ucsi::GlobalCommand::LpmCommand(lpm_command) => {
                                 response.data = self
-                                    .process_lpm_command(state, lpm_command, controllers)
+                                    .process_lpm_command(state, lpm_command)
                                     .await
                                     .map(|inner| inner.map(ResponseData::Lpm));
                             }
@@ -352,7 +359,7 @@ where
         let notify_opm = state.pending_ports.is_empty();
         if state.pending_ports.push_back(port_id).is_ok() {
             self.context
-                .broadcast_message(comms::CommsMessage::UcsiCci(comms::UsciChangeIndicator {
+                .broadcast_message(Event::UcsiCci(UsciChangeIndicator {
                     port: port_id,
                     notify_opm,
                 }))

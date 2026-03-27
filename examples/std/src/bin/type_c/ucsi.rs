@@ -1,3 +1,4 @@
+#![allow(unused_imports)]
 use crate::mock_controller::Wrapper;
 use cfu_service::CfuClient;
 use embassy_executor::{Executor, Spawner};
@@ -21,11 +22,10 @@ use power_policy_service::psu::ArrayEventReceivers;
 use power_policy_service::service::registration::ArrayRegistration;
 use static_cell::StaticCell;
 use std_examples::type_c::mock_controller;
+use type_c_interface::service::context::Context;
 use type_c_service::service::Service;
 use type_c_service::service::config::Config;
-use type_c_service::type_c::ControllerId;
-use type_c_service::type_c::controller::Context;
-use type_c_service::type_c::external::UcsiResponseResult;
+use type_c_interface::port::ControllerId;
 use type_c_service::wrapper::backing::Storage;
 use type_c_service::wrapper::proxy::PowerProxyDevice;
 
@@ -45,8 +45,8 @@ type PowerPolicyServiceType = Mutex<
 >;
 
 #[embassy_executor::task]
-async fn opm_task(context: &'static Context, state: [&'static mock_controller::ControllerState; NUM_PD_CONTROLLERS]) {
-    const CAPABILITY: PowerCapability = PowerCapability {
+async fn opm_task(_context: &'static Context, _state: [&'static mock_controller::ControllerState; NUM_PD_CONTROLLERS]) {
+    /*const CAPABILITY: PowerCapability = PowerCapability {
         voltage_mv: 20000,
         current_ma: 5000,
     };
@@ -172,7 +172,7 @@ async fn opm_task(context: &'static Context, state: [&'static mock_controller::C
             "Sending command complete ack successful, connector change:  {:?}",
             response.cci.connector_change()
         );
-    }
+    }*/
 }
 
 #[embassy_executor::task(pool_size = 2)]
@@ -208,11 +208,8 @@ async fn task(spawner: Spawner) {
 
     embedded_services::init().await;
 
-    static CONTROLLER_CONTEXT: StaticCell<type_c_service::type_c::controller::Context> = StaticCell::new();
-    let controller_context = CONTROLLER_CONTEXT.init(type_c_service::type_c::controller::Context::new());
-
-    static CONTROLLER_LIST: StaticCell<IntrusiveList> = StaticCell::new();
-    let controller_list = CONTROLLER_LIST.init(IntrusiveList::new());
+    static CONTROLLER_CONTEXT: StaticCell<Context> = StaticCell::new();
+    let controller_context = CONTROLLER_CONTEXT.init(Context::new());
 
     static STORAGE0: StaticCell<Storage<1, GlobalRawMutex>> = StaticCell::new();
     let storage0 = STORAGE0.init(Storage::new(controller_context, CONTROLLER0_ID, CFU0_ID, [PORT0_ID]));
@@ -359,7 +356,6 @@ async fn task(spawner: Spawner) {
             ..Default::default()
         },
         controller_context,
-        controller_list,
         power_policy_publisher,
         power_policy_subscriber,
     ));

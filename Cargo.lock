@@ -2514,12 +2514,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "type-c-interface"
+version = "0.1.0"
+dependencies = [
+ "bitfield 0.17.0",
+ "bitvec",
+ "defmt 0.3.100",
+ "embassy-sync",
+ "embassy-time",
+ "embedded-services",
+ "embedded-usb-pd",
+ "log",
+ "power-policy-interface",
+]
+
+[[package]]
 name = "type-c-service"
 version = "0.1.0"
 dependencies = [
  "bitfield 0.17.0",
  "bitflags 2.9.4",
- "bitvec",
  "cfu-service",
  "critical-section",
  "defmt 0.3.100",
@@ -2539,6 +2553,7 @@ dependencies = [
  "static_cell",
  "tokio",
  "tps6699x",
+ "type-c-interface",
 ]
 
 [[package]]

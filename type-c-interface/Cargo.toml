@@ -1,0 +1,38 @@
+[package]
+name = "type-c-interface"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+bitfield.workspace = true
+bitvec.workspace = true
+embassy-sync.workspace = true
+embassy-time.workspace = true
+log = { workspace = true, optional = true }
+defmt = { workspace = true, optional = true }
+embedded-services.workspace = true
+embedded-usb-pd.workspace = true
+power-policy-interface.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+default = []
+defmt = [
+    "dep:defmt",
+    "embassy-sync/defmt",
+    "embassy-time/defmt",
+    "embedded-services/defmt",
+    "embedded-usb-pd/defmt",
+    "power-policy-interface/defmt",
+]
+log = [
+    "dep:log",
+    "embassy-sync/log",
+    "embassy-time/log",
+    "embedded-services/log",
+    "power-policy-interface/log",
+]
