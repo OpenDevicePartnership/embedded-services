@@ -1,6 +1,3 @@
-#![allow(clippy::panic)]
-#![allow(clippy::unwrap_used)]
-
 mod mock;
 
 #[cfg(feature = "bdd")]
