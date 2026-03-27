@@ -1,68 +1,49 @@
-use core::future::Future;
-use embedded_services::{error, event, info, sync::Lockable};
+use embedded_services::{
+    error,
+    event::{self, Receiver},
+    info,
+    sync::Lockable,
+};
+use power_policy_interface::service::event::EventData as PowerPolicyEventData;
 
-use power_policy_interface::psu;
+use crate::{
+    service::{EventReceiver, Service},
+    wrapper::ControllerWrapper,
+};
 
-use crate::{service::Service, wrapper::ControllerWrapper};
-
-/// Task to run the Type-C service, takes a closure to customize the event loop
-pub async fn task_closure<
-    'a,
-    M,
-    D,
-    PSU: Lockable,
-    S,
-    V,
-    Fut: Future<Output = ()>,
-    F: Fn(&'a Service<'a, PSU>) -> Fut,
-    const N: usize,
->(
-    service: &'static Service<'a, PSU>,
-    wrappers: [&'a ControllerWrapper<'a, M, D, S, V>; N],
-    cfu_client: &'a cfu_service::CfuClient,
-    f: F,
+/// Task to run the Type-C service, running the default event loop
+pub async fn task<M, D, S, V, PowerReceiver: Receiver<PowerPolicyEventData>, const N: usize>(
+    service: &'static impl Lockable<Inner = Service<'static>>,
+    mut event_receiver: EventReceiver<'static, PowerReceiver>,
+    wrappers: [&'static ControllerWrapper<'static, M, D, S, V>; N],
+    cfu_client: &'static cfu_service::CfuClient,
 ) where
     M: embassy_sync::blocking_mutex::raw::RawMutex,
-    D: Lockable,
-    PSU::Inner: psu::Psu,
+    D: embedded_services::sync::Lockable,
     S: event::Sender<power_policy_interface::psu::event::EventData>,
     V: crate::wrapper::FwOfferValidator,
-    D::Inner: crate::type_c::controller::Controller,
+    <D as embedded_services::sync::Lockable>::Inner: type_c_interface::port::Controller,
 {
     info!("Starting type-c task");
 
-    // TODO: move this service to use the new power policy event subscribers and receivers
-    // See https://github.com/OpenDevicePartnership/embedded-services/issues/742
-
     for controller_wrapper in wrappers {
-        if controller_wrapper.register(service.controllers(), cfu_client).is_err() {
+        if controller_wrapper.register(cfu_client).is_err() {
             error!("Failed to register a controller");
             return;
         }
     }
 
     loop {
-        f(service).await;
-    }
-}
+        let event = match event_receiver.wait_next().await {
+            Ok(event) => event,
+            Err(e) => {
+                error!("Error waiting for event: {:#?}", e);
+                return;
+            }
+        };
 
-/// Task to run the Type-C service, running the default event loop
-pub async fn task<'a, M, D, PSU: Lockable, S, V, const N: usize>(
-    service: &'static Service<'a, PSU>,
-    wrappers: [&'a ControllerWrapper<'a, M, D, S, V>; N],
-    cfu_client: &'a cfu_service::CfuClient,
-) where
-    M: embassy_sync::blocking_mutex::raw::RawMutex,
-    D: embedded_services::sync::Lockable,
-    PSU::Inner: psu::Psu,
-    S: event::Sender<power_policy_interface::psu::event::EventData>,
-    V: crate::wrapper::FwOfferValidator,
-    <D as embedded_services::sync::Lockable>::Inner: crate::type_c::controller::Controller,
-{
-    task_closure(service, wrappers, cfu_client, |service: &Service<'_, PSU>| async {
-        if let Err(e) = service.process_next_event().await {
+        if let Err(e) = service.lock().await.process_event(event).await {
             error!("Type-C service processing error: {:#?}", e);
         }
-    })
-    .await;
+    }
 }

@@ -8,14 +8,11 @@ use embedded_usb_pd::{type_c::ConnectionState, ucsi::lpm};
 use log::{debug, info, trace};
 
 use power_policy_interface::capability::PowerCapability;
-use type_c_service::type_c::{
-    controller::{
-        AttnVdm, ControllerStatus, DpConfig, DpPinConfig, DpStatus, OtherVdm, PdStateMachineConfig, PortStatus,
-        RetimerFwUpdateState, SendVdm, TbtConfig, TypeCStateMachineState, UsbControlConfig,
-    },
-    event::PortEvent,
-    power_capability_from_current,
+use type_c_interface::port::{
+    AttnVdm, ControllerStatus, DpConfig, DpPinConfig, DpStatus, OtherVdm, PdStateMachineConfig, PortStatus,
+    RetimerFwUpdateState, SendVdm, TbtConfig, TypeCStateMachineState, UsbControlConfig, event::PortEvent,
 };
+use type_c_service::util::power_capability_from_current;
 
 pub struct ControllerState {
     events: Signal<GlobalRawMutex, PortEvent>,
@@ -116,7 +113,7 @@ impl<'a> Controller<'a> {
     }
 }
 
-impl type_c_service::type_c::controller::Controller for Controller<'_> {
+impl type_c_interface::port::Controller for Controller<'_> {
     type BusError = ();
 
     async fn wait_port_event(&mut self) -> Result<(), Error<Self::BusError>> {
