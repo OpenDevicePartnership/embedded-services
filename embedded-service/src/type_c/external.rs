@@ -368,13 +368,13 @@ pub async fn execute_electrical_disconnect(
     port: GlobalPortId,
     reconnect_time_s: Option<NonZeroU8>,
 ) -> Result<(), PdError> {
-    match execute_external_controller_command(Command::Port(PortCommand {
+    match execute_external_port_command(Command::Port(PortCommand {
         port,
         data: PortCommandData::ExecuteElectricalDisconnect { reconnect_time_s },
     }))
     .await?
     {
-        ControllerResponseData::Complete => Ok(()),
+        PortResponseData::Complete => Ok(()),
         _ => Err(PdError::InvalidResponse),
     }
 }
