@@ -11,7 +11,7 @@ use crate::{
 /// This enum doesn't contain a reference to the device and is suitable
 /// for receivers that don't need to know which device triggered the event
 /// and allows for receivers that don't need to be generic over the device type.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum EventData {
     /// Consumer disconnected

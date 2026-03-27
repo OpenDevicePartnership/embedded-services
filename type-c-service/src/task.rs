@@ -1,7 +1,11 @@
 use core::future::Future;
-use embedded_services::{error, event, info, sync::Lockable};
-
-use power_policy_interface::psu;
+use embedded_services::{
+    error,
+    event::{self, Receiver},
+    info,
+    sync::Lockable,
+};
+use power_policy_interface::service::event::EventData as PowerPolicyEventData;
 
 use crate::{service::Service, wrapper::ControllerWrapper};
 
@@ -10,21 +14,20 @@ pub async fn task_closure<
     'a,
     M,
     D,
-    PSU: Lockable,
     S,
     V,
+    PowerReceiver: Receiver<PowerPolicyEventData>,
     Fut: Future<Output = ()>,
-    F: Fn(&'a Service<'a, PSU>) -> Fut,
+    F: Fn(&'a Service<'a, PowerReceiver>) -> Fut,
     const N: usize,
 >(
-    service: &'static Service<'a, PSU>,
+    service: &'static Service<'a, PowerReceiver>,
     wrappers: [&'a ControllerWrapper<'a, M, D, S, V>; N],
     cfu_client: &'a cfu_service::CfuClient,
     f: F,
 ) where
     M: embassy_sync::blocking_mutex::raw::RawMutex,
     D: Lockable,
-    PSU::Inner: psu::Psu,
     S: event::Sender<power_policy_interface::psu::event::EventData>,
     V: crate::wrapper::FwOfferValidator,
     D::Inner: type_c_interface::port::Controller,
@@ -47,22 +50,26 @@ pub async fn task_closure<
 }
 
 /// Task to run the Type-C service, running the default event loop
-pub async fn task<'a, M, D, PSU: Lockable, S, V, const N: usize>(
-    service: &'static Service<'a, PSU>,
+pub async fn task<'a, M, D, S, V, PowerReceiver: Receiver<PowerPolicyEventData>, const N: usize>(
+    service: &'static Service<'a, PowerReceiver>,
     wrappers: [&'a ControllerWrapper<'a, M, D, S, V>; N],
     cfu_client: &'a cfu_service::CfuClient,
 ) where
     M: embassy_sync::blocking_mutex::raw::RawMutex,
     D: embedded_services::sync::Lockable,
-    PSU::Inner: psu::Psu,
     S: event::Sender<power_policy_interface::psu::event::EventData>,
     V: crate::wrapper::FwOfferValidator,
     <D as embedded_services::sync::Lockable>::Inner: type_c_interface::port::Controller,
 {
-    task_closure(service, wrappers, cfu_client, |service: &Service<'_, PSU>| async {
-        if let Err(e) = service.process_next_event().await {
-            error!("Type-C service processing error: {:#?}", e);
-        }
-    })
+    task_closure(
+        service,
+        wrappers,
+        cfu_client,
+        |service: &Service<'_, PowerReceiver>| async {
+            if let Err(e) = service.process_next_event().await {
+                error!("Type-C service processing error: {:#?}", e);
+            }
+        },
+    )
     .await;
 }

@@ -1,34 +1,25 @@
-use embassy_sync::pubsub::WaitResult;
 use power_policy_interface::service as power_policy;
+use power_policy_interface::service::event::EventData as PowerPolicyEventData;
 
 use super::*;
 
-impl<'a, PSU: Lockable> Service<'a, PSU>
-where
-    PSU::Inner: psu::Psu,
-{
+impl<'a, PowerReceiver: Receiver<PowerPolicyEventData>> Service<'a, PowerReceiver> {
     /// Wait for a power policy event
     pub(super) async fn wait_power_policy_event(&self) -> Event {
         loop {
-            match self.power_policy_event_subscriber.lock().await.next_message().await {
-                WaitResult::Lagged(lagged) => {
-                    // Missed some messages, all we can do is log an error
-                    error!("Power policy {} event(s) lagged", lagged);
+            match self.power_policy_event_subscriber.lock().await.wait_next().await {
+                power_policy_interface::service::event::EventData::Unconstrained(state) => {
+                    return Event::PowerPolicy(PowerPolicyEvent::Unconstrained(state));
                 }
-                WaitResult::Message(message) => match message {
-                    power_policy_interface::service::event::Event::Unconstrained(state) => {
-                        return Event::PowerPolicy(PowerPolicyEvent::Unconstrained(state));
-                    }
-                    power_policy_interface::service::event::Event::ConsumerDisconnected(_) => {
-                        return Event::PowerPolicy(PowerPolicyEvent::ConsumerDisconnected);
-                    }
-                    power_policy_interface::service::event::Event::ConsumerConnected(_, _) => {
-                        return Event::PowerPolicy(PowerPolicyEvent::ConsumerConnected);
-                    }
-                    _ => {
-                        // No other events currently implemented
-                    }
-                },
+                power_policy_interface::service::event::EventData::ConsumerDisconnected => {
+                    return Event::PowerPolicy(PowerPolicyEvent::ConsumerDisconnected);
+                }
+                power_policy_interface::service::event::EventData::ConsumerConnected(_) => {
+                    return Event::PowerPolicy(PowerPolicyEvent::ConsumerConnected);
+                }
+                _ => {
+                    // No other events currently implemented
+                }
             }
         }
     }

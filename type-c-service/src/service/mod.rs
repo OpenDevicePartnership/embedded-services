@@ -1,12 +1,9 @@
 use embassy_futures::select::{Either, select};
-use embassy_sync::{
-    mutex::Mutex,
-    pubsub::{DynImmediatePublisher, DynSubscriber},
-};
-use embedded_services::{GlobalRawMutex, debug, error, info, sync::Lockable, trace};
+use embassy_sync::mutex::Mutex;
+use embedded_services::{GlobalRawMutex, debug, error, event::Receiver, info, trace};
 use embedded_usb_pd::GlobalPortId;
 use embedded_usb_pd::PdError as Error;
-use power_policy_interface::psu;
+use power_policy_interface::service::event::EventData as PowerPolicyEventData;
 
 use crate::{PortEventStreamer, PortEventVariant};
 use type_c_interface::port::event::{PortNotificationSingle, PortStatusChanged};
@@ -37,28 +34,15 @@ struct State {
 ///
 /// Constructing a Service is the first step in using the Type-C service.
 /// Arguments should be an initialized context
-pub struct Service<'a, PSU: Lockable>
-where
-    PSU::Inner: psu::Psu,
-{
+pub struct Service<'a, PowerReceiver: Receiver<PowerPolicyEventData>> {
     /// Type-C context
     pub(crate) context: &'a type_c_interface::service::context::Context,
     /// Current state
     state: Mutex<GlobalRawMutex, State>,
     /// Config
     config: config::Config,
-    /// Power policy event receiver
-    ///
-    /// This is the corresponding publisher to [`Self::power_policy_event_subscriber`], power policy events
-    /// will be buffered in the channel until they are brought into the event loop with the subscriber.
-    _power_policy_event_publisher:
-        embedded_services::broadcaster::immediate::Receiver<'a, power_policy_interface::service::event::Event<'a, PSU>>,
     /// Power policy event subscriber
-    ///
-    /// This is the corresponding subscriber to [`Self::power_policy_event_publisher`], needs to be a mutex because getting a message
-    /// from the channel requires mutable access.
-    power_policy_event_subscriber:
-        Mutex<GlobalRawMutex, DynSubscriber<'a, power_policy_interface::service::event::Event<'a, PSU>>>,
+    power_policy_event_subscriber: Mutex<GlobalRawMutex, PowerReceiver>,
 }
 
 /// Power policy events
@@ -86,22 +70,17 @@ pub enum Event {
     PowerPolicy(PowerPolicyEvent),
 }
 
-impl<'a, PSU: Lockable> Service<'a, PSU>
-where
-    PSU::Inner: psu::Psu,
-{
+impl<'a, PowerReceiver: Receiver<PowerPolicyEventData>> Service<'a, PowerReceiver> {
     /// Create a new service the given configuration
     pub fn create(
         config: config::Config,
         context: &'a type_c_interface::service::context::Context,
-        power_policy_publisher: DynImmediatePublisher<'a, power_policy_interface::service::event::Event<'a, PSU>>,
-        power_policy_subscriber: DynSubscriber<'a, power_policy_interface::service::event::Event<'a, PSU>>,
+        power_policy_subscriber: PowerReceiver,
     ) -> Self {
         Self {
             context,
             state: Mutex::new(State::default()),
             config,
-            _power_policy_event_publisher: power_policy_publisher.into(),
             power_policy_event_subscriber: Mutex::new(power_policy_subscriber),
         }
     }

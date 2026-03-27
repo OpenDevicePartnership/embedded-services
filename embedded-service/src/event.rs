@@ -1,8 +1,12 @@
 //! Common traits for event senders and receivers
+use core::{future::ready, marker::PhantomData};
 
-use core::marker::PhantomData;
+use crate::error;
 
-use embassy_sync::channel::{DynamicReceiver, DynamicSender};
+use embassy_sync::{
+    channel::{DynamicReceiver, DynamicSender},
+    pubsub::{DynImmediatePublisher, DynSubscriber, WaitResult},
+};
 
 /// Common event sender trait
 pub trait Sender<E> {
@@ -41,6 +45,38 @@ impl<E> Receiver<E> for DynamicReceiver<'_, E> {
 
     fn wait_next(&mut self) -> impl Future<Output = E> {
         self.receive()
+    }
+}
+
+impl<E: Clone> Sender<E> for DynImmediatePublisher<'_, E> {
+    fn try_send(&mut self, event: E) -> Option<()> {
+        self.try_publish(event).ok()
+    }
+
+    fn send(&mut self, event: E) -> impl Future<Output = ()> {
+        self.publish_immediate(event);
+        ready(())
+    }
+}
+
+impl<E: Clone> Receiver<E> for DynSubscriber<'_, E> {
+    fn try_next(&mut self) -> Option<E> {
+        match self.try_next_message() {
+            Some(WaitResult::Message(e)) => Some(e),
+            Some(WaitResult::Lagged(e)) => {
+                error!("Subscriber lagged, skipping {} events", e);
+                None
+            }
+            _ => None,
+        }
+    }
+
+    async fn wait_next(&mut self) -> E {
+        loop {
+            if let WaitResult::Message(e) = self.next_message().await {
+                return e;
+            }
+        }
     }
 }
 

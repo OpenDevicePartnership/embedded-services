@@ -7,6 +7,7 @@ use embedded_usb_pd::ucsi::ppm::state_machine::{
 };
 use embedded_usb_pd::ucsi::{GlobalCommand, ResponseData, lpm, ppm};
 use embedded_usb_pd::{PdError, PowerRole};
+use power_policy_interface::service::event::EventData as PowerPolicyEventData;
 use type_c_interface::service::event::{Event, UsciChangeIndicator};
 
 use super::*;
@@ -41,10 +42,7 @@ pub(super) struct State {
     pub(super) psu_connected: bool,
 }
 
-impl<'a, PSU: Lockable> Service<'a, PSU>
-where
-    PSU::Inner: psu::Psu,
-{
+impl<'a, PowerReceiver: Receiver<PowerPolicyEventData>> Service<'a, PowerReceiver> {
     /// PPM reset implementation
     fn process_ppm_reset(&self, state: &mut State) {
         debug!("Resetting PPM");

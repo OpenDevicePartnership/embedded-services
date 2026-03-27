@@ -3,10 +3,10 @@ use embassy_executor::{Executor, Spawner};
 use embassy_sync::channel::{Channel, DynamicReceiver, DynamicSender};
 use embassy_sync::mutex::Mutex;
 use embassy_sync::once_lock::OnceLock;
-use embassy_sync::pubsub::PubSubChannel;
+use embassy_sync::pubsub::{DynImmediatePublisher, DynSubscriber, PubSubChannel};
 use embassy_time::Timer;
 use embedded_services::GlobalRawMutex;
-use embedded_services::event::NoopSender;
+use embedded_services::event::MapSender;
 use embedded_usb_pd::GlobalPortId;
 use embedded_usb_pd::ado::Ado;
 use embedded_usb_pd::type_c::Current;
@@ -33,10 +33,24 @@ const DELAY_MS: u64 = 1000;
 
 type DeviceType = Mutex<GlobalRawMutex, PowerProxyDevice<'static>>;
 
+type PowerPolicySenderType = MapSender<
+    power_policy_interface::service::event::Event<'static, DeviceType>,
+    power_policy_interface::service::event::EventData,
+    DynImmediatePublisher<'static, power_policy_interface::service::event::EventData>,
+    fn(
+        power_policy_interface::service::event::Event<'static, DeviceType>,
+    ) -> power_policy_interface::service::event::EventData,
+>;
+
 type PowerPolicyServiceType = Mutex<
     GlobalRawMutex,
-    power_policy_service::service::Service<'static, ArrayRegistration<'static, DeviceType, 1, NoopSender, 1>>,
+    power_policy_service::service::Service<
+        'static,
+        ArrayRegistration<'static, DeviceType, 1, PowerPolicySenderType, 1>,
+    >,
 >;
+
+type ServiceType = Service<'static, DynSubscriber<'static, power_policy_interface::service::event::EventData>>;
 
 #[embassy_executor::task]
 async fn controller_task(
@@ -80,9 +94,21 @@ async fn task(spawner: Spawner) {
 
     let (wrapper, policy_receiver, controller, state) = create_wrapper(controller_context);
 
+    // Create type-c service
+    // The service is the only receiver and we only use a DynImmediatePublisher, which doesn't take a publisher slot
+    static POWER_POLICY_CHANNEL: StaticCell<
+        PubSubChannel<GlobalRawMutex, power_policy_interface::service::event::EventData, 4, 1, 0>,
+    > = StaticCell::new();
+
+    let power_policy_channel = POWER_POLICY_CHANNEL.init(PubSubChannel::new());
+    let power_policy_sender: PowerPolicySenderType =
+        MapSender::new(power_policy_channel.dyn_immediate_publisher(), |e| e.into());
+    // Guaranteed to not panic since we initialized the channel above
+    let power_policy_subscriber = power_policy_channel.dyn_subscriber().unwrap();
+
     let power_policy_registration = ArrayRegistration {
         psus: [&wrapper.ports[0].proxy],
-        service_senders: [NoopSender],
+        service_senders: [power_policy_sender],
     };
 
     static POWER_SERVICE: StaticCell<PowerPolicyServiceType> = StaticCell::new();
@@ -92,22 +118,10 @@ async fn task(spawner: Spawner) {
         power_policy_service::service::config::Config::default(),
     )));
 
-    // Create type-c service
-    // The service is the only receiver and we only use a DynImmediatePublisher, which doesn't take a publisher slot
-    static POWER_POLICY_CHANNEL: StaticCell<
-        PubSubChannel<GlobalRawMutex, power_policy_interface::service::event::Event<'static, DeviceType>, 4, 1, 0>,
-    > = StaticCell::new();
-
-    let power_policy_channel = POWER_POLICY_CHANNEL.init(PubSubChannel::new());
-    let power_policy_publisher = power_policy_channel.dyn_immediate_publisher();
-    // Guaranteed to not panic since we initialized the channel above
-    let power_policy_subscriber = power_policy_channel.dyn_subscriber().unwrap();
-
-    static TYPE_C_SERVICE: StaticCell<Service<'static, DeviceType>> = StaticCell::new();
+    static TYPE_C_SERVICE: StaticCell<ServiceType> = StaticCell::new();
     let type_c_service = TYPE_C_SERVICE.init(Service::create(
         Config::default(),
         controller_context,
-        power_policy_publisher,
         power_policy_subscriber,
     ));
 
@@ -156,7 +170,7 @@ async fn power_policy_task(
 
 #[embassy_executor::task]
 async fn type_c_service_task(
-    service: &'static Service<'static, DeviceType>,
+    service: &'static ServiceType,
     wrappers: [&'static Wrapper<'static>; NUM_PD_CONTROLLERS],
     cfu_client: &'static CfuClient,
 ) {
