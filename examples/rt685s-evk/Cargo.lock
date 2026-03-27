@@ -608,25 +608,13 @@ dependencies = [
 
 [[package]]
 name = "embedded-batteries"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "31e14d288a59ef41f4e05468eae9b1c9fef6866977cea86d3f1a1ced295b6cab"
-dependencies = [
- "bitfield-struct",
- "bitflags 2.9.4",
- "defmt 0.3.100",
- "embedded-hal 1.0.0",
- "zerocopy",
-]
-
-[[package]]
-name = "embedded-batteries"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3b8996d7168535579180a0eead82efaba718ebd598782f986bfd635458259df2"
 dependencies = [
  "bitfield-struct",
  "bitflags 2.9.4",
+ "defmt 0.3.100",
  "embedded-hal 1.0.0",
  "zerocopy",
 ]
@@ -638,14 +626,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6465f32edac01ccd4d55931896177b3a61a5286205c5269f30b91ce7dbf51b5e"
 dependencies = [
  "bitfield-struct",
- "embedded-batteries 0.3.1",
+ "embedded-batteries",
  "embedded-hal 1.0.0",
 ]
 
 [[package]]
 name = "embedded-cfu-protocol"
 version = "0.2.0"
-source = "git+https://github.com/OpenDevicePartnership/embedded-cfu#a4cc8707842b878048447abbf2af4efa79fed368"
+source = "git+https://github.com/OpenDevicePartnership/embedded-cfu#e0d776017cf34c902c9f2a2be0c75fe73a3a4dda"
 dependencies = [
  "defmt 0.3.100",
  "embedded-io-async",
@@ -787,7 +775,7 @@ dependencies = [
 [[package]]
 name = "espi-device"
 version = "0.1.0"
-source = "git+https://github.com/OpenDevicePartnership/haf-ec-service#e9c43ec493ba9c4e3db84c73530f919448c07b6d"
+source = "git+https://github.com/OpenDevicePartnership/haf-ec-service#79e24eca20cfe0d32b491fd4d0562bc87aa358ca"
 dependencies = [
  "bit-register",
  "bitflags 2.9.4",
@@ -1026,11 +1014,11 @@ checksum = "f5e54036fe321fd421e10d732f155734c4e4afd610dd556d9a82833ab3ee0bed"
 [[package]]
 name = "mctp-rs"
 version = "0.1.0"
-source = "git+https://github.com/dymk/mctp-rs#f3121512468e4776c4b1d2d648b54c7271b97bd9"
+source = "git+https://github.com/dymk/mctp-rs#3d941ba5205ca7781bf37e3dc7c5dfdc99a082d6"
 dependencies = [
  "bit-register",
  "defmt 0.3.100",
- "embedded-batteries 0.2.1",
+ "embedded-batteries",
  "espi-device",
  "num_enum",
  "smbus-pec",

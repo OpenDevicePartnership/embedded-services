@@ -1,6 +1,6 @@
 use core::slice;
 
-use embassy_futures::select::select;
+use embassy_futures::select::{Either3, select3};
 use embassy_imxrt::espi;
 use embassy_sync::channel::Channel;
 use embassy_sync::mutex::Mutex;
@@ -44,7 +44,7 @@ impl<'hw, RelayHandler: embedded_services::relay::mctp::RelayHandler> Default fo
 
 /// Service runner for the eSPI service.  Users must call the run() method on the runner for the service to start processing events.
 pub struct Runner<'hw, RelayHandler: embedded_services::relay::mctp::RelayHandler> {
-    inner: &'hw ServiceInner<'hw, RelayHandler>,
+    inner: &'hw mut ServiceInner<'hw, RelayHandler>,
 }
 
 impl<'hw, RelayHandler: embedded_services::relay::mctp::RelayHandler>
@@ -57,7 +57,7 @@ impl<'hw, RelayHandler: embedded_services::relay::mctp::RelayHandler>
 }
 
 pub struct Service<'hw, RelayHandler: embedded_services::relay::mctp::RelayHandler> {
-    _inner: &'hw ServiceInner<'hw, RelayHandler>,
+    _phantom: core::marker::PhantomData<&'hw RelayHandler>,
 }
 
 impl<'hw, RelayHandler: embedded_services::relay::mctp::RelayHandler> odp_service_common::runnable_service::Service<'hw>
@@ -73,7 +73,12 @@ impl<'hw, RelayHandler: embedded_services::relay::mctp::RelayHandler> odp_servic
         params: InitParams<'hw, RelayHandler>,
     ) -> Result<(Self, Self::Runner), core::convert::Infallible> {
         let inner = resources.inner.insert(ServiceInner::new(params).await);
-        Ok((Self { _inner: inner }, Runner { inner }))
+        Ok((
+            Self {
+                _phantom: core::marker::PhantomData,
+            },
+            Runner { inner },
+        ))
     }
 }
 
@@ -99,33 +104,32 @@ impl<'hw, RelayHandler: embedded_services::relay::mctp::RelayHandler> ServiceInn
         }
     }
 
-    async fn run(&self) -> embedded_services::Never {
+    async fn run(&mut self) -> embedded_services::Never {
         let mut espi = self.espi.lock().await;
         loop {
-            let event = select(espi.wait_for_event(), self.host_tx_queue.receive()).await;
+            let event = select3(
+                espi.wait_for_event(),
+                self.host_tx_queue.receive(),
+                self.relay_handler.wait_for_notification(),
+            )
+            .await;
 
             match event {
-                embassy_futures::select::Either::First(controller_event) => {
+                Either3::First(controller_event) => {
                     self.process_controller_event(&mut espi, controller_event)
                         .await
                         .unwrap_or_else(|e| {
                             error!("Critical error processing eSPI controller event: {:?}", e);
                         });
                 }
-                embassy_futures::select::Either::Second(host_msg) => {
-                    self.process_response_to_host(&mut espi, host_msg).await
+                Either3::Second(host_msg) => self.process_response_to_host(&mut espi, host_msg).await,
+                Either3::Third(notification_offset) => {
+                    espi.irq_push(notification_offset).await;
+                    info!("espi: Notification offset {} sent to Host!", notification_offset);
                 }
             }
         }
     }
-
-    // TODO The notification system was not actually used, so this is currently dead code.
-    //      We need to implement some interface for triggering notifications from other subsystems, and it may do something like this:
-    //
-    // async fn process_notification_to_host(&self, espi: &mut espi::Espi<'_>, notification: &NotificationMsg) {
-    //     espi.irq_push(notification.offset).await;
-    //     info!("espi: Notification id {} sent to Host!", notification.offset);
-    // }
 
     fn write_to_hw(&self, espi: &mut espi::Espi<'hw>, packet: &[u8]) -> Result<(), embassy_imxrt::espi::Error> {
         // Send packet via your transport medium
