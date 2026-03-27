@@ -328,11 +328,7 @@ impl embedded_services::type_c::controller::Controller for Controller<'_> {
         port: LocalPortId,
         reconnect_time_s: Option<NonZeroU8>,
     ) -> Result<(), Error<Self::BusError>> {
-        debug!(
-            "Execute electrical disconnect for port {:?} with reconnect time {:?}",
-            port, reconnect_time_s
-        );
-
+        debug!("Execute electrical disconnect for port {port:?} with reconnect time {reconnect_time_s:?}");
         Ok(())
     }
 }
