@@ -32,9 +32,9 @@ embassy-imxrt = { git = "https://github.com/OpenDevicePartnership/embassy-imxrt"
     "unstable-pac",
 ] }
 
-embassy-sync = { version = "0.7.2", features = ["defmt"] }
-embassy-executor = { version = "0.9.1", features = [
-    "arch-cortex-m",
+embassy-sync = { version = "0.8", features = ["defmt"] }
+embassy-executor = { version = "0.10", features = [
+    "platform-cortex-m",
     "executor-thread",
     "executor-interrupt",
     "defmt",
