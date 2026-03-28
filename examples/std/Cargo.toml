@@ -26,6 +26,7 @@ defmt = "0.3"
 
 embedded-usb-pd = { git = "https://github.com/OpenDevicePartnership/embedded-usb-pd" }
 embedded-services = { path = "../../embedded-service", features = ["log"] }
+odp-service-common = { path = "../../odp-service-common" }
 power-policy-service = { path = "../../power-policy-service", features = [
     "log",
 ] }
@@ -43,7 +44,6 @@ embedded-sensors-hal-async = "0.3.0"
 embedded-fans-async = "0.2.0"
 thermal-service = { path = "../../thermal-service", features = ["log", "mock"] }
 thermal-service-messages = { path = "../../thermal-service-messages" }
-odp-service-common = { path = "../../odp-service-common" }
 
 env_logger = "0.11.8"
 log = "0.4.14"

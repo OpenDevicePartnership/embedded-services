@@ -166,6 +166,7 @@ dependencies = [
  "heapless",
  "log",
  "mctp-rs",
+ "odp-service-common",
  "power-policy-interface",
  "zerocopy",
 ]

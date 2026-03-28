@@ -52,6 +52,7 @@ dependencies = [
  "embedded-services",
  "heapless",
  "mctp-rs",
+ "odp-service-common",
  "power-policy-interface",
  "zerocopy",
 ]

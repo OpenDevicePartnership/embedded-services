@@ -7,45 +7,46 @@ use embassy_executor::{Executor, Spawner};
 use embassy_time::{Duration, Timer};
 use static_cell::StaticCell;
 
-#[embassy_executor::task]
-async fn battery_service_task(
-    service: &'static battery_service::Service,
-    devices: [&'static battery_service::device::Device; 1],
-) {
-    battery_service::task::task(service, devices)
-        .await
-        .expect("Failed to init battery service");
-}
+use odp_service_common::runnable_service::spawn_service;
 
 #[embassy_executor::task]
-async fn battery_wrapper_process(battery_wrapper: &'static battery_service::mock::MockBattery<'static>) {
-    battery_wrapper.process().await
-}
-
-#[embassy_executor::task]
-async fn init_and_run_service(spawner: Spawner, battery_service: &'static battery_service::Service) {
+async fn embassy_main(spawner: Spawner) {
     embedded_services::debug!("Initializing battery service");
     embedded_services::init().await;
 
     static BATTERY_DEVICE: StaticCell<bs::device::Device> = StaticCell::new();
-    static BATTERY_WRAPPER: StaticCell<bs::mock::MockBattery> = StaticCell::new();
-    let device = BATTERY_DEVICE.init(bs::device::Device::new(bs::device::DeviceId::default()));
+    let device = BATTERY_DEVICE.init(bs::device::Device::new(Default::default()));
 
+    let battery_service = spawn_service!(
+        spawner,
+        battery_service::Service<'static, 1>,
+        battery_service::InitParams {
+            config: Default::default(),
+            devices: [device],
+        }
+    )
+    .expect("Failed to initialize battery service");
+
+    static BATTERY_WRAPPER: StaticCell<bs::mock::MockBattery> = StaticCell::new();
     let wrapper = BATTERY_WRAPPER.init(bs::wrapper::Wrapper::new(
         device,
         battery_service::mock::MockBatteryDriver::new(),
     ));
 
-    // Run battery service
-    spawner.must_spawn(battery_service_task(battery_service, [device]));
+    #[embassy_executor::task]
+    async fn battery_wrapper_process(battery_wrapper: &'static battery_service::mock::MockBattery<'static>) {
+        battery_wrapper.process().await
+    }
+
     spawner.must_spawn(battery_wrapper_process(wrapper));
+    spawner.must_spawn(run_app(battery_service));
 }
 
 #[embassy_executor::task]
-pub async fn run_app(battery_service: &'static battery_service::Service) {
+pub async fn run_app(battery_service: battery_service::Service<'static, 1>) {
     // Initialize battery state machine.
     let mut retries = 5;
-    while let Err(e) = bs::mock::init_state_machine(battery_service).await {
+    while let Err(e) = bs::mock::init_state_machine(&battery_service).await {
         retries -= 1;
         if retries <= 0 {
             embedded_services::error!("Failed to initialize Battery: {:?}", e);
@@ -85,7 +86,7 @@ pub async fn run_app(battery_service: &'static battery_service::Service) {
             failures = 0;
             count = 0;
             embedded_services::error!("FG: Too many errors, timing out and starting recovery...");
-            if bs::mock::recover_state_machine(battery_service).await.is_err() {
+            if bs::mock::recover_state_machine(&battery_service).await.is_err() {
                 embedded_services::error!("FG: Fatal error");
                 return;
             }
@@ -99,13 +100,10 @@ fn main() {
     env_logger::builder().filter_level(log::LevelFilter::Debug).init();
     embedded_services::info!("battery example started");
 
-    static BATTERY_SERVICE: bs::Service = bs::Service::new();
-
     static EXECUTOR: StaticCell<Executor> = StaticCell::new();
     let executor = EXECUTOR.init(Executor::new());
     // Run battery service
     executor.run(|spawner| {
-        spawner.must_spawn(run_app(&BATTERY_SERVICE));
-        spawner.must_spawn(init_and_run_service(spawner, &BATTERY_SERVICE));
+        spawner.must_spawn(embassy_main(spawner));
     });
 }
