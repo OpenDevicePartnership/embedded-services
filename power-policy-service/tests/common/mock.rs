@@ -1,8 +1,9 @@
 #![allow(clippy::unwrap_used)]
+#![allow(dead_code)]
 use embassy_sync::signal::Signal;
-use embedded_services::{GlobalRawMutex, event::Sender, info};
+use embedded_services::{GlobalRawMutex, event::Sender, info, named::Named};
 use power_policy_interface::{
-    capability::{ConsumerFlags, ConsumerPowerCapability, PowerCapability, ProviderPowerCapability},
+    capability::{ConsumerPowerCapability, PowerCapability, ProviderFlags, ProviderPowerCapability},
     psu::{Error, Psu, State, event::EventData},
 };
 
@@ -42,18 +43,40 @@ impl<'a, S: Sender<EventData>> Mock<'a, S> {
         self.fn_call.signal((num_fn_calls + 1, fn_call));
     }
 
-    pub async fn simulate_consumer_connection(&mut self, capability: PowerCapability) {
+    pub async fn simulate_consumer_connection(&mut self, capability: ConsumerPowerCapability) {
         self.sender.send(EventData::Attached).await;
-
-        let capability = Some(ConsumerPowerCapability {
-            capability,
-            flags: ConsumerFlags::none(),
-        });
-        self.sender.send(EventData::UpdatedConsumerCapability(capability)).await;
+        self.sender
+            .send(EventData::UpdatedConsumerCapability(Some(capability)))
+            .await;
     }
 
     pub async fn simulate_detach(&mut self) {
         self.sender.send(EventData::Detached).await;
+    }
+
+    pub async fn simulate_provider_connection(&mut self, capability: PowerCapability) {
+        self.sender.send(EventData::Attached).await;
+
+        let capability = Some(ProviderPowerCapability {
+            capability,
+            flags: ProviderFlags::none(),
+        });
+        self.sender
+            .send(EventData::RequestedProviderCapability(capability))
+            .await;
+    }
+
+    pub async fn simulate_disconnect(&mut self) {
+        self.sender.send(EventData::Disconnected).await;
+    }
+
+    pub async fn simulate_update_requested_provider_power_capability(
+        &mut self,
+        capability: Option<ProviderPowerCapability>,
+    ) {
+        self.sender
+            .send(power_policy_interface::psu::event::EventData::RequestedProviderCapability(capability))
+            .await
     }
 }
 
@@ -83,7 +106,9 @@ impl<'a, S: Sender<EventData>> Psu for Mock<'a, S> {
     fn state_mut(&mut self) -> &mut State {
         &mut self.state
     }
+}
 
+impl<'a, S: Sender<EventData>> Named for Mock<'a, S> {
     fn name(&self) -> &'static str {
         self.name
     }

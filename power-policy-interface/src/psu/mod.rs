@@ -1,4 +1,6 @@
 //! Device struct and methods
+use embedded_services::named::Named;
+
 use crate::capability::{ConsumerPowerCapability, PowerCapability, ProviderPowerCapability};
 
 pub mod event;
@@ -280,7 +282,7 @@ pub struct Response {
 }
 
 /// Trait for PSU devices
-pub trait Psu {
+pub trait Psu: Named {
     /// Disconnect power from this device
     fn disconnect(&mut self) -> impl Future<Output = Result<(), Error>>;
     /// Connect this device to provide power to an external connection
@@ -291,6 +293,4 @@ pub trait Psu {
     fn state(&self) -> &State;
     /// Return a mutable reference to the current PSU state
     fn state_mut(&mut self) -> &mut State;
-    /// Return the name of the PSU
-    fn name(&self) -> &'static str;
 }

@@ -17,6 +17,7 @@ embedded-hal-async.workspace = true
 embedded-hal.workspace = true
 embedded-services.workspace = true
 heapless.workspace = true
+odp-service-common.workspace = true
 thermal-service-messages.workspace = true
 uuid.workspace = true
 embedded-fans-async = "0.2.0"

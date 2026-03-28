@@ -147,6 +147,9 @@ jobs:
           submodules: true
       - name: Install stable
         uses: dtolnay/rust-toolchain@stable
+        with:
+          # For grcov
+          components: llvm-tools
       - name: Download Cargo.lock files
         if: ${{ inputs.download-lockfiles }}
         uses: actions/download-artifact@v4
@@ -154,10 +157,25 @@ jobs:
           name: updated-lock-files
       - name: cargo test
         run: cargo test --locked
+        env:
+          RUSTFLAGS: '-C instrument-coverage'
+          CARGO_INCREMENTAL: '0'
         # After ensuring tests pass, finally ensure the test code itself contains no clippy warnings
       - name: cargo clippy
         run: |
           cargo clippy --locked --tests
+      # Generate and upload test coverage report
+      - name: Install grcov
+        uses: taiki-e/install-action@grcov
+      - name: Generate test coverage report
+        run: |
+          grcov . --binary-path ./target/debug/deps -s . --branch --ignore-not-existing --ignore "/home/runner/*" -t html -o ./target/debug/coverage
+          grcov . --binary-path ./target/debug/deps -s . --branch --ignore-not-existing --ignore "/home/runner/*" -t markdown >> $GITHUB_STEP_SUMMARY
+      - name: Upload test coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-coverage-report
+          path: ./target/debug/coverage
 
   msrv:
     # check that we can build using the minimal rust version that is specified by this crate

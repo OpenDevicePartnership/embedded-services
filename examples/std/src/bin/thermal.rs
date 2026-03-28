@@ -22,11 +22,26 @@ async fn run(spawner: Spawner) {
     let fans = FANS.init([fan.device()]);
 
     static STORAGE: OnceLock<ts::Service<'static>> = OnceLock::new();
-    let service = ts::Service::init(&STORAGE, sensors, fans).await;
+    let thermal_service = ts::Service::init(&STORAGE, sensors, fans).await;
 
-    spawner.must_spawn(sensor_task(service, sensor));
-    spawner.must_spawn(fan_task(service, fan));
-    spawner.must_spawn(monitor(service));
+    let _fan_service = odp_service_common::spawn_service!(
+        spawner,
+        ts::fan::Service<'static, ts::mock::fan::MockFan, 16>,
+        ts::fan::InitParams { fan, thermal_service }
+    )
+    .expect("Failed to spawn fan service");
+
+    let _sensor_service = odp_service_common::spawn_service!(
+        spawner,
+        ts::sensor::Service<'static, ts::mock::sensor::MockSensor, 16>,
+        ts::sensor::InitParams {
+            sensor,
+            thermal_service
+        }
+    )
+    .expect("Failed to spawn sensor service");
+
+    spawner.must_spawn(monitor(thermal_service));
 }
 
 fn main() {
@@ -37,16 +52,6 @@ fn main() {
     executor.run(|spawner| {
         spawner.must_spawn(run(spawner));
     });
-}
-
-#[embassy_executor::task]
-async fn sensor_task(service: &'static ts::Service<'static>, sensor: &'static ts::mock::TsMockSensor) {
-    ts::task::sensor_task(sensor, service).await
-}
-
-#[embassy_executor::task]
-async fn fan_task(service: &'static ts::Service<'static>, fan: &'static ts::mock::TsMockFan) {
-    ts::task::fan_task(fan, service).await;
 }
 
 #[embassy_executor::task]

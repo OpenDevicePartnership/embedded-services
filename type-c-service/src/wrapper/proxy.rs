@@ -1,5 +1,6 @@
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use embassy_sync::channel::{Channel, DynamicReceiver, DynamicSender};
+use embedded_services::named::Named;
 use power_policy_interface::psu::{CommandData as PolicyCommandData, InternalResponseData as PolicyResponseData, Psu};
 
 pub struct PowerProxyChannel<M: RawMutex> {
@@ -112,7 +113,9 @@ impl<'a> Psu for PowerProxyDevice<'a> {
     fn state_mut(&mut self) -> &mut power_policy_interface::psu::State {
         &mut self.psu_state
     }
+}
 
+impl<'a> Named for PowerProxyDevice<'a> {
     fn name(&self) -> &'static str {
         self.name
     }
