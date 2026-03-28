@@ -22,13 +22,6 @@ mctp-rs = { workspace = true }
 embedded-io-async.workspace = true
 num_enum.workspace = true
 
-# TODO Service message type crates are a temporary dependency until we can parameterize
-#      the supported messages types at UART service creation time.
-battery-service-messages.workspace = true
-debug-service-messages.workspace = true
-thermal-service-messages.workspace = true
-time-alarm-service-messages.workspace = true
-
 [features]
 default = []
 defmt = [
@@ -38,10 +31,6 @@ defmt = [
     "embassy-time/defmt-timestamp-uptime",
     "embassy-sync/defmt",
     "mctp-rs/defmt",
-    "thermal-service-messages/defmt",
-    "battery-service-messages/defmt",
-    "debug-service-messages/defmt",
-    "time-alarm-service-messages/defmt",
 ]
 
 log = ["dep:log", "embedded-services/log", "embassy-time/log"]

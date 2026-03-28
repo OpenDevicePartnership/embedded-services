@@ -7,7 +7,7 @@ use embedded_mcu_hal::NvramStorage;
 use embedded_mcu_hal::time::{Datetime, DatetimeClock, DatetimeClockError};
 use embedded_services::GlobalRawMutex;
 use embedded_services::{info, warn};
-use time_alarm_service_messages::*;
+use time_alarm_service_interface::*;
 
 mod timer;
 use timer::Timer;
@@ -317,37 +317,38 @@ impl<'hw> odp_service_common::runnable_service::ServiceRunner<'hw> for Runner<'h
 }
 
 /// Control handle for the time-alarm service.  Use this to manipulate the time on the service.
+#[derive(Clone, Copy)]
 pub struct Service<'hw> {
     inner: &'hw ServiceInner<'hw>,
 }
 
-impl<'hw> Service<'hw> {
-    pub fn get_capabilities(&self) -> TimeAlarmDeviceCapabilities {
+impl<'hw> TimeAlarmService for Service<'hw> {
+    fn get_capabilities(&self) -> TimeAlarmDeviceCapabilities {
         self.inner.get_capabilities()
     }
 
     /// Query the current time.  Analogous to ACPI TAD's _GRT method.
-    pub fn get_real_time(&self) -> Result<AcpiTimestamp, DatetimeClockError> {
+    fn get_real_time(&self) -> Result<AcpiTimestamp, DatetimeClockError> {
         self.inner.get_real_time()
     }
 
     /// Change the current time.  Analogous to ACPI TAD's _SRT method.
-    pub fn set_real_time(&self, timestamp: AcpiTimestamp) -> Result<(), DatetimeClockError> {
+    fn set_real_time(&self, timestamp: AcpiTimestamp) -> Result<(), DatetimeClockError> {
         self.inner.set_real_time(timestamp)
     }
 
     /// Query the current wake status.  Analogous to ACPI TAD's _GWS method.
-    pub fn get_wake_status(&self, timer_id: AcpiTimerId) -> TimerStatus {
+    fn get_wake_status(&self, timer_id: AcpiTimerId) -> TimerStatus {
         self.inner.get_wake_status(timer_id)
     }
 
     /// Clear the current wake status.  Analogous to ACPI TAD's _CWS method.
-    pub fn clear_wake_status(&self, timer_id: AcpiTimerId) {
+    fn clear_wake_status(&self, timer_id: AcpiTimerId) {
         self.inner.clear_wake_status(timer_id);
     }
 
     /// Configures behavior when the timer expires while the system is on the other power source.  Analogous to ACPI TAD's _STP method.
-    pub fn set_expired_timer_policy(
+    fn set_expired_timer_policy(
         &self,
         timer_id: AcpiTimerId,
         policy: AlarmExpiredWakePolicy,
@@ -356,21 +357,17 @@ impl<'hw> Service<'hw> {
     }
 
     /// Query current behavior when the timer expires while the system is on the other power source.  Analogous to ACPI TAD's _TIP method.
-    pub fn get_expired_timer_policy(&self, timer_id: AcpiTimerId) -> AlarmExpiredWakePolicy {
+    fn get_expired_timer_policy(&self, timer_id: AcpiTimerId) -> AlarmExpiredWakePolicy {
         self.inner.get_expired_timer_policy(timer_id)
     }
 
     /// Change the expiry time for the given timer.  Analogous to ACPI TAD's _STV method.
-    pub fn set_timer_value(
-        &self,
-        timer_id: AcpiTimerId,
-        timer_value: AlarmTimerSeconds,
-    ) -> Result<(), DatetimeClockError> {
+    fn set_timer_value(&self, timer_id: AcpiTimerId, timer_value: AlarmTimerSeconds) -> Result<(), DatetimeClockError> {
         self.inner.set_timer_value(timer_id, timer_value)
     }
 
     /// Query the expiry time for the given timer.  Analogous to ACPI TAD's _TIV method.
-    pub fn get_timer_value(&self, timer_id: AcpiTimerId) -> Result<AlarmTimerSeconds, DatetimeClockError> {
+    fn get_timer_value(&self, timer_id: AcpiTimerId) -> Result<AlarmTimerSeconds, DatetimeClockError> {
         self.inner.get_timer_value(timer_id)
     }
 }
@@ -393,45 +390,5 @@ impl<'hw> odp_service_common::runnable_service::Service<'hw> for Service<'hw> {
         service.timers.dc_timer.start(&service.clock_state, false)?;
 
         Ok((Self { inner: service }, Runner { service }))
-    }
-}
-
-impl<'hw> embedded_services::relay::mctp::RelayServiceHandlerTypes for Service<'hw> {
-    type RequestType = AcpiTimeAlarmRequest;
-    type ResultType = AcpiTimeAlarmResult;
-}
-
-impl<'hw> embedded_services::relay::mctp::RelayServiceHandler for Service<'hw> {
-    async fn process_request(&self, request: Self::RequestType) -> Self::ResultType {
-        use time_alarm_service_messages::AcpiTimeAlarmResponse;
-        match request {
-            AcpiTimeAlarmRequest::GetCapabilities => Ok(AcpiTimeAlarmResponse::Capabilities(self.get_capabilities())),
-            AcpiTimeAlarmRequest::GetRealTime => Ok(AcpiTimeAlarmResponse::RealTime(self.get_real_time()?)),
-            AcpiTimeAlarmRequest::SetRealTime(timestamp) => {
-                self.set_real_time(timestamp)?;
-                Ok(AcpiTimeAlarmResponse::OkNoData)
-            }
-            AcpiTimeAlarmRequest::GetWakeStatus(timer_id) => {
-                Ok(AcpiTimeAlarmResponse::TimerStatus(self.get_wake_status(timer_id)))
-            }
-            AcpiTimeAlarmRequest::ClearWakeStatus(timer_id) => {
-                self.clear_wake_status(timer_id);
-                Ok(AcpiTimeAlarmResponse::OkNoData)
-            }
-            AcpiTimeAlarmRequest::SetExpiredTimerPolicy(timer_id, timer_policy) => {
-                self.set_expired_timer_policy(timer_id, timer_policy)?;
-                Ok(AcpiTimeAlarmResponse::OkNoData)
-            }
-            AcpiTimeAlarmRequest::GetExpiredTimerPolicy(timer_id) => Ok(AcpiTimeAlarmResponse::WakePolicy(
-                self.get_expired_timer_policy(timer_id),
-            )),
-            AcpiTimeAlarmRequest::SetTimerValue(timer_id, timer_value) => {
-                self.set_timer_value(timer_id, timer_value)?;
-                Ok(AcpiTimeAlarmResponse::OkNoData)
-            }
-            AcpiTimeAlarmRequest::GetTimerValue(timer_id) => {
-                Ok(AcpiTimeAlarmResponse::TimerSeconds(self.get_timer_value(timer_id)?))
-            }
-        }
     }
 }
