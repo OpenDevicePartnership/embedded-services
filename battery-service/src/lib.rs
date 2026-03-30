@@ -157,7 +157,7 @@ impl<'hw, const N: usize> Service<'hw, N> {
 #[derive(Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum InitError {
-    DeviceRegistrationFailed,
+    DeviceRegistrationFailed(crate::device::DeviceId),
     CommsRegistrationFailed,
 }
 
@@ -179,7 +179,7 @@ where
         for device in init_params.devices {
             if service.register_fuel_gauge(device).is_err() {
                 error!("Failed to register battery device with DeviceId {:?}", device.id());
-                return Err(InitError::DeviceRegistrationFailed);
+                return Err(InitError::DeviceRegistrationFailed(device.id()));
             }
         }
 
