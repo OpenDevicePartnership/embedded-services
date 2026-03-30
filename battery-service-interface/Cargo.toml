@@ -1,5 +1,5 @@
 [package]
-name = "battery-service-messages"
+name = "battery-service-interface"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

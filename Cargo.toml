@@ -2,7 +2,8 @@
 resolver = "2"
 members = [
     "battery-service",
-    "battery-service-messages",
+    "battery-service-interface",
+    "battery-service-relay",
     "thermal-service",
     "thermal-service-messages",
     "cfu-service",
@@ -55,7 +56,7 @@ unwrap_used = "deny"
 [workspace.dependencies]
 aligned = "0.4"
 anyhow = "1.0"
-battery-service-messages = { path = "./battery-service-messages" }
+battery-service-interface = { path = "./battery-service-interface" }
 bitfield = "0.17.0"
 bitflags = "2.8.0"
 bitvec = { version = "1.0.1", default-features = false }

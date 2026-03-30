@@ -9,7 +9,7 @@ use embedded_batteries_async::{
 };
 use embedded_services::{GlobalRawMutex, Node, NodeContainer, SyncCell};
 
-pub use battery_service_messages::DeviceId;
+pub use battery_service_interface::DeviceId;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]

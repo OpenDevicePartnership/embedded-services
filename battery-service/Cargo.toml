@@ -12,7 +12,7 @@ workspace = true
 
 [dependencies]
 defmt = { workspace = true, optional = true }
-battery-service-messages.workspace = true
+battery-service-interface.workspace = true
 embassy-futures.workspace = true
 embassy-sync.workspace = true
 embassy-time.workspace = true
@@ -22,25 +22,22 @@ embedded-hal.workspace = true
 embedded-services.workspace = true
 log = { workspace = true, optional = true }
 odp-service-common.workspace = true
-zerocopy.workspace = true
-mctp-rs = { workspace = true, features = ["espi"] }
-heapless.workspace = true
 power-policy-interface.workspace = true
 
 [features]
 default = []
 defmt = [
     "dep:defmt",
-    "battery-service-messages/defmt",
+    "battery-service-interface/defmt",
     "embedded-services/defmt",
     "embassy-time/defmt",
     "embassy-sync/defmt",
     "embedded-batteries-async/defmt",
-    "mctp-rs/defmt",
     "power-policy-interface/defmt",
 ]
 log = [
     "dep:log",
+    "battery-service-interface/log",
     "embedded-services/log",
     "embassy-time/log",
     "embassy-sync/log",

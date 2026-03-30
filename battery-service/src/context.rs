@@ -1,7 +1,5 @@
-use crate::AcpiBatteryError;
-use crate::device::{self};
-use crate::device::{Device, FuelGaugeError};
-use battery_service_messages::{AcpiBatteryRequest, AcpiBatteryResponse, DeviceId};
+use crate::device::{self, Device, FuelGaugeError};
+use battery_service_interface::DeviceId;
 use embassy_sync::channel::Channel;
 use embassy_sync::channel::TrySendError;
 use embassy_sync::mutex::Mutex;
@@ -395,44 +393,6 @@ impl Context {
                     }
                 },
             },
-        }
-    }
-
-    pub(super) async fn process_acpi_cmd(
-        &self,
-        acpi_msg: &AcpiBatteryRequest,
-    ) -> Result<AcpiBatteryResponse, AcpiBatteryError> {
-        match *acpi_msg {
-            AcpiBatteryRequest::BatteryGetBixRequest { battery_id } => self.bix_handler(DeviceId(battery_id)).await,
-            AcpiBatteryRequest::BatteryGetBstRequest { battery_id } => self.bst_handler(DeviceId(battery_id)).await,
-            AcpiBatteryRequest::BatteryGetPsrRequest { battery_id } => self.psr_handler(DeviceId(battery_id)).await,
-            AcpiBatteryRequest::BatteryGetPifRequest { battery_id } => self.pif_handler(DeviceId(battery_id)).await,
-            AcpiBatteryRequest::BatteryGetBpsRequest { battery_id } => self.bps_handler(DeviceId(battery_id)).await,
-            AcpiBatteryRequest::BatterySetBtpRequest { battery_id, btp } => {
-                self.btp_handler(DeviceId(battery_id), btp).await
-            }
-            AcpiBatteryRequest::BatterySetBptRequest { battery_id, bpt } => {
-                self.bpt_handler(DeviceId(battery_id), bpt).await
-            }
-            AcpiBatteryRequest::BatteryGetBpcRequest { battery_id } => self.bpc_handler(DeviceId(battery_id)).await,
-            AcpiBatteryRequest::BatterySetBmcRequest { battery_id, bmc } => {
-                self.bmc_handler(DeviceId(battery_id), bmc).await
-            }
-            AcpiBatteryRequest::BatteryGetBmdRequest { battery_id } => self.bmd_handler(DeviceId(battery_id)).await,
-            AcpiBatteryRequest::BatteryGetBctRequest { battery_id, bct } => {
-                self.bct_handler(DeviceId(battery_id), bct).await
-            }
-            AcpiBatteryRequest::BatteryGetBtmRequest { battery_id, btm } => {
-                self.btm_handler(DeviceId(battery_id), btm).await
-            }
-
-            AcpiBatteryRequest::BatterySetBmsRequest { battery_id, bms } => {
-                self.bms_handler(DeviceId(battery_id), bms).await
-            }
-            AcpiBatteryRequest::BatterySetBmaRequest { battery_id, bma } => {
-                self.bma_handler(DeviceId(battery_id), bma).await
-            }
-            AcpiBatteryRequest::BatteryGetStaRequest { battery_id } => self.sta_handler(DeviceId(battery_id)).await,
         }
     }
 

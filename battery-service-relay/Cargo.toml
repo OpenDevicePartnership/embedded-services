@@ -1,0 +1,22 @@
+[package]
+name = "battery-service-relay"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+defmt = { workspace = true, optional = true }
+log = { workspace = true, optional = true }
+embedded-services.workspace = true
+num_enum.workspace = true
+
+battery-service-interface.workspace = true
+embedded-batteries-async.workspace = true
+
+[features]
+defmt = ["dep:defmt", "battery-service-interface/defmt"]
+log = ["dep:log", "embedded-services/log", "battery-service-interface/log"]
+
+[lints]
+workspace = true

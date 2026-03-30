@@ -2,11 +2,15 @@
 
 use core::{any::Any, convert::Infallible};
 
-use battery_service_messages::{AcpiBatteryError, AcpiBatteryRequest, AcpiBatteryResult};
 use context::BatteryEvent;
 use embedded_services::{
     comms::{self, EndpointID},
     error, info, trace,
+};
+
+use battery_service_interface::{
+    BatteryError, Bct, BctReturnResult, BixFixedStrings, Bma, Bmc, Bmd, Bms, Bpc, Bps, Bpt, BstReturn, Btm,
+    BtmReturnResult, Btp, DeviceId, PifFixedStrings, PsrReturn, StaReturn,
 };
 
 mod acpi;
@@ -153,6 +157,91 @@ impl<'hw, const N: usize> Service<'hw, N> {
     }
 }
 
+impl<'hw, const N: usize> battery_service_interface::BatteryService for Service<'hw, N> {
+    async fn battery_charge_time(
+        &self,
+        battery_id: DeviceId,
+        charge_level: Bct,
+    ) -> Result<BctReturnResult, BatteryError> {
+        self.inner.context.bct_handler(battery_id, charge_level).await
+    }
+
+    async fn battery_info(&self, battery_id: DeviceId) -> Result<BixFixedStrings, BatteryError> {
+        self.inner.context.bix_handler(battery_id).await
+    }
+
+    async fn set_battery_measurement_averaging_interval(
+        &self,
+        battery_id: DeviceId,
+        bma: Bma,
+    ) -> Result<(), BatteryError> {
+        self.inner.context.bma_handler(battery_id, bma).await
+    }
+
+    async fn battery_maintenance_control(&self, battery_id: DeviceId, bmc: Bmc) -> Result<(), BatteryError> {
+        self.inner.context.bmc_handler(battery_id, bmc).await
+    }
+
+    async fn battery_maintenance_data(&self, battery_id: DeviceId) -> Result<Bmd, BatteryError> {
+        self.inner.context.bmd_handler(battery_id).await
+    }
+
+    async fn set_battery_measurement_sampling_time(
+        &self,
+        battery_id: DeviceId,
+        battery_measurement_sampling: Bms,
+    ) -> Result<(), BatteryError> {
+        self.inner
+            .context
+            .bms_handler(battery_id, battery_measurement_sampling)
+            .await
+    }
+
+    async fn battery_power_characteristics(&self, battery_id: DeviceId) -> Result<Bpc, BatteryError> {
+        self.inner.context.bpc_handler(battery_id).await
+    }
+
+    async fn battery_power_state(&self, battery_id: DeviceId) -> Result<Bps, BatteryError> {
+        self.inner.context.bps_handler(battery_id).await
+    }
+
+    async fn set_battery_power_threshold(
+        &self,
+        battery_id: DeviceId,
+        power_threshold: Bpt,
+    ) -> Result<(), BatteryError> {
+        self.inner.context.bpt_handler(battery_id, power_threshold).await
+    }
+
+    async fn battery_status(&self, battery_id: DeviceId) -> Result<BstReturn, BatteryError> {
+        self.inner.context.bst_handler(battery_id).await
+    }
+
+    async fn battery_time_to_empty(
+        &self,
+        battery_id: DeviceId,
+        battery_discharge_rate: Btm,
+    ) -> Result<BtmReturnResult, BatteryError> {
+        self.inner.context.btm_handler(battery_id, battery_discharge_rate).await
+    }
+
+    async fn set_battery_trip_point(&self, battery_id: DeviceId, btp: Btp) -> Result<(), BatteryError> {
+        self.inner.context.btp_handler(battery_id, btp).await
+    }
+
+    async fn is_in_use(&self, battery_id: DeviceId) -> Result<PsrReturn, BatteryError> {
+        self.inner.context.psr_handler(battery_id).await
+    }
+
+    async fn power_source_information(&self, power_source_id: DeviceId) -> Result<PifFixedStrings, BatteryError> {
+        self.inner.context.pif_handler(power_source_id).await
+    }
+
+    async fn device_status(&self, battery_id: DeviceId) -> Result<StaReturn, BatteryError> {
+        self.inner.context.sta_handler(battery_id).await
+    }
+}
+
 /// Errors that can occur during battery service initialization.
 #[derive(Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
@@ -189,22 +278,6 @@ where
         }
 
         Ok((Self { inner: service }, Runner { service }))
-    }
-}
-
-impl<const N: usize> embedded_services::relay::mctp::RelayServiceHandlerTypes for Service<'_, N> {
-    type RequestType = AcpiBatteryRequest;
-    type ResultType = AcpiBatteryResult;
-}
-
-impl<const N: usize> embedded_services::relay::mctp::RelayServiceHandler for Service<'_, N> {
-    async fn process_request(&self, request: Self::RequestType) -> Self::ResultType {
-        trace!("Battery service: ACPI cmd recvd");
-        let response = self.inner.context.process_acpi_cmd(&request).await;
-        if let Err(e) = response {
-            error!("Battery service command failed: {:?}", e)
-        }
-        response
     }
 }
 
