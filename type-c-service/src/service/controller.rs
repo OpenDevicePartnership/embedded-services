@@ -2,6 +2,7 @@ use embedded_services::{
     debug, error,
     type_c::{
         ControllerId,
+        controller::SystemPowerState,
         external::{self, ControllerCommandData},
     },
 };
@@ -45,6 +46,19 @@ impl<'a> Service<'a> {
         external::Response::Controller(status.map(|_| external::ControllerResponseData::Complete))
     }
 
+    /// Process external controller set power state command
+    pub(super) async fn process_external_controller_set_power_state(
+        &self,
+        controller: ControllerId,
+        state: SystemPowerState,
+    ) -> external::Response<'static> {
+        let status = self.context.set_power_state(controller, state).await;
+        if let Err(e) = status {
+            error!("Error setting power state: {:#?}", e);
+        }
+        external::Response::Controller(status.map(|_| external::ControllerResponseData::Complete))
+    }
+
     /// Process external controller commands
     pub(super) async fn process_external_controller_command(
         &self,
@@ -55,6 +69,9 @@ impl<'a> Service<'a> {
             ControllerCommandData::ControllerStatus => self.process_external_controller_status(command.id).await,
             ControllerCommandData::SyncState => self.process_external_controller_sync_state(command.id).await,
             ControllerCommandData::Reset => self.process_external_controller_reset(command.id).await,
+            ControllerCommandData::SetSystemPowerState(state) => {
+                self.process_external_controller_set_power_state(command.id, state).await
+            }
         }
     }
 }

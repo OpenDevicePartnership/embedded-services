@@ -261,6 +261,25 @@ pub enum TypeCStateMachineState {
     Disabled,
 }
 
+/// System power state for Sx App Config.
+///
+/// Used to notify the PD controller of the current system power state.
+/// A change in power state triggers a new Application Configuration to be applied.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum SystemPowerState {
+    /// S0 - System fully running
+    S0,
+    /// S3 - Suspend to RAM
+    S3,
+    /// S4 - Hibernate
+    S4,
+    /// S5 - Soft off
+    S5,
+    /// S0ix - Modern standby / Connected standby
+    S0ix,
+}
+
 /// Port-specific command data
 #[derive(Copy, Clone, Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
@@ -378,6 +397,8 @@ pub enum InternalCommandData {
     Status,
     /// Sync controller state
     SyncState,
+    /// Set the system power state (Sx App Config)
+    SetSystemPowerState(SystemPowerState),
 }
 
 /// PD controller command
@@ -574,6 +595,14 @@ pub trait Controller {
     fn get_controller_status(
         &mut self,
     ) -> impl Future<Output = Result<ControllerStatus<'static>, Error<Self::BusError>>>;
+    /// Set the system power state (Sx App Config).
+    ///
+    /// This notifies the PD controller of the current system power state (S0, S3, S4, S5, S0ix).
+    /// A change in power state triggers a new Application Configuration to be applied.
+    fn set_power_state(
+        &mut self,
+        state: SystemPowerState,
+    ) -> impl Future<Output = Result<(), Error<Self::BusError>>>;
     /// Get current PD alert
     fn get_pd_alert(&mut self, port: LocalPortId) -> impl Future<Output = Result<Option<Ado>, Error<Self::BusError>>>;
     /// Set the maximum sink voltage for the given port
@@ -1059,6 +1088,27 @@ impl ContextToken {
             InternalResponseData::Complete => Ok(()),
             r => {
                 error!("Invalid response: expected controller status, got {:?}", r);
+                Err(PdError::InvalidResponse)
+            }
+        }
+    }
+
+    /// Set the system power state on the given controller.
+    ///
+    /// This notifies the PD controller of the current system power state (S0, S3, S4, S5, S0ix).
+    /// A change in power state triggers a new Application Configuration to be applied.
+    pub async fn set_power_state(
+        &self,
+        controller_id: ControllerId,
+        state: SystemPowerState,
+    ) -> Result<(), PdError> {
+        match self
+            .send_controller_command(controller_id, InternalCommandData::SetSystemPowerState(state))
+            .await?
+        {
+            InternalResponseData::Complete => Ok(()),
+            r => {
+                error!("Invalid response: expected complete, got {:?}", r);
                 Err(PdError::InvalidResponse)
             }
         }

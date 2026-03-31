@@ -151,6 +151,14 @@ impl embedded_services::type_c::controller::Controller for Controller<'_> {
         })
     }
 
+    async fn set_power_state(
+        &mut self,
+        state: embedded_services::type_c::controller::SystemPowerState,
+    ) -> Result<(), Error<Self::BusError>> {
+        debug!("Set power state: {:?}", state);
+        Ok(())
+    }
+
     async fn reset_controller(&mut self) -> Result<(), Error<Self::BusError>> {
         debug!("Reset controller");
         Ok(())

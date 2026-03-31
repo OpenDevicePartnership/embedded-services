@@ -4,8 +4,11 @@ use embedded_services::GlobalRawMutex;
 use embassy_futures::select::select;
 use embedded_services::{
     debug, error, info,
-    power::policy::charger::{
-        self, ChargeController, ChargerEvent, ChargerResponse, InternalState, PolicyEvent, PoweredSubstate, State,
+    power::policy::{
+        ConsumerPowerCapability,
+        charger::{
+            self, ChargeController, ChargerEvent, ChargerResponse, InternalState, PolicyEvent, PoweredSubstate, State,
+        },
     },
     trace, warn,
 };
@@ -16,6 +19,9 @@ where
 {
     charger_policy_state: &'a charger::Device,
     controller: Mutex<GlobalRawMutex, C>,
+    /// Stores a PolicyConfiguration that arrives while the charger is still in Powered(Init) state.
+    /// This allows us to defer processing until the charger finishes initialization, then replay the capability.
+    pending_capability: Mutex<GlobalRawMutex, Option<ConsumerPowerCapability>>,
 }
 
 impl<'a, C: ChargeController> Wrapper<'a, C>
@@ -26,6 +32,7 @@ where
         Self {
             charger_policy_state,
             controller: Mutex::new(controller),
+            pending_capability: Mutex::new(None),
         }
     }
 
@@ -42,20 +49,50 @@ where
     }
 
     #[allow(clippy::single_match)]
-    async fn process_controller_event(&self, _controller: &mut C, event: ChargerEvent) {
+    async fn process_controller_event(&self, controller: &mut C, event: ChargerEvent) {
         let state = self.get_state().await;
         match state.state {
             State::Powered(powered_substate) => match powered_substate {
                 PoweredSubstate::Init => match event {
                     ChargerEvent::Initialized(psu_state) => {
+                        let new_state = match psu_state {
+                            charger::PsuState::Attached => State::Powered(PoweredSubstate::PsuAttached),
+                            charger::PsuState::Detached => State::Powered(PoweredSubstate::PsuDetached),
+                        };
                         self.set_state(InternalState {
-                            state: match psu_state {
-                                charger::PsuState::Attached => State::Powered(PoweredSubstate::PsuAttached),
-                                charger::PsuState::Detached => State::Powered(PoweredSubstate::PsuDetached),
-                            },
+                            state: new_state,
                             capability: state.capability,
                         })
-                        .await
+                        .await;
+
+                        // Replay any pending capability that arrived during init
+                        let pending = self.pending_capability.lock().await.take();
+                        if let Some(capability) = pending {
+                            info!("Charger init complete, replaying deferred PolicyConfiguration");
+                            if capability.capability.current_ma == 0 {
+                                // Deferred detach
+                                if controller.detach_handler().await.is_err() {
+                                    error!("Error replaying deferred detach");
+                                } else {
+                                    self.set_state(InternalState {
+                                        state: new_state,
+                                        capability: None,
+                                    })
+                                    .await;
+                                }
+                            } else {
+                                // Deferred attach
+                                if controller.attach_handler(capability).await.is_err() {
+                                    error!("Error replaying deferred attach");
+                                } else {
+                                    self.set_state(InternalState {
+                                        state: new_state,
+                                        capability: Some(capability.capability),
+                                    })
+                                    .await;
+                                }
+                            }
+                        }
                     }
                     // If we are initializing, we don't care about anything else
                     _ => (),
@@ -135,10 +172,10 @@ where
                 }
                 State::Powered(substate) => match substate {
                     PoweredSubstate::Init => {
-                        error!("Charger detected new power policy configuration but charger is still initializing.");
-                        Err(charger::ChargerError::InvalidState(State::Powered(
-                            PoweredSubstate::Init,
-                        )))
+                        // Defer the capability instead of rejecting - store it for replay after init completes
+                        info!("Charger still initializing, deferring PolicyConfiguration for replay after init");
+                        *self.pending_capability.lock().await = Some(power_capability);
+                        Ok(charger::ChargerResponseData::Ack)
                     }
                     PoweredSubstate::PsuAttached | PoweredSubstate::PsuDetached => {
                         if power_capability.capability.current_ma == 0 {

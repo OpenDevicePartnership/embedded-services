@@ -12,8 +12,8 @@ use embedded_hal_async::i2c::I2c;
 use embedded_services::power::policy::PowerCapability;
 use embedded_services::type_c::ATTN_VDM_LEN;
 use embedded_services::type_c::controller::{
-    self, AttnVdm, Controller, ControllerStatus, DpPinConfig, OtherVdm, PortStatus, SendVdm, TbtConfig,
-    TypeCStateMachineState, UsbControlConfig,
+    self, AttnVdm, Controller, ControllerStatus, DpPinConfig, OtherVdm, PortStatus, SendVdm, SystemPowerState,
+    TbtConfig, TypeCStateMachineState, UsbControlConfig,
 };
 use embedded_services::type_c::event::PortEvent;
 use embedded_services::{debug, error, trace, type_c, warn};
@@ -475,6 +475,25 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
             fw_version0: customer_use.ti_fw_version(),
             fw_version1: customer_use.custom_fw_version(),
         })
+    }
+
+    async fn set_power_state(&mut self, state: SystemPowerState) -> Result<(), Error<Self::BusError>> {
+        use tps6699x::registers::sx_app_config::{SystemPowerState as DriverSystemPowerState, SxAppConfig};
+
+        // Convert from embedded_services SystemPowerState to tps6699x SystemPowerState
+        let driver_state = match state {
+            SystemPowerState::S0 => DriverSystemPowerState::S0,
+            SystemPowerState::S3 => DriverSystemPowerState::S3,
+            SystemPowerState::S4 => DriverSystemPowerState::S4,
+            SystemPowerState::S5 => DriverSystemPowerState::S5,
+            SystemPowerState::S0ix => DriverSystemPowerState::S0ix,
+        };
+
+        let mut config = SxAppConfig::default();
+        config.set_power_state(driver_state);
+
+        // Set Sx config on PORT0 - this is a controller-level register
+        self.tps6699x.set_sx_app_config(PORT0, config).await
     }
 
     fn set_unconstrained_power(

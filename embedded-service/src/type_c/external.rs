@@ -11,7 +11,7 @@ use crate::type_c::{
 use super::{
     ControllerId,
     controller::{
-        ControllerStatus, DpConfig, DpStatus, PortStatus, RetimerFwUpdateState, SendVdm,
+        ControllerStatus, DpConfig, DpStatus, PortStatus, RetimerFwUpdateState, SendVdm, SystemPowerState,
         execute_external_controller_command, execute_external_port_command, lookup_controller,
     },
 };
@@ -26,6 +26,11 @@ pub enum ControllerCommandData {
     SyncState,
     /// Controller reset
     Reset,
+    /// Set the system power state (Sx App Config).
+    ///
+    /// Used to notify the PD controller of system power state changes,
+    /// which triggers Application Configuration updates (e.g., crossbar reconfiguration).
+    SetSystemPowerState(SystemPowerState),
 }
 
 /// Controller-specific commands
@@ -292,6 +297,23 @@ pub async fn sync_controller_state(id: ControllerId) -> Result<(), PdError> {
     match execute_external_controller_command(Command::Controller(ControllerCommand {
         id,
         data: ControllerCommandData::SyncState,
+    }))
+    .await?
+    {
+        ControllerResponseData::Complete => Ok(()),
+        _ => Err(PdError::InvalidResponse),
+    }
+}
+
+/// Set the system power state on the given controller.
+///
+/// This notifies the PD controller of the current system power state (S0, S3, S4, S5, S0ix).
+/// A change in power state triggers a new Application Configuration to be applied,
+/// which can be used for crossbar reconfiguration on resume.
+pub async fn set_power_state(id: ControllerId, state: SystemPowerState) -> Result<(), PdError> {
+    match execute_external_controller_command(Command::Controller(ControllerCommand {
+        id,
+        data: ControllerCommandData::SetSystemPowerState(state),
     }))
     .await?
     {
