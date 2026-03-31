@@ -6,7 +6,8 @@ use embedded_usb_pd::{GlobalPortId, LocalPortId, PdError, ucsi};
 use crate::type_c::{
     Cached,
     controller::{
-        PdStateMachineConfig, TbtConfig, TypeCStateMachineState, UsbControlConfig, execute_external_ucsi_command,
+        PdStateMachineConfig, SystemPowerState, TbtConfig, TypeCStateMachineState, UsbControlConfig,
+        execute_external_ucsi_command,
     },
 };
 
@@ -28,6 +29,8 @@ pub enum ControllerCommandData {
     SyncState,
     /// Controller reset
     Reset,
+    /// Set the system power state
+    SetSystemPowerState(SystemPowerState),
 }
 
 /// Controller-specific commands
@@ -301,6 +304,22 @@ pub async fn sync_controller_state(id: ControllerId) -> Result<(), PdError> {
     match execute_external_controller_command(Command::Controller(ControllerCommand {
         id,
         data: ControllerCommandData::SyncState,
+    }))
+    .await?
+    {
+        ControllerResponseData::Complete => Ok(()),
+        _ => Err(PdError::InvalidResponse),
+    }
+}
+
+/// Set the system power state on the given controller.
+///
+/// This notifies the PD controller of the current system power state,
+/// which triggers Application Configuration updates (e.g., crossbar reconfiguration).
+pub async fn set_power_state(id: ControllerId, state: SystemPowerState) -> Result<(), PdError> {
+    match execute_external_controller_command(Command::Controller(ControllerCommand {
+        id,
+        data: ControllerCommandData::SetSystemPowerState(state),
     }))
     .await?
     {

@@ -376,6 +376,25 @@ impl PortResponseData {
 /// Port-specific command response
 pub type PortResponse = Result<PortResponseData, PdError>;
 
+/// System power state for Sx App Config register.
+///
+/// Used to notify the PD controller of the current system power state,
+/// which triggers Application Configuration updates (e.g., crossbar reconfiguration).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum SystemPowerState {
+    /// S0 - System fully running
+    S0,
+    /// S3 - Suspend to RAM
+    S3,
+    /// S4 - Hibernate
+    S4,
+    /// S5 - Soft off
+    S5,
+    /// S0ix - Modern standby / Connected standby
+    S0ix,
+}
+
 /// PD controller command-specific data
 #[derive(Copy, Clone, Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
@@ -386,6 +405,8 @@ pub enum InternalCommandData {
     Status,
     /// Sync controller state
     SyncState,
+    /// Set the system power state
+    SetSystemPowerState(SystemPowerState),
 }
 
 /// PD controller command
@@ -679,6 +700,15 @@ pub trait Controller {
         &mut self,
         port: LocalPortId,
         reconnect_time_s: Option<NonZeroU8>,
+    ) -> impl Future<Output = Result<(), Error<Self::BusError>>>;
+
+    /// Set the system power state on the controller.
+    ///
+    /// This notifies the PD controller of the current system power state,
+    /// which triggers Application Configuration updates (e.g., crossbar reconfiguration).
+    fn set_power_state(
+        &mut self,
+        state: SystemPowerState,
     ) -> impl Future<Output = Result<(), Error<Self::BusError>>>;
 }
 
@@ -1077,6 +1107,27 @@ impl ContextToken {
             InternalResponseData::Complete => Ok(()),
             r => {
                 error!("Invalid response: expected controller status, got {:?}", r);
+                Err(PdError::InvalidResponse)
+            }
+        }
+    }
+
+    /// Set the system power state on the given controller.
+    ///
+    /// This notifies the PD controller of the current system power state,
+    /// which triggers Application Configuration updates (e.g., crossbar reconfiguration).
+    pub async fn set_power_state(
+        &self,
+        controller_id: ControllerId,
+        state: SystemPowerState,
+    ) -> Result<(), PdError> {
+        match self
+            .send_controller_command(controller_id, InternalCommandData::SetSystemPowerState(state))
+            .await?
+        {
+            InternalResponseData::Complete => Ok(()),
+            r => {
+                error!("Invalid response: expected complete, got {:?}", r);
                 Err(PdError::InvalidResponse)
             }
         }

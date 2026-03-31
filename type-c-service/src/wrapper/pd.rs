@@ -450,6 +450,14 @@ where
                         .map_err(|_| PdError::Failed),
                 )
             }
+            controller::InternalCommandData::SetSystemPowerState(power_state) => {
+                let result = controller.set_power_state(*power_state).await;
+                controller::Response::Controller(
+                    result
+                        .map(|_| InternalResponseData::Complete)
+                        .map_err(|_| PdError::Failed),
+                )
+            }
         }
     }
 
