@@ -706,10 +706,7 @@ pub trait Controller {
     ///
     /// This notifies the PD controller of the current system power state,
     /// which triggers Application Configuration updates (e.g., crossbar reconfiguration).
-    fn set_power_state(
-        &mut self,
-        state: SystemPowerState,
-    ) -> impl Future<Output = Result<(), Error<Self::BusError>>>;
+    fn set_power_state(&mut self, state: SystemPowerState) -> impl Future<Output = Result<(), Error<Self::BusError>>>;
 }
 
 /// Internal context for managing PD controllers
@@ -1116,11 +1113,7 @@ impl ContextToken {
     ///
     /// This notifies the PD controller of the current system power state,
     /// which triggers Application Configuration updates (e.g., crossbar reconfiguration).
-    pub async fn set_power_state(
-        &self,
-        controller_id: ControllerId,
-        state: SystemPowerState,
-    ) -> Result<(), PdError> {
+    pub async fn set_power_state(&self, controller_id: ControllerId, state: SystemPowerState) -> Result<(), PdError> {
         match self
             .send_controller_command(controller_id, InternalCommandData::SetSystemPowerState(state))
             .await?

@@ -69,7 +69,8 @@ impl<'a> Service<'a> {
             ControllerCommandData::SyncState => self.process_external_controller_sync_state(command.id).await,
             ControllerCommandData::Reset => self.process_external_controller_reset(command.id).await,
             ControllerCommandData::SetSystemPowerState(state) => {
-                self.process_external_controller_set_power_state(command.id, state).await
+                self.process_external_controller_set_power_state(command.id, state)
+                    .await
             }
         }
     }

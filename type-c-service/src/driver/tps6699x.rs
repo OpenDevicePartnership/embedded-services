@@ -827,10 +827,7 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
         }
     }
 
-    async fn set_power_state(
-        &mut self,
-        state: controller::SystemPowerState,
-    ) -> Result<(), Error<Self::BusError>> {
+    async fn set_power_state(&mut self, state: controller::SystemPowerState) -> Result<(), Error<Self::BusError>> {
         use tps6699x::registers::SystemPowerState as DriverSystemPowerState;
 
         let driver_state = match state {
