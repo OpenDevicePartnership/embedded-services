@@ -66,6 +66,10 @@ mod test_controller {
                     info!("Sync controller state");
                     Ok(controller::InternalResponseData::Complete)
                 }
+                controller::InternalCommandData::SetSystemPowerState(state) => {
+                    info!("Set system power state: {state:?}");
+                    Ok(controller::InternalResponseData::Complete)
+                }
             }
         }
 
