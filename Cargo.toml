@@ -87,7 +87,7 @@ serde = { version = "1.0.*", default-features = false }
 static_cell = "2.1.0"
 toml = { version = "0.8", default-features = false }
 syn = "2.0"
-tps6699x = { git = "https://github.com/OpenDevicePartnership/tps6699x" }
+tps6699x = { git = "https://github.com/jibz5/tps6699x", branch = "personal/jcutlerywala/addpowerstatereg" }
 tokio = { version = "1.42.0" }
 uuid = { version = "=1.17.0", default-features = false }
 zerocopy = "0.8.26"
