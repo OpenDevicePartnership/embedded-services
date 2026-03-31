@@ -838,7 +838,7 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
             controller::SystemPowerState::S3 => DriverSystemPowerState::S3,
             controller::SystemPowerState::S4 => DriverSystemPowerState::S4,
             controller::SystemPowerState::S5 => DriverSystemPowerState::S5,
-            controller::SystemPowerState::S0ix => DriverSystemPowerState::S0ix,
+            controller::SystemPowerState::S0ix => DriverSystemPowerState::S0Ix,
         };
 
         // Write to port 0 - the power state applies to the entire controller
