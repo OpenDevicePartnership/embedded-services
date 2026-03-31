@@ -841,8 +841,12 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
             controller::SystemPowerState::S0ix => DriverSystemPowerState::S0Ix,
         };
 
-        // Write to port 0 - the power state applies to the entire controller
-        self.tps6699x.set_sx_app_config(PORT0, driver_state).await
+        // The TRM indicates this register is unique per port, so write to all ports
+        for port_idx in 0..self.port_events.len() {
+            let port = LocalPortId(port_idx as u8);
+            self.tps6699x.set_sx_app_config(port, driver_state).await?;
+        }
+        Ok(())
     }
 }
 
