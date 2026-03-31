@@ -831,7 +831,7 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
         &mut self,
         state: controller::SystemPowerState,
     ) -> Result<(), Error<Self::BusError>> {
-        use tps6699x::registers::sx_app_config::{SystemPowerState as DriverSystemPowerState, SxAppConfig};
+        use tps6699x::registers::{SystemPowerState as DriverSystemPowerState, field_sets::SxAppConfig};
 
         let driver_state = match state {
             controller::SystemPowerState::S0 => DriverSystemPowerState::S0,
@@ -841,8 +841,8 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
             controller::SystemPowerState::S0ix => DriverSystemPowerState::S0ix,
         };
 
-        let mut config = SxAppConfig::default();
-        config.set_power_state(driver_state);
+        let mut config = SxAppConfig::new_zero();
+        config.set_sleep_state(driver_state);
 
         // Write to port 0 - the power state applies to the entire controller
         self.tps6699x.set_sx_app_config(PORT0, config).await
