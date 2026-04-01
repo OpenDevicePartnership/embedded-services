@@ -317,6 +317,8 @@ pub enum PortCommandData {
         /// If [`None`], the port will not automatically reconnect.
         reconnect_time_s: Option<NonZeroU8>,
     },
+    /// Set the system power state
+    SetSystemPowerState(SystemPowerState),
 }
 
 /// Port-specific commands
@@ -405,8 +407,6 @@ pub enum InternalCommandData {
     Status,
     /// Sync controller state
     SyncState,
-    /// Set the system power state
-    SetSystemPowerState(SystemPowerState),
 }
 
 /// PD controller command
@@ -702,11 +702,15 @@ pub trait Controller {
         reconnect_time_s: Option<NonZeroU8>,
     ) -> impl Future<Output = Result<(), Error<Self::BusError>>>;
 
-    /// Set the system power state on the controller.
+    /// Set the system power state on the given port.
     ///
     /// This notifies the PD controller of the current system power state,
     /// which triggers Application Configuration updates (e.g., crossbar reconfiguration).
-    fn set_power_state(&mut self, state: SystemPowerState) -> impl Future<Output = Result<(), Error<Self::BusError>>>;
+    fn set_power_state(
+        &mut self,
+        port: LocalPortId,
+        state: SystemPowerState,
+    ) -> impl Future<Output = Result<(), Error<Self::BusError>>>;
 }
 
 /// Internal context for managing PD controllers
@@ -1109,23 +1113,6 @@ impl ContextToken {
         }
     }
 
-    /// Set the system power state on the given controller.
-    ///
-    /// This notifies the PD controller of the current system power state,
-    /// which triggers Application Configuration updates (e.g., crossbar reconfiguration).
-    pub async fn set_power_state(&self, controller_id: ControllerId, state: SystemPowerState) -> Result<(), PdError> {
-        match self
-            .send_controller_command(controller_id, InternalCommandData::SetSystemPowerState(state))
-            .await?
-        {
-            InternalResponseData::Complete => Ok(()),
-            r => {
-                error!("Invalid response: expected complete, got {:?}", r);
-                Err(PdError::InvalidResponse)
-            }
-        }
-    }
-
     /// Wait for an external command
     pub async fn wait_external_command(
         &self,
@@ -1277,6 +1264,20 @@ impl ContextToken {
     ) -> Result<(), PdError> {
         match self
             .send_port_command(port, PortCommandData::ExecuteElectricalDisconnect { reconnect_time_s })
+            .await?
+        {
+            PortResponseData::Complete => Ok(()),
+            _ => Err(PdError::InvalidResponse),
+        }
+    }
+
+    /// Set the system power state on the given port.
+    ///
+    /// This notifies the PD controller of the current system power state,
+    /// which triggers Application Configuration updates (e.g., crossbar reconfiguration).
+    pub async fn set_power_state(&self, port: GlobalPortId, state: SystemPowerState) -> Result<(), PdError> {
+        match self
+            .send_port_command(port, PortCommandData::SetSystemPowerState(state))
             .await?
         {
             PortResponseData::Complete => Ok(()),

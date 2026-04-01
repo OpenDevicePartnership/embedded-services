@@ -415,6 +415,15 @@ where
                     },
                 }
             }
+            controller::PortCommandData::SetSystemPowerState(power_state) => {
+                match controller.set_power_state(local_port, power_state).await {
+                    Ok(()) => Ok(controller::PortResponseData::Complete),
+                    Err(e) => match e {
+                        Error::Bus(_) => Err(PdError::Failed),
+                        Error::Pd(e) => Err(e),
+                    },
+                }
+            }
         })
     }
 
@@ -444,14 +453,6 @@ where
             }
             controller::InternalCommandData::Reset => {
                 let result = controller.reset_controller().await;
-                controller::Response::Controller(
-                    result
-                        .map(|_| InternalResponseData::Complete)
-                        .map_err(|_| PdError::Failed),
-                )
-            }
-            controller::InternalCommandData::SetSystemPowerState(power_state) => {
-                let result = controller.set_power_state(*power_state).await;
                 controller::Response::Controller(
                     result
                         .map(|_| InternalResponseData::Complete)

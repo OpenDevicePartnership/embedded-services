@@ -332,8 +332,12 @@ impl embedded_services::type_c::controller::Controller for Controller<'_> {
         Ok(())
     }
 
-    async fn set_power_state(&mut self, state: SystemPowerState) -> Result<(), Error<Self::BusError>> {
-        debug!("Set power state: {state:?}");
+    async fn set_power_state(
+        &mut self,
+        port: LocalPortId,
+        state: SystemPowerState,
+    ) -> Result<(), Error<Self::BusError>> {
+        debug!("Set power state for port {port:?}: {state:?}");
         Ok(())
     }
 }

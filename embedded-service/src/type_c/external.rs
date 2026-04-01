@@ -29,8 +29,6 @@ pub enum ControllerCommandData {
     SyncState,
     /// Controller reset
     Reset,
-    /// Set the system power state
-    SetSystemPowerState(SystemPowerState),
 }
 
 /// Controller-specific commands
@@ -103,6 +101,8 @@ pub enum PortCommandData {
         /// If [`None`], the port will not automatically reconnect.
         reconnect_time_s: Option<NonZeroU8>,
     },
+    /// Set the system power state
+    SetSystemPowerState(SystemPowerState),
 }
 
 /// Port-specific commands
@@ -312,18 +312,18 @@ pub async fn sync_controller_state(id: ControllerId) -> Result<(), PdError> {
     }
 }
 
-/// Set the system power state on the given controller.
+/// Set the system power state on the given port.
 ///
 /// This notifies the PD controller of the current system power state,
 /// which triggers Application Configuration updates (e.g., crossbar reconfiguration).
-pub async fn set_power_state(id: ControllerId, state: SystemPowerState) -> Result<(), PdError> {
-    match execute_external_controller_command(Command::Controller(ControllerCommand {
-        id,
-        data: ControllerCommandData::SetSystemPowerState(state),
+pub async fn set_power_state(port: GlobalPortId, state: SystemPowerState) -> Result<(), PdError> {
+    match execute_external_port_command(Command::Port(PortCommand {
+        port,
+        data: PortCommandData::SetSystemPowerState(state),
     }))
     .await?
     {
-        ControllerResponseData::Complete => Ok(()),
+        PortResponseData::Complete => Ok(()),
         _ => Err(PdError::InvalidResponse),
     }
 }

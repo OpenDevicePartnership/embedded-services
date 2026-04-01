@@ -71,6 +71,9 @@ impl<'a> Service<'a> {
                 self.process_execute_electrical_disconnect(command.port, reconnect_time_s)
                     .await
             }
+            external::PortCommandData::SetSystemPowerState(state) => {
+                self.process_set_power_state(command.port, state).await
+            }
         }
     }
 
@@ -265,6 +268,20 @@ impl<'a> Service<'a> {
             .await;
         if let Err(e) = status {
             error!("Error executing electrical disconnect: {:#?}", e);
+        }
+
+        external::Response::Port(status.map(|_| external::PortResponseData::Complete))
+    }
+
+    /// Process [`external::PortCommandData::SetSystemPowerState`] command
+    async fn process_set_power_state(
+        &self,
+        port_id: GlobalPortId,
+        state: embedded_services::type_c::controller::SystemPowerState,
+    ) -> external::Response<'static> {
+        let status = self.context.set_power_state(port_id, state).await;
+        if let Err(e) = status {
+            error!("Error setting power state: {:#?}", e);
         }
 
         external::Response::Port(status.map(|_| external::PortResponseData::Complete))

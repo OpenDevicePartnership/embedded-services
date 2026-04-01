@@ -827,7 +827,11 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
         }
     }
 
-    async fn set_power_state(&mut self, state: controller::SystemPowerState) -> Result<(), Error<Self::BusError>> {
+    async fn set_power_state(
+        &mut self,
+        port: LocalPortId,
+        state: controller::SystemPowerState,
+    ) -> Result<(), Error<Self::BusError>> {
         use tps6699x::registers::SystemPowerState as DriverSystemPowerState;
 
         let driver_state = match state {
@@ -838,12 +842,7 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
             controller::SystemPowerState::S0ix => DriverSystemPowerState::S0Ix,
         };
 
-        // The TRM indicates this register is unique per port, so write to all ports
-        for port_idx in 0..self.port_events.len() {
-            let port = LocalPortId(port_idx as u8);
-            self.tps6699x.set_sx_app_config(port, driver_state).await?;
-        }
-        Ok(())
+        self.tps6699x.set_sx_app_config(port, driver_state).await
     }
 }
 
