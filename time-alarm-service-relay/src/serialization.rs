@@ -151,16 +151,26 @@ impl SerializableMessage for AcpiTimeAlarmRequest {
 
 // -------------------------------------------------
 
+/// Response types for the ACPI Time and Alarm device service.
 #[derive(Copy, Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum AcpiTimeAlarmResponse {
+    /// Response to a _GCP request, containing the capabilities of the time-alarm device.
     Capabilities(TimeAlarmDeviceCapabilities),
+
+    /// Response to a _GRT request, containing the current real time according to the time-alarm device.
     RealTime(AcpiTimestamp),
+
+    /// Response to a _GWS request, containing the current status of the specified timer.
     TimerStatus(TimerStatus),
+
+    /// Response to a _TIP request, containing the current wake policy for the specified timer.
     WakePolicy(AlarmExpiredWakePolicy),
+
+    /// Response to a _TIV request, containing the current timer value for the specified timer.
     TimerSeconds(AlarmTimerSeconds),
 
-    /// Operation succeeded, but there's no data to return.
+    /// Operation succeeded, but there's no data to return - response to methods that just return a boolean - _SRT, _CWS, _STP, _STV
     OkNoData,
 }
 

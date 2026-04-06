@@ -5,11 +5,13 @@ use time_alarm_service_interface::TimeAlarmService;
 mod serialization;
 pub use serialization::{AcpiTimeAlarmRequest, AcpiTimeAlarmResponse, AcpiTimeAlarmResult};
 
+/// A relay handler that converts MCTP messages into function calls against the time-alarm service.
 pub struct TimeAlarmServiceRelayHandler<T: TimeAlarmService> {
     service: T,
 }
 
 impl<T: TimeAlarmService> TimeAlarmServiceRelayHandler<T> {
+    /// Construct a new relay handler that transmits requests to the given time-alarm service.
     pub fn new(service: T) -> Self {
         Self { service }
     }

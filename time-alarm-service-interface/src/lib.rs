@@ -6,10 +6,12 @@ pub use acpi_timestamp::{AcpiDaylightSavingsTimeStatus, AcpiTimeZone, AcpiTimeZo
 use bitfield::bitfield;
 use embedded_mcu_hal::time::DatetimeClockError;
 
+/// The number of seconds before a timer will expire.
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct AlarmTimerSeconds(pub u32);
 impl AlarmTimerSeconds {
+    /// The alarm is not running and will never expire.
     pub const DISABLED: Self = Self(u32::MAX);
 }
 
@@ -21,11 +23,16 @@ impl Default for AlarmTimerSeconds {
 
 // -------------------------------------------------
 
+/// If a timer is on the wrong power source when it expires, the number of seconds after switching to the correct
+/// power source that must elapse on the correct power source before the timer actually triggers a wake event.
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct AlarmExpiredWakePolicy(pub u32);
 impl AlarmExpiredWakePolicy {
+    /// The timer will trigger a wake event immediately upon switching to the correct power source.
     pub const INSTANTLY: Self = Self(0);
+
+    /// The timer will never trigger a wake event if it expires on the wrong power source, even if it later switches to the correct power source.
     pub const NEVER: Self = Self(u32::MAX);
 }
 
@@ -37,16 +44,20 @@ impl Default for AlarmExpiredWakePolicy {
 
 // -------------------------------------------------
 
-// Timer ID as defined in the ACPI spec.
+/// ACPI timer ID as defined in the ACPI spec.
 #[derive(Clone, Copy, Debug, PartialEq, num_enum::TryFromPrimitive, num_enum::IntoPrimitive)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[repr(u32)]
 pub enum AcpiTimerId {
+    /// The timer that is active when the system is on external power.
     AcPower = 0,
+
+    /// The timer that is active when the system is on battery power.
     DcPower = 1,
 }
 
 impl AcpiTimerId {
+    /// Gets the timer ID for the other power source.
     pub fn get_other_timer_id(&self) -> Self {
         match self {
             AcpiTimerId::AcPower => AcpiTimerId::DcPower,
@@ -56,6 +67,7 @@ impl AcpiTimerId {
 }
 
 bitfield!(
+    /// Describes the current status of a timer, including whether it has expired and whether it triggered a wake event.
     #[derive(Copy, Clone, Default, PartialEq, Eq)]
     #[cfg_attr(feature = "defmt", derive(defmt::Format))]
     pub struct TimerStatus(u32);
@@ -68,6 +80,7 @@ bitfield!(
 // -------------------------------------------------
 
 bitfield!(
+    /// Describes the capabilities of a time-alarm device. Details on semantics of individual fields are available in the ACPI spec, version 6.4, section 9.18.2
     #[derive(Copy, Clone, Default, PartialEq, Eq)]
     #[cfg_attr(feature = "defmt", derive(defmt::Format))]
     pub struct TimeAlarmDeviceCapabilities(u32);
@@ -84,7 +97,10 @@ bitfield!(
     pub dc_s5_wake_supported, set_dc_s5_wake_supported: 8;
 );
 
+/// The interface for a time-alarm service, which implements the ACPI Time and Alarm device specification.
+/// See the ACPI spec version 6.4, section 9.18, for more details on the expected behavior of each method.
 pub trait TimeAlarmService {
+    /// Query the capabilities of the time-alarm device.  Analogous to ACPI TAD's _GCP method.
     fn get_capabilities(&self) -> TimeAlarmDeviceCapabilities;
 
     /// Query the current time.  Analogous to ACPI TAD's _GRT method.
