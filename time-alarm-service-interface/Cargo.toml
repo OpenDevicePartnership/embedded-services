@@ -1,0 +1,21 @@
+[package]
+name = "time-alarm-service-interface"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+bitfield.workspace = true
+defmt = { workspace = true, optional = true }
+log = { workspace = true, optional = true }
+embedded-mcu-hal.workspace = true
+num_enum.workspace = true
+zerocopy = { workspace = true, features = ["derive"] }
+
+[features]
+defmt = ["dep:defmt", "embedded-mcu-hal/defmt"]
+log = ["dep:log"]
+
+[lints]
+workspace = true
