@@ -6,7 +6,7 @@ use embedded_usb_pd::{GlobalPortId, LocalPortId, PdError, ucsi};
 use crate::type_c::{
     Cached,
     controller::{
-        PdStateMachineConfig, SystemPowerState, TbtConfig, TypeCStateMachineState, UsbControlConfig,
+        DiscoveredSvids, PdStateMachineConfig, SystemPowerState, TbtConfig, TypeCStateMachineState, UsbControlConfig,
         execute_external_ucsi_command,
     },
 };
@@ -103,6 +103,8 @@ pub enum PortCommandData {
     },
     /// Set the system power state
     SetSystemPowerState(SystemPowerState),
+    /// Get the port's discovered SVIDs
+    GetDiscoveredSvids,
 }
 
 /// Port-specific commands
@@ -127,6 +129,8 @@ pub enum PortResponseData {
     RetimerFwUpdateGetState(RetimerFwUpdateState),
     /// Get DisplayPort status
     GetDpStatus(DpStatus),
+    /// Get the port's discovered SVIDs
+    DiscoveredSvids(DiscoveredSvids),
 }
 
 /// Port-specific command response
@@ -498,6 +502,19 @@ pub async fn set_type_c_state_machine_config(port: GlobalPortId, state: TypeCSta
     .await?
     {
         PortResponseData::Complete => Ok(()),
+        _ => Err(PdError::InvalidResponse),
+    }
+}
+
+/// Get the port's discovered SVIDs
+pub async fn get_discovered_svids(port: GlobalPortId) -> Result<DiscoveredSvids, PdError> {
+    match execute_external_port_command(Command::Port(PortCommand {
+        port,
+        data: PortCommandData::GetDiscoveredSvids,
+    }))
+    .await?
+    {
+        PortResponseData::DiscoveredSvids(svids) => Ok(svids),
         _ => Err(PdError::InvalidResponse),
     }
 }

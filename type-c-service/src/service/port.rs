@@ -74,6 +74,7 @@ impl<'a> Service<'a> {
             external::PortCommandData::SetSystemPowerState(state) => {
                 self.process_set_power_state(command.port, state).await
             }
+            external::PortCommandData::GetDiscoveredSvids => self.process_get_discovered_svids(command.port).await,
         }
     }
 
@@ -285,5 +286,15 @@ impl<'a> Service<'a> {
         }
 
         external::Response::Port(status.map(|_| external::PortResponseData::Complete))
+    }
+
+    /// Process [`external::PortCommandData::GetDiscoveredSvids`] command
+    async fn process_get_discovered_svids(&self, port_id: GlobalPortId) -> external::Response<'static> {
+        let status = self.context.get_discovered_svids(port_id).await;
+        if let Err(e) = status {
+            error!("Error getting discovered SVIDs: {:#?}", e);
+        }
+
+        external::Response::Port(status.map(external::PortResponseData::DiscoveredSvids))
     }
 }

@@ -13,8 +13,8 @@ use embedded_hal_async::i2c::I2c;
 use embedded_services::power::policy::PowerCapability;
 use embedded_services::type_c::ATTN_VDM_LEN;
 use embedded_services::type_c::controller::{
-    self, AttnVdm, Controller, ControllerStatus, DpPinConfig, OtherVdm, PortStatus, SendVdm, TbtConfig,
-    TypeCStateMachineState, UsbControlConfig,
+    self, AttnVdm, Controller, ControllerStatus, DiscoveredSvids, DpPinConfig, OtherVdm, PortStatus, SendVdm,
+    TbtConfig, TypeCStateMachineState, UsbControlConfig,
 };
 use embedded_services::type_c::event::PortEvent;
 use embedded_services::{debug, error, trace, type_c, warn};
@@ -24,6 +24,7 @@ use embedded_usb_pd::pdo::{Common, Contract, Rdo, sink, source};
 use embedded_usb_pd::type_c::Current as TypecCurrent;
 use embedded_usb_pd::ucsi::lpm;
 use embedded_usb_pd::{DataRole, Error, LocalPortId, PdError, PlugOrientation, PowerRole};
+use heapless::Vec;
 use tps6699x::MAX_SUPPORTED_PORTS;
 use tps6699x::asynchronous::embassy as tps6699x_drv;
 use tps6699x::asynchronous::fw_update::UpdateTarget;
@@ -843,6 +844,23 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
         };
 
         self.tps6699x.set_sx_app_config(port, driver_state).await
+    }
+
+    async fn get_discovered_svids(&mut self, port: LocalPortId) -> Result<DiscoveredSvids, Error<Self::BusError>> {
+        let svids = self.tps6699x.get_discovered_svids(port).await?;
+        debug!("{:?} discovered SVIDs: {:?}", port, svids);
+        let mut sop = Vec::new();
+        for svid in svids.svid_sop().take(sop.capacity()) {
+            let _ = sop.push(svid);
+        }
+
+        let mut sop_prime = Vec::new();
+        for svid in svids.svid_sop_prime().take(sop_prime.capacity()) {
+            let _ = sop_prime.push(svid);
+        }
+
+        let svids = DiscoveredSvids::new(sop, sop_prime);
+        Ok(svids)
     }
 }
 

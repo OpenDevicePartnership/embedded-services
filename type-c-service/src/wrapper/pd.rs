@@ -424,6 +424,15 @@ where
                     },
                 }
             }
+            controller::PortCommandData::GetDiscoveredSvids => {
+                match controller.get_discovered_svids(local_port).await {
+                    Ok(svids) => Ok(controller::PortResponseData::DiscoveredSvids(svids)),
+                    Err(e) => match e {
+                        Error::Bus(_) => Err(PdError::Failed),
+                        Error::Pd(e) => Err(e),
+                    },
+                }
+            }
         })
     }
 
