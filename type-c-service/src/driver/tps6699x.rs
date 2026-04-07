@@ -862,6 +862,16 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
         let svids = DiscoveredSvids::new(sop, sop_prime);
         Ok(svids)
     }
+
+    async fn hard_reset(&mut self, port: LocalPortId) -> Result<(), Error<Self::BusError>> {
+        match self.tps6699x.execute_hrst(port).await? {
+            ReturnValue::Success => Ok(()),
+            r => {
+                debug!("Error executing hard reset on port {}: {:#?}", port.0, r);
+                Err(Error::Pd(PdError::InvalidResponse))
+            }
+        }
+    }
 }
 
 impl<'a, M: RawMutex, BUS: I2c> AsRef<tps6699x_drv::Tps6699x<'a, M, BUS>> for Tps6699x<'a, M, BUS> {

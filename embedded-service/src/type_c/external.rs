@@ -105,6 +105,8 @@ pub enum PortCommandData {
     SetSystemPowerState(SystemPowerState),
     /// Get the port's discovered SVIDs
     GetDiscoveredSvids,
+    /// Trigger a hard reset on the given port.
+    HardReset,
 }
 
 /// Port-specific commands
@@ -515,6 +517,19 @@ pub async fn get_discovered_svids(port: GlobalPortId) -> Result<DiscoveredSvids,
     .await?
     {
         PortResponseData::DiscoveredSvids(svids) => Ok(svids),
+        _ => Err(PdError::InvalidResponse),
+    }
+}
+
+/// Trigger a hard reset on the given port
+pub async fn hard_reset(port: GlobalPortId) -> Result<(), PdError> {
+    match execute_external_port_command(Command::Port(PortCommand {
+        port,
+        data: PortCommandData::HardReset,
+    }))
+    .await?
+    {
+        PortResponseData::Complete => Ok(()),
         _ => Err(PdError::InvalidResponse),
     }
 }

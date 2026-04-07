@@ -346,6 +346,11 @@ impl embedded_services::type_c::controller::Controller for Controller<'_> {
         debug!("Get discovered SVIDs for port {port:?}");
         Ok(DiscoveredSvids::default())
     }
+
+    async fn hard_reset(&mut self, port: LocalPortId) -> Result<(), Error<Self::BusError>> {
+        debug!("Hard reset for port {port:?}");
+        Ok(())
+    }
 }
 
 pub struct Validator;

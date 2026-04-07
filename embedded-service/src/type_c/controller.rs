@@ -380,6 +380,8 @@ pub enum PortCommandData {
     SetSystemPowerState(SystemPowerState),
     /// Get the port's discovered SVIDs
     GetDiscoveredSvids,
+    /// Trigger a hard reset on the given port.
+    HardReset,
 }
 
 /// Port-specific commands
@@ -780,6 +782,9 @@ pub trait Controller {
         &mut self,
         port: LocalPortId,
     ) -> impl Future<Output = Result<DiscoveredSvids, Error<Self::BusError>>>;
+
+    /// Trigger a hard reset on the given port.
+    fn hard_reset(&mut self, port: LocalPortId) -> impl Future<Output = Result<(), Error<Self::BusError>>>;
 }
 
 /// Internal context for managing PD controllers
@@ -1365,6 +1370,14 @@ impl ContextToken {
                 error!("Invalid response: expected discovered SVIDs, got {:?}", r);
                 Err(PdError::InvalidResponse)
             }
+        }
+    }
+
+    /// Trigger a hard reset on the given port.
+    pub async fn hard_reset(&self, port: GlobalPortId) -> Result<(), PdError> {
+        match self.send_port_command(port, PortCommandData::HardReset).await? {
+            PortResponseData::Complete => Ok(()),
+            _ => Err(PdError::InvalidResponse),
         }
     }
 

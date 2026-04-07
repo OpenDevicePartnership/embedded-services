@@ -433,6 +433,13 @@ where
                     },
                 }
             }
+            controller::PortCommandData::HardReset => match controller.hard_reset(local_port).await {
+                Ok(()) => Ok(controller::PortResponseData::Complete),
+                Err(e) => match e {
+                    Error::Bus(_) => Err(PdError::Failed),
+                    Error::Pd(e) => Err(e),
+                },
+            },
         })
     }
 
