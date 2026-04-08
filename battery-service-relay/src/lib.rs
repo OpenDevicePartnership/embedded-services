@@ -4,9 +4,7 @@ use battery_service_interface::*;
 use embedded_services::trace;
 
 mod serialization;
-use serialization::AcpiBatteryRequest;
-
-use crate::serialization::AcpiBatteryResponse;
+pub use serialization::{AcpiBatteryError, AcpiBatteryRequest, AcpiBatteryResponse, AcpiBatteryResult};
 
 /// Relays messages to and from a battery service implementation over MCTP.
 pub struct BatteryServiceRelayHandler<S: battery_service_interface::BatteryService> {

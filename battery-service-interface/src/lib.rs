@@ -192,7 +192,7 @@ pub trait BatteryService {
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-/// Errors that can ocur when interacting with the battery service.
+/// Errors that can occur when interacting with the battery service.
 pub enum BatteryError {
     /// The specified battery ID does not correspond to any known battery.
     UnknownDeviceId,

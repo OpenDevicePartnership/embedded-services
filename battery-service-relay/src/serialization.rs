@@ -233,7 +233,7 @@ impl SerializableMessage for AcpiBatteryResponse {
                 BatteryCmd::GetBst => {
                     let bst = BstReturn {
                         battery_state: BatteryState::from_bits(safe_get_dword(buffer, 0)?)
-                            .ok_or(MessageSerializationError::BufferTooSmall)?,
+                            .ok_or(MessageSerializationError::InvalidPayload("Invalid BatteryState"))?,
                         battery_present_rate: safe_get_dword(buffer, 4)?,
                         battery_remaining_capacity: safe_get_dword(buffer, 8)?,
                         battery_present_voltage: safe_get_dword(buffer, 12)?,

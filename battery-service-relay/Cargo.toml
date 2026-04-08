@@ -15,7 +15,11 @@ battery-service-interface.workspace = true
 embedded-batteries-async.workspace = true
 
 [features]
-defmt = ["dep:defmt", "battery-service-interface/defmt"]
+defmt = [
+    "dep:defmt",
+    "embedded-services/defmt",
+    "battery-service-interface/defmt",
+]
 log = ["dep:log", "embedded-services/log", "battery-service-interface/log"]
 
 [lints]
