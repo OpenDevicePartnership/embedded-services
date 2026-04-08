@@ -8,11 +8,13 @@ use serialization::AcpiBatteryRequest;
 
 use crate::serialization::AcpiBatteryResponse;
 
+/// Relays messages to and from a battery service implementation over MCTP.
 pub struct BatteryServiceRelayHandler<S: battery_service_interface::BatteryService> {
     service: S,
 }
 
 impl<S: battery_service_interface::BatteryService> BatteryServiceRelayHandler<S> {
+    /// Create a new relay handler that uses the provided battery service implementation to handle requests.
     pub fn new(service: S) -> Self {
         Self { service }
     }

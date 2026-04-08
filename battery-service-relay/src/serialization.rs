@@ -7,7 +7,7 @@ use embedded_services::relay::{MessageSerializationError, SerializableMessage};
 
 // Unfortunately `TryFrom<u32>` is not implemented by embedded-batteries for these types
 /// Attempt to convert a `u32` to a `PowerUnit`.
-pub fn power_unit_try_from_u32(value: u32) -> Result<PowerUnit, MessageSerializationError> {
+fn power_unit_try_from_u32(value: u32) -> Result<PowerUnit, MessageSerializationError> {
     match value {
         0 => Ok(PowerUnit::MilliWatts),
         1 => Ok(PowerUnit::MilliAmps),
@@ -16,7 +16,7 @@ pub fn power_unit_try_from_u32(value: u32) -> Result<PowerUnit, MessageSerializa
 }
 
 /// Attempt to convert a `u32` to a `BatteryTechnology`.
-pub fn bat_tech_try_from_u32(value: u32) -> Result<BatteryTechnology, MessageSerializationError> {
+fn bat_tech_try_from_u32(value: u32) -> Result<BatteryTechnology, MessageSerializationError> {
     match value {
         0 => Ok(BatteryTechnology::Primary),
         1 => Ok(BatteryTechnology::Secondary),
@@ -25,7 +25,7 @@ pub fn bat_tech_try_from_u32(value: u32) -> Result<BatteryTechnology, MessageSer
 }
 
 /// Attempt to convert a `u32` to a `BatterySwapCapability`.
-pub fn bat_swap_try_from_u32(value: u32) -> Result<BatterySwapCapability, MessageSerializationError> {
+fn bat_swap_try_from_u32(value: u32) -> Result<BatterySwapCapability, MessageSerializationError> {
     match value {
         0 => Ok(BatterySwapCapability::NonSwappable),
         1 => Ok(BatterySwapCapability::ColdSwappable),
@@ -37,7 +37,7 @@ pub fn bat_swap_try_from_u32(value: u32) -> Result<BatterySwapCapability, Messag
 }
 
 /// Attempt to convert a `u32` to a `ThresholdId`.
-pub fn thres_id_try_from_u32(value: u32) -> Result<ThresholdId, MessageSerializationError> {
+fn thres_id_try_from_u32(value: u32) -> Result<ThresholdId, MessageSerializationError> {
     match value {
         0 => Ok(ThresholdId::ClearAll),
         1 => Ok(ThresholdId::InstantaneousPeakPower),
@@ -47,7 +47,7 @@ pub fn thres_id_try_from_u32(value: u32) -> Result<ThresholdId, MessageSerializa
 }
 
 /// Attempt to convert a `u32` to a `PowerSource`.
-pub fn pwr_src_try_from_u32(value: u32) -> Result<PowerSource, MessageSerializationError> {
+fn pwr_src_try_from_u32(value: u32) -> Result<PowerSource, MessageSerializationError> {
     match value {
         0 => Ok(PowerSource::Offline),
         1 => Ok(PowerSource::Online),
@@ -138,21 +138,51 @@ impl From<&AcpiBatteryResponse> for BatteryCmd {
 
 #[derive(PartialEq, Clone, Copy)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
+/// ACPI battery device message responses as defined in ACPI spec version 6.4, section 10.2
 pub enum AcpiBatteryResponse {
+    /// Extended battery information. Analogous to the return value of the _BIX method.
     GetBix { bix: BixFixedStrings },
+
+    /// Battery status. Analogous to the return value of the _BST method.
     GetBst { bst: BstReturn },
+
+    /// Power source in use. Analogous to the return value of the _PSR method.
     GetPsr { psr: PsrReturn },
+
+    /// Power source information. Analogous to the return value of the _PIF method.
     GetPif { pif: PifFixedStrings },
+
+    /// Battery power state. Analogous to the return value of the _BPS method.
     GetBps { bps: Bps },
+
+    /// Result of setting a battery trip point. Analogous to the _BTP method. Semantically equivalent to ().
     SetBtp {},
+
+    /// Result of setting a battery power threshold. Analogous to the _BPT method. Semantically equivalent to ().
     SetBpt {},
+
+    /// Battery power characteristics. Analogous to the return value of the _BPC method.
     GetBpc { bpc: Bpc },
+
+    /// Result of performing a battery maintenance control operation. Analogous to the return value of the _BMC method. Semantically equivalent to ().
     SetBmc {},
+
+    /// Battery maintenance data. Analogous to the return value of the _BMD method.
     GetBmd { bmd: Bmd },
+
+    /// Battery charge time. Analogous to the return value of the _BCT method.
     GetBct { bct_response: BctReturnResult },
+
+    /// Battery time to empty. Analogous to the return value of the _BTM method.
     GetBtm { btm_response: BtmReturnResult },
+
+    /// Result of setting the battery measurement sampling time. Analogous to the _BMS method.
     SetBms { status: u32 },
+
+    /// Result of setting the battery measurement averaging interval. Analogous to the _BMA method.
     SetBma { status: u32 },
+
+    /// Battery device status. Analogous to the return value of the _STA method.
     GetSta { sta: StaReturn },
 }
 
@@ -278,20 +308,49 @@ impl SerializableMessage for AcpiBatteryResponse {
 #[derive(PartialEq, Clone, Copy)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum AcpiBatteryRequest {
+    /// Queries extended battery information. Analogous to ACPI's _BIX method.
     GetBix { battery_id: u8 },
+
+    /// Queries battery status. Analogous to ACPI's _BST method.
     GetBst { battery_id: u8 },
+
+    /// Queries the current power source. Analogous to ACPI's _PSR method.
     GetPsr { battery_id: u8 },
+
+    /// Queries information about the battery's power source. Analogous to ACPI's _PIF method.
     GetPif { battery_id: u8 },
+
+    /// Queries information about the current power delivery capabilities of the battery. Analogous to ACPI's _BPS method.
     GetBps { battery_id: u8 },
+
+    /// Sets a battery trip point. Analogous to ACPI's _BTP method.
     SetBtp { battery_id: u8, btp: Btp },
+
+    /// Sets a battery power threshold. Analogous to ACPI's _BPT method.
     SetBpt { battery_id: u8, bpt: Bpt },
+
+    /// Queries the current power characteristics of the battery. Analogous to ACPI's _BPC method.
     GetBpc { battery_id: u8 },
+
+    /// Performs a battery maintenance control operation. Analogous to ACPI's _BMC method.
     SetBmc { battery_id: u8, bmc: Bmc },
+
+    /// Queries battery maintenance data. Analogous to ACPI's _BMD method.
     GetBmd { battery_id: u8 },
+
+    /// Queries the estimated time remaining to charge the battery to the specified level. Analogous to ACPI's _BCT method.
     GetBct { battery_id: u8, bct: Bct },
+
+    /// Queries the estimated time remaining until the battery is discharged to the specified level. Analogous to ACPI's _BTM method.
     GetBtm { battery_id: u8, btm: Btm },
+
+    /// Sets the sampling time of battery measurements in milliseconds. Analogous to ACPI's _BMS method.
     SetBms { battery_id: u8, bms: Bms },
+
+    /// Sets the averaging interval of battery measurements in milliseconds. Analogous to ACPI's _BMA method.
     SetBma { battery_id: u8, bma: Bma },
+
+    /// Queries the current status of the battery device. Analogous to ACPI's _STA method.
     GetSta { battery_id: u8 },
 }
 
@@ -414,13 +473,18 @@ impl SerializableMessage for AcpiBatteryRequest {
     }
 }
 
+/// Serializable result type for battery operations.
 pub type AcpiBatteryResult = Result<AcpiBatteryResponse, AcpiBatteryError>;
 
 #[derive(num_enum::IntoPrimitive, num_enum::TryFromPrimitive, Copy, Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[repr(u16)]
+/// Errors that can occur while processing ACPI battery requests.
 pub enum AcpiBatteryError {
+    /// The provided battery ID does not correspond to any known battery device.
     UnknownDeviceId = 1,
+
+    /// An unspecified error occurred while processing the request.
     UnspecifiedFailure = 2,
 }
 
