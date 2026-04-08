@@ -30,7 +30,9 @@ pub fn bat_swap_try_from_u32(value: u32) -> Result<BatterySwapCapability, Messag
         0 => Ok(BatterySwapCapability::NonSwappable),
         1 => Ok(BatterySwapCapability::ColdSwappable),
         2 => Ok(BatterySwapCapability::HotSwappable),
-        _ => Err(MessageSerializationError::InvalidPayload("Invalid BatteryTechnology")),
+        _ => Err(MessageSerializationError::InvalidPayload(
+            "Invalid BatterySwapCapability",
+        )),
     }
 }
 
@@ -503,7 +505,7 @@ const BIX_OEM_INFO_START_IDX: usize = BIX_BATTERY_TYPE_END_IDX;
 const BIX_OEM_INFO_END_IDX: usize = BIX_OEM_INFO_START_IDX + STD_BIX_OEM_SIZE;
 
 fn bix_to_bytes(bix: BixFixedStrings, dst_slice: &mut [u8]) -> Result<usize, MessageSerializationError> {
-    if dst_slice.len() < BIX_OEM_INFO_END_IDX {
+    if dst_slice.len() < BIX_OEM_INFO_END_IDX + core::mem::size_of::<u32>() {
         return Err(MessageSerializationError::BufferTooSmall);
     }
 
@@ -557,11 +559,11 @@ fn bix_from_bytes(src_slice: &[u8]) -> Result<BixFixedStrings, MessageSerializat
 }
 
 const PIF_MODEL_NUM_START_IDX: usize = 12;
-const PIF_MODEL_NUM_END_IDX: usize = PIF_MODEL_NUM_START_IDX + STD_BIX_MODEL_SIZE;
+const PIF_MODEL_NUM_END_IDX: usize = PIF_MODEL_NUM_START_IDX + STD_PIF_MODEL_SIZE;
 const PIF_SERIAL_NUM_START_IDX: usize = PIF_MODEL_NUM_END_IDX;
-const PIF_SERIAL_NUM_END_IDX: usize = PIF_SERIAL_NUM_START_IDX + STD_BIX_SERIAL_SIZE;
+const PIF_SERIAL_NUM_END_IDX: usize = PIF_SERIAL_NUM_START_IDX + STD_PIF_SERIAL_SIZE;
 const PIF_OEM_INFO_START_IDX: usize = PIF_SERIAL_NUM_END_IDX;
-const PIF_OEM_INFO_END_IDX: usize = PIF_OEM_INFO_START_IDX + STD_BIX_OEM_SIZE;
+const PIF_OEM_INFO_END_IDX: usize = PIF_OEM_INFO_START_IDX + STD_PIF_OEM_SIZE;
 
 fn pif_to_bytes(pif: PifFixedStrings, dst_slice: &mut [u8]) -> Result<usize, MessageSerializationError> {
     if dst_slice.len() < PIF_OEM_INFO_END_IDX {
@@ -582,8 +584,8 @@ fn pif_from_bytes(src_slice: &[u8]) -> Result<PifFixedStrings, MessageSerializat
             .ok_or(MessageSerializationError::InvalidPayload("Invalid PowerSourceState"))?,
         max_output_power: safe_get_dword(src_slice, 4)?,
         max_input_power: safe_get_dword(src_slice, 8)?,
-        model_number: safe_get_bytes::<STD_BIX_MODEL_SIZE>(src_slice, PIF_MODEL_NUM_START_IDX)?,
-        serial_number: safe_get_bytes::<STD_BIX_SERIAL_SIZE>(src_slice, PIF_SERIAL_NUM_START_IDX)?,
-        oem_info: safe_get_bytes::<STD_BIX_OEM_SIZE>(src_slice, PIF_OEM_INFO_START_IDX)?,
+        model_number: safe_get_bytes::<STD_PIF_MODEL_SIZE>(src_slice, PIF_MODEL_NUM_START_IDX)?,
+        serial_number: safe_get_bytes::<STD_PIF_SERIAL_SIZE>(src_slice, PIF_SERIAL_NUM_START_IDX)?,
+        oem_info: safe_get_bytes::<STD_PIF_OEM_SIZE>(src_slice, PIF_OEM_INFO_START_IDX)?,
     })
 }

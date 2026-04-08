@@ -82,11 +82,11 @@ pub struct PifFixedStrings {
     /// 0xFFFFFFFF indicates the value is unavailable.
     pub max_input_power: u32,
     /// OEM-specific model number (ASCIIZ). Empty string if not supported.
-    pub model_number: [u8; STD_BIX_MODEL_SIZE],
+    pub model_number: [u8; STD_PIF_MODEL_SIZE],
     /// OEM-specific serial number (ASCIIZ). Empty string if not supported.
-    pub serial_number: [u8; STD_BIX_SERIAL_SIZE],
+    pub serial_number: [u8; STD_PIF_SERIAL_SIZE],
     /// OEM-specific information (ASCIIZ). Empty string if not supported.
-    pub oem_info: [u8; STD_BIX_OEM_SIZE],
+    pub oem_info: [u8; STD_PIF_OEM_SIZE],
 }
 
 /// Fuel gauge ID
@@ -108,7 +108,7 @@ pub trait BatteryService {
         battery_id: DeviceId,
     ) -> impl core::future::Future<Output = Result<BixFixedStrings, BatteryError>>;
 
-    /// Sets the averaging interval of baterry capacity measurement in milliseconds. Corresponds to ACPI's _BMA method.
+    /// Sets the averaging interval of battery capacity measurement in milliseconds. Corresponds to ACPI's _BMA method.
     fn set_battery_measurement_averaging_interval(
         &self,
         battery_id: DeviceId,
