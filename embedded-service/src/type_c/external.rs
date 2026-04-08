@@ -1,10 +1,13 @@
 //! Message definitions for external type-C commands
+use core::num::NonZeroU8;
+
 use embedded_usb_pd::{GlobalPortId, LocalPortId, PdError, ucsi};
 
 use crate::type_c::{
     Cached,
     controller::{
-        PdStateMachineConfig, TbtConfig, TypeCStateMachineState, UsbControlConfig, execute_external_ucsi_command,
+        PdStateMachineConfig, SystemPowerState, TbtConfig, TypeCStateMachineState, UsbControlConfig,
+        execute_external_ucsi_command,
     },
 };
 
@@ -91,6 +94,15 @@ pub enum PortCommandData {
     SetPdStateMachineConfig(PdStateMachineConfig),
     /// Set Type-C state-machine configuration
     SetTypeCStateMachineConfig(TypeCStateMachineState),
+    /// Execute electrical disconnect
+    ExecuteElectricalDisconnect {
+        /// The time, in seconds, after which the port should automatically reconnect.
+        ///
+        /// If [`None`], the port will not automatically reconnect.
+        reconnect_time_s: Option<NonZeroU8>,
+    },
+    /// Set the system power state
+    SetSystemPowerState(SystemPowerState),
 }
 
 /// Port-specific commands
@@ -300,6 +312,22 @@ pub async fn sync_controller_state(id: ControllerId) -> Result<(), PdError> {
     }
 }
 
+/// Set the system power state on the given port.
+///
+/// This notifies the PD controller of the current system power state,
+/// which triggers Application Configuration updates (e.g., crossbar reconfiguration).
+pub async fn set_power_state(port: GlobalPortId, state: SystemPowerState) -> Result<(), PdError> {
+    match execute_external_port_command(Command::Port(PortCommand {
+        port,
+        data: PortCommandData::SetSystemPowerState(state),
+    }))
+    .await?
+    {
+        PortResponseData::Complete => Ok(()),
+        _ => Err(PdError::InvalidResponse),
+    }
+}
+
 /// Get number of ports on the system
 pub fn get_num_ports() -> usize {
     super::controller::get_num_ports()
@@ -349,6 +377,25 @@ pub async fn reconfigure_retimer(port: GlobalPortId) -> Result<(), PdError> {
 /// Execute a UCSI command
 pub async fn execute_ucsi_command(command: ucsi::GlobalCommand) -> UcsiResponse {
     execute_external_ucsi_command(command).await
+}
+
+/// Execute an electrical disconnect on the given port.
+///
+/// The `reconnect_time_s` parameter specifies the time, in seconds, after which the port should automatically reconnect.
+/// If [`None`], the port will not automatically reconnect.
+pub async fn execute_electrical_disconnect(
+    port: GlobalPortId,
+    reconnect_time_s: Option<NonZeroU8>,
+) -> Result<(), PdError> {
+    match execute_external_port_command(Command::Port(PortCommand {
+        port,
+        data: PortCommandData::ExecuteElectricalDisconnect { reconnect_time_s },
+    }))
+    .await?
+    {
+        PortResponseData::Complete => Ok(()),
+        _ => Err(PdError::InvalidResponse),
+    }
 }
 
 /// Send vdm to the given port

@@ -12,7 +12,6 @@ mod defmt_and_log {
     #[collapse_debuginfo(yes)]
     macro_rules! trace {
         ($s:literal $(, $x:expr)* $(,)?) => {{
-            let _ = ($s $(, &$x )*);
             ::defmt::trace!($s $(, $x)*);
             ::log::trace!($s $(, $x)*);
         }};
@@ -23,7 +22,6 @@ mod defmt_and_log {
     #[collapse_debuginfo(yes)]
     macro_rules! debug {
         ($s:literal $(, $x:expr)* $(,)?) => {{
-            let _ = ($s $(, &$x )*);
             ::defmt::debug!($s $(, $x)*);
             ::log::debug!($s $(, $x)*);
         }};
@@ -34,7 +32,6 @@ mod defmt_and_log {
     #[collapse_debuginfo(yes)]
     macro_rules! info {
         ($s:literal $(, $x:expr)* $(,)?) => {{
-            let _ = ($s $(, &$x )*);
             ::defmt::info!($s $(, $x)*);
             ::log::info!($s $(, $x)*);
         }};
@@ -45,7 +42,6 @@ mod defmt_and_log {
     #[collapse_debuginfo(yes)]
     macro_rules! warn {
         ($s:literal $(, $x:expr)* $(,)?) => {{
-            let _ = ($s $(, &$x )*);
             ::defmt::warn!($s $(, $x)*);
             ::log::warn!($s $(, $x)*);
         }};
@@ -56,7 +52,6 @@ mod defmt_and_log {
     #[collapse_debuginfo(yes)]
     macro_rules! error {
         ($s:literal $(, $x:expr)* $(,)?) => {{
-            let _ = ($s $(, &$x )*);
             ::defmt::error!($s $(, $x)*);
             ::log::error!($s $(, $x)*);
         }};
@@ -71,7 +66,7 @@ mod defmt {
     macro_rules! trace {
         ($s:literal $(, $x:expr)* $(,)?) => {
             {
-                let _ = ($s, $( &$x ),*);
+                let _ = $s;
                 ::defmt::trace!($s $(, $x)*);
             }
         };
@@ -83,7 +78,7 @@ mod defmt {
     macro_rules! debug {
         ($s:literal $(, $x:expr)* $(,)?) => {
             {
-                let _ = ($s, $( &$x ),*);
+                let _ = $s;
                 ::defmt::debug!($s $(, $x)*);
             }
         };
@@ -95,7 +90,7 @@ mod defmt {
     macro_rules! info {
         ($s:literal $(, $x:expr)* $(,)?) => {
             {
-                let _ = ($s, $( &$x ),*);
+                let _ = $s;
                 ::defmt::info!($s $(, $x)*);
             }
         };
@@ -107,7 +102,7 @@ mod defmt {
     macro_rules! warn {
         ($s:literal $(, $x:expr)* $(,)?) => {
             {
-                let _ = ($s, $( &$x ),*);
+                let _ = $s;
                 ::defmt::warn!($s $(, $x)*);
             }
         };
@@ -119,7 +114,7 @@ mod defmt {
     macro_rules! error {
         ($s:literal $(, $x:expr)* $(,)?) => {
             {
-                let _ = ($s, $( &$x ),*);
+                let _ = $s;
                 ::defmt::error!($s $(, $x)*);
             }
         };

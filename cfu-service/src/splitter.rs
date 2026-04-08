@@ -52,24 +52,6 @@ impl<'a, C: Customization> Splitter<'a, C> {
         }
     }
 
-    /// Create a new invalid FW version response
-    fn create_invalid_fw_version_response(&self) -> InternalResponseData {
-        let dev_inf = FwVerComponentInfo::new(FwVersion::new(0xffffffff), self.cfu_device.component_id());
-        let comp_info: [FwVerComponentInfo; MAX_CMPT_COUNT] = [dev_inf; MAX_CMPT_COUNT];
-        InternalResponseData::FwVersionResponse(GetFwVersionResponse {
-            header: GetFwVersionResponseHeader::new(1, GetFwVerRespHeaderByte3::NoSpecialFlags),
-            component_info: comp_info,
-        })
-    }
-
-    /// Create a content rejection response
-    fn create_content_rejection(sequence: u16) -> InternalResponseData {
-        InternalResponseData::ContentResponse(FwUpdateContentResponse::new(
-            sequence,
-            CfuUpdateContentResponseStatus::ErrorInvalid,
-        ))
-    }
-
     /// Process a fw version request
     async fn process_get_fw_version(&self) -> InternalResponseData {
         let mut versions = [GetFwVersionResponse {
@@ -96,7 +78,7 @@ impl<'a, C: Customization> Splitter<'a, C> {
             overall_version.component_info[0].component_id = self.cfu_device.component_id();
             InternalResponseData::FwVersionResponse(overall_version)
         } else {
-            self.create_invalid_fw_version_response()
+            crate::responses::create_invalid_fw_version_response(self.cfu_device.component_id())
         }
     }
 
@@ -123,7 +105,7 @@ impl<'a, C: Customization> Splitter<'a, C> {
         if success && let Some(offer_responses_slice) = offer_responses.get(..self.devices.len()) {
             InternalResponseData::OfferResponse(self.customization.resolve_offer_response(offer_responses_slice))
         } else {
-            self.create_invalid_fw_version_response()
+            crate::responses::create_invalid_fw_version_response(self.cfu_device.component_id())
         }
     }
 
@@ -146,7 +128,7 @@ impl<'a, C: Customization> Splitter<'a, C> {
         if success && let Some(content_responses_slice) = content_responses.get(..self.devices.len()) {
             InternalResponseData::ContentResponse(self.customization.resolve_content_response(content_responses_slice))
         } else {
-            Self::create_content_rejection(content.header.sequence_num)
+            crate::responses::create_content_rejection(content.header.sequence_num)
         }
     }
 

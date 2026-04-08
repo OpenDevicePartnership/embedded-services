@@ -1,5 +1,6 @@
 //! PD controller related code
 use core::future::Future;
+use core::num::NonZeroU8;
 use core::sync::atomic::{AtomicBool, Ordering};
 
 use embassy_sync::signal::Signal;
@@ -215,7 +216,7 @@ impl Default for SendVdm {
 pub struct UsbControlConfig {
     /// Enable USB2 data path
     pub usb2_enabled: bool,
-    /// Enable USB3 data path  
+    /// Enable USB3 data path
     pub usb3_enabled: bool,
     /// Enable USB4 data path
     pub usb4_enabled: bool,
@@ -309,6 +310,15 @@ pub enum PortCommandData {
     SetTypeCStateMachineConfig(TypeCStateMachineState),
     /// Execute the UCSI command
     ExecuteUcsiCommand(lpm::CommandData),
+    /// Execute electrical disconnect
+    ExecuteElectricalDisconnect {
+        /// The time, in seconds, after which the port should automatically reconnect.
+        ///
+        /// If [`None`], the port will not automatically reconnect.
+        reconnect_time_s: Option<NonZeroU8>,
+    },
+    /// Set the system power state
+    SetSystemPowerState(SystemPowerState),
 }
 
 /// Port-specific commands
@@ -367,6 +377,25 @@ impl PortResponseData {
 
 /// Port-specific command response
 pub type PortResponse = Result<PortResponseData, PdError>;
+
+/// System power state for Sx App Config register.
+///
+/// Used to notify the PD controller of the current system power state,
+/// which triggers Application Configuration updates (e.g., crossbar reconfiguration).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum SystemPowerState {
+    /// S0 - System fully running
+    S0,
+    /// S3 - Suspend to RAM
+    S3,
+    /// S4 - Hibernate
+    S4,
+    /// S5 - Soft off
+    S5,
+    /// S0ix - Modern standby / Connected standby
+    S0ix,
+}
 
 /// PD controller command-specific data
 #[derive(Copy, Clone, Debug)]
@@ -662,6 +691,26 @@ pub trait Controller {
         &mut self,
         command: lpm::LocalCommand,
     ) -> impl Future<Output = Result<Option<lpm::ResponseData>, Error<Self::BusError>>>;
+
+    /// Execute an electrical disconnect on the given port, if supported by the controller.
+    ///
+    /// If `reconnect_time_s` is provided, the controller should automatically reconnect the port after the specified time
+    /// has elapsed. If `reconnect_time_s` is [`None`], the port should remain disconnected until manually reconnected.
+    fn execute_electrical_disconnect(
+        &mut self,
+        port: LocalPortId,
+        reconnect_time_s: Option<NonZeroU8>,
+    ) -> impl Future<Output = Result<(), Error<Self::BusError>>>;
+
+    /// Set the system power state on the given port.
+    ///
+    /// This notifies the PD controller of the current system power state,
+    /// which triggers Application Configuration updates (e.g., crossbar reconfiguration).
+    fn set_power_state(
+        &mut self,
+        port: LocalPortId,
+        state: SystemPowerState,
+    ) -> impl Future<Output = Result<(), Error<Self::BusError>>>;
 }
 
 /// Internal context for managing PD controllers
@@ -1203,6 +1252,35 @@ impl ContextToken {
             .await?
         {
             PortResponseData::UcsiResponse(response) => response,
+            _ => Err(PdError::InvalidResponse),
+        }
+    }
+
+    /// Execute an electrical disconnect on the given port.
+    pub async fn execute_electrical_disconnect(
+        &self,
+        port: GlobalPortId,
+        reconnect_time_s: Option<NonZeroU8>,
+    ) -> Result<(), PdError> {
+        match self
+            .send_port_command(port, PortCommandData::ExecuteElectricalDisconnect { reconnect_time_s })
+            .await?
+        {
+            PortResponseData::Complete => Ok(()),
+            _ => Err(PdError::InvalidResponse),
+        }
+    }
+
+    /// Set the system power state on the given port.
+    ///
+    /// This notifies the PD controller of the current system power state,
+    /// which triggers Application Configuration updates (e.g., crossbar reconfiguration).
+    pub async fn set_power_state(&self, port: GlobalPortId, state: SystemPowerState) -> Result<(), PdError> {
+        match self
+            .send_port_command(port, PortCommandData::SetSystemPowerState(state))
+            .await?
+        {
+            PortResponseData::Complete => Ok(()),
             _ => Err(PdError::InvalidResponse),
         }
     }

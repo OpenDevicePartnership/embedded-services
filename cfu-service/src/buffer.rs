@@ -96,24 +96,6 @@ impl<'a> Buffer<'a> {
         }
     }
 
-    /// Create a new invalid FW version response
-    fn create_invalid_fw_version_response(&self) -> InternalResponseData {
-        let dev_inf = FwVerComponentInfo::new(FwVersion::new(0xffffffff), self.cfu_device.component_id());
-        let comp_info: [FwVerComponentInfo; MAX_CMPT_COUNT] = [dev_inf; MAX_CMPT_COUNT];
-        InternalResponseData::FwVersionResponse(GetFwVersionResponse {
-            header: GetFwVersionResponseHeader::new(1, GetFwVerRespHeaderByte3::NoSpecialFlags),
-            component_info: comp_info,
-        })
-    }
-
-    /// Create a content rejection response
-    fn create_content_rejection(sequence: u16) -> InternalResponseData {
-        InternalResponseData::ContentResponse(FwUpdateContentResponse::new(
-            sequence,
-            CfuUpdateContentResponseStatus::ErrorInvalid,
-        ))
-    }
-
     /// Process a fw version request
     async fn process_get_fw_version(&self) -> InternalResponseData {
         if let Ok(InternalResponseData::FwVersionResponse(mut response)) =
@@ -124,7 +106,7 @@ impl<'a> Buffer<'a> {
             InternalResponseData::FwVersionResponse(response)
         } else {
             error!("Failed to get FW version for device {}", self.buffered_id);
-            self.create_invalid_fw_version_response()
+            crate::responses::create_invalid_fw_version_response(self.cfu_device.component_id())
         }
     }
 
@@ -176,7 +158,7 @@ impl<'a> Buffer<'a> {
                     "Failed to send content to buffered component {:?}: {:?}",
                     self.buffered_id, e
                 );
-                return Self::create_content_rejection(content.header.sequence_num);
+                return crate::responses::create_content_rejection(content.header.sequence_num);
             }
         }
 
@@ -223,7 +205,7 @@ impl<'a> Buffer<'a> {
                             "Failed to get response from buffered component {:?}: {:?}",
                             self.buffered_id, e
                         );
-                        Self::create_content_rejection(content.header.sequence_num)
+                        crate::responses::create_content_rejection(content.header.sequence_num)
                     }
                 }
             }
@@ -268,7 +250,7 @@ impl<'a> Buffer<'a> {
                     Event::ComponentResponse(response)
                 } else {
                     error!("Failed to get response from buffered component: {:?}", response);
-                    Event::ComponentResponse(Self::create_content_rejection(0))
+                    Event::ComponentResponse(crate::responses::create_content_rejection(0))
                 }
             }
         }
@@ -287,7 +269,7 @@ impl<'a> Buffer<'a> {
                         "Failed to send content to buffered component {:?}: {:?}",
                         self.buffered_id, e
                     );
-                    Some(Self::create_content_rejection(content.header.sequence_num))
+                    Some(crate::responses::create_content_rejection(content.header.sequence_num))
                 } else {
                     state.component_busy = true;
                     None
