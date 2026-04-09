@@ -11,7 +11,7 @@ use embedded_usb_pd::{
     ado::Ado,
     pdinfo::{AltMode, PowerPathStatus},
     type_c::ConnectionState,
-    vdm::Svid,
+    vdm::structured::Svid,
 };
 use heapless::Vec;
 
