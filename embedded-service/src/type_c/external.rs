@@ -107,6 +107,10 @@ pub enum PortCommandData {
     GetDiscoveredSvids,
     /// Trigger a hard reset on the given port.
     HardReset,
+    /// Get the response to a Discover Identity command sent to the given port with SOP
+    GetDiscoverIdentitySop,
+    /// Get the response to a Discover Identity command sent to the given port with SOP'
+    GetDiscoverIdentitySopPrime,
 }
 
 /// Port-specific commands
@@ -133,6 +137,10 @@ pub enum PortResponseData {
     GetDpStatus(DpStatus),
     /// Get the port's discovered SVIDs
     DiscoveredSvids(DiscoveredSvids),
+    /// Discover Identity response data for SOP
+    DiscoverIdentitySop(embedded_usb_pd::vdm::structured::command::discover_identity::sop::ResponseVdos),
+    /// Discover Identity response data for SOP'
+    DiscoverIdentitySopPrime(embedded_usb_pd::vdm::structured::command::discover_identity::sop_prime::ResponseVdos),
 }
 
 /// Port-specific command response
@@ -530,6 +538,36 @@ pub async fn hard_reset(port: GlobalPortId) -> Result<(), PdError> {
     .await?
     {
         PortResponseData::Complete => Ok(()),
+        _ => Err(PdError::InvalidResponse),
+    }
+}
+
+/// Get the response to a Discover Identity command sent to the given port with SOP.
+pub async fn get_discover_identity_sop_response(
+    port: GlobalPortId,
+) -> Result<embedded_usb_pd::vdm::structured::command::discover_identity::sop::ResponseVdos, PdError> {
+    match execute_external_port_command(Command::Port(PortCommand {
+        port,
+        data: PortCommandData::GetDiscoverIdentitySop,
+    }))
+    .await?
+    {
+        PortResponseData::DiscoverIdentitySop(vdos) => Ok(vdos),
+        _ => Err(PdError::InvalidResponse),
+    }
+}
+
+/// Get the response to a Discover Identity command sent to the given port with SOP'.
+pub async fn get_discover_identity_sop_prime_response(
+    port: GlobalPortId,
+) -> Result<embedded_usb_pd::vdm::structured::command::discover_identity::sop_prime::ResponseVdos, PdError> {
+    match execute_external_port_command(Command::Port(PortCommand {
+        port,
+        data: PortCommandData::GetDiscoverIdentitySopPrime,
+    }))
+    .await?
+    {
+        PortResponseData::DiscoverIdentitySopPrime(vdos) => Ok(vdos),
         _ => Err(PdError::InvalidResponse),
     }
 }

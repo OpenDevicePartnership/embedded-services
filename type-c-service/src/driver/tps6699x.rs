@@ -872,6 +872,38 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
             }
         }
     }
+
+    async fn get_discover_identity_sop_response(
+        &mut self,
+        port: LocalPortId,
+    ) -> Result<embedded_usb_pd::vdm::structured::command::discover_identity::sop::ResponseVdos, Error<Self::BusError>>
+    {
+        let data = self.tps6699x.get_received_sop_identity_data(port).await?;
+        match data.try_into() {
+            Ok(vdos) => Ok(vdos),
+            Err(e) => {
+                debug!("Error deserializing Received SOP Identity Data: {:?}", e);
+                Err(Error::Pd(PdError::Serialize))
+            }
+        }
+    }
+
+    async fn get_discover_identity_sop_prime_response(
+        &mut self,
+        port: LocalPortId,
+    ) -> Result<
+        embedded_usb_pd::vdm::structured::command::discover_identity::sop_prime::ResponseVdos,
+        Error<Self::BusError>,
+    > {
+        let data = self.tps6699x.get_received_sop_prime_identity_data(port).await?;
+        match data.try_into() {
+            Ok(vdos) => Ok(vdos),
+            Err(e) => {
+                debug!("Error deserializing Received SOP Prime Identity Data: {:?}", e);
+                Err(Error::Pd(PdError::Serialize))
+            }
+        }
+    }
 }
 
 impl<'a, M: RawMutex, BUS: I2c> AsRef<tps6699x_drv::Tps6699x<'a, M, BUS>> for Tps6699x<'a, M, BUS> {

@@ -351,6 +351,26 @@ impl embedded_services::type_c::controller::Controller for Controller<'_> {
         debug!("Hard reset for port {port:?}");
         Ok(())
     }
+
+    async fn get_discover_identity_sop_response(
+        &mut self,
+        port: LocalPortId,
+    ) -> Result<embedded_usb_pd::vdm::structured::command::discover_identity::sop::ResponseVdos, Error<Self::BusError>>
+    {
+        debug!("Get Discover Identity SOP response for port {port:?}");
+        Err(Error::Pd(PdError::Failed))
+    }
+
+    async fn get_discover_identity_sop_prime_response(
+        &mut self,
+        port: LocalPortId,
+    ) -> Result<
+        embedded_usb_pd::vdm::structured::command::discover_identity::sop_prime::ResponseVdos,
+        Error<Self::BusError>,
+    > {
+        debug!("Get Discover Identity SOP' response for port {port:?}");
+        Err(Error::Pd(PdError::Failed))
+    }
 }
 
 pub struct Validator;

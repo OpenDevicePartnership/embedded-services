@@ -440,6 +440,24 @@ where
                     Error::Pd(e) => Err(e),
                 },
             },
+            controller::PortCommandData::GetDiscoverIdentitySop => {
+                match controller.get_discover_identity_sop_response(local_port).await {
+                    Ok(vdos) => Ok(controller::PortResponseData::DiscoverIdentitySop(vdos)),
+                    Err(e) => match e {
+                        Error::Bus(_) => Err(PdError::Failed),
+                        Error::Pd(e) => Err(e),
+                    },
+                }
+            }
+            controller::PortCommandData::GetDiscoverIdentitySopPrime => {
+                match controller.get_discover_identity_sop_prime_response(local_port).await {
+                    Ok(vdos) => Ok(controller::PortResponseData::DiscoverIdentitySopPrime(vdos)),
+                    Err(e) => match e {
+                        Error::Bus(_) => Err(PdError::Failed),
+                        Error::Pd(e) => Err(e),
+                    },
+                }
+            }
         })
     }
 

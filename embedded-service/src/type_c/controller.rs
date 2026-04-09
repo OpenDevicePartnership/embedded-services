@@ -382,6 +382,10 @@ pub enum PortCommandData {
     GetDiscoveredSvids,
     /// Trigger a hard reset on the given port.
     HardReset,
+    /// Get the response to a Discover Identity command sent to the given port with SOP
+    GetDiscoverIdentitySop,
+    /// Get the response to a Discover Identity command sent to the given port with SOP'
+    GetDiscoverIdentitySopPrime,
 }
 
 /// Port-specific commands
@@ -428,6 +432,10 @@ pub enum PortResponseData {
     UcsiResponse(Result<Option<lpm::ResponseData>, PdError>),
     /// Discovered SVIDs
     DiscoveredSvids(DiscoveredSvids),
+    /// Discover Identity SOP response
+    DiscoverIdentitySop(embedded_usb_pd::vdm::structured::command::discover_identity::sop::ResponseVdos),
+    /// Discover Identity SOP' response
+    DiscoverIdentitySopPrime(embedded_usb_pd::vdm::structured::command::discover_identity::sop_prime::ResponseVdos),
 }
 
 impl PortResponseData {
@@ -785,6 +793,28 @@ pub trait Controller {
 
     /// Trigger a hard reset on the given port.
     fn hard_reset(&mut self, port: LocalPortId) -> impl Future<Output = Result<(), Error<Self::BusError>>>;
+
+    /// Get the latest response from the Discover Identity command targetting SOP.
+    fn get_discover_identity_sop_response(
+        &mut self,
+        port: LocalPortId,
+    ) -> impl Future<
+        Output = Result<
+            embedded_usb_pd::vdm::structured::command::discover_identity::sop::ResponseVdos,
+            Error<Self::BusError>,
+        >,
+    >;
+
+    /// Get the latest response from the Discover Identity command targetting SOP'.
+    fn get_discover_identity_sop_prime_response(
+        &mut self,
+        port: LocalPortId,
+    ) -> impl Future<
+        Output = Result<
+            embedded_usb_pd::vdm::structured::command::discover_identity::sop_prime::ResponseVdos,
+            Error<Self::BusError>,
+        >,
+    >;
 }
 
 /// Internal context for managing PD controllers
@@ -1378,6 +1408,43 @@ impl ContextToken {
         match self.send_port_command(port, PortCommandData::HardReset).await? {
             PortResponseData::Complete => Ok(()),
             _ => Err(PdError::InvalidResponse),
+        }
+    }
+
+    /// Get the latest response from the Discover Identity command targetting SOP.
+    pub async fn get_discover_identity_sop_response(
+        &self,
+        port: GlobalPortId,
+    ) -> Result<embedded_usb_pd::vdm::structured::command::discover_identity::sop::ResponseVdos, PdError> {
+        match self
+            .send_port_command(port, PortCommandData::GetDiscoverIdentitySop)
+            .await?
+        {
+            PortResponseData::DiscoverIdentitySop(response) => Ok(response),
+            r => {
+                error!("Invalid response: expected Discover Identity SOP response, got {:?}", r);
+                Err(PdError::InvalidResponse)
+            }
+        }
+    }
+
+    /// Get the latest response from the Discover Identity command targetting SOP'.
+    pub async fn get_discover_identity_sop_prime_response(
+        &self,
+        port: GlobalPortId,
+    ) -> Result<embedded_usb_pd::vdm::structured::command::discover_identity::sop_prime::ResponseVdos, PdError> {
+        match self
+            .send_port_command(port, PortCommandData::GetDiscoverIdentitySopPrime)
+            .await?
+        {
+            PortResponseData::DiscoverIdentitySopPrime(response) => Ok(response),
+            r => {
+                error!(
+                    "Invalid response: expected Discover Identity SOP' response, got {:?}",
+                    r
+                );
+                Err(PdError::InvalidResponse)
+            }
         }
     }
 

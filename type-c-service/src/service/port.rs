@@ -76,6 +76,13 @@ impl<'a> Service<'a> {
             }
             external::PortCommandData::GetDiscoveredSvids => self.process_get_discovered_svids(command.port).await,
             external::PortCommandData::HardReset => self.process_hard_reset(command.port).await,
+            external::PortCommandData::GetDiscoverIdentitySop => {
+                self.process_get_discover_identity_sop_response(command.port).await
+            }
+            external::PortCommandData::GetDiscoverIdentitySopPrime => {
+                self.process_get_discover_identity_sop_prime_response(command.port)
+                    .await
+            }
         }
     }
 
@@ -307,5 +314,28 @@ impl<'a> Service<'a> {
         }
 
         external::Response::Port(status.map(|_| external::PortResponseData::Complete))
+    }
+
+    /// Process [`external::PortCommandData::DiscoverIdentitySop`] command
+    async fn process_get_discover_identity_sop_response(&self, port_id: GlobalPortId) -> external::Response<'static> {
+        let status = self.context.get_discover_identity_sop_response(port_id).await;
+        if let Err(e) = status {
+            error!("Error getting Discover Identity SOP response: {:#?}", e);
+        }
+
+        external::Response::Port(status.map(external::PortResponseData::DiscoverIdentitySop))
+    }
+
+    /// Process [`external::PortCommandData::DiscoverIdentitySopPrime`] command
+    async fn process_get_discover_identity_sop_prime_response(
+        &self,
+        port_id: GlobalPortId,
+    ) -> external::Response<'static> {
+        let status = self.context.get_discover_identity_sop_prime_response(port_id).await;
+        if let Err(e) = status {
+            error!("Error getting Discover Identity SOP' response: {:#?}", e);
+        }
+
+        external::Response::Port(status.map(external::PortResponseData::DiscoverIdentitySopPrime))
     }
 }
