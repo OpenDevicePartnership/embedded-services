@@ -1,7 +1,4 @@
 use battery_service_interface::*;
-// BatteryState, Bct, BctReturnResult, BixFixedStrings, Bma, Bmc, Bmd, BmdCapabilityFlags, BmdStatusFlags, Bms, Bpc,
-//     Bps, Bpt, BstReturn, Btm, BtmReturnResult, Btp, PifFixedStrings, PowerThresholdSupport, PowerUnit, PsrReturn,
-//     StaReturn, BmcControlFlags
 use embedded_batteries_async::acpi::{BatterySwapCapability, BatteryTechnology, PowerSource, ThresholdId};
 use embedded_services::relay::{MessageSerializationError, SerializableMessage};
 

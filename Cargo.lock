@@ -229,9 +229,7 @@ version = "0.1.0"
 dependencies = [
  "defmt 0.3.100",
  "embedded-batteries-async",
- "embedded-services",
  "log",
- "num_enum",
 ]
 
 [[package]]

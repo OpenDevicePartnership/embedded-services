@@ -57,6 +57,7 @@ unwrap_used = "deny"
 aligned = "0.4"
 anyhow = "1.0"
 battery-service-interface = { path = "./battery-service-interface" }
+battery-service-relay = { path = "./battery-service-relay" }
 bitfield = "0.17.0"
 bitflags = "2.8.0"
 bitvec = { version = "1.0.1", default-features = false }

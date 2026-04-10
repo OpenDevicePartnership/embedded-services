@@ -9,16 +9,10 @@ repository.workspace = true
 defmt = { workspace = true, optional = true }
 log = { workspace = true, optional = true }
 embedded-batteries-async.workspace = true
-embedded-services.workspace = true
-num_enum.workspace = true
 
 [lints]
 workspace = true
 
 [features]
-defmt = [
-    "dep:defmt",
-    "embedded-services/defmt",
-    "embedded-batteries-async/defmt",
-]
-log = ["dep:log", "embedded-services/log"]
+defmt = ["dep:defmt", "embedded-batteries-async/defmt"]
+log = ["dep:log"]
