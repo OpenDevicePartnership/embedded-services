@@ -1,56 +1,5 @@
 use battery_service_interface::*;
-use embedded_batteries_async::acpi::{BatterySwapCapability, BatteryTechnology, PowerSource, ThresholdId};
 use embedded_services::relay::{MessageSerializationError, SerializableMessage};
-
-// Unfortunately `TryFrom<u32>` is not implemented by embedded-batteries for these types
-/// Attempt to convert a `u32` to a `PowerUnit`.
-fn power_unit_try_from_u32(value: u32) -> Result<PowerUnit, MessageSerializationError> {
-    match value {
-        0 => Ok(PowerUnit::MilliWatts),
-        1 => Ok(PowerUnit::MilliAmps),
-        _ => Err(MessageSerializationError::InvalidPayload("Invalid PowerUnit")),
-    }
-}
-
-/// Attempt to convert a `u32` to a `BatteryTechnology`.
-fn bat_tech_try_from_u32(value: u32) -> Result<BatteryTechnology, MessageSerializationError> {
-    match value {
-        0 => Ok(BatteryTechnology::Primary),
-        1 => Ok(BatteryTechnology::Secondary),
-        _ => Err(MessageSerializationError::InvalidPayload("Invalid BatteryTechnology")),
-    }
-}
-
-/// Attempt to convert a `u32` to a `BatterySwapCapability`.
-fn bat_swap_try_from_u32(value: u32) -> Result<BatterySwapCapability, MessageSerializationError> {
-    match value {
-        0 => Ok(BatterySwapCapability::NonSwappable),
-        1 => Ok(BatterySwapCapability::ColdSwappable),
-        2 => Ok(BatterySwapCapability::HotSwappable),
-        _ => Err(MessageSerializationError::InvalidPayload(
-            "Invalid BatterySwapCapability",
-        )),
-    }
-}
-
-/// Attempt to convert a `u32` to a `ThresholdId`.
-fn thres_id_try_from_u32(value: u32) -> Result<ThresholdId, MessageSerializationError> {
-    match value {
-        0 => Ok(ThresholdId::ClearAll),
-        1 => Ok(ThresholdId::InstantaneousPeakPower),
-        2 => Ok(ThresholdId::SustainablePeakPower),
-        _ => Err(MessageSerializationError::InvalidPayload("Invalid ThresholdId")),
-    }
-}
-
-/// Attempt to convert a `u32` to a `PowerSource`.
-fn pwr_src_try_from_u32(value: u32) -> Result<PowerSource, MessageSerializationError> {
-    match value {
-        0 => Ok(PowerSource::Offline),
-        1 => Ok(PowerSource::Online),
-        _ => Err(MessageSerializationError::InvalidPayload("Invalid PowerSource")),
-    }
-}
 
 #[derive(num_enum::IntoPrimitive, num_enum::TryFromPrimitive, Copy, Clone, Debug, PartialEq)]
 #[repr(u16)]
@@ -239,7 +188,9 @@ impl SerializableMessage for AcpiBatteryResponse {
                 }
                 BatteryCmd::GetPsr => Self::GetPsr {
                     psr: PsrReturn {
-                        power_source: pwr_src_try_from_u32(safe_get_dword(buffer, 0)?)?,
+                        power_source: safe_get_dword(buffer, 0)?
+                            .try_into()
+                            .map_err(|_| MessageSerializationError::InvalidPayload("Invalid PowerSource"))?,
                     },
                 },
                 BatteryCmd::GetPif => Self::GetPif {
@@ -418,7 +369,9 @@ impl SerializableMessage for AcpiBatteryRequest {
                     battery_id: safe_get_u8(buffer, 0)?,
                     bpt: Bpt {
                         revision: safe_get_dword(buffer, 1)?,
-                        threshold_id: thres_id_try_from_u32(safe_get_dword(buffer, 5)?)?,
+                        threshold_id: safe_get_dword(buffer, 5)?
+                            .try_into()
+                            .map_err(|_| MessageSerializationError::InvalidPayload("Invalid ThresholdId"))?,
                         threshold_value: safe_get_dword(buffer, 9)?,
                     },
                 },
@@ -596,10 +549,14 @@ fn bix_to_bytes(bix: BixFixedStrings, dst_slice: &mut [u8]) -> Result<usize, Mes
 fn bix_from_bytes(src_slice: &[u8]) -> Result<BixFixedStrings, MessageSerializationError> {
     Ok(BixFixedStrings {
         revision: safe_get_dword(src_slice, 0)?,
-        power_unit: power_unit_try_from_u32(safe_get_dword(src_slice, 4)?)?,
+        power_unit: safe_get_dword(src_slice, 4)?
+            .try_into()
+            .map_err(|_| MessageSerializationError::InvalidPayload("Invalid PowerUnit"))?,
         design_capacity: safe_get_dword(src_slice, 8)?,
         last_full_charge_capacity: safe_get_dword(src_slice, 12)?,
-        battery_technology: bat_tech_try_from_u32(safe_get_dword(src_slice, 16)?)?,
+        battery_technology: safe_get_dword(src_slice, 16)?
+            .try_into()
+            .map_err(|_| MessageSerializationError::InvalidPayload("Invalid BatteryTechnology"))?,
         design_voltage: safe_get_dword(src_slice, 20)?,
         design_cap_of_warning: safe_get_dword(src_slice, 24)?,
         design_cap_of_low: safe_get_dword(src_slice, 28)?,
@@ -615,7 +572,9 @@ fn bix_from_bytes(src_slice: &[u8]) -> Result<BixFixedStrings, MessageSerializat
         serial_number: safe_get_bytes::<STD_BIX_SERIAL_SIZE>(src_slice, BIX_SERIAL_NUM_START_IDX)?,
         battery_type: safe_get_bytes::<STD_BIX_BATTERY_SIZE>(src_slice, BIX_BATTERY_TYPE_START_IDX)?,
         oem_info: safe_get_bytes::<STD_BIX_OEM_SIZE>(src_slice, BIX_OEM_INFO_START_IDX)?,
-        battery_swapping_capability: bat_swap_try_from_u32(safe_get_dword(src_slice, BIX_OEM_INFO_END_IDX)?)?,
+        battery_swapping_capability: safe_get_dword(src_slice, BIX_OEM_INFO_END_IDX)?
+            .try_into()
+            .map_err(|_| MessageSerializationError::InvalidPayload("Invalid BatterySwappingCapability"))?,
     })
 }
 

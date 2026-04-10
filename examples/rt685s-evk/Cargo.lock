@@ -175,6 +175,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "bitfield-struct"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8769c4854c5ada2852ddf6fd09d15cf43d4c2aaeccb4de6432f5402f08a6003b"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.106",
+]
+
+[[package]]
 name = "bitflags"
 version = "1.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -548,7 +559,7 @@ dependencies = [
  "itertools 0.11.0",
  "mimxrt600-fcb 0.2.2",
  "mimxrt633s-pac",
- "mimxrt685s-pac 0.5.0",
+ "mimxrt685s-pac",
  "nb 1.1.0",
  "paste",
  "rand_core",
@@ -612,7 +623,7 @@ version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "31e14d288a59ef41f4e05468eae9b1c9fef6866977cea86d3f1a1ced295b6cab"
 dependencies = [
- "bitfield-struct",
+ "bitfield-struct 0.10.1",
  "bitflags 2.9.4",
  "defmt 0.3.100",
  "embedded-hal 1.0.0",
@@ -625,7 +636,7 @@ version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3b8996d7168535579180a0eead82efaba718ebd598782f986bfd635458259df2"
 dependencies = [
- "bitfield-struct",
+ "bitfield-struct 0.10.1",
  "bitflags 2.9.4",
  "embedded-hal 1.0.0",
  "zerocopy",
@@ -633,11 +644,11 @@ dependencies = [
 
 [[package]]
 name = "embedded-batteries-async"
-version = "0.3.3"
+version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6465f32edac01ccd4d55931896177b3a61a5286205c5269f30b91ce7dbf51b5e"
+checksum = "a3bf0e4be67770cfc31f1cea8b73baf98c0baf2c57d6bd8c3a4c315acb1d8bd4"
 dependencies = [
- "bitfield-struct",
+ "bitfield-struct 0.12.1",
  "embedded-batteries 0.3.1",
  "embedded-hal 1.0.0",
 ]
@@ -1098,18 +1109,6 @@ dependencies = [
 
 [[package]]
 name = "mimxrt685s-pac"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4c0b80e5add9dc74500acbb1ca70248e237d242b77988631e41db40a225f3a40"
-dependencies = [
- "cortex-m",
- "cortex-m-rt",
- "critical-section",
- "vcell",
-]
-
-[[package]]
-name = "mimxrt685s-pac"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8c8860258951178c4f91e42581ae8f33241a0e9a3e89bf2721d932ef366db51b"
@@ -1415,7 +1414,7 @@ dependencies = [
  "embedded-usb-pd",
  "futures",
  "mimxrt600-fcb 0.1.0",
- "mimxrt685s-pac 0.4.0",
+ "mimxrt685s-pac",
  "odp-service-common",
  "panic-probe",
  "platform-service",
