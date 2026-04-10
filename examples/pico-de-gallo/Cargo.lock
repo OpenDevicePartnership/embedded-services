@@ -188,9 +188,7 @@ name = "battery-service-interface"
 version = "0.1.0"
 dependencies = [
  "embedded-batteries-async",
- "embedded-services",
  "log",
- "num_enum",
 ]
 
 [[package]]
