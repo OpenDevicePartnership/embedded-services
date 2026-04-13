@@ -155,7 +155,7 @@ pub mod esa {
         const READ_SIZE: usize = 4;
 
         async fn read(&mut self, offset: u32, bytes: &mut [u8]) -> Result<(), Self::Error> {
-            if (offset as usize) % Self::READ_SIZE != 0 || bytes.len() % Self::READ_SIZE != 0 {
+            if !(offset as usize).is_multiple_of(Self::READ_SIZE) || !bytes.len().is_multiple_of(Self::READ_SIZE) {
                 return Err(Error::NotAligned);
             }
 
@@ -175,7 +175,7 @@ pub mod esa {
         async fn erase(&mut self, from: u32, to: u32) -> Result<(), Self::Error> {
             let len = to.checked_sub(from).unwrap();
 
-            if (from as usize) % Self::ERASE_SIZE != 0 || len as usize % Self::ERASE_SIZE != 0 {
+            if !(from as usize).is_multiple_of(Self::ERASE_SIZE) || !(len as usize).is_multiple_of(Self::ERASE_SIZE) {
                 return Err(Error::NotAligned);
             }
 
@@ -184,7 +184,7 @@ pub mod esa {
         }
 
         async fn write(&mut self, offset: u32, bytes: &[u8]) -> Result<(), Self::Error> {
-            if (offset as usize) % Self::WRITE_SIZE != 0 || bytes.len() % Self::WRITE_SIZE != 0 {
+            if !(offset as usize).is_multiple_of(Self::WRITE_SIZE) || !bytes.len().is_multiple_of(Self::WRITE_SIZE) {
                 return Err(Error::NotAligned);
             }
 
