@@ -156,8 +156,8 @@ async fn main(spawner: Spawner) {
 
     info!("Service initialization complete...");
 
-    spawner.spawn(simple_example::receiver()).unwrap();
-    spawner.spawn(simple_example::sender()).unwrap();
+    spawner.spawn(simple_example::receiver().expect("Failed to create receiver task"));
+    spawner.spawn(simple_example::sender().expect("Failed to create sender task"));
 
     info!("Subsystem initialization complete...");
 

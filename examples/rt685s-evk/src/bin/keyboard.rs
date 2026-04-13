@@ -150,10 +150,10 @@ async fn main(spawner: Spawner) {
     info!("Service initialization complete...");
 
     // create an activity service subscriber
-    spawner.spawn(activity_example::backlight::task()).unwrap();
+    spawner.spawn(activity_example::backlight::task().expect("Failed to create backlight task"));
 
     // create an activity service publisher
-    spawner.spawn(activity_example::publisher::keyboard_task()).unwrap();
+    spawner.spawn(activity_example::publisher::keyboard_task().expect("Failed to create keyboard task"));
 
     info!("Subsystem initialization complete...");
 

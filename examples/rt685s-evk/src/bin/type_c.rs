@@ -144,7 +144,7 @@ async fn main(spawner: Spawner) {
     tps6699x.reset(&mut delay).await.unwrap();
 
     info!("Spawining interrupt task");
-    spawner.must_spawn(interrupt_task(int_in, interrupt));
+    spawner.spawn(interrupt_task(int_in, interrupt).expect("Failed to spawn interrupt task"));
 
     // These aren't enabled by default
     tps6699x
@@ -246,21 +246,27 @@ async fn main(spawner: Spawner) {
     let cfu_client = CfuClient::new(&CFU_CLIENT).await;
 
     info!("Spawining type-c service task");
-    spawner.must_spawn(type_c_service_task(
-        type_c_service,
-        EventReceiver::new(controller_context, power_policy_subscriber),
-        [wrapper],
-        cfu_client,
-    ));
+    spawner.spawn(
+        type_c_service_task(
+            type_c_service,
+            EventReceiver::new(controller_context, power_policy_subscriber),
+            [wrapper],
+            cfu_client,
+        )
+        .expect("Failed to create type-c service task"),
+    );
 
     info!("Spawining power policy task");
-    spawner.must_spawn(power_policy_task(
-        ArrayEventReceivers::new(
-            [&wrapper.ports[0].proxy, &wrapper.ports[1].proxy],
-            [policy_receiver0, policy_receiver1],
-        ),
-        power_service,
-    ));
+    spawner.spawn(
+        power_policy_task(
+            ArrayEventReceivers::new(
+                [&wrapper.ports[0].proxy, &wrapper.ports[1].proxy],
+                [policy_receiver0, policy_receiver1],
+            ),
+            power_service,
+        )
+        .expect("Failed to create power policy task"),
+    );
 
-    spawner.must_spawn(pd_controller_task(wrapper));
+    spawner.spawn(pd_controller_task(wrapper).expect("Failed to create pd controller task"));
 }
