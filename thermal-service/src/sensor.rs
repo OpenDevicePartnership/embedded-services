@@ -1,31 +1,14 @@
-//! Sensor Device
-use crate::Event;
 use crate::utils::SampleBuf;
-use embassy_sync::mutex::Mutex;
-use embassy_sync::signal::Signal;
-use embassy_time::Timer;
-use embedded_sensors_hal_async::temperature::{DegreesCelsius, TemperatureSensor, TemperatureThresholdSet};
-use embedded_services::GlobalRawMutex;
-use embedded_services::error;
-use embedded_services::ipc::deferred as ipc;
+use core::marker::PhantomData;
+use embassy_sync::{mutex::Mutex, signal::Signal};
+use embassy_time::{Duration, Timer, with_timeout};
+use embedded_sensors_hal_async::temperature::DegreesCelsius;
+use embedded_services::event::Sender;
+use embedded_services::{GlobalRawMutex, error};
+use thermal_service_interface::sensor;
 
-// Timeout period (in ms) for physical bus access
-const BUS_TIMEOUT: u64 = 200;
-
-/// Convenience type for Sensor response result
-pub type Response = Result<ResponseData, Error>;
-
-/// Allows OEM to implement custom requests
-///
-/// The default response is to return an error on unrecognized requests
-pub trait CustomRequestHandler {
-    fn handle_custom_request(&self, _request: Request) -> impl core::future::Future<Output = Response> {
-        async { Err(Error::InvalidRequest) }
-    }
-}
-
-/// Ensures all necessary traits are implemented for the controlling driver
-pub trait Controller: TemperatureSensor + TemperatureThresholdSet + CustomRequestHandler {}
+// Timeout period for physical bus access
+const BUS_TIMEOUT: Duration = Duration::from_millis(200);
 
 /* Helper macro for calling a bus function with automatic retry after timeout or failure.
  *
@@ -37,14 +20,14 @@ macro_rules! with_retry {
         $self:expr,
         $bus_method:expr
     ) => {{
-        let mut retry_attempts = $self.profile.lock().await.retry_attempts;
+        let mut retry_attempts = $self.config.lock().await.retry_attempts;
 
         loop {
             if retry_attempts == 0 {
-                break Err(Error::Hardware);
+                break Err(sensor::Error::RetryExhausted);
             }
 
-            match embassy_time::with_timeout(embassy_time::Duration::from_millis(BUS_TIMEOUT), $bus_method).await {
+            match with_timeout(BUS_TIMEOUT, $bus_method).await {
                 Ok(Ok(val)) => break Ok(val),
                 _ => {
                     retry_attempts -= 1;
@@ -54,174 +37,164 @@ macro_rules! with_retry {
     }};
 }
 
-/// Sensor threshold type
-#[derive(Debug, Clone, Copy, PartialEq)]
+/// Sensor service configuration parameters.
+#[derive(Clone, Copy, Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub enum ThresholdType {
-    /// Threshold below which host is notified
-    WarnLow,
-    /// Threshold above which host is notified
-    WarnHigh,
-    /// Threshold above which PROCHOT is asserted
-    Prochot,
-    /// Threshold above which critical temperature is reached and system should be shutdown
-    /// Some systems may tie sensor alert pin directly to reset controller, in which case
-    /// SetHardAlert should be used.
-    Critical,
-}
-
-/// Sensor error type
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub enum Error {
-    /// Invalid request
-    InvalidRequest,
-    /// Device encountered a hardware failure
-    Hardware,
-}
-
-/// Sensor request
-#[derive(Debug, Clone, Copy, PartialEq)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub enum Request {
-    /// Most recent cached temperature measurement
-    GetTemp,
-    /// Average temperature measurement (over BUFFER_SIZE * SAMPLING_PERIOD)
-    GetAvgTemp,
-    /// Instructs sensor to immediately sample temperature (not cached)
-    GetTmpNow,
-    /// Low threshold below which sensor will set the alert pin active (in degrees Celsius)
-    SetHardAlertLow(DegreesCelsius),
-    /// High threshold above which sensor will set the alert pin active (in degrees Celsius)
-    SetHardAlertHigh(DegreesCelsius),
-    /// Get a threshold
-    GetThreshold(ThresholdType),
-    /// Set a threshold
-    SetThreshold(ThresholdType, DegreesCelsius),
-    /// Threshold in which sensor begins fast sampling
-    SetFastSamplingThreshold(DegreesCelsius),
-    /// Set temperature sampling period (in ms)
-    SetSamplingPeriod(u64),
-    /// Set fast temperature sampling period (in ms)
-    SetFastSamplingPeriod(u64),
-    /// An offset that is applied to all physical temperature samples (in degrees Celsius)
-    SetOffset(DegreesCelsius),
-    /// Enable sensor sampling
-    EnableSampling,
-    /// Disable sensor sampling
-    DisableSampling,
-    /// Set the max number of times communication with physical sensor will be attempted until error is reported
-    SetRetryAttempts(u8),
-    /// Get the thermal profile associated with this sensor
-    GetProfile,
-    /// Set the thermal profile associated with this sensor
-    SetProfile(Profile),
-    /// Custom-implemented command
-    Custom(u8, &'static [u8]),
-}
-
-/// Sensor response
-#[derive(Debug, Clone, Copy, PartialEq)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub enum ResponseData {
-    /// Response for any request that is successful but does not require data
-    Success,
-    /// Temperature (in degrees Celsius)
-    Temp(DegreesCelsius),
-    /// Threshold (in degrees Celsius)
-    Threshold(DegreesCelsius),
-    /// Profile
-    Profile(Profile),
-    /// Custom-implemented response
-    Custom(&'static [u8]),
-}
-
-/// Sensor device ID new type
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct DeviceId(pub u8);
-
-/// Sensor device struct
-pub struct Device {
-    /// Device ID
-    id: DeviceId,
-    /// Channel for IPC requests and responses
-    ipc: ipc::Channel<GlobalRawMutex, Request, Response>,
-    /// Signal for enable
-    enable: Signal<GlobalRawMutex, ()>,
-}
-
-impl Device {
-    /// Create a new sensor device
-    pub fn new(id: DeviceId) -> Self {
-        Self {
-            id,
-            ipc: ipc::Channel::new(),
-            enable: Signal::new(),
-        }
-    }
-
-    /// Get the device ID
-    pub fn id(&self) -> DeviceId {
-        self.id
-    }
-
-    /// Execute request and wait for response
-    pub async fn execute_request(&self, request: Request) -> Response {
-        self.ipc.execute(request).await
-    }
-}
-
-/// Sensor profile
-#[derive(Debug, Clone, Copy, PartialEq)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct Profile {
-    /// Profile ID
-    pub id: usize,
-    /// Period (in ms) sensor will sample its temperature
-    pub sample_period: u64,
-    /// Period (in ms) sensor will sample its temperature when in fast sampling state
-    pub fast_sample_period: u64,
-    /// Whether or not automatic background sampling is enabled or not
+pub struct Config {
+    /// Rate at which to sample the sensor when operating in normal conditions.
+    pub sample_period: Duration,
+    /// Rate at which to sample the sensor when operating in fast conditions.
+    pub fast_sample_period: Duration,
+    /// Whether periodic sampling is enabled.
     pub sampling_enabled: bool,
-    /// Hysteresis value (in degrees Celsius) preventing sensor from rapidly reporting threshold events
+    /// Hysteresis value to prevent rapid generation of threshold events when temperature is near a threshold.
     pub hysteresis: DegreesCelsius,
-    /// Threshold (in degrees Celsius) at which sensor will trigger a WARN LOW event
+    /// Temperature threshold below which a warning event will be generated.
     pub warn_low_threshold: DegreesCelsius,
-    /// Threshold (in degrees Celsius) at which sensor will trigger a WARN HIGH event
+    /// Temperature threshold above which a warning event will be generated.
     pub warn_high_threshold: DegreesCelsius,
-    /// Threshold (in degrees Celsius) at which sensor will trigger a PROCHOT event
+    /// Temperature threshold above which a prochot event will be generated.
     pub prochot_threshold: DegreesCelsius,
-    /// Threshold (in degrees Celsius) at which sensor will trigger a CRITICAL event
-    pub crt_threshold: DegreesCelsius,
-    /// Threshold (in degrees Celsius) at which sensor will enter the fast sampling state
+    /// Temperature threshold above which a critical event will be generated.
+    pub critical_threshold: DegreesCelsius,
+    /// Temperature threshold above which fast sampling is enabled.
     pub fast_sampling_threshold: DegreesCelsius,
-    /// Offset (in degrees Celsius) to be added to sampled temperature
+    /// Offset to be applied to the temperature readings.
     pub offset: DegreesCelsius,
-    /// Number of attempts sensor will make to communicate with the physical device over the bus
+    /// Number of retry attempts for bus operations.
     pub retry_attempts: u8,
 }
 
-impl Default for Profile {
+impl Default for Config {
     fn default() -> Self {
         Self {
-            id: 0,
-            sample_period: 1000,
-            fast_sample_period: 200,
+            sample_period: Duration::from_secs(1),
+            fast_sample_period: Duration::from_millis(200),
             sampling_enabled: true,
+            hysteresis: 2.0,
             warn_low_threshold: DegreesCelsius::MIN,
             warn_high_threshold: DegreesCelsius::MAX,
             prochot_threshold: DegreesCelsius::MAX,
-            crt_threshold: DegreesCelsius::MAX,
+            critical_threshold: DegreesCelsius::MAX,
             fast_sampling_threshold: DegreesCelsius::MAX,
             offset: 0.0,
             retry_attempts: 5,
-            hysteresis: 2.0,
         }
     }
 }
 
-// Additional Sensor state
+struct ServiceInner<T: sensor::Driver, const SAMPLE_BUF_LEN: usize> {
+    driver: Mutex<GlobalRawMutex, T>,
+    en_signal: Signal<GlobalRawMutex, ()>,
+    config: Mutex<GlobalRawMutex, Config>,
+    samples: Mutex<GlobalRawMutex, SampleBuf<DegreesCelsius, SAMPLE_BUF_LEN>>,
+}
+
+impl<T: sensor::Driver, const SAMPLE_BUF_LEN: usize> ServiceInner<T, SAMPLE_BUF_LEN> {
+    fn new(driver: T, config: Config) -> Self {
+        Self {
+            driver: Mutex::new(driver),
+            en_signal: Signal::new(),
+            config: Mutex::new(config),
+            samples: Mutex::new(SampleBuf::create()),
+        }
+    }
+}
+
+/// Sensor service control handle.
+pub struct Service<'hw, T: sensor::Driver, E: Sender<sensor::Event>, const SAMPLE_BUF_LEN: usize> {
+    inner: &'hw ServiceInner<T, SAMPLE_BUF_LEN>,
+    _phantom: PhantomData<E>,
+}
+
+// Note: We can't derive these traits because the compiler thinks our generics then need to be Copy + Clone,
+// but we only hold a reference and don't actually need to be that strict
+impl<T: sensor::Driver, E: Sender<sensor::Event>, const SAMPLE_BUF_LEN: usize> Clone
+    for Service<'_, T, E, SAMPLE_BUF_LEN>
+{
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<T: sensor::Driver, E: Sender<sensor::Event>, const SAMPLE_BUF_LEN: usize> Copy
+    for Service<'_, T, E, SAMPLE_BUF_LEN>
+{
+}
+
+impl<'hw, T: sensor::Driver, E: Sender<sensor::Event>, const SAMPLE_BUF_LEN: usize> sensor::SensorService
+    for Service<'hw, T, E, SAMPLE_BUF_LEN>
+{
+    async fn temperature(&self) -> DegreesCelsius {
+        self.inner.samples.lock().await.recent()
+    }
+
+    async fn temperature_average(&self) -> DegreesCelsius {
+        self.inner.samples.lock().await.average()
+    }
+
+    async fn temperature_immediate(&self) -> Result<DegreesCelsius, sensor::Error> {
+        with_retry!(self.inner, self.inner.driver.lock().await.temperature())
+    }
+
+    async fn set_threshold(&self, threshold: sensor::Threshold, value: DegreesCelsius) {
+        let mut config = self.inner.config.lock().await;
+        match threshold {
+            sensor::Threshold::WarnLow => config.warn_low_threshold = value,
+            sensor::Threshold::WarnHigh => config.warn_high_threshold = value,
+            sensor::Threshold::Prochot => config.prochot_threshold = value,
+            sensor::Threshold::Critical => config.critical_threshold = value,
+        }
+    }
+
+    async fn threshold(&self, threshold: sensor::Threshold) -> DegreesCelsius {
+        let config = self.inner.config.lock().await;
+        match threshold {
+            sensor::Threshold::WarnLow => config.warn_low_threshold,
+            sensor::Threshold::WarnHigh => config.warn_high_threshold,
+            sensor::Threshold::Prochot => config.prochot_threshold,
+            sensor::Threshold::Critical => config.critical_threshold,
+        }
+    }
+
+    async fn set_sample_period(&self, period: Duration) {
+        self.inner.config.lock().await.sample_period = period;
+    }
+
+    async fn enable_sampling(&self) {
+        self.inner.config.lock().await.sampling_enabled = true;
+        self.inner.en_signal.signal(());
+    }
+
+    async fn disable_sampling(&self) {
+        self.inner.config.lock().await.sampling_enabled = false;
+    }
+}
+
+/// Parameters required to initialize a sensor service.
+pub struct InitParams<'hw, T: sensor::Driver, E: Sender<sensor::Event>> {
+    /// The underlying sensor driver this service will control.
+    pub driver: T,
+    /// Initial configuration for the sensor service.
+    pub config: Config,
+    /// Event senders for sensor events.
+    pub event_senders: &'hw mut [E],
+}
+
+/// The memory resources required by the sensor.
+pub struct Resources<T: sensor::Driver, const SAMPLE_BUF_LEN: usize> {
+    inner: Option<ServiceInner<T, SAMPLE_BUF_LEN>>,
+}
+
+// Note: We can't derive Default unless we trait bound T by Default,
+// but we don't want that restriction since the default is just the None case
+impl<T: sensor::Driver, const SAMPLE_BUF_LEN: usize> Default for Resources<T, SAMPLE_BUF_LEN> {
+    fn default() -> Self {
+        Self { inner: None }
+    }
+}
+
+// Additional sensor runner state
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 struct State {
@@ -231,343 +204,136 @@ struct State {
     is_critical: bool,
 }
 
-/// Wrapper binding a communication device, hardware driver, and additional state.
-pub struct Sensor<T: Controller, const SAMPLE_BUF_LEN: usize> {
-    /// Sensor communication device
-    device: Device,
-    /// Sensor controller
-    controller: Mutex<GlobalRawMutex, T>,
-    /// Sensor profile
-    profile: Mutex<GlobalRawMutex, Profile>,
-    /// Sensor state
-    state: Mutex<GlobalRawMutex, State>,
-    /// Cached temperature samples
-    samples: Mutex<GlobalRawMutex, SampleBuf<DegreesCelsius, SAMPLE_BUF_LEN>>,
+/// A task runner for a sensor. Users must run this in an embassy task or similar async execution context.
+pub struct Runner<'hw, T: sensor::Driver, E: Sender<sensor::Event>, const SAMPLE_BUF_LEN: usize> {
+    service: &'hw ServiceInner<T, SAMPLE_BUF_LEN>,
+    event_senders: &'hw mut [E],
+    state: State,
 }
 
-impl<T: Controller, const SAMPLE_BUF_LEN: usize> Sensor<T, SAMPLE_BUF_LEN> {
-    /// New sensor
-    ///
-    /// Sample buffer length MUST be a power of two
-    pub fn new(id: DeviceId, controller: T, profile: Profile) -> Self {
-        Self {
-            device: Device::new(id),
-            controller: Mutex::new(controller),
-            profile: Mutex::new(profile),
-            state: Mutex::new(State::default()),
-            samples: Mutex::new(SampleBuf::create()),
+impl<'hw, T: sensor::Driver, E: Sender<sensor::Event>, const SAMPLE_BUF_LEN: usize> Runner<'hw, T, E, SAMPLE_BUF_LEN> {
+    async fn broadcast_event(&mut self, event: sensor::Event) {
+        for sender in self.event_senders.iter_mut() {
+            sender.send(event).await;
         }
     }
 
-    /// Retrieve a reference to underlying device for registration with services
-    pub fn device(&self) -> &Device {
-        &self.device
-    }
+    async fn check_thresholds(&mut self, temp: DegreesCelsius) {
+        let config = *self.service.config.lock().await;
 
-    /// Retrieve a Mutex wrapping the underlying controller
-    ///
-    /// Should only be used to update OEM specific state
-    pub fn controller(&self) -> &Mutex<GlobalRawMutex, T> {
-        &self.controller
-    }
+        if temp >= config.warn_high_threshold && !self.state.is_warn_high {
+            self.state.is_warn_high = true;
+            self.broadcast_event(sensor::Event::ThresholdExceeded(sensor::Threshold::WarnHigh))
+                .await;
+        } else if temp < (config.warn_high_threshold - config.hysteresis) && self.state.is_warn_high {
+            self.state.is_warn_high = false;
+            self.broadcast_event(sensor::Event::ThresholdCleared(sensor::Threshold::WarnHigh))
+                .await;
+        }
 
-    /// Wait for sensor to receive a request
-    pub async fn wait_request(&self) -> ipc::Request<'_, GlobalRawMutex, Request, Response> {
-        self.device.ipc.receive().await
-    }
+        if temp <= config.warn_low_threshold && !self.state.is_warn_low {
+            self.state.is_warn_low = true;
+            self.broadcast_event(sensor::Event::ThresholdExceeded(sensor::Threshold::WarnLow))
+                .await;
+        } else if temp > (config.warn_low_threshold + config.hysteresis) && self.state.is_warn_low {
+            self.state.is_warn_low = false;
+            self.broadcast_event(sensor::Event::ThresholdCleared(sensor::Threshold::WarnLow))
+                .await;
+        }
 
-    /// Process sensor request
-    pub async fn process_request(&self, request: Request) -> Response {
-        match request {
-            Request::GetTemp => {
-                let temp = self.samples.lock().await.recent();
-                Ok(ResponseData::Temp(temp))
-            }
-            Request::GetAvgTemp => {
-                let temp = self.samples.lock().await.average();
-                Ok(ResponseData::Temp(temp))
-            }
-            Request::GetTmpNow => {
-                let temp = with_retry!(self, self.controller.lock().await.temperature())?;
-                Ok(ResponseData::Temp(temp))
-            }
-            Request::SetHardAlertLow(low) => {
-                with_retry!(self, self.controller.lock().await.set_temperature_threshold_low(low))?;
-                Ok(ResponseData::Success)
-            }
-            Request::SetHardAlertHigh(high) => {
-                with_retry!(self, self.controller.lock().await.set_temperature_threshold_high(high))?;
-                Ok(ResponseData::Success)
-            }
-            Request::GetThreshold(ThresholdType::WarnLow) => {
-                let threshold = self.profile.lock().await.warn_low_threshold;
-                Ok(ResponseData::Threshold(threshold))
-            }
-            Request::GetThreshold(ThresholdType::WarnHigh) => {
-                let threshold = self.profile.lock().await.warn_high_threshold;
-                Ok(ResponseData::Threshold(threshold))
-            }
-            Request::GetThreshold(ThresholdType::Prochot) => {
-                let threshold = self.profile.lock().await.prochot_threshold;
-                Ok(ResponseData::Threshold(threshold))
-            }
-            Request::GetThreshold(ThresholdType::Critical) => {
-                let threshold = self.profile.lock().await.crt_threshold;
-                Ok(ResponseData::Threshold(threshold))
-            }
-            Request::SetThreshold(ThresholdType::WarnLow, threshold) => {
-                self.profile.lock().await.warn_low_threshold = threshold;
-                Ok(ResponseData::Success)
-            }
-            Request::SetThreshold(ThresholdType::WarnHigh, threshold) => {
-                self.profile.lock().await.warn_high_threshold = threshold;
-                Ok(ResponseData::Success)
-            }
-            Request::SetThreshold(ThresholdType::Prochot, threshold) => {
-                self.profile.lock().await.prochot_threshold = threshold;
-                Ok(ResponseData::Success)
-            }
-            Request::SetThreshold(ThresholdType::Critical, threshold) => {
-                self.profile.lock().await.crt_threshold = threshold;
-                Ok(ResponseData::Success)
-            }
-            Request::SetFastSamplingThreshold(threshold) => {
-                self.profile.lock().await.fast_sampling_threshold = threshold;
-                Ok(ResponseData::Success)
-            }
-            Request::SetSamplingPeriod(period) => {
-                self.profile.lock().await.sample_period = period;
-                Ok(ResponseData::Success)
-            }
-            Request::SetFastSamplingPeriod(period) => {
-                self.profile.lock().await.fast_sample_period = period;
-                Ok(ResponseData::Success)
-            }
-            Request::SetOffset(offset) => {
-                self.profile.lock().await.offset = offset;
-                Ok(ResponseData::Success)
-            }
-            Request::EnableSampling => {
-                self.profile.lock().await.sampling_enabled = true;
-                self.device.enable.signal(());
-                Ok(ResponseData::Success)
-            }
-            Request::DisableSampling => {
-                self.profile.lock().await.sampling_enabled = false;
-                Ok(ResponseData::Success)
-            }
-            Request::SetRetryAttempts(limit) => {
-                self.profile.lock().await.retry_attempts = limit;
-                Ok(ResponseData::Success)
-            }
-            Request::GetProfile => {
-                let profile = *self.profile.lock().await;
-                Ok(ResponseData::Profile(profile))
-            }
-            Request::SetProfile(profile) => {
-                *self.profile.lock().await = profile;
-                Ok(ResponseData::Success)
-            }
-            Request::Custom(_, _) => self.controller.lock().await.handle_custom_request(request).await,
+        if temp >= config.prochot_threshold && !self.state.is_prochot {
+            self.state.is_prochot = true;
+            self.broadcast_event(sensor::Event::ThresholdExceeded(sensor::Threshold::Prochot))
+                .await;
+        } else if temp < (config.prochot_threshold - config.hysteresis) && self.state.is_prochot {
+            self.state.is_prochot = false;
+            self.broadcast_event(sensor::Event::ThresholdCleared(sensor::Threshold::Prochot))
+                .await;
+        }
+
+        if temp >= config.critical_threshold && !self.state.is_critical {
+            self.state.is_critical = true;
+            self.broadcast_event(sensor::Event::ThresholdExceeded(sensor::Threshold::Critical))
+                .await;
+        } else if temp < (config.critical_threshold - config.hysteresis) && self.state.is_critical {
+            self.state.is_critical = false;
+            self.broadcast_event(sensor::Event::ThresholdCleared(sensor::Threshold::Critical))
+                .await;
         }
     }
+}
 
-    // Wait for sensor to receive a request, process it, and send a response
-    pub async fn wait_and_process(&self) {
-        let request = self.wait_request().await;
-        let response = self.process_request(request.command).await;
-        request.respond(response);
-    }
-
-    /// Waits for a request then processes it and sends a response
-    pub async fn handle_rx(&self) {
+impl<'hw, T: sensor::Driver, E: Sender<sensor::Event>, const SAMPLE_BUF_LEN: usize>
+    odp_service_common::runnable_service::ServiceRunner<'hw> for Runner<'hw, T, E, SAMPLE_BUF_LEN>
+{
+    async fn run(mut self) -> embedded_services::Never {
         loop {
-            self.wait_and_process().await;
-        }
-    }
+            let config = *self.service.config.lock().await;
 
-    async fn check_thresholds<'hw>(&self, temp: DegreesCelsius, thermal_service: &crate::Service<'hw>) {
-        let profile = self.profile.lock().await;
-        let mut state = self.state.lock().await;
-
-        if temp >= profile.warn_high_threshold && !state.is_warn_high {
-            thermal_service
-                .send_event(Event::ThresholdExceeded(self.device.id, ThresholdType::WarnHigh, temp))
-                .await;
-            state.is_warn_high = true;
-        } else if temp < (profile.warn_high_threshold - profile.hysteresis) && state.is_warn_high {
-            thermal_service
-                .send_event(Event::ThresholdCleared(self.device.id, ThresholdType::WarnHigh))
-                .await;
-            state.is_warn_high = false;
-        }
-
-        if temp <= profile.warn_low_threshold && !state.is_warn_low {
-            thermal_service
-                .send_event(Event::ThresholdExceeded(self.device.id, ThresholdType::WarnLow, temp))
-                .await;
-            state.is_warn_low = true;
-        } else if temp > (profile.warn_low_threshold + profile.hysteresis) && state.is_warn_low {
-            thermal_service
-                .send_event(Event::ThresholdCleared(self.device.id, ThresholdType::WarnLow))
-                .await;
-            state.is_warn_low = false;
-        }
-
-        if temp >= profile.prochot_threshold && !state.is_prochot {
-            thermal_service
-                .send_event(Event::ThresholdExceeded(self.device.id, ThresholdType::Prochot, temp))
-                .await;
-            state.is_prochot = true;
-        } else if temp < (profile.prochot_threshold - profile.hysteresis) && state.is_prochot {
-            thermal_service
-                .send_event(Event::ThresholdCleared(self.device.id, ThresholdType::Prochot))
-                .await;
-            state.is_prochot = false;
-        }
-
-        if temp >= profile.crt_threshold && !state.is_critical {
-            thermal_service
-                .send_event(Event::ThresholdExceeded(self.device.id, ThresholdType::Critical, temp))
-                .await;
-            state.is_critical = true;
-        } else if temp < (profile.crt_threshold - profile.hysteresis) && state.is_critical {
-            thermal_service
-                .send_event(Event::ThresholdCleared(self.device.id, ThresholdType::Critical))
-                .await;
-            state.is_critical = false;
-        }
-    }
-
-    /// Periodically samples temperature from physical sensor and caches it
-    pub async fn handle_sampling<'hw>(&self, thermal_service: &crate::Service<'hw>) {
-        loop {
             // Only sample temperature if enabled
-            if self.profile.lock().await.sampling_enabled {
-                let temp = match with_retry!(self, self.controller.lock().await.temperature()) {
+            if config.sampling_enabled {
+                let temp = match with_retry!(self.service, self.service.driver.lock().await.temperature()) {
                     Ok(temp) => temp,
-                    _ => {
-                        self.profile.lock().await.sampling_enabled = false;
-                        thermal_service
-                            .send_event(Event::SensorFailure(self.device.id, Error::Hardware))
-                            .await;
-                        error!("Error sampling sensor {}, disabling sampling", self.device.id.0);
+                    Err(e) => {
+                        self.service.config.lock().await.sampling_enabled = false;
+                        self.broadcast_event(sensor::Event::Failure(e)).await;
+                        error!("Error sampling sensor, disabling sampling");
                         continue;
                     }
                 };
 
                 // Add offset to measured temperature
-                let temp = temp + self.profile.lock().await.offset;
+                let temp = temp + config.offset;
 
                 // Cache in buffer for quick retrieval from other services
-                self.samples.lock().await.push(temp);
+                self.service.samples.lock().await.push(temp);
 
                 // Check thresholds
-                self.check_thresholds(temp, thermal_service).await;
+                self.check_thresholds(temp).await;
 
                 // Adjust sampling rate based on how hot we are getting
-                let profile = self.profile.lock().await;
-                let sleep_duration = if temp >= profile.fast_sampling_threshold {
-                    profile.fast_sample_period
+                let sleep_duration = if temp >= config.fast_sampling_threshold {
+                    config.fast_sample_period
                 } else {
-                    profile.sample_period
+                    config.sample_period
                 };
-                drop(profile);
 
                 // Sleep in-between sampling periods
-                Timer::after_millis(sleep_duration).await;
+                Timer::after(sleep_duration).await;
 
             // Otherwise sleep and wait to be re-enabled
             } else {
-                self.device.enable.wait().await;
+                self.service.en_signal.wait().await;
             }
         }
     }
 }
 
-/// The memory resources required by the sensor.
-pub struct Resources<'hw, T: Controller, const SAMPLE_BUF_LEN: usize> {
-    inner: Option<ServiceInner<'hw, T, SAMPLE_BUF_LEN>>,
-}
-
-// Note: We can't derive Default unless we trait bound T by Default,
-// but we don't want that restriction since the default is just the None case
-impl<'hw, T: Controller, const SAMPLE_BUF_LEN: usize> Default for Resources<'hw, T, SAMPLE_BUF_LEN> {
-    fn default() -> Self {
-        Self { inner: None }
-    }
-}
-
-struct ServiceInner<'hw, T: Controller, const SAMPLE_BUF_LEN: usize> {
-    sensor: &'hw Sensor<T, SAMPLE_BUF_LEN>,
-    thermal_service: &'hw crate::Service<'hw>,
-}
-
-impl<'hw, T: Controller, const SAMPLE_BUF_LEN: usize> ServiceInner<'hw, T, SAMPLE_BUF_LEN> {
-    fn new(init_params: InitParams<'hw, T, SAMPLE_BUF_LEN>) -> Self {
-        Self {
-            sensor: init_params.sensor,
-            thermal_service: init_params.thermal_service,
-        }
-    }
-
-    fn sensor(&self) -> &Sensor<T, SAMPLE_BUF_LEN> {
-        self.sensor
-    }
-}
-
-/// A task runner for a sensor. Users must run this in an embassy task or similar async execution context.
-pub struct Runner<'hw, T: Controller, const SAMPLE_BUF_LEN: usize> {
-    service: &'hw ServiceInner<'hw, T, SAMPLE_BUF_LEN>,
-}
-
-impl<'hw, T: Controller, const SAMPLE_BUF_LEN: usize> odp_service_common::runnable_service::ServiceRunner<'hw>
-    for Runner<'hw, T, SAMPLE_BUF_LEN>
+impl<'hw, T: sensor::Driver, E: Sender<sensor::Event> + 'hw, const SAMPLE_BUF_LEN: usize>
+    odp_service_common::runnable_service::Service<'hw> for Service<'hw, T, E, SAMPLE_BUF_LEN>
 {
-    async fn run(self) -> embedded_services::Never {
-        loop {
-            let _ = embassy_futures::join::join(
-                self.service.sensor.handle_rx(),
-                self.service.sensor.handle_sampling(self.service.thermal_service),
-            )
-            .await;
-        }
-    }
-}
-
-/// Sensor service control handle.
-pub struct Service<'hw, T: Controller, const SAMPLE_BUF_LEN: usize> {
-    inner: &'hw ServiceInner<'hw, T, SAMPLE_BUF_LEN>,
-}
-
-impl<'hw, T: Controller, const SAMPLE_BUF_LEN: usize> Service<'hw, T, SAMPLE_BUF_LEN> {
-    /// Get a reference to the inner sensor.
-    pub fn sensor(&self) -> &Sensor<T, SAMPLE_BUF_LEN> {
-        self.inner.sensor()
-    }
-}
-
-/// Parameters required to initialize a sensor service.
-pub struct InitParams<'hw, T: Controller, const SAMPLE_BUF_LEN: usize> {
-    /// The underlying `Sensor` wrapper this service will control.
-    pub sensor: &'hw Sensor<T, SAMPLE_BUF_LEN>,
-    /// The thermal service handle for this sensor to communicate events to.
-    pub thermal_service: &'hw crate::Service<'hw>,
-}
-
-impl<'hw, T: Controller, const SAMPLE_BUF_LEN: usize> odp_service_common::runnable_service::Service<'hw>
-    for Service<'hw, T, SAMPLE_BUF_LEN>
-{
-    type Runner = Runner<'hw, T, SAMPLE_BUF_LEN>;
-    type Resources = Resources<'hw, T, SAMPLE_BUF_LEN>;
-    type ErrorType = Error;
-    type InitParams = InitParams<'hw, T, SAMPLE_BUF_LEN>;
+    type Runner = Runner<'hw, T, E, SAMPLE_BUF_LEN>;
+    type Resources = Resources<T, SAMPLE_BUF_LEN>;
+    type ErrorType = sensor::Error;
+    type InitParams = InitParams<'hw, T, E>;
 
     async fn new(
         service_storage: &'hw mut Self::Resources,
         init_params: Self::InitParams,
     ) -> Result<(Self, Self::Runner), Self::ErrorType> {
-        let service = service_storage.inner.insert(ServiceInner::new(init_params));
-        Ok((Self { inner: service }, Runner { service }))
+        let service = service_storage
+            .inner
+            .insert(ServiceInner::new(init_params.driver, init_params.config));
+        Ok((
+            Self {
+                inner: service,
+                _phantom: PhantomData,
+            },
+            Runner {
+                service,
+                event_senders: init_params.event_senders,
+                state: State::default(),
+            },
+        ))
     }
 }

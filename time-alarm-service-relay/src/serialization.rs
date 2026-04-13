@@ -1,11 +1,9 @@
-#![no_std]
-
-mod acpi_timestamp;
-pub use acpi_timestamp::{AcpiDaylightSavingsTimeStatus, AcpiTimeZone, AcpiTimeZoneOffset, AcpiTimestamp};
-
-use bitfield::bitfield;
 use core::array::TryFromSliceError;
 use embedded_services::relay::{MessageSerializationError, SerializableMessage};
+use time_alarm_service_interface::{
+    AcpiDaylightSavingsTimeStatus, AcpiTimerId, AcpiTimestamp, AlarmExpiredWakePolicy, AlarmTimerSeconds,
+    TimeAlarmDeviceCapabilities, TimerStatus,
+};
 
 /// Message types for the ACPI Time and Alarm device service.
 /// These are directly analogous to the ACPI Time and Alarm device methods.
@@ -153,97 +151,26 @@ impl SerializableMessage for AcpiTimeAlarmRequest {
 
 // -------------------------------------------------
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct AlarmTimerSeconds(pub u32);
-impl AlarmTimerSeconds {
-    pub const DISABLED: Self = Self(u32::MAX);
-}
-
-impl Default for AlarmTimerSeconds {
-    fn default() -> Self {
-        Self::DISABLED
-    }
-}
-
-// -------------------------------------------------
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct AlarmExpiredWakePolicy(pub u32);
-impl AlarmExpiredWakePolicy {
-    #[allow(dead_code)]
-    pub const INSTANTLY: Self = Self(0);
-    pub const NEVER: Self = Self(u32::MAX);
-}
-
-impl Default for AlarmExpiredWakePolicy {
-    fn default() -> Self {
-        Self::NEVER
-    }
-}
-
-// -------------------------------------------------
-
-// Timer ID as defined in the ACPI spec.
-#[derive(Clone, Copy, Debug, PartialEq, num_enum::TryFromPrimitive, num_enum::IntoPrimitive)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-#[repr(u32)]
-pub enum AcpiTimerId {
-    AcPower = 0,
-    DcPower = 1,
-}
-
-impl AcpiTimerId {
-    pub fn get_other_timer_id(&self) -> Self {
-        match self {
-            AcpiTimerId::AcPower => AcpiTimerId::DcPower,
-            AcpiTimerId::DcPower => AcpiTimerId::AcPower,
-        }
-    }
-}
-
-bitfield!(
-    #[derive(Copy, Clone, Default, PartialEq, Eq)]
-    #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-    pub struct TimerStatus(u32);
-    impl Debug;
-    bool;
-    pub timer_expired, set_timer_expired: 0;
-    pub timer_triggered_wake, set_timer_triggered_wake: 1;
-);
-
-// -------------------------------------------------
-
-bitfield!(
-    #[derive(Copy, Clone, Default, PartialEq, Eq)]
-    #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-    pub struct TimeAlarmDeviceCapabilities(u32);
-    impl Debug;
-    bool;
-    pub ac_wake_implemented, set_ac_wake_implemented: 0;
-    pub dc_wake_implemented, set_dc_wake_implemented: 1;
-    pub realtime_implemented, set_realtime_implemented: 2;
-    pub realtime_accuracy_in_milliseconds, set_realtime_accuracy_in_milliseconds: 3;
-    pub get_wake_status_supported, set_get_wake_status_supported: 4;
-    pub ac_s4_wake_supported, set_ac_s4_wake_supported: 5;
-    pub ac_s5_wake_supported, set_ac_s5_wake_supported: 6;
-    pub dc_s4_wake_supported, set_dc_s4_wake_supported: 7;
-    pub dc_s5_wake_supported, set_dc_s5_wake_supported: 8;
-);
-
-// -------------------------------------------------
-
+/// Response types for the ACPI Time and Alarm device service.
 #[derive(Copy, Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum AcpiTimeAlarmResponse {
+    /// Response to a _GCP request, containing the capabilities of the time-alarm device.
     Capabilities(TimeAlarmDeviceCapabilities),
+
+    /// Response to a _GRT request, containing the current real time according to the time-alarm device.
     RealTime(AcpiTimestamp),
+
+    /// Response to a _GWS request, containing the current status of the specified timer.
     TimerStatus(TimerStatus),
+
+    /// Response to a _TIP request, containing the current wake policy for the specified timer.
     WakePolicy(AlarmExpiredWakePolicy),
+
+    /// Response to a _TIV request, containing the current timer value for the specified timer.
     TimerSeconds(AlarmTimerSeconds),
 
-    /// Operation succeeded, but there's no data to return.
+    /// Operation succeeded, but there's no data to return - response to methods that just return a boolean - _SRT, _CWS, _STP, _STV
     OkNoData,
 }
 

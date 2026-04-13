@@ -1,6 +1,7 @@
-use crate::sensor;
+use crate::sensor::Config;
 use embedded_sensors_hal_async::sensor as sensor_traits;
 use embedded_sensors_hal_async::temperature::{DegreesCelsius, TemperatureSensor, TemperatureThresholdSet};
+use thermal_service_interface::sensor;
 
 /// `MockSensor` error.
 #[derive(Clone, Copy, Debug)]
@@ -28,6 +29,16 @@ impl MockSensor {
         Self {
             temp: super::MIN_TEMP,
             falling: false,
+        }
+    }
+
+    /// Returns a suitable `Config` for a mock sensor service.
+    pub fn config() -> Config {
+        Config {
+            warn_high_threshold: super::MIN_TEMP + super::TEMP_RANGE / 4.0,
+            prochot_threshold: super::MIN_TEMP + super::TEMP_RANGE / 2.0,
+            critical_threshold: super::MAX_TEMP - super::TEMP_RANGE / 4.0,
+            ..Default::default()
         }
     }
 }
@@ -66,5 +77,4 @@ impl TemperatureThresholdSet for MockSensor {
     }
 }
 
-impl sensor::CustomRequestHandler for MockSensor {}
-impl sensor::Controller for MockSensor {}
+impl sensor::Driver for MockSensor {}

@@ -1,5 +1,6 @@
-use crate::fan;
+use crate::fan::Config;
 use embedded_fans_async::{Error, ErrorKind, ErrorType, Fan, RpmSense};
+use thermal_service_interface::fan as fan_interface;
 
 /// `MockFan` error.
 #[derive(Clone, Copy, Debug)]
@@ -20,6 +21,16 @@ impl MockFan {
     /// Create a new `MockFan`.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Returns a suitable `Config` for a mock fan service.
+    pub fn config() -> Config {
+        Config {
+            min_temp: super::MIN_TEMP + super::TEMP_RANGE / 4.0,
+            ramp_temp: super::MIN_TEMP + super::TEMP_RANGE / 2.0,
+            max_temp: super::MAX_TEMP - super::TEMP_RANGE / 4.0,
+            ..Default::default()
+        }
     }
 }
 
@@ -54,6 +65,4 @@ impl RpmSense for MockFan {
     }
 }
 
-impl fan::CustomRequestHandler for MockFan {}
-impl fan::RampResponseHandler for MockFan {}
-impl fan::Controller for MockFan {}
+impl fan_interface::Driver for MockFan {}

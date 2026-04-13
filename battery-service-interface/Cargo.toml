@@ -1,0 +1,18 @@
+[package]
+name = "battery-service-interface"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+defmt = { workspace = true, optional = true }
+log = { workspace = true, optional = true }
+embedded-batteries-async.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+defmt = ["dep:defmt", "embedded-batteries-async/defmt"]
+log = ["dep:log"]

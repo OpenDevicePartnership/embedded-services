@@ -4,7 +4,8 @@ use core::{future::ready, marker::PhantomData};
 use crate::error;
 
 use embassy_sync::{
-    channel::{DynamicReceiver, DynamicSender},
+    blocking_mutex::raw::RawMutex,
+    channel::{DynamicReceiver, DynamicSender, Receiver as ChannelReceiver, Sender as ChannelSender},
     pubsub::{DynImmediatePublisher, DynSubscriber, WaitResult},
 };
 
@@ -81,6 +82,26 @@ impl<E: Clone> Receiver<E> for DynSubscriber<'_, E> {
                 }
             }
         }
+    }
+}
+
+impl<M: RawMutex, E, const N: usize> Sender<E> for ChannelSender<'_, M, E, N> {
+    fn try_send(&mut self, event: E) -> Option<()> {
+        ChannelSender::try_send(self, event).ok()
+    }
+
+    fn send(&mut self, event: E) -> impl Future<Output = ()> {
+        ChannelSender::send(self, event)
+    }
+}
+
+impl<M: RawMutex, E, const N: usize> Receiver<E> for ChannelReceiver<'_, M, E, N> {
+    fn try_next(&mut self) -> Option<E> {
+        ChannelReceiver::try_receive(self).ok()
+    }
+
+    fn wait_next(&mut self) -> impl Future<Output = E> {
+        ChannelReceiver::receive(self)
     }
 }
 

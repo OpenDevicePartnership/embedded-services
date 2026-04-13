@@ -2,9 +2,11 @@
 resolver = "2"
 members = [
     "battery-service",
-    "battery-service-messages",
+    "battery-service-interface",
+    "battery-service-relay",
     "thermal-service",
-    "thermal-service-messages",
+    "thermal-service-interface",
+    "thermal-service-relay",
     "cfu-service",
     "embedded-service",
     "espi-service",
@@ -17,7 +19,8 @@ members = [
     "power-button-service",
     "power-policy-service",
     "time-alarm-service",
-    "time-alarm-service-messages",
+    "time-alarm-service-interface",
+    "time-alarm-service-relay",
     "type-c-service",
     "debug-service",
     "debug-service-messages",
@@ -54,7 +57,8 @@ unwrap_used = "deny"
 [workspace.dependencies]
 aligned = "0.4"
 anyhow = "1.0"
-battery-service-messages = { path = "./battery-service-messages" }
+battery-service-interface = { path = "./battery-service-interface" }
+battery-service-relay = { path = "./battery-service-relay" }
 bitfield = "0.17.0"
 bitflags = "2.8.0"
 bitvec = { version = "1.0.1", default-features = false }
@@ -73,7 +77,7 @@ embassy-imxrt = { git = "https://github.com/OpenDevicePartnership/embassy-imxrt"
 embassy-sync = "0.7.2"
 embassy-time = "0.5.0"
 embassy-time-driver = "0.2.1"
-embedded-batteries-async = "0.3"
+embedded-batteries-async = "0.3.4"
 cfu-service = { path = "./cfu-service" }
 embedded-cfu-protocol = { git = "https://github.com/OpenDevicePartnership/embedded-cfu" }
 embedded-hal = "1.0"
@@ -104,8 +108,10 @@ rstest = { version = "0.26.1", default-features = false }
 serde = { version = "1.0.*", default-features = false }
 static_cell = "2.1.0"
 toml = { version = "0.8", default-features = false }
-thermal-service-messages = { path = "./thermal-service-messages" }
-time-alarm-service-messages = { path = "./time-alarm-service-messages" }
+thermal-service-interface = { path = "./thermal-service-interface" }
+thermal-service-relay = { path = "./thermal-service-relay" }
+time-alarm-service-interface = { path = "./time-alarm-service-interface" }
+time-alarm-service-relay = { path = "./time-alarm-service-relay" }
 type-c-interface = { path = "./type-c-interface" }
 syn = "2.0"
 tps6699x = { git = "https://github.com/OpenDevicePartnership/tps6699x" }

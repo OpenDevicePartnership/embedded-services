@@ -1,4 +1,4 @@
-//! Helpful utilities for the thermal service
+//! Helpful utilities for the thermal service.
 use heapless::Deque;
 
 /// Buffer for storing samples
@@ -29,23 +29,20 @@ impl<T: Default + Copy + core::fmt::Debug, const N: usize> SampleBuf<T, N> {
 }
 
 impl<const N: usize> SampleBuf<f32, N> {
+    /// Returns the average of the samples in the buffer, or 0.0 if the buffer is empty.
     pub fn average(&self) -> f32 {
-        self.deque.iter().copied().sum::<f32>() / (self.deque.len() as f32)
+        let len = self.deque.len();
+        if len == 0 {
+            return 0.0;
+        }
+        self.deque.iter().copied().sum::<f32>() / len as f32
     }
 }
 
 impl<const N: usize> SampleBuf<u16, N> {
+    /// Returns the average of the samples in the buffer, or 0 if the buffer is empty.
     pub fn average(&self) -> u16 {
-        self.deque.iter().copied().sum::<u16>() / (self.deque.len() as u16)
+        let sum: u32 = self.deque.iter().copied().map(u32::from).sum();
+        sum.checked_div(self.deque.len() as u32).unwrap_or(0) as u16
     }
-}
-
-/// Convert deciKelvin to degrees Celsius
-pub const fn dk_to_c(dk: thermal_service_messages::DeciKelvin) -> f32 {
-    (dk as f32 / 10.0) - 273.15
-}
-
-/// Convert degrees Celsius to deciKelvin
-pub const fn c_to_dk(c: f32) -> thermal_service_messages::DeciKelvin {
-    ((c + 273.15) * 10.0) as thermal_service_messages::DeciKelvin
 }

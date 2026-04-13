@@ -1,5 +1,5 @@
 [package]
-name = "thermal-service-messages"
+name = "thermal-service-relay"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -8,6 +8,7 @@ repository.workspace = true
 [dependencies]
 defmt = { workspace = true, optional = true }
 embedded-services.workspace = true
+thermal-service-interface.workspace = true
 num_enum.workspace = true
 uuid.workspace = true
 

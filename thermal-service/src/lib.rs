@@ -1,101 +1,74 @@
 //! Thermal service
 #![no_std]
-#![allow(clippy::todo)]
-#![allow(clippy::unwrap_used)]
 
-use embedded_sensors_hal_async::temperature::DegreesCelsius;
-use thermal_service_messages::{ThermalRequest, ThermalResult};
+use thermal_service_interface::{fan::FanService, sensor::SensorService};
 
-mod context;
 pub mod fan;
 #[cfg(feature = "mock")]
 pub mod mock;
-pub mod mptf;
 pub mod sensor;
-pub mod utils;
+mod utils;
 
-/// Thermal error
-#[derive(Debug)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct Error;
-
-/// Thermal event
-#[derive(Debug, Clone, Copy, PartialEq)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub enum Event {
-    /// Sensor sampled temperature exceeding a threshold
-    ThresholdExceeded(sensor::DeviceId, sensor::ThresholdType, DegreesCelsius),
-    /// Sensor is no longer exceeding a threshold
-    ThresholdCleared(sensor::DeviceId, sensor::ThresholdType),
-    /// Sensor encountered hardware failure
-    SensorFailure(sensor::DeviceId, sensor::Error),
-    /// Fan encountered hardware failure
-    FanFailure(fan::DeviceId, fan::Error),
+struct ServiceInner<'hw, S: SensorService, F: FanService> {
+    sensors: &'hw [S],
+    fans: &'hw [F],
 }
 
-pub struct Service<'hw> {
-    context: context::Context<'hw>,
+/// Thermal service handle.
+///
+/// This maintains a list of registered temperature sensors and fans, which can be accessed by instance ID.
+///
+/// To allow for a collection of sensors and fans of different underlying driver types,
+/// type erasure will need to be handled by the user, likely via enum dispatch,
+/// since async traits are not currently dyn compatible.
+#[derive(Clone, Copy)]
+pub struct Service<'hw, S: SensorService, F: FanService> {
+    inner: &'hw ServiceInner<'hw, S, F>,
 }
 
-impl<'hw> Service<'hw> {
-    pub async fn init(
-        service_storage: &'hw embassy_sync::once_lock::OnceLock<Service<'hw>>,
-        sensors: &'hw [&'hw sensor::Device],
-        fans: &'hw [&'hw fan::Device],
-    ) -> &'hw Self {
-        service_storage.get_or_init(|| Self {
-            context: context::Context::new(sensors, fans),
-        })
-    }
+/// Parameters required to initialize the thermal service.
+pub struct InitParams<'hw, S: SensorService, F: FanService> {
+    /// Registered temperature sensors.
+    pub sensors: &'hw [S],
+    /// Registered fans.
+    pub fans: &'hw [F],
+}
 
-    /// Send a thermal event
-    pub async fn send_event(&self, event: Event) {
-        self.context.send_event(event).await
-    }
+/// The memory resources required by the thermal service.
+pub struct Resources<'hw, S: SensorService, F: FanService> {
+    inner: Option<ServiceInner<'hw, S, F>>,
+}
 
-    /// Wait for a thermal event
-    pub async fn wait_event(&self) -> Event {
-        self.context.wait_event().await
-    }
-
-    /// Provides access to the sensors list
-    pub fn sensors(&self) -> &[&sensor::Device] {
-        self.context.sensors()
-    }
-
-    /// Find a sensor by its ID
-    pub fn get_sensor(&self, id: sensor::DeviceId) -> Option<&sensor::Device> {
-        self.context.get_sensor(id)
-    }
-
-    /// Send a request to a sensor through the thermal service instead of directly.
-    pub async fn execute_sensor_request(&self, id: sensor::DeviceId, request: sensor::Request) -> sensor::Response {
-        self.context.execute_sensor_request(id, request).await
-    }
-
-    /// Provides access to the fans list
-    pub fn fans(&self) -> &[&fan::Device] {
-        self.context.fans()
-    }
-
-    /// Find a fan by its ID
-    pub fn get_fan(&self, id: fan::DeviceId) -> Option<&fan::Device> {
-        self.context.get_fan(id)
-    }
-
-    /// Send a request to a fan through the thermal service instead of directly.
-    pub async fn execute_fan_request(&self, id: fan::DeviceId, request: fan::Request) -> fan::Response {
-        self.context.execute_fan_request(id, request).await
+// Note: We can't derive Default because the compiler requires S: Default + F: Default bounds,
+// but we don't need that since the default is just the None case
+impl<S: SensorService, F: FanService> Default for Resources<'_, S, F> {
+    fn default() -> Self {
+        Self { inner: None }
     }
 }
 
-impl<'hw> embedded_services::relay::mctp::RelayServiceHandlerTypes for Service<'hw> {
-    type RequestType = ThermalRequest;
-    type ResultType = ThermalResult;
+impl<'hw, S: SensorService, F: FanService> Service<'hw, S, F> {
+    /// Initializes the thermal service with the provided sensors and fans.
+    pub fn init(resources: &'hw mut Resources<'hw, S, F>, init_params: InitParams<'hw, S, F>) -> Self {
+        let inner = resources.inner.insert(ServiceInner {
+            sensors: init_params.sensors,
+            fans: init_params.fans,
+        });
+        Self { inner }
+    }
 }
 
-impl<'hw> embedded_services::relay::mctp::RelayServiceHandler for Service<'hw> {
-    async fn process_request(&self, request: Self::RequestType) -> Self::ResultType {
-        mptf::process_request(&request, self).await
+impl<'hw, S: SensorService + Copy, F: FanService + Copy> thermal_service_interface::ThermalService
+    for Service<'hw, S, F>
+{
+    type Sensor = S;
+    type Fan = F;
+
+    fn sensor(&self, id: u8) -> Option<Self::Sensor> {
+        self.inner.sensors.get(id as usize).copied()
+    }
+
+    fn fan(&self, id: u8) -> Option<Self::Fan> {
+        self.inner.fans.get(id as usize).copied()
     }
 }

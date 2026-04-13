@@ -170,7 +170,7 @@ dependencies = [
 name = "battery-service"
 version = "0.1.0"
 dependencies = [
- "battery-service-messages",
+ "battery-service-interface",
  "embassy-futures",
  "embassy-sync",
  "embassy-time",
@@ -178,21 +178,17 @@ dependencies = [
  "embedded-hal 1.0.0",
  "embedded-hal-async",
  "embedded-services",
- "heapless 0.8.0",
  "log",
- "mctp-rs",
  "odp-service-common",
  "power-policy-interface",
- "zerocopy",
 ]
 
 [[package]]
-name = "battery-service-messages"
+name = "battery-service-interface"
 version = "0.1.0"
 dependencies = [
  "embedded-batteries-async",
- "embedded-services",
- "num_enum",
+ "log",
 ]
 
 [[package]]

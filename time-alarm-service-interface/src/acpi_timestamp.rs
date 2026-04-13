@@ -59,6 +59,7 @@ impl From<&AcpiTimestamp> for RawAcpiTimestamp {
 
 // -------------------------------------------------
 
+/// The current daylight savings time status of the timer.
 #[derive(Clone, Copy, Debug, PartialEq, num_enum::IntoPrimitive, num_enum::TryFromPrimitive)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[repr(u8)]
@@ -77,6 +78,7 @@ pub enum AcpiDaylightSavingsTimeStatus {
 
 // -------------------------------------------------
 
+/// The time offset from UTC of the system's time zone, expressed in minutes
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct AcpiTimeZoneOffset {
@@ -84,6 +86,7 @@ pub struct AcpiTimeZoneOffset {
 }
 
 impl AcpiTimeZoneOffset {
+    /// Constructs a time zone offset with the given number of minutes from UTC.  Valid values are -1440 to 1440 (inclusive).
     pub fn new(minutes_from_utc: i16) -> Result<Self, DatetimeClockError> {
         if !(-1440..=1440).contains(&minutes_from_utc) {
             Err(DatetimeClockError::UnsupportedDatetime)
@@ -92,11 +95,13 @@ impl AcpiTimeZoneOffset {
         }
     }
 
+    /// The number of minutes that the time zone is offset from UTC.
     pub fn minutes_from_utc(&self) -> i16 {
         self.minutes_from_utc
     }
 }
 
+/// The time zone of the system, either unknown or specified as a number of minutes from UTC.
 #[derive(Copy, Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum AcpiTimeZone {
@@ -130,6 +135,7 @@ impl From<AcpiTimeZone> for i16 {
 
 // -------------------------------------------------
 
+/// A timestamp as specified in the ACPI spec, including time zone and daylight savings time status.
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct AcpiTimestamp {
@@ -139,6 +145,7 @@ pub struct AcpiTimestamp {
 }
 
 impl AcpiTimestamp {
+    /// Converts this timestamp into the raw byte format specified in the ACPI spec version 6.4, section 9.18.3 (_GRT), with the Valid bit set.
     pub fn as_bytes(&self) -> [u8; core::mem::size_of::<RawAcpiTimestamp>()] /* 16 */ {
         // Size is guaranteed to be correct by zerocopy, but zerocopy returns as a slice rather than an array,
         // and we need to return an owned array, so we need to convert.
@@ -150,6 +157,7 @@ impl AcpiTimestamp {
             .expect("Size is guaranteed to be the size of RawAcpiTimestamp")
     }
 
+    /// Attempt to parse an ACPI timestamp from a byte slice.  Returns an error if the slice does not represent a valid ACPI timestamp as specified in ACPI spec version 6.4, section 9.18.4 (_SRT).
     pub fn try_from_bytes(bytes: &[u8]) -> Result<Self, DatetimeClockError> {
         let raw = RawAcpiTimestamp::ref_from_bytes(
             bytes

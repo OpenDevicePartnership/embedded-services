@@ -1,18 +1,19 @@
 #![allow(dead_code)]
 use core::ops::Deref;
 
+use battery_service_interface::BatteryError;
 use embedded_batteries_async::acpi::{PowerSourceState, PowerUnit};
 use embedded_services::{info, trace};
 
-use battery_service_messages::{
-    AcpiBatteryResponse, BixFixedStrings, DeviceId, PifFixedStrings, STD_BIX_BATTERY_SIZE, STD_BIX_MODEL_SIZE,
-    STD_BIX_OEM_SIZE, STD_BIX_SERIAL_SIZE, STD_PIF_MODEL_SIZE, STD_PIF_OEM_SIZE, STD_PIF_SERIAL_SIZE,
+use battery_service_interface::{
+    BctReturnResult, BixFixedStrings, Bmd, Bpc, Bps, BstReturn, BtmReturnResult, DeviceId, PifFixedStrings, PsrReturn,
+    STD_BIX_BATTERY_SIZE, STD_BIX_MODEL_SIZE, STD_BIX_OEM_SIZE, STD_BIX_SERIAL_SIZE, STD_PIF_MODEL_SIZE,
+    STD_PIF_OEM_SIZE, STD_PIF_SERIAL_SIZE, StaReturn,
 };
 
 use power_policy_interface::capability::PowerCapability;
 
 use crate::{
-    AcpiBatteryError,
     context::PsuState,
     device::{DynamicBatteryMsgs, StaticBatteryMsgs},
 };
@@ -181,222 +182,173 @@ pub(crate) fn compute_pif(psu_state: &PsuState) -> PifFixedStrings {
 }
 
 impl crate::context::Context {
-    // TODO Move these to a trait
-    pub(super) async fn bix_handler(&self, device_id: DeviceId) -> Result<AcpiBatteryResponse, AcpiBatteryError> {
+    pub(super) async fn bix_handler(&self, device_id: DeviceId) -> Result<BixFixedStrings, BatteryError> {
         trace!("Battery service: got BIX command!");
 
-        let fg = self
-            .get_fuel_gauge(device_id)
-            .ok_or(AcpiBatteryError::UnknownDeviceId)?;
+        let fg = self.get_fuel_gauge(device_id).ok_or(BatteryError::UnknownDeviceId)?;
 
         let static_cache_guard = fg.get_static_battery_cache_guarded().await;
         let dynamic_cache_guard = fg.get_dynamic_battery_cache_guarded().await;
 
-        Ok(AcpiBatteryResponse::BatteryGetBixResponse {
-            bix: compute_bix(static_cache_guard.deref(), dynamic_cache_guard.deref())
-                .map_err(|_| AcpiBatteryError::UnspecifiedFailure)?,
-        })
+        compute_bix(static_cache_guard.deref(), dynamic_cache_guard.deref())
+            .map_err(|_| BatteryError::UnspecifiedFailure)
     }
 
-    pub(super) async fn bst_handler(&self, device_id: DeviceId) -> Result<AcpiBatteryResponse, AcpiBatteryError> {
+    pub(super) async fn bst_handler(&self, device_id: DeviceId) -> Result<BstReturn, BatteryError> {
         trace!("Battery service: got BST command!");
 
-        let fg = self
-            .get_fuel_gauge(device_id)
-            .ok_or(AcpiBatteryError::UnknownDeviceId)?;
+        let fg = self.get_fuel_gauge(device_id).ok_or(BatteryError::UnknownDeviceId)?;
 
-        Ok(AcpiBatteryResponse::BatteryGetBstResponse {
-            bst: compute_bst(&fg.get_dynamic_battery_cache().await),
-        })
+        Ok(compute_bst(&fg.get_dynamic_battery_cache().await))
     }
 
-    pub(super) async fn psr_handler(&self, device_id: DeviceId) -> Result<AcpiBatteryResponse, AcpiBatteryError> {
+    pub(super) async fn psr_handler(&self, device_id: DeviceId) -> Result<PsrReturn, BatteryError> {
         trace!("Battery service: got PSR command!");
 
-        let _fg = self
-            .get_fuel_gauge(device_id)
-            .ok_or(AcpiBatteryError::UnknownDeviceId)?;
+        let _fg = self.get_fuel_gauge(device_id).ok_or(BatteryError::UnknownDeviceId)?;
 
-        Ok(AcpiBatteryResponse::BatteryGetPsrResponse {
-            psr: compute_psr(&self.get_power_info().await),
-        })
+        Ok(compute_psr(&self.get_power_info().await))
     }
 
-    pub(super) async fn pif_handler(&self, device_id: DeviceId) -> Result<AcpiBatteryResponse, AcpiBatteryError> {
+    pub(super) async fn pif_handler(&self, device_id: DeviceId) -> Result<PifFixedStrings, BatteryError> {
         trace!("Battery service: got PIF command!");
 
-        let _fg = self
-            .get_fuel_gauge(device_id)
-            .ok_or(AcpiBatteryError::UnknownDeviceId)?;
+        let _fg = self.get_fuel_gauge(device_id).ok_or(BatteryError::UnknownDeviceId)?;
 
-        Ok(AcpiBatteryResponse::BatteryGetPifResponse {
-            pif: compute_pif(&self.get_power_info().await),
-        })
+        Ok(compute_pif(&self.get_power_info().await))
     }
 
-    pub(super) async fn bps_handler(&self, device_id: DeviceId) -> Result<AcpiBatteryResponse, AcpiBatteryError> {
+    pub(super) async fn bps_handler(&self, device_id: DeviceId) -> Result<Bps, BatteryError> {
         trace!("Battery service: got BPS command!");
 
-        let fg = self
-            .get_fuel_gauge(device_id)
-            .ok_or(AcpiBatteryError::UnknownDeviceId)?;
+        let fg = self.get_fuel_gauge(device_id).ok_or(BatteryError::UnknownDeviceId)?;
 
-        Ok(AcpiBatteryResponse::BatteryGetBpsResponse {
-            bps: compute_bps(&fg.get_dynamic_battery_cache().await),
-        })
+        Ok(compute_bps(&fg.get_dynamic_battery_cache().await))
     }
 
     pub(super) async fn btp_handler(
         &self,
         device_id: DeviceId,
         btp: embedded_batteries_async::acpi::Btp,
-    ) -> Result<AcpiBatteryResponse, AcpiBatteryError> {
+    ) -> Result<(), BatteryError> {
         trace!("Battery service: got BTP command!");
 
-        let _fg = self
-            .get_fuel_gauge(device_id)
-            .ok_or(AcpiBatteryError::UnknownDeviceId)?;
+        let _fg = self.get_fuel_gauge(device_id).ok_or(BatteryError::UnknownDeviceId)?;
 
         // TODO: Save trip point
         info!("Battery service: New BTP {}", btp.trip_point);
 
-        Ok(AcpiBatteryResponse::BatterySetBtpResponse {})
+        Ok(())
     }
 
     pub(super) async fn bpt_handler(
         &self,
         device_id: DeviceId,
         bpt: embedded_batteries_async::acpi::Bpt,
-    ) -> Result<AcpiBatteryResponse, AcpiBatteryError> {
+    ) -> Result<(), BatteryError> {
         trace!("Battery service: got BPT command!");
 
-        let _fg = self
-            .get_fuel_gauge(device_id)
-            .ok_or(AcpiBatteryError::UnknownDeviceId)?;
+        let _fg = self.get_fuel_gauge(device_id).ok_or(BatteryError::UnknownDeviceId)?;
 
         info!(
             "Battery service: Threshold ID: {:?}, Threshold value: {:?}",
             bpt.threshold_id as u32, bpt.threshold_value
         );
 
-        Ok(AcpiBatteryResponse::BatterySetBptResponse {})
+        Ok(())
     }
 
-    pub(super) async fn bpc_handler(&self, device_id: DeviceId) -> Result<AcpiBatteryResponse, AcpiBatteryError> {
+    pub(super) async fn bpc_handler(&self, device_id: DeviceId) -> Result<Bpc, BatteryError> {
         trace!("Battery service: got BPC command!");
 
         // TODO: Save trip point
-        let fg = self
-            .get_fuel_gauge(device_id)
-            .ok_or(AcpiBatteryError::UnknownDeviceId)?;
+        let fg = self.get_fuel_gauge(device_id).ok_or(BatteryError::UnknownDeviceId)?;
 
-        Ok(AcpiBatteryResponse::BatteryGetBpcResponse {
-            bpc: compute_bpc(&fg.get_static_battery_cache().await),
-        })
+        Ok(compute_bpc(&fg.get_static_battery_cache().await))
     }
 
     pub(super) async fn bmc_handler(
         &self,
         device_id: DeviceId,
         bmc: embedded_batteries_async::acpi::Bmc,
-    ) -> Result<AcpiBatteryResponse, AcpiBatteryError> {
+    ) -> Result<(), BatteryError> {
         trace!("Battery service: got BMC command!");
 
-        let _fg = self
-            .get_fuel_gauge(device_id)
-            .ok_or(AcpiBatteryError::UnknownDeviceId)?;
+        let _fg = self.get_fuel_gauge(device_id).ok_or(BatteryError::UnknownDeviceId)?;
 
         info!("Battery service: Bmc {}", bmc.maintenance_control_flags.bits());
 
-        Ok(AcpiBatteryResponse::BatterySetBmcResponse {})
+        Ok(())
     }
 
-    pub(super) async fn bmd_handler(&self, device_id: DeviceId) -> Result<AcpiBatteryResponse, AcpiBatteryError> {
+    pub(super) async fn bmd_handler(&self, device_id: DeviceId) -> Result<Bmd, BatteryError> {
         trace!("Battery service: got BMD command!");
 
-        let fg = self
-            .get_fuel_gauge(device_id)
-            .ok_or(AcpiBatteryError::UnknownDeviceId)?;
+        let fg = self.get_fuel_gauge(device_id).ok_or(BatteryError::UnknownDeviceId)?;
 
         let static_cache = fg.get_static_battery_cache().await;
         let dynamic_cache = fg.get_dynamic_battery_cache().await;
 
-        Ok(AcpiBatteryResponse::BatteryGetBmdResponse {
-            bmd: compute_bmd(&static_cache, &dynamic_cache),
-        })
+        Ok(compute_bmd(&static_cache, &dynamic_cache))
     }
 
     pub(super) async fn bct_handler(
         &self,
         device_id: DeviceId,
         bct: embedded_batteries_async::acpi::Bct,
-    ) -> Result<AcpiBatteryResponse, AcpiBatteryError> {
+    ) -> Result<BctReturnResult, BatteryError> {
         trace!("Battery service: got BCT command!");
 
-        let fg = self
-            .get_fuel_gauge(device_id)
-            .ok_or(AcpiBatteryError::UnknownDeviceId)?;
+        let fg = self.get_fuel_gauge(device_id).ok_or(BatteryError::UnknownDeviceId)?;
 
         info!("Recvd BCT charge_level_percent: {}", bct.charge_level_percent);
-        Ok(AcpiBatteryResponse::BatteryGetBctResponse {
-            bct_response: compute_bct(&bct, &fg.get_dynamic_battery_cache().await),
-        })
+        Ok(compute_bct(&bct, &fg.get_dynamic_battery_cache().await))
     }
 
     pub(super) async fn btm_handler(
         &self,
         device_id: DeviceId,
         btm: embedded_batteries_async::acpi::Btm,
-    ) -> Result<AcpiBatteryResponse, AcpiBatteryError> {
+    ) -> Result<BtmReturnResult, BatteryError> {
         trace!("Battery service: got BTM command!");
 
-        let fg = self
-            .get_fuel_gauge(device_id)
-            .ok_or(AcpiBatteryError::UnknownDeviceId)?;
+        let fg = self.get_fuel_gauge(device_id).ok_or(BatteryError::UnknownDeviceId)?;
 
         info!("Recvd BTM discharge_rate: {}", btm.discharge_rate);
-        Ok(AcpiBatteryResponse::BatteryGetBtmResponse {
-            btm_response: compute_btm(&btm, &fg.get_dynamic_battery_cache().await),
-        })
+        Ok(compute_btm(&btm, &fg.get_dynamic_battery_cache().await))
     }
 
     pub(super) async fn bms_handler(
         &self,
         device_id: DeviceId,
         bms: embedded_batteries_async::acpi::Bms,
-    ) -> Result<AcpiBatteryResponse, AcpiBatteryError> {
+    ) -> Result<(), BatteryError> {
         trace!("Battery service: got BMS command!");
 
-        let _fg = self
-            .get_fuel_gauge(device_id)
-            .ok_or(AcpiBatteryError::UnknownDeviceId)?;
+        let _fg = self.get_fuel_gauge(device_id).ok_or(BatteryError::UnknownDeviceId)?;
 
         info!("Recvd BMS sampling_time: {}", bms.sampling_time_ms);
-        Ok(AcpiBatteryResponse::BatterySetBmsResponse { status: 0 })
+        Ok(())
     }
 
     pub(super) async fn bma_handler(
         &self,
         device_id: DeviceId,
         bma: embedded_batteries_async::acpi::Bma,
-    ) -> Result<AcpiBatteryResponse, AcpiBatteryError> {
+    ) -> Result<(), BatteryError> {
         trace!("Battery service: got BMA command!");
 
-        let _fg = self
-            .get_fuel_gauge(device_id)
-            .ok_or(AcpiBatteryError::UnknownDeviceId)?;
+        let _fg = self.get_fuel_gauge(device_id).ok_or(BatteryError::UnknownDeviceId)?;
 
         info!("Recvd BMA averaging_interval_ms: {}", bma.averaging_interval_ms);
-        Ok(AcpiBatteryResponse::BatterySetBmaResponse { status: 0 })
+        Ok(())
     }
 
-    pub(super) async fn sta_handler(&self, device_id: DeviceId) -> Result<AcpiBatteryResponse, AcpiBatteryError> {
+    pub(super) async fn sta_handler(&self, device_id: DeviceId) -> Result<StaReturn, BatteryError> {
         trace!("Battery service: got STA command!");
 
-        let _fg = self
-            .get_fuel_gauge(device_id)
-            .ok_or(AcpiBatteryError::UnknownDeviceId)?;
+        let _fg = self.get_fuel_gauge(device_id).ok_or(BatteryError::UnknownDeviceId)?;
 
-        Ok(AcpiBatteryResponse::BatteryGetStaResponse { sta: compute_sta() })
+        Ok(compute_sta())
     }
 }
