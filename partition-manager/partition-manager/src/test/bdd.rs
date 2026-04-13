@@ -81,6 +81,11 @@ fn bdd() {
                 slot_a.write(0x200, slice_to_blocks(&[0xFD; 8])).await,
                 Err(Error::OutOfBounds)
             );
+
+            // block_address * BLOCK_SIZE (8) would overflow u32
+            let mut buf = [0u8; 8];
+            let blocks = slice_to_blocks_mut(&mut buf);
+            assert_eq!(slot_a.read(u32::MAX, blocks).await, Err(Error::OutOfBounds));
         }
 
         disk.check();

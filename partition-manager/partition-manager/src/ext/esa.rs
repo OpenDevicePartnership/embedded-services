@@ -30,12 +30,14 @@ impl<F: ReadNorFlash, M: RawMutex> ReadNorFlash for Partition<'_, F, RO, M> {
     const READ_SIZE: usize = F::READ_SIZE;
 
     async fn read(&mut self, offset: u32, bytes: &mut [u8]) -> Result<(), Self::Error> {
-        if !self.within_bounds(offset, bytes.len() as u32) {
+        if bytes.len() > u32::MAX as usize || !self.within_bounds(offset, bytes.len() as u32) {
             return Err(Error::OutOfBounds);
         }
 
         let mut storage = self.storage.lock().await;
-        Ok(storage.read(offset + self.offset, bytes).await?)
+        Ok(storage
+            .read(offset.checked_add(self.offset).ok_or(Error::OutOfBounds)?, bytes)
+            .await?)
     }
 
     fn capacity(&self) -> usize {
@@ -65,16 +67,23 @@ impl<F: NorFlash, M: RawMutex> NorFlash for Partition<'_, F, RW, M> {
         }
 
         let mut storage = self.storage.lock().await;
-        Ok(storage.erase(from + self.offset, to + self.offset).await?)
+        Ok(storage
+            .erase(
+                from.checked_add(self.offset).ok_or(Error::OutOfBounds)?,
+                to.checked_add(self.offset).ok_or(Error::OutOfBounds)?,
+            )
+            .await?)
     }
 
     async fn write(&mut self, offset: u32, bytes: &[u8]) -> Result<(), Self::Error> {
-        if !self.within_bounds(offset, bytes.len() as u32) {
+        if bytes.len() > u32::MAX as usize || !self.within_bounds(offset, bytes.len() as u32) {
             return Err(Error::OutOfBounds);
         }
 
         let mut storage = self.storage.lock().await;
-        Ok(storage.write(offset + self.offset, bytes).await?)
+        Ok(storage
+            .write(offset.checked_add(self.offset).ok_or(Error::OutOfBounds)?, bytes)
+            .await?)
     }
 }
 
@@ -86,11 +95,14 @@ impl<F: ReadNorFlash, M: RawMutex> ReadNorFlash for PartitionGuard<'_, F, RO, M>
     const READ_SIZE: usize = F::READ_SIZE;
 
     async fn read(&mut self, offset: u32, bytes: &mut [u8]) -> Result<(), Self::Error> {
-        if !self.within_bounds(offset, bytes.len() as u32) {
+        if bytes.len() > u32::MAX as usize || !self.within_bounds(offset, bytes.len() as u32) {
             return Err(Error::OutOfBounds);
         }
 
-        Ok(self.guard.read(offset + self.offset, bytes).await?)
+        Ok(self
+            .guard
+            .read(offset.checked_add(self.offset).ok_or(Error::OutOfBounds)?, bytes)
+            .await?)
     }
 
     fn capacity(&self) -> usize {
@@ -102,11 +114,14 @@ impl<F: ReadNorFlash, M: RawMutex> ReadNorFlash for PartitionGuard<'_, F, RW, M>
     const READ_SIZE: usize = F::READ_SIZE;
 
     async fn read(&mut self, offset: u32, bytes: &mut [u8]) -> Result<(), Self::Error> {
-        if !self.within_bounds(offset, bytes.len() as u32) {
+        if bytes.len() > u32::MAX as usize || !self.within_bounds(offset, bytes.len() as u32) {
             return Err(Error::OutOfBounds);
         }
 
-        Ok(self.guard.read(offset + self.offset, bytes).await?)
+        Ok(self
+            .guard
+            .read(offset.checked_add(self.offset).ok_or(Error::OutOfBounds)?, bytes)
+            .await?)
     }
 
     fn capacity(&self) -> usize {
@@ -123,15 +138,24 @@ impl<F: NorFlash, M: RawMutex> NorFlash for PartitionGuard<'_, F, RW, M> {
             return Err(Error::OutOfBounds);
         }
 
-        Ok(self.guard.erase(from + self.offset, to + self.offset).await?)
+        Ok(self
+            .guard
+            .erase(
+                from.checked_add(self.offset).ok_or(Error::OutOfBounds)?,
+                to.checked_add(self.offset).ok_or(Error::OutOfBounds)?,
+            )
+            .await?)
     }
 
     async fn write(&mut self, offset: u32, bytes: &[u8]) -> Result<(), Self::Error> {
-        if !self.within_bounds(offset, bytes.len() as u32) {
+        if bytes.len() > u32::MAX as usize || !self.within_bounds(offset, bytes.len() as u32) {
             return Err(Error::OutOfBounds);
         }
 
-        Ok(self.guard.write(offset + self.offset, bytes).await?)
+        Ok(self
+            .guard
+            .write(offset.checked_add(self.offset).ok_or(Error::OutOfBounds)?, bytes)
+            .await?)
     }
 }
 

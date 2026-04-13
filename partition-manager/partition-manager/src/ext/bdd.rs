@@ -27,8 +27,16 @@ impl<F, MARKER, M: RawMutex> Partition<'_, F, MARKER, M> {
     where
         F: BlockDevice<SIZE>,
     {
-        let offset = block_address * SIZE as u32;
-        let size = (data.len() * SIZE) as u32;
+        const { assert!(SIZE <= u32::MAX as usize) };
+        let Some(offset) = block_address.checked_mul(SIZE as u32) else {
+            return Err(Error::OutOfBounds);
+        };
+        if data.len() > u32::MAX as usize {
+            return Err(Error::OutOfBounds);
+        }
+        let Some(size) = (data.len() as u32).checked_mul(SIZE as u32) else {
+            return Err(Error::OutOfBounds);
+        };
         if !self.within_bounds(offset, size) {
             Err(Error::OutOfBounds)
         } else {
@@ -54,8 +62,16 @@ impl<F, MARKER, M: RawMutex> PartitionGuard<'_, F, MARKER, M> {
     where
         F: BlockDevice<SIZE>,
     {
-        let offset = block_address * SIZE as u32;
-        let size = (data.len() * SIZE) as u32;
+        const { assert!(SIZE <= u32::MAX as usize) };
+        let Some(offset) = block_address.checked_mul(SIZE as u32) else {
+            return Err(Error::OutOfBounds);
+        };
+        if data.len() > u32::MAX as usize {
+            return Err(Error::OutOfBounds);
+        }
+        let Some(size) = (data.len() as u32).checked_mul(SIZE as u32) else {
+            return Err(Error::OutOfBounds);
+        };
         if !self.within_bounds(offset, size) {
             Err(Error::OutOfBounds)
         } else {
@@ -77,7 +93,9 @@ impl<const SIZE: usize, F: BlockDevice<SIZE>, M: RawMutex> BlockDevice<SIZE> for
         let start_block = self.start_block(SIZE as u32).ok_or(Error::NotAligned)?;
 
         let mut storage = self.storage.lock().await;
-        Ok(storage.read(start_block + block_address, data).await?)
+        Ok(storage
+            .read(start_block.checked_add(block_address).ok_or(Error::OutOfBounds)?, data)
+            .await?)
     }
 
     async fn write(
@@ -114,7 +132,9 @@ impl<const SIZE: usize, F: BlockDevice<SIZE>, M: RawMutex> BlockDevice<SIZE> for
         let start_block = self.start_block(SIZE as u32).ok_or(Error::NotAligned)?;
 
         let mut storage = self.storage.lock().await;
-        Ok(storage.write(start_block + block_address, data).await?)
+        Ok(storage
+            .write(start_block.checked_add(block_address).ok_or(Error::OutOfBounds)?, data)
+            .await?)
     }
 
     async fn size(&mut self) -> Result<u64, Self::Error> {
@@ -135,7 +155,10 @@ impl<const SIZE: usize, F: BlockDevice<SIZE>, M: RawMutex> BlockDevice<SIZE> for
         self.check_access(block_address, data)?;
         let start_block = self.start_block(SIZE as u32).ok_or(Error::NotAligned)?;
 
-        Ok(self.guard.read(start_block + block_address, data).await?)
+        Ok(self
+            .guard
+            .read(start_block.checked_add(block_address).ok_or(Error::OutOfBounds)?, data)
+            .await?)
     }
 
     async fn write(
@@ -163,7 +186,10 @@ impl<const SIZE: usize, F: BlockDevice<SIZE>, M: RawMutex> BlockDevice<SIZE> for
         self.check_access(block_address, data)?;
         let start_block = self.start_block(SIZE as u32).ok_or(Error::NotAligned)?;
 
-        Ok(self.guard.read(start_block + block_address, data).await?)
+        Ok(self
+            .guard
+            .read(start_block.checked_add(block_address).ok_or(Error::OutOfBounds)?, data)
+            .await?)
     }
 
     async fn write(
@@ -174,7 +200,10 @@ impl<const SIZE: usize, F: BlockDevice<SIZE>, M: RawMutex> BlockDevice<SIZE> for
         self.check_access(block_address, data)?;
         let start_block = self.start_block(SIZE as u32).ok_or(Error::NotAligned)?;
 
-        Ok(self.guard.write(start_block + block_address, data).await?)
+        Ok(self
+            .guard
+            .write(start_block.checked_add(block_address).ok_or(Error::OutOfBounds)?, data)
+            .await?)
     }
 
     async fn size(&mut self) -> Result<u64, Self::Error> {
