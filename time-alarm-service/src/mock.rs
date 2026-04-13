@@ -1,6 +1,6 @@
 #![allow(dead_code)] // We have some functionality in these mocks that isn't used yet but will be in future tests.
 
-use embedded_mcu_hal::NvramStorage;
+use embedded_mcu_hal::nvram::NvramStorage;
 use embedded_mcu_hal::time::{Datetime, DatetimeClock, DatetimeClockError};
 
 // Used for `cargo test` runs in an std environment
@@ -74,10 +74,10 @@ impl DatetimeClock for MockDatetimeClock {
         }
     }
 
-    fn set_current_datetime(&mut self, datetime: &Datetime) -> Result<(), DatetimeClockError> {
+    fn set(&mut self, datetime: Datetime) -> Result<(), DatetimeClockError> {
         match self {
             MockDatetimeClock::Paused { .. } => {
-                *self = MockDatetimeClock::Paused { frozen_time: *datetime };
+                *self = MockDatetimeClock::Paused { frozen_time: datetime };
                 Ok(())
             }
             MockDatetimeClock::Running { .. } => {
@@ -90,7 +90,7 @@ impl DatetimeClock for MockDatetimeClock {
         }
     }
 
-    fn max_resolution_hz(&self) -> u32 {
+    fn resolution_hz(&self) -> u32 {
         1
     }
 }

@@ -69,9 +69,7 @@ mod test {
 
         let mut clock = MockDatetimeClock::new_paused();
         const TEST_UNIX_TIME: u64 = 1_234_567_890;
-        clock
-            .set_current_datetime(&Datetime::from_unix_timestamp(TEST_UNIX_TIME))
-            .unwrap();
+        clock.set(Datetime::from_unix_timestamp(TEST_UNIX_TIME)).unwrap();
 
         let mut storage = Default::default();
 

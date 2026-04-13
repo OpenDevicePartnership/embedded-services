@@ -74,7 +74,7 @@ macro_rules! spawn_service {
         <$service_ty>::new(service_resources, $init_arg)
             .await
             .map(|(control_handle, runner)| {
-                $spawner.must_spawn(service_task_fn(runner));
+                $spawner.spawn(service_task_fn(runner).expect("Failed to spawn service task"));
                 control_handle
             })
     }};
