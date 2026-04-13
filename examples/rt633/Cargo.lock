@@ -53,7 +53,7 @@ dependencies = [
  "battery-service-interface",
  "defmt 0.3.100",
  "embassy-futures",
- "embassy-sync 0.8.0",
+ "embassy-sync",
  "embassy-time",
  "embedded-batteries-async",
  "embedded-hal 1.0.0",
@@ -392,30 +392,13 @@ checksum = "48c757948c5ede0e46177b7add2e67155f70e33c07fea8284df6576da70b3719"
 
 [[package]]
 name = "embassy-embedded-hal"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "554e3e840696f54b4c9afcf28a0f24da431c927f4151040020416e7393d6d0d8"
-dependencies = [
- "embassy-futures",
- "embassy-hal-internal 0.3.0",
- "embassy-sync 0.7.2",
- "embedded-hal 0.2.7",
- "embedded-hal 1.0.0",
- "embedded-hal-async",
- "embedded-storage",
- "embedded-storage-async",
- "nb 1.1.0",
-]
-
-[[package]]
-name = "embassy-embedded-hal"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b0641612053b2f34fc250bb63f6630ae75de46e02ade7f457268447081d709ce"
 dependencies = [
  "embassy-futures",
  "embassy-hal-internal 0.4.0",
- "embassy-sync 0.8.0",
+ "embassy-sync",
  "embassy-time",
  "embedded-hal 0.2.7",
  "embedded-hal 1.0.0",
@@ -496,10 +479,10 @@ dependencies = [
  "critical-section",
  "defmt 1.0.1",
  "document-features",
- "embassy-embedded-hal 0.6.0",
+ "embassy-embedded-hal",
  "embassy-futures",
  "embassy-hal-internal 0.3.0",
- "embassy-sync 0.8.0",
+ "embassy-sync",
  "embassy-time",
  "embassy-time-driver",
  "embassy-time-queue-utils",
@@ -520,20 +503,6 @@ dependencies = [
  "paste",
  "rand_core 0.9.5",
  "storage_bus",
-]
-
-[[package]]
-name = "embassy-sync"
-version = "0.7.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "73974a3edbd0bd286759b3d483540f0ebef705919a5f56f4fc7709066f71689b"
-dependencies = [
- "cfg-if",
- "critical-section",
- "embedded-io-async 0.6.1",
- "futures-core",
- "futures-sink",
- "heapless 0.8.0",
 ]
 
 [[package]]
@@ -728,7 +697,7 @@ dependencies = [
  "defmt 0.3.100",
  "document-features",
  "embassy-futures",
- "embassy-sync 0.8.0",
+ "embassy-sync",
  "embassy-time",
  "embedded-cfu-protocol",
  "embedded-hal-async",
@@ -794,7 +763,7 @@ dependencies = [
  "defmt 0.3.100",
  "embassy-futures",
  "embassy-imxrt",
- "embassy-sync 0.8.0",
+ "embassy-sync",
  "embassy-time",
  "embedded-services",
  "mctp-rs",
@@ -1212,7 +1181,7 @@ dependencies = [
  "bitfield 0.17.0",
  "defmt 0.3.100",
  "embassy-futures",
- "embassy-sync 0.8.0",
+ "embassy-sync",
  "embedded-batteries-async",
  "embedded-services",
  "heapless 0.8.0",
@@ -1314,11 +1283,11 @@ dependencies = [
  "cortex-m-rt",
  "defmt 0.3.100",
  "defmt-rtt",
- "embassy-embedded-hal 0.5.0",
+ "embassy-embedded-hal",
  "embassy-executor",
  "embassy-futures",
  "embassy-imxrt",
- "embassy-sync 0.8.0",
+ "embassy-sync",
  "embassy-time",
  "embedded-batteries-async",
  "embedded-hal-async",
