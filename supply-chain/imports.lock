@@ -300,6 +300,12 @@ user-id = 64539
 user-login = "kennykerr"
 user-name = "Kenny Kerr"
 
+[[audits.OpenDevicePartnership.audits.embassy-time]]
+who = "Felipe Balbi <febalbi@microsoft.com>"
+criteria = "safe-to-deploy"
+version = "0.5.0"
+aggregated-from = "https://raw.githubusercontent.com/OpenDevicePartnership/tps6699x/refs/heads/main/supply-chain/audits.toml"
+
 [[audits.OpenDevicePartnership.audits.windows-sys]]
 who = "Felipe Balbi <febalbi@microsoft.com>"
 criteria = "safe-to-run"
