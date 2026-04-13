@@ -73,47 +73,23 @@ async fn power_policy_task<'device, 'sender, const N: usize>(
     }
 }
 
-/// This trait is a workaround for Rust's current limitations on closures returning a generic future.
+/// Trait for runnable tests.
 ///
-/// The trait we want to express for `run_test` is something like:
-/// ```
-/// for<'a> F: FnOnce(
-/// &'a ServiceMutex<'a, 'a>,
-/// &'a Mutex<GlobalRawMutex, Mock<'a, DynamicSender<'a, EventData>>>,
-/// &'a Signal<GlobalRawMutex, (usize, FnCall)>,
-/// &'a Mutex<GlobalRawMutex, Mock<'a, DynamicSender<'a, EventData>>>,
-/// &'a Signal<GlobalRawMutex, (usize, FnCall)>
-/// ) -> impl (Future<Output = ()> + 'a)
-/// ```
-/// However, `impl (Future<Output = ()> + 'a)` is not real syntax. This could be done with the unstable feature type_alias_impl_trait,
-/// but we use this helper trait so as to not require use of nightly.
-pub trait TestArgsFnOnce<'a, Arg0: 'a, Arg1: 'a, Arg2: 'a, Arg3: 'a, Arg4: 'a, Arg5: 'a>:
-    FnOnce(Arg0, Arg1, Arg2, Arg3, Arg4, Arg5) -> Self::Fut
-{
-    type Fut: Future<Output = ()>;
+/// This exists because there are lifetime issues with being generic over FnOnce or FnMut.
+/// Those can be resolved, but having a dedicated trait is simpler.
+pub trait Test {
+    fn run<'a>(
+        &mut self,
+        service: &'a ServiceMutex<'a, 'a>,
+        service_receiver: DynamicReceiver<'a, ServiceEvent<'a, DeviceType<'a>>>,
+        device0: &'a DeviceType<'a>,
+        device0_signal: &'a Signal<GlobalRawMutex, (usize, FnCall)>,
+        device1: &'a DeviceType<'a>,
+        device1_signal: &'a Signal<GlobalRawMutex, (usize, FnCall)>,
+    ) -> impl Future<Output = ()>;
 }
 
-impl<'a, Arg0: 'a, Arg1: 'a, Arg2: 'a, Arg3: 'a, Arg4: 'a, Arg5: 'a, F, Fut>
-    TestArgsFnOnce<'a, Arg0, Arg1, Arg2, Arg3, Arg4, Arg5> for F
-where
-    F: FnOnce(Arg0, Arg1, Arg2, Arg3, Arg4, Arg5) -> Fut,
-    Fut: Future<Output = ()>,
-{
-    type Fut = Fut;
-}
-
-pub async fn run_test<F>(timeout: Duration, test: F, config: Config)
-where
-    for<'a> F: TestArgsFnOnce<
-            'a,
-            &'a ServiceMutex<'a, 'a>,
-            DynamicReceiver<'a, ServiceEvent<'a, DeviceType<'a>>>,
-            &'a DeviceType<'a>,
-            &'a Signal<GlobalRawMutex, (usize, FnCall)>,
-            &'a DeviceType<'a>,
-            &'a Signal<GlobalRawMutex, (usize, FnCall)>,
-        >,
-{
+pub async fn run_test(timeout: Duration, mut test: impl Test, config: Config) {
     // Tokio runs tests in parallel, but logging is global so we need to run tests sequentially to avoid interleaved logs.
     static TEST_MUTEX: OnceLock<Mutex<GlobalRawMutex, ()>> = OnceLock::new();
     let test_mutex = TEST_MUTEX.get_or_init(|| Mutex::new(()));
@@ -138,11 +114,8 @@ where
     let service_context = power_policy_service::service::context::Context::new();
     let completion_signal = Signal::new();
 
-    // Ideally F would have two lifetime arguments: 'device and 'sender because the event type requires 'device: 'sender.
-    // But Rust doesn't currently support syntax like `for<'device, 'sender> ... where 'device: 'sender`. So we just
-    // use a single lifetime. However, the unified lifetime makes the drop-checker think that dropping the channel
-    // could be unsafe. We use ManuallyDrop to disable the drop and make the drop-checker happy. None of the types
-    // here do any clean-up in their Drop impls so we don't have to worry about any sort of leaks.
+    // For simplicity, Test::run is only generic over a single lifetime. But this causes issues with the drop checker because
+    // the device lifetime doesn't outlive the channel lifetime from its perspective. Use ManuallyDrop to work around this.
     let service_event_channel: ManuallyDrop<
         Channel<GlobalRawMutex, ServiceEvent<'_, DeviceType<'_>>, EVENT_CHANNEL_SIZE>,
     > = ManuallyDrop::new(Channel::new());
@@ -168,7 +141,7 @@ where
                 ArrayEventReceivers::new([&device0, &device1], [device0_receiver, device1_receiver]),
             ),
             async {
-                test(
+                test.run(
                     &power_policy,
                     service_receiver,
                     &device0,
