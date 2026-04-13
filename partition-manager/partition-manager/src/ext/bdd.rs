@@ -11,7 +11,7 @@ impl<F, MARKER, M: RawMutex> Partition<'_, F, MARKER, M> {
     ///
     /// Will not be able to return a value of the partition is not aligned to a single block.
     const fn start_block(&self, block_size: u32) -> Option<u32> {
-        if self.offset % block_size != 0 {
+        if !self.offset.is_multiple_of(block_size) {
             None
         } else {
             Some(self.offset / block_size)
