@@ -59,8 +59,8 @@ pub async fn run_app(battery_service: battery_service::Service<'static, 1>) {
     let mut count: usize = 1;
     loop {
         Timer::after(Duration::from_secs(1)).await;
-        if count.is_multiple_of(const { 60 * 60 * 60 }) {
-            if let Err(e) = battery_service
+        if count.is_multiple_of(const { 60 * 60 * 60 })
+            && let Err(e) = battery_service
                 .execute_event(battery_service::context::BatteryEvent {
                     event: battery_service::context::BatteryEventInner::PollStaticData,
                     device_id: bs::device::DeviceId(0),
@@ -70,7 +70,6 @@ pub async fn run_app(battery_service: battery_service::Service<'static, 1>) {
                 failures += 1;
                 embedded_services::error!("Fuel gauge static data error: {:#?}", e);
             }
-        }
         if let Err(e) = battery_service
             .execute_event(battery_service::context::BatteryEvent {
                 event: battery_service::context::BatteryEventInner::PollDynamicData,
