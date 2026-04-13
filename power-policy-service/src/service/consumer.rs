@@ -103,9 +103,10 @@ impl<'device, Reg: Registration<'device>> Service<'device, Reg> {
         let mut unconstrained_new = UnconstrainedState::default();
         for psu in self.registration.psus() {
             if let Some(capability) = psu.lock().await.state().consumer_capability
-                && capability.flags.unconstrained_power() {
-                    unconstrained_new.available += 1;
-                }
+                && capability.flags.unconstrained_power()
+            {
+                unconstrained_new.available += 1;
+            }
         }
 
         // The overall unconstrained state is true if an unconstrained consumer is currently connected
