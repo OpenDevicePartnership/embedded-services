@@ -18,30 +18,31 @@ embedded-services.workspace = true
 defmt = { workspace = true, optional = true }
 log = { workspace = true, optional = true }
 embassy-sync.workspace = true
-embassy-imxrt = { workspace = true, features = ["mimxrt633s"] }
+embassy-imxrt = { workspace = true, features = ["mimxrt633s"], optional = true }
 embassy-futures.workspace = true
-mctp-rs = { workspace = true, features = ["espi"] }
+mctp-rs = { workspace = true, features = ["espi"], optional = true }
 
 [target.'cfg(target_os = "none")'.dependencies]
-cortex-m-rt.workspace = true
+cortex-m-rt = { workspace = true, optional = true }
 cortex-m = { workspace = true, features = [
     "inline-asm",
     "critical-section-single-core",
-] }
-embassy-imxrt = { workspace = true, features = [
-    "time-driver-os-timer",
-    "time",
-    "mimxrt633s",
-] }
+], optional = true }
 
 [features]
 default = []
+imxrt = [
+    "dep:embassy-imxrt",
+    "dep:mctp-rs",
+    "dep:cortex-m-rt",
+    "dep:cortex-m",
+]
 defmt = [
     "dep:defmt",
     "embedded-services/defmt",
     "embassy-sync/defmt",
-    "embassy-imxrt/defmt",
-    "mctp-rs/defmt",
+    "embassy-imxrt?/defmt",
+    "mctp-rs?/defmt",
 ]
 
 log = ["dep:log", "embedded-services/log"]
