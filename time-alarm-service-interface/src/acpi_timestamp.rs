@@ -1,4 +1,4 @@
-use embedded_mcu_hal::time::{Datetime, DatetimeClockError, Month, UncheckedDatetime};
+use embedded_mcu_hal::time::{Datetime, DatetimeClockError, DatetimeFields, Month};
 use zerocopy::{FromBytes, I16, Immutable, IntoBytes, KnownLayout, LE, U16, Unaligned};
 
 // Timestamp structure as specified in the ACPI spec.  Must be exactly this layout.
@@ -167,7 +167,7 @@ impl AcpiTimestamp {
         .map_err(|_| DatetimeClockError::Unknown)?;
 
         Ok(Self {
-            datetime: Datetime::new(UncheckedDatetime {
+            datetime: Datetime::new(DatetimeFields {
                 year: raw.year.get(),
                 month: Month::try_from(raw.month).map_err(|_| DatetimeClockError::Unknown)?,
                 day: raw.day,

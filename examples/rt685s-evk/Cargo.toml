@@ -86,7 +86,7 @@ platform-service = { path = "../../platform-service", features = [
     "defmt",
     "imxrt685",
 ] }
-embedded-mcu-hal = { git = "https://github.com/OpenDevicePartnership/embedded-mcu" }
+embedded-mcu-hal = "0.2.0"
 
 cfu-service = { path = "../../cfu-service", features = ["defmt"] }
 

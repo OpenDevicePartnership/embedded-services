@@ -2,7 +2,7 @@ use crate::{AlarmExpiredWakePolicy, ClockState, TimerStatus};
 use core::cell::RefCell;
 use embassy_futures::select::{Either, select};
 use embassy_sync::{blocking_mutex::Mutex, signal::Signal};
-use embedded_mcu_hal::NvramStorage;
+use embedded_mcu_hal::nvram::NvramStorage;
 use embedded_mcu_hal::time::{Datetime, DatetimeClockError};
 use embedded_services::{GlobalRawMutex, error};
 
@@ -24,8 +24,8 @@ enum WakeState {
 }
 
 mod persistent_storage {
+    use crate::NvramStorage;
     use crate::{AlarmExpiredWakePolicy, Datetime};
-    use embedded_mcu_hal::NvramStorage;
 
     pub struct PersistentStorage<'hw> {
         /// When the timer is programmed to expire, or None if the timer is not set
@@ -61,7 +61,7 @@ mod persistent_storage {
         pub fn get_expiration_time(&self) -> Option<Datetime> {
             match self.expiration_time_storage.read() {
                 Self::NO_EXPIRATION_TIME => None,
-                secs => Some(Datetime::from_unix_time_seconds(secs.into())),
+                secs => Some(Datetime::from_unix_timestamp(secs.into())),
             }
         }
 
@@ -69,7 +69,7 @@ mod persistent_storage {
             match expiration_time {
                 Some(dt) => {
                     // This won't overflow until 2106, which is acceptable for our use case.
-                    self.expiration_time_storage.write(dt.to_unix_time_seconds() as u32);
+                    self.expiration_time_storage.write(dt.unix_timestamp() as u32);
                 }
                 None => {
                     self.expiration_time_storage.write(Self::NO_EXPIRATION_TIME);
@@ -163,8 +163,7 @@ impl<'hw> Timer<'hw> {
         self.timer_state.lock(|timer_state| {
             let mut timer_state = timer_state.borrow_mut();
             if let WakeState::ExpiredWaitingForPolicyDelay(_, _) = timer_state.wake_state {
-                timer_state.wake_state =
-                    WakeState::ExpiredWaitingForPolicyDelay(Self::get_current_datetime(clock_state)?, 0);
+                timer_state.wake_state = WakeState::ExpiredWaitingForPolicyDelay(Self::now(clock_state)?, 0);
                 self.timer_signal.signal(Some(wake_policy.0));
             }
 
@@ -189,9 +188,8 @@ impl<'hw> Timer<'hw> {
                 Some(dt) => {
                     // Note: If the expiration time was in the past, this will immediately trigger the timer to expire.
                     self.timer_signal.signal(Some(
-                        dt.to_unix_time_seconds()
-                            .saturating_sub(Self::get_current_datetime(clock_state)?.to_unix_time_seconds())
-                            as u32, // The ACPI spec doesn't provide a facility to program a timer more than u32::MAX seconds in the future, so this cast is safe
+                        dt.unix_timestamp()
+                            .saturating_sub(Self::now(clock_state)?.unix_timestamp()) as u32, // The ACPI spec doesn't provide a facility to program a timer more than u32::MAX seconds in the future, so this cast is safe
                     ));
 
                     timer_state.persistent_storage.set_expiration_time(expiration_time);
@@ -222,7 +220,7 @@ impl<'hw> Timer<'hw> {
 
             if !was_active {
                 if let WakeState::ExpiredWaitingForPowerSource(seconds_already_elapsed) = timer_state.wake_state {
-                    match Self::get_current_datetime(clock_state) {
+                    match Self::now(clock_state) {
                         Ok(now) => {
                             timer_state.wake_state =
                                 WakeState::ExpiredWaitingForPolicyDelay(now, seconds_already_elapsed);
@@ -250,12 +248,12 @@ impl<'hw> Timer<'hw> {
             } else if let WakeState::ExpiredWaitingForPolicyDelay(wait_start_time, seconds_elapsed_before_wait) =
                 timer_state.wake_state
             {
-                let total_seconds_elapsed_on_policy_delay = match Self::get_current_datetime(clock_state) {
+                let total_seconds_elapsed_on_policy_delay = match Self::now(clock_state) {
                     Ok(now) => {
                         seconds_elapsed_before_wait
                             + (now
-                                .to_unix_time_seconds()
-                                .saturating_sub(wait_start_time.to_unix_time_seconds())
+                                .unix_timestamp()
+                                .saturating_sub(wait_start_time.unix_timestamp())
                                 as u32) // The ACPI spec expresses timeouts in terms of u32s - it's impossible to schedule a timer u32::MAX seconds in the future
                     }
                     Err(_) => {
@@ -332,16 +330,13 @@ impl<'hw> Timer<'hw> {
                         }
                     };
 
-                    match Self::get_current_datetime(clock_state) {
+                    match Self::now(clock_state) {
                         Ok(now) => {
-                            if now.to_unix_time_seconds() < expiration_time.to_unix_time_seconds() {
+                            if now.unix_timestamp() < expiration_time.unix_timestamp() {
                                 // Time hasn't actually passed the mark yet - this can happen if we were reprogrammed with a different time right as the old timer was expiring. Reset the timer.
                                 timer_state.wake_state = WakeState::Armed;
                                 self.timer_signal.signal(Some(
-                                    expiration_time
-                                        .to_unix_time_seconds()
-                                        .saturating_sub(now.to_unix_time_seconds())
-                                        as u32,
+                                    expiration_time.unix_timestamp().saturating_sub(now.unix_timestamp()) as u32,
                                 ));
                                 return false;
                             }
@@ -392,9 +387,7 @@ impl<'hw> Timer<'hw> {
         self.timer_signal.signal(None);
     }
 
-    fn get_current_datetime(
-        clock_state: &Mutex<GlobalRawMutex, RefCell<ClockState<'hw>>>,
-    ) -> Result<Datetime, DatetimeClockError> {
-        clock_state.lock(|clock_state| clock_state.borrow().datetime_clock.get_current_datetime())
+    fn now(clock_state: &Mutex<GlobalRawMutex, RefCell<ClockState<'hw>>>) -> Result<Datetime, DatetimeClockError> {
+        clock_state.lock(|clock_state| clock_state.borrow().datetime_clock.now())
     }
 }

@@ -15,7 +15,7 @@ fn now_seconds() -> u64 {
 }
 
 // Allows us to use this mock in no_std contexts
-// Note: `get_current_datetime` will always reflect time as starting from the beginning
+// Note: `now` will always reflect time as starting from the beginning
 // of UNIX time (1970), and not current wall-clock time. This is sufficient for its use case
 // since it provides a consistent baseline and allows time to advance, but is something to be aware of.
 #[cfg(not(test))]
@@ -37,7 +37,7 @@ impl MockDatetimeClock {
     /// New `MockDatetimeClock` in which time is paused.
     pub fn new_paused() -> Self {
         Self::Paused {
-            frozen_time: Datetime::from_unix_time_seconds(now_seconds()),
+            frozen_time: Datetime::from_unix_timestamp(now_seconds()),
         }
     }
 
@@ -47,7 +47,7 @@ impl MockDatetimeClock {
             *self = MockDatetimeClock::Paused {
                 // Panic safety: Mocks aren't used in production code, so panicking is acceptable here
                 #[allow(clippy::unwrap_used)]
-                frozen_time: self.get_current_datetime().unwrap(),
+                frozen_time: self.now().unwrap(),
             };
         }
     }
@@ -55,7 +55,7 @@ impl MockDatetimeClock {
     /// Resume time advancing.
     pub fn resume(&mut self) {
         if let Self::Paused { frozen_time } = self {
-            let target_secs = frozen_time.to_unix_time_seconds() as i64;
+            let target_secs = frozen_time.unix_timestamp() as i64;
             *self = MockDatetimeClock::Running {
                 seconds_offset: target_secs - now_seconds() as i64,
             };
@@ -64,12 +64,12 @@ impl MockDatetimeClock {
 }
 
 impl DatetimeClock for MockDatetimeClock {
-    fn get_current_datetime(&self) -> Result<Datetime, DatetimeClockError> {
+    fn now(&self) -> Result<Datetime, DatetimeClockError> {
         match self {
             MockDatetimeClock::Paused { frozen_time } => Ok(*frozen_time),
             MockDatetimeClock::Running { seconds_offset } => {
                 let adjusted_seconds = now_seconds() as i64 + seconds_offset;
-                Ok(Datetime::from_unix_time_seconds(adjusted_seconds as u64))
+                Ok(Datetime::from_unix_timestamp(adjusted_seconds as u64))
             }
         }
     }
@@ -81,7 +81,7 @@ impl DatetimeClock for MockDatetimeClock {
                 Ok(())
             }
             MockDatetimeClock::Running { .. } => {
-                let target_secs = datetime.to_unix_time_seconds() as i64;
+                let target_secs = datetime.unix_timestamp() as i64;
                 *self = MockDatetimeClock::Running {
                     seconds_offset: target_secs - now_seconds() as i64,
                 };

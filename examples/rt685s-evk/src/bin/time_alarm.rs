@@ -2,8 +2,8 @@
 #![no_main]
 
 use embedded_mcu_hal::{
-    Nvram,
-    time::{Datetime, Month, UncheckedDatetime},
+    nvram::Nvram,
+    time::{Datetime, DatetimeFields, Month},
 };
 use embedded_services::info;
 use static_cell::StaticCell;
@@ -58,7 +58,7 @@ async fn main(spawner: embassy_executor::Spawner) {
     //
     time_service
         .set_real_time(AcpiTimestamp {
-            datetime: Datetime::new(UncheckedDatetime {
+            datetime: Datetime::new(DatetimeFields {
                 year: 2024,
                 month: Month::January,
                 day: 10,

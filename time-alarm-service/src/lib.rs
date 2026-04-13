@@ -3,7 +3,7 @@
 use core::cell::RefCell;
 use embassy_sync::blocking_mutex::Mutex;
 use embassy_sync::signal::Signal;
-use embedded_mcu_hal::NvramStorage;
+use embedded_mcu_hal::nvram::NvramStorage;
 use embedded_mcu_hal::time::{Datetime, DatetimeClock, DatetimeClockError};
 use embedded_services::GlobalRawMutex;
 use embedded_services::{info, warn};
@@ -167,7 +167,7 @@ impl<'hw> ServiceInner<'hw> {
     fn get_real_time(&self) -> Result<AcpiTimestamp, DatetimeClockError> {
         self.clock_state.lock(|clock_state| {
             let clock_state = clock_state.borrow();
-            let datetime = clock_state.datetime_clock.get_current_datetime()?;
+            let datetime = clock_state.datetime_clock.now()?;
             let (time_zone, dst_status) = clock_state.tz_data.get_data();
             Ok(AcpiTimestamp {
                 datetime,
@@ -181,7 +181,7 @@ impl<'hw> ServiceInner<'hw> {
     fn set_real_time(&self, timestamp: AcpiTimestamp) -> Result<(), DatetimeClockError> {
         self.clock_state.lock(|clock_state| {
             let mut clock_state = clock_state.borrow_mut();
-            clock_state.datetime_clock.set_current_datetime(&timestamp.datetime)?;
+            clock_state.datetime_clock.set(timestamp.datetime)?;
             clock_state.tz_data.set_data(timestamp.time_zone, timestamp.dst_status);
             Ok(())
         })
@@ -221,10 +221,10 @@ impl<'hw> ServiceInner<'hw> {
             AlarmTimerSeconds(secs) => {
                 let current_time = self
                     .clock_state
-                    .lock(|clock_state| clock_state.borrow().datetime_clock.get_current_datetime())?;
+                    .lock(|clock_state| clock_state.borrow().datetime_clock.now())?;
 
-                Some(Datetime::from_unix_time_seconds(
-                    current_time.to_unix_time_seconds() + u64::from(secs),
+                Some(Datetime::from_unix_timestamp(
+                    current_time.unix_timestamp() + u64::from(secs),
                 ))
             }
         };
@@ -242,12 +242,12 @@ impl<'hw> ServiceInner<'hw> {
             Some(expiration_time) => {
                 let current_time = self
                     .clock_state
-                    .lock(|clock_state| clock_state.borrow().datetime_clock.get_current_datetime())?;
+                    .lock(|clock_state| clock_state.borrow().datetime_clock.now())?;
 
                 Ok(AlarmTimerSeconds(
                     expiration_time
-                        .to_unix_time_seconds()
-                        .saturating_sub(current_time.to_unix_time_seconds()) as u32,
+                        .unix_timestamp()
+                        .saturating_sub(current_time.unix_timestamp()) as u32,
                 ))
             }
             None => Ok(AlarmTimerSeconds::DISABLED),

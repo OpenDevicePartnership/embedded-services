@@ -85,7 +85,7 @@ embedded-hal-async = "1.0"
 embedded-hal-nb = "1.0"
 embedded-io = "0.6.1"
 embedded-io-async = "0.6.1"
-embedded-mcu-hal = { git = "https://github.com/OpenDevicePartnership/embedded-mcu" }
+embedded-mcu-hal = "0.2.0"
 embedded-services = { path = "./embedded-service" }
 embedded-storage = "0.3"
 embedded-storage-async = "0.4.1"

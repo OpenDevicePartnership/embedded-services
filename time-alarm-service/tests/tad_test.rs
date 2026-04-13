@@ -53,8 +53,8 @@ mod test {
                 Timer::after(embassy_time::Duration::from_millis(delay_secs * 1000)).await;
                 let end = service.get_real_time().unwrap();
                 println!("Current time from service after delay: {end:?}");
-                assert!(end.datetime.to_unix_time_seconds() - begin.datetime.to_unix_time_seconds() <= delay_secs + 1);
-                assert!(end.datetime.to_unix_time_seconds() - begin.datetime.to_unix_time_seconds() >= delay_secs - 1);
+                assert!(end.datetime.unix_timestamp() - begin.datetime.unix_timestamp() <= delay_secs + 1);
+                assert!(end.datetime.unix_timestamp() - begin.datetime.unix_timestamp() >= delay_secs - 1);
             } => {}
         }
     }
@@ -70,7 +70,7 @@ mod test {
         let mut clock = MockDatetimeClock::new_paused();
         const TEST_UNIX_TIME: u64 = 1_234_567_890;
         clock
-            .set_current_datetime(&Datetime::from_unix_time_seconds(TEST_UNIX_TIME))
+            .set_current_datetime(&Datetime::from_unix_timestamp(TEST_UNIX_TIME))
             .unwrap();
 
         let mut storage = Default::default();
@@ -94,10 +94,10 @@ mod test {
             _ = async {
                 // Clock is paused, so time shouldn't advance unless we set it.
                 let begin = service.get_real_time().unwrap();
-                assert_eq!(begin.datetime.to_unix_time_seconds(), TEST_UNIX_TIME);
+                assert_eq!(begin.datetime.unix_timestamp(), TEST_UNIX_TIME);
 
                 let target_timestamp = AcpiTimestamp {
-                    datetime: Datetime::from_unix_time_seconds(TEST_UNIX_TIME),
+                    datetime: Datetime::from_unix_timestamp(TEST_UNIX_TIME),
                     time_zone: AcpiTimeZone::Unknown,
                     dst_status: AcpiDaylightSavingsTimeStatus::Adjusted,
                 };
