@@ -225,7 +225,7 @@ async fn task(spawner: Spawner) {
     static CFU_CLIENT: OnceLock<CfuClient> = OnceLock::new();
     let cfu_client = CfuClient::new(&CFU_CLIENT).await;
 
-    spawner.must_spawn(power_policy_task(
+    spawner.spawn(power_policy_task(
         ArrayEventReceivers::new(
             [
                 &wrapper0.ports[0].proxy,
@@ -235,17 +235,17 @@ async fn task(spawner: Spawner) {
             [policy_receiver0, policy_receiver1, policy_receiver2],
         ),
         power_service,
-    ));
-    spawner.must_spawn(type_c_service_task(
+    ).expect("Failed to create power policy task"));
+    spawner.spawn(type_c_service_task(
         type_c_service,
         EventReceiver::new(controller_context, power_policy_subscriber),
         [wrapper0, wrapper1, wrapper2],
         cfu_client,
-    ));
+    ).expect("Failed to create type-c service task"));
 
-    spawner.must_spawn(controller_task(wrapper0));
-    spawner.must_spawn(controller_task(wrapper1));
-    spawner.must_spawn(controller_task(wrapper2));
+    spawner.spawn(controller_task(wrapper0).expect("Failed to create controller0 task"));
+    spawner.spawn(controller_task(wrapper1).expect("Failed to create controller1 task"));
+    spawner.spawn(controller_task(wrapper2).expect("Failed to create controller2 task"));
 
     const CAPABILITY: PowerCapability = PowerCapability {
         voltage_mv: 20000,
@@ -321,6 +321,6 @@ fn main() {
     static EXECUTOR: StaticCell<Executor> = StaticCell::new();
     let executor = EXECUTOR.init(Executor::new());
     executor.run(|spawner| {
-        spawner.must_spawn(task(spawner));
+        spawner.spawn(task(spawner).expect("Failed to create task"));
     });
 }

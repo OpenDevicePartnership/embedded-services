@@ -182,7 +182,7 @@ async fn run(spawner: Spawner) {
     static CFU_CLIENT: OnceLock<CfuClient> = OnceLock::new();
     let cfu_client = CfuClient::new(&CFU_CLIENT).await;
 
-    spawner.must_spawn(cfu_service_task(cfu_client));
+    spawner.spawn(cfu_service_task(cfu_client).expect("Failed to create cfu service task"));
 
     info!("Creating device 0");
     static DEVICE0: OnceLock<mock::Device> = OnceLock::new();
@@ -197,7 +197,7 @@ async fn run(spawner: Spawner) {
         )
     });
     cfu_client.register_device(device0).unwrap();
-    spawner.must_spawn(device_task(device0));
+    spawner.spawn(device_task(device0).expect("Failed to create device0 task"));
 
     info!("Creating device 1");
     static DEVICE1: OnceLock<mock::Device> = OnceLock::new();
@@ -212,7 +212,7 @@ async fn run(spawner: Spawner) {
         )
     });
     cfu_client.register_device(device1).unwrap();
-    spawner.must_spawn(device_task(device1));
+    spawner.spawn(device_task(device1).expect("Failed to create device1 task"));
 
     info!("Creating splitter");
     static SPLITTER: OnceLock<splitter::Splitter<'static, mock::Customization>> = OnceLock::new();
@@ -220,7 +220,7 @@ async fn run(spawner: Spawner) {
     let customization = mock::Customization {};
     let splitter = SPLITTER.get_or_init(|| splitter::Splitter::new(CFU_SPLITTER_ID, &DEVICES, customization).unwrap());
     splitter.register(cfu_client).unwrap();
-    spawner.must_spawn(splitter_task(splitter, cfu_client));
+    spawner.spawn(splitter_task(splitter, cfu_client).expect("Failed to create splitter task"));
 
     info!("Getting FW version");
     let response = cfu_client
@@ -283,6 +283,6 @@ fn main() {
     static EXECUTOR: StaticCell<Executor> = StaticCell::new();
     let executor = EXECUTOR.init(Executor::new());
     executor.run(|spawner| {
-        spawner.must_spawn(run(spawner));
+        spawner.spawn(run(spawner).expect("Failed to create run task"));
     });
 }

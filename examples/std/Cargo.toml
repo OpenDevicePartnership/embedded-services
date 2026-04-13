@@ -12,12 +12,12 @@ warnings = "deny"
 workspace = true
 
 [dependencies]
-embassy-sync = { version = "0.7.2", features = ["log", "std"] }
+embassy-sync = { version = "0.8.0", features = ["log", "std"] }
 embassy-time-driver = { version = "0.2.1", optional = true }
 embassy-time = { version = "0.5.0", features = ["log", "std"] }
 embassy-futures = "0.1.2"
-embassy-executor = { version = "0.9.1", features = [
-    "arch-std",
+embassy-executor = { version = "0.10.0", features = [
+    "platform-std",
     "executor-thread",
     "log",
 ] }

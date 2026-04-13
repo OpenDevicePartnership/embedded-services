@@ -109,6 +109,6 @@ fn main() {
     static EXECUTOR: StaticCell<Executor> = StaticCell::new();
     let executor = EXECUTOR.init(Executor::new());
     executor.run(|spawner| {
-        spawner.spawn(task()).unwrap();
+        spawner.spawn(task().expect("Failed to create task"));
     });
 }

@@ -150,16 +150,19 @@ async fn run(spawner: Spawner) {
         power_policy_service::service::config::Config::default(),
     )));
 
-    spawner.must_spawn(power_policy_task(
-        ArrayEventReceivers::new(
-            [device0, device1],
-            [
-                device0_event_channel.dyn_receiver(),
-                device1_event_channel.dyn_receiver(),
-            ],
-        ),
-        service,
-    ));
+    spawner.spawn(
+        power_policy_task(
+            ArrayEventReceivers::new(
+                [device0, device1],
+                [
+                    device0_event_channel.dyn_receiver(),
+                    device1_event_channel.dyn_receiver(),
+                ],
+            ),
+            service,
+        )
+        .expect("Failed to create power policy task"),
+    );
 
     // Plug in device 0, should become current consumer
     info!("Connecting device 0");
@@ -301,6 +304,6 @@ fn main() {
     let executor = EXECUTOR.init(Executor::new());
 
     executor.run(|spawner| {
-        spawner.must_spawn(run(spawner));
+        spawner.spawn(run(spawner).expect("Failed to create run task"));
     });
 }

@@ -139,8 +139,8 @@ async fn run(spawner: Spawner) {
 
     keyboard::enable_broadcast_host().await;
 
-    spawner.must_spawn(host());
-    spawner.must_spawn(device());
+    spawner.spawn(host().expect("Failed to create host task"));
+    spawner.spawn(device().expect("Failed to create device task"));
 }
 
 fn main() {
@@ -149,6 +149,6 @@ fn main() {
     static EXECUTOR: StaticCell<Executor> = StaticCell::new();
     let executor = EXECUTOR.init(Executor::new());
     executor.run(|spawner| {
-        spawner.must_spawn(run(spawner));
+        spawner.spawn(run(spawner).expect("Failed to create run task"));
     });
 }

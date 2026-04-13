@@ -38,8 +38,8 @@ async fn embassy_main(spawner: Spawner) {
         battery_wrapper.process().await
     }
 
-    spawner.must_spawn(battery_wrapper_process(wrapper));
-    spawner.must_spawn(run_app(battery_service));
+    spawner.spawn(battery_wrapper_process(wrapper).expect("Failed to create battery wrapper task"));
+    spawner.spawn(run_app(battery_service).expect("Failed to create run_app task"));
 }
 
 #[embassy_executor::task]
@@ -104,6 +104,6 @@ fn main() {
     let executor = EXECUTOR.init(Executor::new());
     // Run battery service
     executor.run(|spawner| {
-        spawner.must_spawn(embassy_main(spawner));
+        spawner.spawn(embassy_main(spawner).expect("Failed to create embassy_main task"));
     });
 }

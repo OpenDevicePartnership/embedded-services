@@ -167,15 +167,15 @@ async fn init_task(spawner: Spawner) {
     info!("init espi service");
     espi_service::init().await;
     // Spawn eSPI request task to drive the OOB request/response flow
-    spawner.must_spawn(espi_service::request_task());
+    spawner.spawn(espi_service::request_task().expect("Failed to create espi request task"));
 
     info!("spawn debug service");
-    spawner.must_spawn(debug_service());
+    spawner.spawn(debug_service().expect("Failed to create debug service task"));
 
     info!("spawn defmt_to_host_task");
-    spawner.must_spawn(defmt_to_host_task());
+    spawner.spawn(defmt_to_host_task().expect("Failed to create defmt_to_host task"));
 
-    spawner.must_spawn(defmt_frames_task());
+    spawner.spawn(defmt_frames_task().expect("Failed to create defmt_frames task"));
 }
 
 #[embassy_executor::task]
@@ -198,6 +198,6 @@ fn main() {
 
     executor.run(|spawner| {
         // Spawn debug-service tasks and mock eSPI service
-        spawner.must_spawn(init_task(spawner));
+        spawner.spawn(init_task(spawner).expect("Failed to create init task"));
     });
 }

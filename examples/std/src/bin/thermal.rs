@@ -76,8 +76,10 @@ async fn run(spawner: Spawner) {
     let resources = RESOURCES.init(ts::Resources::default());
     let thermal_service = ts::Service::init(resources, ts::InitParams { sensors, fans });
 
-    spawner.must_spawn(monitor(thermal_service));
-    spawner.must_spawn(sensor_event_listener(sensor_event_channel.receiver()));
+    spawner.spawn(monitor(thermal_service).expect("Failed to create monitor task"));
+    spawner.spawn(
+        sensor_event_listener(sensor_event_channel.receiver()).expect("Failed to create sensor event listener task"),
+    );
 }
 
 fn main() {
@@ -86,7 +88,7 @@ fn main() {
     static EXECUTOR: StaticCell<Executor> = StaticCell::new();
     let executor = EXECUTOR.init(Executor::new());
     executor.run(|spawner| {
-        spawner.must_spawn(run(spawner));
+        spawner.spawn(run(spawner).expect("Failed to create run task"));
     });
 }
 

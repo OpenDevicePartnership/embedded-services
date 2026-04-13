@@ -25,7 +25,7 @@ fn main() {
     static EXECUTOR: StaticCell<Executor> = StaticCell::new();
     let executor = EXECUTOR.init(Executor::new());
     executor.run(|spawner| {
-        spawner.must_spawn(registration_waiter());
-        spawner.must_spawn(registration_task());
+        spawner.spawn(registration_waiter().expect("Failed to create registration_waiter task"));
+        spawner.spawn(registration_task().expect("Failed to create registration task"));
     });
 }

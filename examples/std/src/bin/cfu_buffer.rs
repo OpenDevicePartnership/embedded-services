@@ -160,7 +160,7 @@ async fn run(spawner: Spawner) {
     static CFU_CLIENT: OnceLock<CfuClient> = OnceLock::new();
     let cfu_client = CfuClient::new(&CFU_CLIENT).await;
 
-    spawner.must_spawn(cfu_service_task(cfu_client));
+    spawner.spawn(cfu_service_task(cfu_client).expect("Failed to create cfu service task"));
 
     info!("Creating device 0");
     static DEVICE0: OnceLock<mock::Device> = OnceLock::new();
@@ -175,7 +175,7 @@ async fn run(spawner: Spawner) {
         )
     });
     cfu_client.register_device(device0).unwrap();
-    spawner.must_spawn(device_task(device0));
+    spawner.spawn(device_task(device0).expect("Failed to create device task"));
 
     info!("Creating buffer");
     static BUFFER: OnceLock<buffer::Buffer<'static>> = OnceLock::new();
@@ -192,7 +192,7 @@ async fn run(spawner: Spawner) {
         )
     });
     buffer.register(cfu_client).unwrap();
-    spawner.must_spawn(buffer_task(buffer, cfu_client));
+    spawner.spawn(buffer_task(buffer, cfu_client).expect("Failed to create buffer task"));
 
     info!("Getting FW version");
     let response = cfu_client
@@ -261,6 +261,6 @@ fn main() {
     static EXECUTOR: StaticCell<Executor> = StaticCell::new();
     let executor = EXECUTOR.init(Executor::new());
     executor.run(|spawner| {
-        spawner.must_spawn(run(spawner));
+        spawner.spawn(run(spawner).expect("Failed to create run task"));
     });
 }
