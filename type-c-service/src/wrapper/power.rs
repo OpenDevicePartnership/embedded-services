@@ -27,7 +27,7 @@ where
     /// Handle a new contract as consumer
     pub(super) async fn process_new_consumer_contract(
         &self,
-        port_state: &mut PortState<'_, S>,
+        port_state: &mut PortState<S>,
         status: &PortStatus,
     ) -> Result<(), Error<<D::Inner as Controller>::BusError>> {
         info!("Process new consumer contract");
@@ -53,7 +53,7 @@ where
     /// Handle a new contract as provider
     pub(super) async fn process_new_provider_contract(
         &self,
-        port_state: &mut PortState<'_, S>,
+        port_state: &mut PortState<S>,
         status: &PortStatus,
     ) -> Result<(), Error<<D::Inner as Controller>::BusError>> {
         info!("Process New provider contract");

@@ -1,18 +1,18 @@
 //! This module provides TCPM event types and bitfields.
 //! Hardware typically uses bitfields to store pending events/interrupts so we provide generic versions of these.
-//! [`PortStatusChanged`] contains events related to the overall port state (plug state, power contract, etc).
-//! Processing these events typically requires acessing similar registers so they are grouped together.
-//! [`PortNotification`] contains events that are typically more message-like (PD alerts, VDMs, etc) and can be processed independently.
-//! Consequently [`PortNotification`] implements iterator traits to allow for processing these events as a stream.
+//! [`PortStatusEventBitfield`] contains events related to the overall port state (plug state, power contract, etc).
+//! Processing these events typically requires accessing similar registers so they are grouped together.
+//! [`PortNotificationEventBitfield`] contains events that are typically more message-like (PD alerts, VDMs, etc) and can be processed independently.
+//! Consequently [`PortNotificationEventBitfield`] implements iterator traits to allow for processing these events as a stream.
 use bitfield::bitfield;
-use bitvec::BitArr;
-use embedded_services::error;
+
+use crate::port::{AttnVdm, OtherVdm};
 
 bitfield! {
     /// Raw bitfield of possible port status events
     #[derive(Copy, Clone, PartialEq, Eq, Default)]
     #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-    struct PortStatusChangedRaw(u16);
+    struct PortStatusEventBitfieldRaw(u16);
     impl Debug;
     /// Plug inserted or removed
     pub u8, plug_inserted_or_removed, set_plug_inserted_or_removed: 0, 0;
@@ -34,31 +34,23 @@ bitfield! {
     pub u8, pd_hard_reset, set_pd_hard_reset: 8, 8;
 }
 
-/// Port pending errors
-#[derive(Clone, Copy, Debug, PartialEq)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub enum PortPendingError {
-    /// Invalid port
-    InvalidPort(usize),
-}
-
 /// Port status change events
 /// This is a type-safe wrapper around the raw bitfield
 /// These events are related to the overall port state and typically need to be considered together.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct PortStatusChanged(PortStatusChangedRaw);
+pub struct PortStatusEventBitfield(PortStatusEventBitfieldRaw);
 
-impl PortStatusChanged {
+impl PortStatusEventBitfield {
     /// Create a new PortEventKind with no pending events
     pub const fn none() -> Self {
-        Self(PortStatusChangedRaw(0))
+        Self(PortStatusEventBitfieldRaw(0))
     }
 
     /// Returns the union of self and other
-    pub fn union(self, other: PortStatusChanged) -> PortStatusChanged {
+    pub fn union(self, other: PortStatusEventBitfield) -> PortStatusEventBitfield {
         // This spacing is what rustfmt wants
-        PortStatusChanged(PortStatusChangedRaw(self.0.0 | other.0.0))
+        PortStatusEventBitfield(PortStatusEventBitfieldRaw(self.0.0 | other.0.0))
     }
 
     /// Returns true if a plug was inserted or removed
@@ -156,7 +148,7 @@ bitfield! {
     /// Raw bitfield of possible port notification events
     #[derive(Copy, Clone, PartialEq, Eq)]
     #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-    struct PortNotificationRaw(u16);
+    struct PortNotificationEventBitfieldRaw(u16);
     impl Debug;
     /// PD alert
     pub u8, alert, set_alert: 0, 0;
@@ -181,18 +173,18 @@ bitfield! {
 /// These events are unrelated to the overall port state and each other.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct PortNotification(PortNotificationRaw);
+pub struct PortNotificationEventBitfield(PortNotificationEventBitfieldRaw);
 
-impl PortNotification {
+impl PortNotificationEventBitfield {
     /// Create a new PortNotification with no pending events
     pub const fn none() -> Self {
-        Self(PortNotificationRaw(0))
+        Self(PortNotificationEventBitfieldRaw(0))
     }
 
     /// Returns the union of self and other
-    pub fn union(self, other: PortNotification) -> PortNotification {
+    pub fn union(self, other: PortNotificationEventBitfield) -> PortNotificationEventBitfield {
         // This spacing is what rustfmt wants
-        PortNotification(PortNotificationRaw(self.0.0 | other.0.0))
+        PortNotificationEventBitfield(PortNotificationEventBitfieldRaw(self.0.0 | other.0.0))
     }
 
     /// Returns true if an alert was received
@@ -290,10 +282,26 @@ pub enum VdmNotification {
     OtherReceived,
 }
 
-/// Individual port notifications
+/// VDM event data
+#[derive(Copy, Clone, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum VdmData {
+    /// Entered custom mode
+    Entered(OtherVdm),
+    /// Exited custom mode
+    Exited(OtherVdm),
+    /// Received a vendor-defined other message
+    ReceivedOther(OtherVdm),
+    /// Received a vendor-defined attention message
+    ReceivedAttn(AttnVdm),
+}
+
+/// Enum to contain all port event variants
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub enum PortNotificationSingle {
+pub enum PortEvent {
+    /// Port status change events
+    StatusChanged(PortStatusEventBitfield),
     /// PD alert
     Alert,
     /// VDM
@@ -306,34 +314,34 @@ pub enum PortNotificationSingle {
     DpStatusUpdate,
 }
 
-impl Iterator for PortNotification {
-    type Item = PortNotificationSingle;
+impl Iterator for PortNotificationEventBitfield {
+    type Item = PortEvent;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.alert() {
             self.set_alert(false);
-            Some(PortNotificationSingle::Alert)
+            Some(PortEvent::Alert)
         } else if self.custom_mode_entered() {
             self.set_custom_mode_entered(false);
-            Some(PortNotificationSingle::Vdm(VdmNotification::Entered))
+            Some(PortEvent::Vdm(VdmNotification::Entered))
         } else if self.custom_mode_exited() {
             self.set_custom_mode_exited(false);
-            Some(PortNotificationSingle::Vdm(VdmNotification::Exited))
+            Some(PortEvent::Vdm(VdmNotification::Exited))
         } else if self.custom_mode_attention_received() {
             self.set_custom_mode_attention_received(false);
-            Some(PortNotificationSingle::Vdm(VdmNotification::AttentionReceived))
+            Some(PortEvent::Vdm(VdmNotification::AttentionReceived))
         } else if self.custom_mode_other_vdm_received() {
             self.set_custom_mode_other_vdm_received(false);
-            Some(PortNotificationSingle::Vdm(VdmNotification::OtherReceived))
+            Some(PortEvent::Vdm(VdmNotification::OtherReceived))
         } else if self.discover_mode_completed() {
             self.set_discover_mode_completed(false);
-            Some(PortNotificationSingle::DiscoverModeCompleted)
+            Some(PortEvent::DiscoverModeCompleted)
         } else if self.usb_mux_error_recovery() {
             self.set_usb_mux_error_recovery(false);
-            Some(PortNotificationSingle::UsbMuxErrorRecovery)
+            Some(PortEvent::UsbMuxErrorRecovery)
         } else if self.dp_status_update() {
             self.set_dp_status_update(false);
-            Some(PortNotificationSingle::DpStatusUpdate)
+            Some(PortEvent::DpStatusUpdate)
         } else {
             None
         }
@@ -343,176 +351,52 @@ impl Iterator for PortNotification {
 /// Overall port event type
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct PortEvent {
+pub struct PortEventBitfield {
     /// Port status change events
-    pub status: PortStatusChanged,
+    pub status: PortStatusEventBitfield,
     /// Port notification events
-    pub notification: PortNotification,
+    pub notification: PortNotificationEventBitfield,
 }
 
-impl PortEvent {
+impl PortEventBitfield {
     /// Creates a new PortEvent with no pending events
     pub const fn none() -> Self {
         Self {
-            status: PortStatusChanged::none(),
-            notification: PortNotification::none(),
+            status: PortStatusEventBitfield::none(),
+            notification: PortNotificationEventBitfield::none(),
         }
     }
 
     /// Returns the union of self and other
-    pub fn union(self, other: PortEvent) -> PortEvent {
-        PortEvent {
+    pub fn union(self, other: PortEventBitfield) -> PortEventBitfield {
+        PortEventBitfield {
             status: self.status.union(other.status),
             notification: self.notification.union(other.notification),
         }
     }
 }
 
-impl Default for PortEvent {
+impl Default for PortEventBitfield {
     fn default() -> Self {
         Self::none()
     }
 }
 
-impl From<PortStatusChanged> for PortEvent {
-    fn from(status: PortStatusChanged) -> Self {
+impl From<PortStatusEventBitfield> for PortEventBitfield {
+    fn from(status: PortStatusEventBitfield) -> Self {
         Self {
             status,
-            notification: PortNotification::none(),
+            notification: PortNotificationEventBitfield::none(),
         }
     }
 }
 
-impl From<PortNotification> for PortEvent {
-    fn from(notification: PortNotification) -> Self {
+impl From<PortNotificationEventBitfield> for PortEventBitfield {
+    fn from(notification: PortNotificationEventBitfield) -> Self {
         Self {
-            status: PortStatusChanged::none(),
+            status: PortStatusEventBitfield::none(),
             notification,
         }
-    }
-}
-
-/// Bit vector type to store pending port events
-type PortPendingVec = BitArr!(for 32, in u32);
-
-/// Pending port events
-///
-/// This type works using usize to allow use with both global and local port IDs.
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-#[repr(transparent)]
-pub struct PortPending(PortPendingVec);
-
-impl PortPending {
-    /// Creates a new PortPending with no pending ports
-    pub const fn none() -> Self {
-        Self(PortPendingVec::ZERO)
-    }
-
-    /// Returns true if there are no pending ports
-    pub fn is_none(&self) -> bool {
-        self.0 == PortPendingVec::ZERO
-    }
-
-    /// Marks the given port as pending
-    pub fn pend_port(&mut self, port: usize) -> Result<(), PortPendingError> {
-        if port >= self.0.len() {
-            return Err(PortPendingError::InvalidPort(port));
-        }
-        self.0.set(port, true);
-
-        Ok(())
-    }
-
-    /// Marks the indexes given by the iterator as pending
-    pub fn pend_ports<I: IntoIterator<Item = usize>>(&mut self, iter: I) {
-        for port in iter {
-            if self.pend_port(port).is_err() {
-                error!("Error pending port {}", port);
-            }
-        }
-    }
-
-    /// Clears the pending status of the given port
-    pub fn clear_port(&mut self, port: usize) -> Result<(), PortPendingError> {
-        if port >= self.0.len() {
-            return Err(PortPendingError::InvalidPort(port));
-        }
-
-        self.0.set(port, false);
-        Ok(())
-    }
-
-    /// Returns true if the given port is pending
-    pub fn is_pending(&self, port: usize) -> Result<bool, PortPendingError> {
-        Ok(*self.0.get(port).ok_or(PortPendingError::InvalidPort(port))?)
-    }
-
-    /// Returns a combination of the current pending ports and other
-    pub fn union(&self, other: PortPending) -> PortPending {
-        PortPending(self.0 | other.0)
-    }
-
-    /// Returns the number of bits in Self
-    #[allow(clippy::len_without_is_empty)]
-    pub fn len(&self) -> usize {
-        self.0.len()
-    }
-}
-
-impl From<PortPending> for u32 {
-    fn from(flags: PortPending) -> Self {
-        flags.0.data[0]
-    }
-}
-
-impl Default for PortPending {
-    fn default() -> Self {
-        Self::none()
-    }
-}
-
-impl FromIterator<usize> for PortPending {
-    fn from_iter<T: IntoIterator<Item = usize>>(iter: T) -> Self {
-        let mut flags = PortPending::none();
-        flags.pend_ports(iter);
-        flags
-    }
-}
-
-/// An iterator over the pending port event flags
-#[derive(Copy, Clone)]
-pub struct PortPendingIter {
-    /// The flags being iterated over
-    flags: PortPending,
-    /// The current index in the flags
-    index: usize,
-}
-
-impl Iterator for PortPendingIter {
-    type Item = usize;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        while self.index < self.flags.len() {
-            let port_index = self.index;
-            self.index += 1;
-            if self.flags.is_pending(port_index).unwrap_or(false) {
-                if self.flags.clear_port(port_index).is_ok() {
-                    return Some(port_index);
-                } else {
-                    continue;
-                }
-            }
-        }
-        None
-    }
-}
-
-impl IntoIterator for PortPending {
-    type Item = usize;
-    type IntoIter = PortPendingIter;
-
-    fn into_iter(self) -> PortPendingIter {
-        PortPendingIter { flags: self, index: 0 }
     }
 }
 
@@ -522,125 +406,91 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_port_event_flags_iter() {
-        let mut pending = PortPending::none();
-
-        pending.pend_port(0).unwrap();
-        pending.pend_port(1).unwrap();
-        pending.pend_port(2).unwrap();
-        pending.pend_port(10).unwrap();
-        pending.pend_port(23).unwrap();
-        pending.pend_port(31).unwrap();
-
-        let result = pending.pend_port(32);
-        let expected = Err(PortPendingError::InvalidPort(32));
-        assert_eq!(expected, result);
-
-        let mut iter = pending.into_iter();
-        assert_eq!(iter.next(), Some(0));
-        assert_eq!(iter.next(), Some(1));
-        assert_eq!(iter.next(), Some(2));
-        assert_eq!(iter.next(), Some(10));
-        assert_eq!(iter.next(), Some(23));
-        assert_eq!(iter.next(), Some(31));
-        assert_eq!(iter.next(), None);
-    }
-
-    #[test]
     fn test_port_notification_iter_all() {
-        let mut notification = PortNotification::none();
+        let mut notification = PortNotificationEventBitfield::none();
         notification.set_alert(true);
         notification.set_custom_mode_entered(true);
 
-        assert_eq!(notification.next(), Some(PortNotificationSingle::Alert));
-        assert_eq!(
-            notification.next(),
-            Some(PortNotificationSingle::Vdm(VdmNotification::Entered))
-        );
+        assert_eq!(notification.next(), Some(PortEvent::Alert));
+        assert_eq!(notification.next(), Some(PortEvent::Vdm(VdmNotification::Entered)));
         assert_eq!(notification.next(), None);
     }
 
     #[test]
     fn test_port_notification_iter_alert() {
-        let mut notification = PortNotification::none();
+        let mut notification = PortNotificationEventBitfield::none();
         notification.set_alert(true);
 
-        assert_eq!(notification.next(), Some(PortNotificationSingle::Alert));
+        assert_eq!(notification.next(), Some(PortEvent::Alert));
         assert_eq!(notification.next(), None);
     }
 
     #[test]
     fn test_port_notification_iter_custom_mode_entered() {
-        let mut notification = PortNotification::none();
+        let mut notification = PortNotificationEventBitfield::none();
         notification.set_custom_mode_entered(true);
 
-        assert_eq!(
-            notification.next(),
-            Some(PortNotificationSingle::Vdm(VdmNotification::Entered))
-        );
+        assert_eq!(notification.next(), Some(PortEvent::Vdm(VdmNotification::Entered)));
         assert_eq!(notification.next(), None);
     }
 
     #[test]
     fn test_port_notification_iter_custom_mode_exited() {
-        let mut notification = PortNotification::none();
+        let mut notification = PortNotificationEventBitfield::none();
         notification.set_custom_mode_exited(true);
 
-        assert_eq!(
-            notification.next(),
-            Some(PortNotificationSingle::Vdm(VdmNotification::Exited))
-        );
+        assert_eq!(notification.next(), Some(PortEvent::Vdm(VdmNotification::Exited)));
         assert_eq!(notification.next(), None);
     }
 
     #[test]
     fn test_port_notification_iter_custom_mode_attention_received() {
-        let mut notification = PortNotification::none();
+        let mut notification = PortNotificationEventBitfield::none();
         notification.set_custom_mode_attention_received(true);
 
         assert_eq!(
             notification.next(),
-            Some(PortNotificationSingle::Vdm(VdmNotification::AttentionReceived))
+            Some(PortEvent::Vdm(VdmNotification::AttentionReceived))
         );
         assert_eq!(notification.next(), None);
     }
 
     #[test]
     fn test_port_notification_iter_custom_mode_other_vdm_received() {
-        let mut notification = PortNotification::none();
+        let mut notification = PortNotificationEventBitfield::none();
         notification.set_custom_mode_other_vdm_received(true);
 
         assert_eq!(
             notification.next(),
-            Some(PortNotificationSingle::Vdm(VdmNotification::OtherReceived))
+            Some(PortEvent::Vdm(VdmNotification::OtherReceived))
         );
         assert_eq!(notification.next(), None);
     }
 
     #[test]
     fn test_port_notification_iter_discover_mode_completed() {
-        let mut notification = PortNotification::none();
+        let mut notification = PortNotificationEventBitfield::none();
         notification.set_discover_mode_completed(true);
 
-        assert_eq!(notification.next(), Some(PortNotificationSingle::DiscoverModeCompleted));
+        assert_eq!(notification.next(), Some(PortEvent::DiscoverModeCompleted));
         assert_eq!(notification.next(), None);
     }
 
     #[test]
     fn test_port_notification_iter_usb_mux_error_recovery() {
-        let mut notification = PortNotification::none();
+        let mut notification = PortNotificationEventBitfield::none();
         notification.set_usb_mux_error_recovery(true);
 
-        assert_eq!(notification.next(), Some(PortNotificationSingle::UsbMuxErrorRecovery));
+        assert_eq!(notification.next(), Some(PortEvent::UsbMuxErrorRecovery));
         assert_eq!(notification.next(), None);
     }
 
     #[test]
     fn test_port_notification_iter_dp_status_update() {
-        let mut notification = PortNotification::none();
+        let mut notification = PortNotificationEventBitfield::none();
         notification.set_dp_status_update(true);
 
-        assert_eq!(notification.next(), Some(PortNotificationSingle::DpStatusUpdate));
+        assert_eq!(notification.next(), Some(PortEvent::DpStatusUpdate));
         assert_eq!(notification.next(), None);
     }
 }

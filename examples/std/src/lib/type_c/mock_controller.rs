@@ -10,12 +10,12 @@ use log::{debug, info, trace};
 use power_policy_interface::capability::PowerCapability;
 use type_c_interface::port::{
     AttnVdm, ControllerStatus, DpConfig, DpPinConfig, DpStatus, OtherVdm, PdStateMachineConfig, PortStatus,
-    RetimerFwUpdateState, SendVdm, TbtConfig, TypeCStateMachineState, UsbControlConfig, event::PortEvent,
+    RetimerFwUpdateState, SendVdm, TbtConfig, TypeCStateMachineState, UsbControlConfig, event::PortEventBitfield,
 };
 use type_c_service::util::power_capability_from_current;
 
 pub struct ControllerState {
-    events: Signal<GlobalRawMutex, PortEvent>,
+    events: Signal<GlobalRawMutex, PortEventBitfield>,
     status: Mutex<GlobalRawMutex, PortStatus>,
     pd_alert: Mutex<GlobalRawMutex, Option<Ado>>,
 }
@@ -38,7 +38,7 @@ impl ControllerState {
             ConnectionState::Attached
         });
 
-        let mut events = PortEvent::none();
+        let mut events = PortEventBitfield::none();
         match role {
             PowerRole::Source => {
                 status.available_source_contract = Some(capability);
@@ -67,7 +67,7 @@ impl ControllerState {
     pub async fn disconnect(&self) {
         *self.status.lock().await = PortStatus::default();
 
-        let mut events = PortEvent::none();
+        let mut events = PortEventBitfield::none();
         events.status.set_plug_inserted_or_removed(true);
         self.events.signal(events);
     }
@@ -82,7 +82,7 @@ impl ControllerState {
     pub async fn send_pd_alert(&self, ado: Ado) {
         *self.pd_alert.lock().await = Some(ado);
 
-        let mut events = PortEvent::none();
+        let mut events = PortEventBitfield::none();
         events.notification.set_alert(true);
         self.events.signal(events);
     }
@@ -96,14 +96,14 @@ impl Default for ControllerState {
 
 pub struct Controller<'a> {
     state: &'a ControllerState,
-    events: PortEvent,
+    events: PortEventBitfield,
 }
 
 impl<'a> Controller<'a> {
     pub fn new(state: &'a ControllerState) -> Self {
         Self {
             state,
-            events: PortEvent::none(),
+            events: PortEventBitfield::none(),
         }
     }
 
@@ -123,10 +123,10 @@ impl type_c_interface::port::Controller for Controller<'_> {
         Ok(())
     }
 
-    async fn clear_port_events(&mut self, _port: LocalPortId) -> Result<PortEvent, Error<Self::BusError>> {
+    async fn clear_port_events(&mut self, _port: LocalPortId) -> Result<PortEventBitfield, Error<Self::BusError>> {
         let events = self.events;
         debug!("Clear port events: {events:#?}");
-        self.events = PortEvent::none();
+        self.events = PortEventBitfield::none();
         Ok(events)
     }
 

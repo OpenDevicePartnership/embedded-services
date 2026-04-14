@@ -19,9 +19,13 @@ use power_policy_service::service::registration::ArrayRegistration;
 use static_cell::StaticCell;
 use std_examples::type_c::mock_controller;
 use type_c_interface::port::ControllerId;
+use type_c_interface::port::PortRegistration;
+use type_c_interface::service::event::PortEvent as ServicePortEvent;
 use type_c_service::service::{EventReceiver, Service};
 use type_c_service::wrapper::backing::{IntermediateStorage, ReferencedStorage, Storage};
 use type_c_service::wrapper::proxy::PowerProxyDevice;
+
+const CHANNEL_CAPACITY: usize = 4;
 
 const NUM_PD_CONTROLLERS: usize = 3;
 
@@ -87,8 +91,18 @@ async fn task(spawner: Spawner) {
     let policy_sender0 = policy_channel0.dyn_sender();
     let policy_receiver0 = policy_channel0.dyn_receiver();
 
+    static PORT0_CHANNEL: Channel<GlobalRawMutex, ServicePortEvent, CHANNEL_CAPACITY> = Channel::new();
     static STORAGE0: StaticCell<Storage<1, GlobalRawMutex>> = StaticCell::new();
-    let storage0 = STORAGE0.init(Storage::new(controller_context, CONTROLLER0_ID, CFU0_ID, [PORT0_ID]));
+    let storage0 = STORAGE0.init(Storage::new(
+        controller_context,
+        CONTROLLER0_ID,
+        CFU0_ID,
+        [PortRegistration {
+            id: PORT0_ID,
+            sender: PORT0_CHANNEL.dyn_sender(),
+            receiver: PORT0_CHANNEL.dyn_receiver(),
+        }],
+    ));
     static INTERMEDIATE0: StaticCell<
         IntermediateStorage<1, GlobalRawMutex, DynamicSender<'static, psu::event::EventData>>,
     > = StaticCell::new();
@@ -123,8 +137,18 @@ async fn task(spawner: Spawner) {
     let policy_sender1 = policy_channel1.dyn_sender();
     let policy_receiver1 = policy_channel1.dyn_receiver();
 
+    static PORT1_CHANNEL: Channel<GlobalRawMutex, ServicePortEvent, CHANNEL_CAPACITY> = Channel::new();
     static STORAGE1: StaticCell<Storage<1, GlobalRawMutex>> = StaticCell::new();
-    let storage1 = STORAGE1.init(Storage::new(controller_context, CONTROLLER1_ID, CFU1_ID, [PORT1_ID]));
+    let storage1 = STORAGE1.init(Storage::new(
+        controller_context,
+        CONTROLLER1_ID,
+        CFU1_ID,
+        [PortRegistration {
+            id: PORT1_ID,
+            sender: PORT1_CHANNEL.dyn_sender(),
+            receiver: PORT1_CHANNEL.dyn_receiver(),
+        }],
+    ));
     static INTERMEDIATE1: StaticCell<
         IntermediateStorage<1, GlobalRawMutex, DynamicSender<'static, psu::event::EventData>>,
     > = StaticCell::new();
@@ -159,8 +183,18 @@ async fn task(spawner: Spawner) {
     let policy_sender2 = policy_channel2.dyn_sender();
     let policy_receiver2 = policy_channel2.dyn_receiver();
 
+    static PORT2_CHANNEL: Channel<GlobalRawMutex, ServicePortEvent, CHANNEL_CAPACITY> = Channel::new();
     static STORAGE2: StaticCell<Storage<1, GlobalRawMutex>> = StaticCell::new();
-    let storage2 = STORAGE2.init(Storage::new(controller_context, CONTROLLER2_ID, CFU2_ID, [PORT2_ID]));
+    let storage2 = STORAGE2.init(Storage::new(
+        controller_context,
+        CONTROLLER2_ID,
+        CFU2_ID,
+        [PortRegistration {
+            id: PORT2_ID,
+            sender: PORT2_CHANNEL.dyn_sender(),
+            receiver: PORT2_CHANNEL.dyn_receiver(),
+        }],
+    ));
     static INTERMEDIATE2: StaticCell<
         IntermediateStorage<1, GlobalRawMutex, DynamicSender<'static, psu::event::EventData>>,
     > = StaticCell::new();

@@ -2,22 +2,16 @@
 //!
 //! TODO: update this documentation when the type-C service is refactored
 //!
-use core::array::from_fn;
+use core::{array::from_fn, ops::Range};
 
 use cfu_service::component::CfuDevice;
-use embassy_sync::{
-    blocking_mutex::raw::RawMutex,
-    mutex::Mutex,
-    pubsub::{DynImmediatePublisher, DynSubscriber, PubSubChannel},
-};
+use embassy_sync::{blocking_mutex::raw::RawMutex, mutex::Mutex};
 
 use embassy_time::Instant;
 use embedded_cfu_protocol::protocol_definitions::ComponentId;
 use embedded_services::event;
-use embedded_usb_pd::{GlobalPortId, ado::Ado};
 
-use type_c_interface::port::event::{PortEvent, PortStatusChanged};
-use type_c_interface::port::{ControllerId, PortStatus};
+use type_c_interface::port::{ControllerId, PortRegistration, PortStatus, event::PortStatusEventBitfield};
 
 use crate::{
     PortEventStreamer,
@@ -28,12 +22,12 @@ use crate::{
 };
 
 /// Internal per-controller state
-#[derive(Copy, Clone)]
+#[derive(Clone)]
 pub struct ControllerState {
     /// If we're currently doing a firmware update
     pub(crate) fw_update_state: cfu::FwUpdateState,
     /// State used to keep track of where we are as we turn the event bitfields into a stream of events
-    pub(crate) port_event_streaming_state: Option<PortEventStreamer>,
+    pub(crate) port_event_streaming_state: Option<PortEventStreamer<Range<usize>>>,
 }
 
 impl Default for ControllerState {
@@ -59,20 +53,14 @@ impl<'a, M: RawMutex> Registration<'a, M> {
     }
 }
 
-/// PD alerts should be fairly uncommon, four seems like a reasonable number to start with.
-const MAX_BUFFERED_PD_ALERTS: usize = 4;
-
 /// Base storage
 pub struct Storage<'a, const N: usize, M: RawMutex> {
     // Registration-related
     context: &'a type_c_interface::service::context::Context,
     controller_id: ControllerId,
-    pd_ports: [GlobalPortId; N],
+    pd_ports: [PortRegistration; N],
     cfu_device: CfuDevice,
     power_proxy_channels: [PowerProxyChannel<M>; N],
-
-    // State-related
-    pd_alerts: [PubSubChannel<M, Ado, MAX_BUFFERED_PD_ALERTS, 1, 0>; N],
 }
 
 impl<'a, const N: usize, M: RawMutex> Storage<'a, N, M> {
@@ -80,7 +68,7 @@ impl<'a, const N: usize, M: RawMutex> Storage<'a, N, M> {
         context: &'a type_c_interface::service::context::Context,
         controller_id: ControllerId,
         cfu_id: ComponentId,
-        pd_ports: [GlobalPortId; N],
+        pd_ports: [PortRegistration; N],
     ) -> Self {
         Self {
             context,
@@ -88,7 +76,6 @@ impl<'a, const N: usize, M: RawMutex> Storage<'a, N, M> {
             pd_ports,
             cfu_device: CfuDevice::new(cfu_id),
             power_proxy_channels: from_fn(|_| PowerProxyChannel::new()),
-            pd_alerts: [const { PubSubChannel::new() }; N],
         }
     }
 
@@ -103,34 +90,26 @@ impl<'a, const N: usize, M: RawMutex> Storage<'a, N, M> {
 
 pub struct Port<'a, M: RawMutex, S: event::Sender<power_policy_interface::psu::event::EventData>> {
     pub proxy: Mutex<M, PowerProxyDevice<'a>>,
-    pub state: Mutex<M, PortState<'a, S>>,
+    pub state: Mutex<M, PortState<S>>,
 }
 
-pub struct PortState<'a, S: event::Sender<power_policy_interface::psu::event::EventData>> {
+pub struct PortState<S: event::Sender<power_policy_interface::psu::event::EventData>> {
     /// Cached port status
     pub(crate) status: PortStatus,
     /// Software status event
-    pub(crate) sw_status_event: PortStatusChanged,
+    pub(crate) sw_status_event: PortStatusEventBitfield,
     /// Sink ready deadline instant
     pub(crate) sink_ready_deadline: Option<Instant>,
-    /// Pending events for the type-C service
-    pub(crate) pending_events: PortEvent,
-    /// PD alert channel for this port
-    // There's no direct immediate equivalent of a channel. PubSubChannel has immediate publisher behavior
-    // so we use that, but this requires us to keep separate publisher and subscriber objects.
-    pub(crate) pd_alerts: (DynImmediatePublisher<'a, Ado>, DynSubscriber<'a, Ado>),
     /// Sender to send events to the power policy service
     pub(crate) power_policy_sender: S,
 }
 
-impl<'a, S: event::Sender<power_policy_interface::psu::event::EventData>> PortState<'a, S> {
-    pub fn new(pd_alerts: (DynImmediatePublisher<'a, Ado>, DynSubscriber<'a, Ado>), power_policy_sender: S) -> Self {
+impl<S: event::Sender<power_policy_interface::psu::event::EventData>> PortState<S> {
+    pub fn new(power_policy_sender: S) -> Self {
         Self {
             status: PortStatus::default(),
-            sw_status_event: PortStatusChanged::default(),
+            sw_status_event: PortStatusEventBitfield::default(),
             sink_ready_deadline: None,
-            pending_events: PortEvent::default(),
-            pd_alerts,
             power_policy_sender,
         }
     }
@@ -155,21 +134,15 @@ impl<'a, const N: usize, M: RawMutex, S: event::Sender<power_policy_interface::p
         let mut ports = heapless::Vec::<_, N>::new();
         let mut power_proxy_receivers = heapless::Vec::<_, N>::new();
 
-        for ((power_proxy_channel, pd_alert), (name, policy_sender)) in storage
-            .power_proxy_channels
-            .iter()
-            .zip(storage.pd_alerts.iter())
-            .zip(power_policy_init.into_iter())
+        for (power_proxy_channel, (name, policy_sender)) in
+            storage.power_proxy_channels.iter().zip(power_policy_init.into_iter())
         {
             let (device_sender, device_receiver) = power_proxy_channel.get_device_components();
 
             ports
                 .push(Port {
                     proxy: Mutex::new(PowerProxyDevice::new(name, device_sender, device_receiver)),
-                    state: Mutex::new(PortState::new(
-                        (pd_alert.dyn_immediate_publisher(), pd_alert.dyn_subscriber().ok()?),
-                        policy_sender,
-                    )),
+                    state: Mutex::new(PortState::new(policy_sender)),
                 })
                 .ok()?;
             power_proxy_receivers

@@ -2,10 +2,9 @@ use embassy_sync::blocking_mutex::raw::RawMutex;
 use embedded_services::{event, sync::Lockable, trace};
 use embedded_usb_pd::{Error, LocalPortId, PdError};
 
-use crate::wrapper::message::vdm::OutputKind;
-
-use type_c_interface::port::Controller;
-use type_c_interface::port::event::{PortPending, VdmNotification};
+use type_c_interface::port::event::VdmNotification;
+use type_c_interface::port::{Controller, event::VdmData};
+use type_c_interface::service::event::{PortEvent, PortEventData};
 
 use super::{ControllerWrapper, FwOfferValidator, message::vdm::Output};
 
@@ -28,42 +27,26 @@ where
     ) -> Result<Output, Error<<D::Inner as Controller>::BusError>> {
         trace!("Processing VDM event: {:?} on port {}", event, port.0);
         let kind = match event {
-            VdmNotification::Entered => OutputKind::Entered(controller.get_other_vdm(port).await?),
-            VdmNotification::Exited => OutputKind::Exited(controller.get_other_vdm(port).await?),
-            VdmNotification::OtherReceived => OutputKind::ReceivedOther(controller.get_other_vdm(port).await?),
-            VdmNotification::AttentionReceived => OutputKind::ReceivedAttn(controller.get_attn_vdm(port).await?),
+            VdmNotification::Entered => VdmData::Entered(controller.get_other_vdm(port).await?),
+            VdmNotification::Exited => VdmData::Exited(controller.get_other_vdm(port).await?),
+            VdmNotification::OtherReceived => VdmData::ReceivedOther(controller.get_other_vdm(port).await?),
+            VdmNotification::AttentionReceived => VdmData::ReceivedAttn(controller.get_attn_vdm(port).await?),
         };
 
-        Ok(Output { port, kind })
+        Ok(Output { port, vdm_data: kind })
     }
 
     /// Finalize a VDM output by notifying the service.
     pub(super) async fn finalize_vdm(&self, output: Output) -> Result<(), PdError> {
         trace!("Finalizing VDM output: {:?}", output);
-        let Output { port, kind } = output;
+        let Output { port, vdm_data } = output;
         let global_port_id = self.registration.pd_controller.lookup_global_port(port)?;
-        let mut port_state = self
-            .ports
-            .get(port.0 as usize)
-            .ok_or(PdError::InvalidPort)?
-            .state
-            .lock()
-            .await;
-        let notification = &mut port_state.pending_events.notification;
-        match kind {
-            OutputKind::Entered(_) => notification.set_custom_mode_entered(true),
-            OutputKind::Exited(_) => notification.set_custom_mode_exited(true),
-            OutputKind::ReceivedOther(_) => notification.set_custom_mode_other_vdm_received(true),
-            OutputKind::ReceivedAttn(_) => notification.set_custom_mode_attention_received(true),
-        }
-
-        let mut pending = PortPending::none();
-        pending
-            .pend_port(global_port_id.0 as usize)
-            .map_err(|_| PdError::InvalidPort)?;
         self.registration
-            .pd_controller
-            .notify_ports(self.registration.context, pending);
-        Ok(())
+            .context
+            .send_port_event(PortEvent {
+                port: global_port_id,
+                event: PortEventData::Vdm(vdm_data),
+            })
+            .await
     }
 }

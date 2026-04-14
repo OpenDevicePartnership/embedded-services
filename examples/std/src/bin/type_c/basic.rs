@@ -1,20 +1,23 @@
 use embassy_executor::{Executor, Spawner};
-use embassy_sync::once_lock::OnceLock;
+use embassy_sync::channel::Channel;
 use embassy_time::Timer;
+use embedded_services::GlobalRawMutex;
 use embedded_usb_pd::ucsi::lpm;
 use embedded_usb_pd::{GlobalPortId, PdError as Error};
 use log::*;
 use static_cell::StaticCell;
-use type_c_interface::port::{self, Cached, ControllerId};
+use type_c_interface::port::{self, ControllerId, PortRegistration};
 use type_c_interface::service::context::{Context, DeviceContainer};
+use type_c_interface::service::event::PortEvent as ServicePortEvent;
 
 const CONTROLLER0_ID: ControllerId = ControllerId(0);
 const PORT0_ID: GlobalPortId = GlobalPortId(0);
 const PORT1_ID: GlobalPortId = GlobalPortId(1);
+const CHANNEL_CAPACITY: usize = 4;
 
 mod test_controller {
     use embedded_usb_pd::ucsi;
-    use type_c_interface::port::{ControllerStatus, PortStatus};
+    use type_c_interface::port::{ControllerStatus, PortRegistration};
 
     use super::*;
 
@@ -29,7 +32,7 @@ mod test_controller {
     }
 
     impl<'a> Controller<'a> {
-        pub fn new(id: ControllerId, ports: &'a [GlobalPortId]) -> Self {
+        pub fn new(id: ControllerId, ports: &'a [PortRegistration]) -> Self {
             Self {
                 controller: port::Device::new(id, ports),
             }
@@ -80,16 +83,8 @@ mod test_controller {
         }
 
         async fn process_port_command(&self, command: port::PortCommand) -> Result<port::PortResponseData, Error> {
-            Ok(match command.data {
-                port::PortCommandData::PortStatus(Cached(true)) => {
-                    info!("Port status for port {}", command.port.0);
-                    port::PortResponseData::PortStatus(PortStatus::new())
-                }
-                _ => {
-                    info!("Port command for port {}", command.port.0);
-                    port::PortResponseData::Complete
-                }
-            })
+            info!("Port command for port {}", command.port.0);
+            Ok(port::PortResponseData::Complete)
         }
 
         pub async fn process(&self) {
@@ -109,11 +104,25 @@ mod test_controller {
 
 #[embassy_executor::task]
 async fn controller_task(controller_context: &'static Context) {
-    static CONTROLLER: OnceLock<test_controller::Controller> = OnceLock::new();
+    static PORT0_CHANNEL: Channel<GlobalRawMutex, ServicePortEvent, CHANNEL_CAPACITY> = Channel::new();
+    static PORT1_CHANNEL: Channel<GlobalRawMutex, ServicePortEvent, CHANNEL_CAPACITY> = Channel::new();
 
-    static PORTS: [GlobalPortId; 2] = [PORT0_ID, PORT1_ID];
+    static PORTS: StaticCell<[PortRegistration; 2]> = StaticCell::new();
+    let ports = PORTS.init([
+        PortRegistration {
+            id: PORT0_ID,
+            sender: PORT0_CHANNEL.dyn_sender(),
+            receiver: PORT0_CHANNEL.dyn_receiver(),
+        },
+        PortRegistration {
+            id: PORT1_ID,
+            sender: PORT1_CHANNEL.dyn_sender(),
+            receiver: PORT1_CHANNEL.dyn_receiver(),
+        },
+    ]);
 
-    let controller = CONTROLLER.get_or_init(|| test_controller::Controller::new(CONTROLLER0_ID, &PORTS));
+    static CONTROLLER: StaticCell<test_controller::Controller> = StaticCell::new();
+    let controller = CONTROLLER.init(test_controller::Controller::new(CONTROLLER0_ID, ports.as_slice()));
     controller_context.register_controller(controller).unwrap();
 
     loop {
@@ -137,18 +146,6 @@ async fn task(spawner: Spawner) {
 
     let status = controller_context.get_controller_status(CONTROLLER0_ID).await.unwrap();
     info!("Controller 0 status: {status:#?}");
-
-    let status = controller_context
-        .get_port_status(PORT0_ID, Cached(true))
-        .await
-        .unwrap();
-    info!("Port 0 status: {status:#?}");
-
-    let status = controller_context
-        .get_port_status(PORT1_ID, Cached(true))
-        .await
-        .unwrap();
-    info!("Port 1 status: {status:#?}");
 }
 
 fn main() {

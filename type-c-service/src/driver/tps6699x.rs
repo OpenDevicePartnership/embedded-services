@@ -28,7 +28,7 @@ use tps6699x::command::{
 };
 use tps6699x::fw_update::UpdateConfig as FwUpdateConfig;
 use tps6699x::registers::port_config::TypeCStateMachine;
-use type_c_interface::port::event::PortEvent;
+use type_c_interface::port::event::PortEventBitfield;
 use type_c_interface::port::{ATTN_VDM_LEN, DpConfig, DpStatus, PdStateMachineConfig, RetimerFwUpdateState};
 use type_c_interface::port::{
     AttnVdm, Controller, ControllerStatus, DpPinConfig, OtherVdm, PortStatus, SendVdm, TbtConfig,
@@ -52,7 +52,7 @@ struct FwUpdateState<'a, M: RawMutex, B: I2c> {
 }
 
 pub struct Tps6699x<'a, M: RawMutex, B: I2c> {
-    port_events: heapless::Vec<PortEvent, MAX_SUPPORTED_PORTS>,
+    port_events: heapless::Vec<PortEventBitfield, MAX_SUPPORTED_PORTS>,
     tps6699x: tps6699x_drv::Tps6699x<'a, M, B>,
     update_state: Option<FwUpdateState<'a, M, B>>,
     /// Firmware update configuration
@@ -73,7 +73,7 @@ impl<'a, M: RawMutex, B: I2c> Tps6699x<'a, M, B> {
         } else {
             Some(Self {
                 // num_ports validated by branch
-                port_events: heapless::Vec::from_iter((0..num_ports).map(|_| PortEvent::none())),
+                port_events: heapless::Vec::from_iter((0..num_ports).map(|_| PortEventBitfield::none())),
                 tps6699x,
                 update_state: None,
                 fw_update_config,
@@ -274,9 +274,7 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
     }
 
     /// Returns and clears current events for the given port
-    ///
-    /// Drop safety: All state changes happen after await point
-    async fn clear_port_events(&mut self, port: LocalPortId) -> Result<PortEvent, Error<Self::BusError>> {
+    async fn clear_port_events(&mut self, port: LocalPortId) -> Result<PortEventBitfield, Error<Self::BusError>> {
         Ok(core::mem::take(
             self.port_events.get_mut(port.0 as usize).ok_or(PdError::InvalidPort)?,
         ))

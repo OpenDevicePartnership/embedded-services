@@ -1,19 +1,20 @@
 use core::cell::RefCell;
 use core::future::pending;
+use core::pin::pin;
 
+use embassy_futures::select::select_slice;
 use embassy_futures::select::{Either, select};
 use embedded_services::{debug, error, event::Receiver, info, trace};
 use embedded_usb_pd::GlobalPortId;
 use embedded_usb_pd::PdError as Error;
 use power_policy_interface::service::event::EventData as PowerPolicyEventData;
+use type_c_interface::service::event::{PortEvent, PortEventData};
 
-use crate::{PortEventStreamer, PortEventVariant};
-use type_c_interface::port::event::{PortNotificationSingle, PortStatusChanged};
-use type_c_interface::port::{Cached, PortStatus};
+use type_c_interface::port::event::PortStatusEventBitfield;
+use type_c_interface::port::{Device, PortStatus};
 use type_c_interface::service::event;
 
 pub mod config;
-pub mod pd;
 mod power;
 mod ucsi;
 pub mod vdm;
@@ -60,9 +61,7 @@ pub enum PowerPolicyEvent {
 #[derive(Copy, Clone)]
 pub enum Event {
     /// Port event
-    PortStatusChanged(GlobalPortId, PortStatusChanged, PortStatus),
-    /// A controller notified of an event that occurred.
-    PortNotification(GlobalPortId, PortNotificationSingle),
+    PortEvent(PortEvent),
     /// Power policy event
     PowerPolicy(PowerPolicyEvent),
 }
@@ -97,10 +96,10 @@ impl<'a> Service<'a> {
     }
 
     /// Process events for a specific port
-    async fn process_port_event(
+    async fn process_port_status_event(
         &mut self,
         port_id: GlobalPortId,
-        event: PortStatusChanged,
+        event: PortStatusEventBitfield,
         status: PortStatus,
     ) -> Result<(), Error> {
         let old_status = self.get_cached_port_status(port_id)?;
@@ -132,17 +131,25 @@ impl<'a> Service<'a> {
         Ok(())
     }
 
+    async fn process_port_event(&mut self, event: &PortEvent) -> Result<(), Error> {
+        match &event.event {
+            PortEventData::StatusChanged(status_event, status) => {
+                self.process_port_status_event(event.port, *status_event, *status).await
+            }
+            unhandled => {
+                // Currently just log notifications, but may want to do more in the future
+                debug!("Port{}: Received notification event: {:#?}", event.port.0, unhandled);
+                Ok(())
+            }
+        }
+    }
+
     /// Process the given event
     pub async fn process_event(&mut self, event: Event) -> Result<(), Error> {
         match event {
-            Event::PortStatusChanged(port, event_kind, status) => {
-                trace!("Port{}: Processing port status changed", port.0);
-                self.process_port_event(port, event_kind, status).await
-            }
-            Event::PortNotification(port, notification) => {
-                // Other port notifications
-                info!("Port{}: Got port notification: {:?}", port.0, notification);
-                Ok(())
+            Event::PortEvent(event) => {
+                trace!("Port{}: Processing port event", event.port.0);
+                self.process_port_event(&event).await
             }
             Event::PowerPolicy(event) => {
                 trace!("Processing power policy event");
@@ -156,8 +163,6 @@ impl<'a> Service<'a> {
 pub struct EventReceiver<'a, PowerReceiver: Receiver<PowerPolicyEventData>> {
     /// Type-C context
     pub(crate) context: &'a type_c_interface::service::context::Context,
-    /// Next port to check, this is used to round-robin through ports
-    port_event_streaming_state: Option<PortEventStreamer>,
     /// Power policy event subscriber
     ///
     /// Used to allow partial borrows of Self for the call to select
@@ -172,54 +177,31 @@ impl<'a, PowerReceiver: Receiver<PowerPolicyEventData>> EventReceiver<'a, PowerR
     ) -> Self {
         Self {
             context,
-            port_event_streaming_state: None,
             power_policy_event_subscriber: RefCell::new(power_policy_event_subscriber),
         }
     }
 
     /// Wait for the next event
-    pub async fn wait_next(&mut self) -> Result<Event, Error> {
-        loop {
-            match select(self.wait_port_flags(), self.wait_power_policy_event()).await {
-                Either::First(mut stream) => {
-                    if let Some((port_id, event)) = stream
-                        .next(|port_id| self.context.get_port_event(GlobalPortId(port_id as u8)))
-                        .await?
-                    {
-                        let port_id = GlobalPortId(port_id as u8);
-                        self.port_event_streaming_state = Some(stream);
-                        match event {
-                            PortEventVariant::StatusChanged(status_event) => {
-                                // Return a port status changed event
-                                let status = self.context.get_port_status(port_id, Cached(true)).await?;
-                                return Ok(Event::PortStatusChanged(port_id, status_event, status));
-                            }
-                            PortEventVariant::Notification(notification) => {
-                                // Other notifications
-                                trace!("Port notification: {:?}", notification);
-                                return Ok(Event::PortNotification(port_id, notification));
-                            }
-                        }
-                    } else {
-                        self.port_event_streaming_state = None;
-                    }
-                }
-                Either::Second(event) => return Ok(event),
-            }
+    pub async fn wait_next(&mut self) -> Event {
+        match select(self.wait_port_event(), self.wait_power_policy_event()).await {
+            Either::First(event) => event,
+            Either::Second(event) => event,
         }
     }
 
-    /// Wait for port flags
-    async fn wait_port_flags(&self) -> PortEventStreamer {
-        if let Some(ref streamer) = self.port_event_streaming_state {
-            // If we have an existing iterator, return it
-            // Yield first to prevent starving other tasks
-            embassy_futures::yield_now().await;
-            *streamer
-        } else {
-            // Wait for the next port event and create a streamer
-            PortEventStreamer::new(self.context.get_unhandled_events().await.into_iter())
-        }
+    /// Wait for a port event
+    async fn wait_port_event(&self) -> Event {
+        let (event, _) = {
+            let mut futures = heapless::Vec::<_, MAX_SUPPORTED_PORTS>::new();
+            for device in self.context.controllers.iter_only::<Device>() {
+                for descriptor in device.ports.iter() {
+                    let _ = futures.push(async move { descriptor.receiver.receive().await });
+                }
+            }
+            select_slice(pin!(&mut futures)).await
+        };
+
+        Event::PortEvent(event)
     }
 
     /// Wait for a power policy event

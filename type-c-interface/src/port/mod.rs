@@ -1,6 +1,7 @@
 //! PD controller related code
 use core::future::Future;
 
+use embassy_sync::channel::{DynamicReceiver, DynamicSender};
 use embedded_usb_pd::ucsi::{self, lpm};
 use embedded_usb_pd::{
     DataRole, Error, GlobalPortId, LocalPortId, PdError, PlugOrientation, PowerRole,
@@ -14,7 +15,8 @@ use embedded_services::{GlobalRawMutex, intrusive_list};
 
 pub mod event;
 
-use event::{PortEvent, PortPending};
+use crate::port::event::PortEventBitfield;
+use crate::service::event::PortEvent as ServicePortEvent;
 
 /// Length of the Other VDM data
 pub const OTHER_VDM_LEN: usize = 29;
@@ -22,11 +24,6 @@ pub const OTHER_VDM_LEN: usize = 29;
 pub const ATTN_VDM_LEN: usize = 9;
 /// maximum number of data objects in a VDM
 pub const MAX_NUM_DATA_OBJECTS: usize = 7; // 7 VDOs of 4 bytes each
-
-/// Newtype to help clarify arguments to port status commands
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct Cached(pub bool);
 
 /// Controller ID
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -275,10 +272,6 @@ pub enum TypeCStateMachineState {
 #[derive(Copy, Clone, Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum PortCommandData {
-    /// Get port status
-    PortStatus(Cached),
-    /// Get and clear events
-    ClearEvents,
     /// Get retimer fw update state
     RetimerFwUpdateGetState,
     /// Set retimer fw update state
@@ -289,8 +282,6 @@ pub enum PortCommandData {
     SetRetimerCompliance,
     /// Reconfigure retimer
     ReconfigureRetimer,
-    /// Get oldest unhandled PD alert
-    GetPdAlert,
     /// Set the maximum sink voltage in mV for the given port
     SetMaxSinkVoltage(Option<u16>),
     /// Set unconstrained power
@@ -347,10 +338,6 @@ pub enum RetimerFwUpdateState {
 pub enum PortResponseData {
     /// Command completed with no error
     Complete,
-    /// Port status
-    PortStatus(PortStatus),
-    /// ClearEvents
-    ClearEvents(PortEvent),
     /// Retimer Fw Update status
     RtFwUpdateStatus(RetimerFwUpdateState),
     /// PD alert
@@ -441,11 +428,21 @@ pub struct ControllerStatus<'a> {
     pub fw_version1: u32,
 }
 
+/// Per-port registration info
+pub struct PortRegistration {
+    /// Global port ID of the port
+    pub id: GlobalPortId,
+    /// Event receiver for the type-C service
+    pub receiver: DynamicReceiver<'static, ServicePortEvent>,
+    /// Event sender for the type-C service
+    pub sender: DynamicSender<'static, ServicePortEvent>,
+}
+
 /// PD controller
 pub struct Device<'a> {
     node: intrusive_list::Node,
     id: ControllerId,
-    ports: &'a [GlobalPortId],
+    pub ports: &'a [PortRegistration],
     num_ports: usize,
     command: deferred::Channel<GlobalRawMutex, Command, Response<'static>>,
 }
@@ -458,7 +455,7 @@ impl intrusive_list::NodeContainer for Device<'static> {
 
 impl<'a> Device<'a> {
     /// Create a new PD controller struct
-    pub fn new(id: ControllerId, ports: &'a [GlobalPortId]) -> Self {
+    pub fn new(id: ControllerId, ports: &'a [PortRegistration]) -> Self {
         Self {
             node: intrusive_list::Node::uninit(),
             id,
@@ -485,14 +482,14 @@ impl<'a> Device<'a> {
 
     /// Convert a local port ID to a global port ID
     pub fn lookup_global_port(&self, port: LocalPortId) -> Result<GlobalPortId, PdError> {
-        Ok(*self.ports.get(port.0 as usize).ok_or(PdError::InvalidParams)?)
+        Ok(self.ports.get(port.0 as usize).ok_or(PdError::InvalidParams)?.id)
     }
 
     /// Convert a global port ID to a local port ID
     pub fn lookup_local_port(&self, port: GlobalPortId) -> Result<LocalPortId, PdError> {
         self.ports
             .iter()
-            .position(|p| *p == port)
+            .position(|descriptor| descriptor.id == port)
             .map(|p| LocalPortId(p as u8))
             .ok_or(PdError::InvalidParams)
     }
@@ -504,19 +501,9 @@ impl<'a> Device<'a> {
         self.command.receive().await
     }
 
-    /// Notify that there are pending events on one or more ports
-    pub fn notify_ports(&self, ctx: &crate::service::context::Context, pending: PortPending) {
-        ctx.notify_ports(pending);
-    }
-
     /// Number of ports on this controller
     pub fn num_ports(&self) -> usize {
         self.num_ports
-    }
-
-    /// Slice of global ports on the Device
-    pub fn ports(&self) -> &'a [GlobalPortId] {
-        self.ports
     }
 }
 
@@ -537,7 +524,7 @@ pub trait Controller {
     fn clear_port_events(
         &mut self,
         port: LocalPortId,
-    ) -> impl Future<Output = Result<PortEvent, Error<Self::BusError>>>;
+    ) -> impl Future<Output = Result<PortEventBitfield, Error<Self::BusError>>>;
     /// Returns the port status
     fn get_port_status(&mut self, port: LocalPortId)
     -> impl Future<Output = Result<PortStatus, Error<Self::BusError>>>;

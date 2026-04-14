@@ -17,7 +17,7 @@
 //! any caching/buffering of data, and notifies the type-C service implementation of the event if needed.
 use core::array::from_fn;
 use core::future::pending;
-use core::ops::DerefMut;
+use core::ops::{DerefMut, Range};
 
 use crate::wrapper::backing::{ControllerState, PortState};
 use cfu_service::CfuClient;
@@ -29,13 +29,15 @@ use embassy_time::Instant;
 use embedded_cfu_protocol::protocol_definitions::{FwUpdateOffer, FwUpdateOfferResponse, FwVersion};
 use embedded_services::event;
 use embedded_services::sync::Lockable;
-use embedded_services::{debug, error, info, trace, warn};
+use embedded_services::{debug, error, info, trace};
 use embedded_usb_pd::ado::Ado;
 use embedded_usb_pd::{Error, LocalPortId, PdError};
+use type_c_interface::port::event::PortEvent as InterfacePortEvent;
+use type_c_interface::service::event::{PortEvent as ServicePortEvent, PortEventData as ServicePortEventData};
 
+use crate::PortEventStreamer;
 use crate::wrapper::message::*;
 use crate::wrapper::proxy::PowerProxyReceiver;
-use crate::{PortEventStreamer, PortEventVariant};
 
 pub mod backing;
 mod cfu;
@@ -47,7 +49,7 @@ mod power;
 pub mod proxy;
 mod vdm;
 
-use type_c_interface::port::event::{PortEvent, PortNotificationSingle, PortPending, PortStatusChanged};
+use type_c_interface::port::event::PortStatusEventBitfield;
 use type_c_interface::port::{Controller, PortStatus};
 
 /// Base interval for checking for FW update timeouts and recovery attempts
@@ -174,7 +176,7 @@ where
             }
 
             port_state.sw_status_event = status_changed;
-            if port_state.sw_status_event != PortStatusChanged::none() {
+            if port_state.sw_status_event != PortStatusEventBitfield::none() {
                 // Have a status changed event, notify
                 trace!("Port{} status changed: {:#?}", i, status);
                 self.sw_status_event.signal(());
@@ -186,7 +188,7 @@ where
     /// Handle a plug event
     async fn process_plug_event(
         &self,
-        port_state: &mut PortState<'_, S>,
+        port_state: &mut PortState<S>,
         status: &PortStatus,
     ) -> Result<(), Error<<D::Inner as Controller>::BusError>> {
         info!("Plug event");
@@ -212,7 +214,7 @@ where
         &self,
         controller: &mut D::Inner,
         local_port_id: LocalPortId,
-        status_event: PortStatusChanged,
+        status_event: PortStatusEventBitfield,
     ) -> Result<Output<'b>, Error<<D::Inner as Controller>::BusError>> {
         let global_port_id = self
             .registration
@@ -264,7 +266,7 @@ where
     async fn finalize_port_status_change(
         &self,
         local_port: LocalPortId,
-        status_event: PortStatusChanged,
+        status_event: PortStatusEventBitfield,
         status: PortStatus,
     ) -> Result<(), Error<<D::Inner as Controller>::BusError>> {
         let global_port_id = self
@@ -273,31 +275,22 @@ where
             .lookup_global_port(local_port)
             .map_err(Error::Pd)?;
 
-        let mut port_state = self
-            .ports
+        self.ports
             .get(local_port.0 as usize)
             .ok_or(Error::Pd(PdError::InvalidPort))?
             .state
             .lock()
-            .await;
+            .await
+            .status = status;
 
-        let mut events = port_state.pending_events;
-        events.status = events.status.union(status_event);
-        port_state.pending_events = events;
-        port_state.status = status;
-
-        if events != PortEvent::none() {
-            let mut pending = PortPending::none();
-            pending
-                .pend_port(global_port_id.0 as usize)
-                .map_err(|_| PdError::InvalidPort)?;
-            self.registration
-                .pd_controller
-                .notify_ports(self.registration.context, pending);
-            trace!("P{}: Notified service for events: {:#?}", global_port_id.0, events);
-        }
-
-        Ok(())
+        self.registration
+            .context
+            .send_port_event(ServicePortEvent {
+                port: global_port_id,
+                event: ServicePortEventData::StatusChanged(status_event, status),
+            })
+            .await
+            .map_err(Error::Pd)
     }
 
     /// Finalize a PD alert output
@@ -312,29 +305,14 @@ where
             .lookup_global_port(local_port)
             .map_err(Error::Pd)?;
 
-        let mut port_state = self
-            .ports
-            .get(local_port.0 as usize)
-            .ok_or(Error::Pd(PdError::InvalidPort))?
-            .state
-            .lock()
-            .await;
-
-        // Buffer the alert
-        port_state.pd_alerts.0.publish_immediate(alert);
-
-        // Pend the alert
-        port_state.pending_events.notification.set_alert(true);
-
-        // Pend this port
-        let mut pending = PortPending::none();
-        pending
-            .pend_port(global_port_id.0 as usize)
-            .map_err(|_| PdError::InvalidPort)?;
         self.registration
-            .pd_controller
-            .notify_ports(self.registration.context, pending);
-        Ok(())
+            .context
+            .send_port_event(ServicePortEvent {
+                port: global_port_id,
+                event: ServicePortEventData::Alert(alert),
+            })
+            .await
+            .map_err(Error::Pd)
     }
 
     /// Wait for a pending port event
@@ -344,14 +322,14 @@ where
         &self,
         controller_state: &ControllerState,
         controller: &mut D::Inner,
-    ) -> Result<PortEventStreamer, Error<<D::Inner as Controller>::BusError>> {
+    ) -> Result<PortEventStreamer<Range<usize>>, Error<<D::Inner as Controller>::BusError>> {
         if controller_state.fw_update_state.in_progress() {
             // Don't process events while firmware update is in progress
             debug!("Firmware update in progress, ignoring port events");
             return pending().await;
         }
 
-        let streaming_state = controller_state.port_event_streaming_state;
+        let streaming_state = controller_state.port_event_streaming_state.clone();
         if let Some(streamer) = streaming_state {
             // If we're converting the bitfields into an event stream yield first to prevent starving other tasks
             embassy_futures::yield_now().await;
@@ -368,8 +346,7 @@ where
                 Either::First(r) => r?,
                 Either::Second(_) => (),
             };
-            let pending: PortPending = FromIterator::from_iter(0..self.registration.num_ports());
-            Ok(PortEventStreamer::new(pending.into_iter()))
+            Ok(PortEventStreamer::new(0..self.registration.num_ports()))
         }
     }
 
@@ -410,33 +387,20 @@ where
 
                             // No more awaits, modify state here for drop safety
                             let sw_event =
-                                core::mem::replace(&mut port_state.sw_status_event, PortStatusChanged::none());
+                                core::mem::replace(&mut port_state.sw_status_event, PortStatusEventBitfield::none());
                             Ok(hw_event.union(sw_event.into()))
                         })
                         .await?
                     {
                         let port_id = LocalPortId(port_index as u8);
                         self.controller_state.lock().await.port_event_streaming_state = Some(stream);
-                        match event {
-                            PortEventVariant::StatusChanged(status_event) => {
-                                return Ok(Event::PortStatusChanged(EventPortStatusChanged {
-                                    port: port_id,
-                                    status_event,
-                                }));
-                            }
-                            PortEventVariant::Notification(notification) => {
-                                return Ok(Event::PortNotification(EventPortNotification {
-                                    port: port_id,
-                                    notification,
-                                }));
-                            }
-                        }
+                        return Ok(Event::PortEvent(LocalPortEvent { port: port_id, event }));
                     } else {
                         self.controller_state.lock().await.port_event_streaming_state = None;
                     }
                 }
                 Either5::Second((port, request)) => {
-                    return Ok(Event::PowerPolicyCommand(EventPowerPolicyCommand { port, request }));
+                    return Ok(Event::PowerPolicyCommand(PowerPolicyCommand { port, request }));
                 }
                 Either5::Third(request) => return Ok(Event::ControllerCommand(request)),
                 Either5::Fourth(event) => return Ok(Event::CfuEvent(event)),
@@ -450,42 +414,49 @@ where
                         .lock()
                         .await
                         .sink_ready_deadline = None;
-                    let mut status_event = PortStatusChanged::none();
+                    let mut status_event = PortStatusEventBitfield::none();
                     status_event.set_sink_ready(true);
-                    return Ok(Event::PortStatusChanged(EventPortStatusChanged { port, status_event }));
+                    return Ok(Event::PortEvent(LocalPortEvent {
+                        port,
+                        event: type_c_interface::port::event::PortEvent::StatusChanged(status_event),
+                    }));
                 }
             }
         }
     }
 
     /// Process a port notification
-    async fn process_port_notification<'b>(
+    async fn process_port_event<'b>(
         &self,
         controller: &mut D::Inner,
-        port: LocalPortId,
-        notification: PortNotificationSingle,
+        event: LocalPortEvent,
     ) -> Result<Output<'b>, Error<<D::Inner as Controller>::BusError>> {
-        match notification {
-            PortNotificationSingle::Alert => {
-                let ado = controller.get_pd_alert(port).await?;
-                trace!("Port{}: PD alert: {:#?}", port.0, ado);
+        match event.event {
+            InterfacePortEvent::StatusChanged(status_event) => {
+                self.process_port_status_changed(controller, event.port, status_event)
+                    .await
+            }
+            InterfacePortEvent::Alert => {
+                let ado = controller.get_pd_alert(event.port).await?;
+                trace!("Port{}: PD alert: {:#?}", event.port.0, ado);
                 if let Some(ado) = ado {
-                    Ok(Output::PdAlert(OutputPdAlert { port, ado }))
+                    Ok(Output::PdAlert(OutputPdAlert { port: event.port, ado }))
                 } else {
                     // For some reason we didn't read an alert, nothing to do
                     Ok(Output::Nop)
                 }
             }
-            PortNotificationSingle::Vdm(event) => {
-                self.process_vdm_event(controller, port, event).await.map(Output::Vdm)
-            }
-            PortNotificationSingle::DpStatusUpdate => self
-                .process_dp_status_update(controller, port)
+            InterfacePortEvent::Vdm(vdm_event) => self
+                .process_vdm_event(controller, event.port, vdm_event)
+                .await
+                .map(Output::Vdm),
+            InterfacePortEvent::DpStatusUpdate => self
+                .process_dp_status_update(controller, event.port)
                 .await
                 .map(Output::DpStatusUpdate),
             rest => {
                 // Nothing currently implemented for these
-                trace!("Port{}: Notification: {:#?}", port.0, rest);
+                trace!("Port{}: Notification: {:#?}", event.port.0, rest);
                 Ok(Output::Nop)
             }
         }
@@ -500,11 +471,8 @@ where
         let mut controller = self.controller.lock().await;
         let mut controller_state = self.controller_state.lock().await;
         match event {
-            Event::PortStatusChanged(EventPortStatusChanged { port, status_event }) => {
-                self.process_port_status_changed(&mut controller, port, status_event)
-                    .await
-            }
-            Event::PowerPolicyCommand(EventPowerPolicyCommand { port, request }) => {
+            Event::PortEvent(port_event) => self.process_port_event(&mut controller, port_event).await,
+            Event::PowerPolicyCommand(PowerPolicyCommand { port, request }) => {
                 let response = self
                     .process_power_command(&mut controller_state, &mut controller, port, &request)
                     .await;
@@ -529,10 +497,6 @@ where
                     Ok(Output::CfuRecovery)
                 }
             },
-            Event::PortNotification(EventPortNotification { port, notification }) => {
-                self.process_port_notification(&mut controller, port, notification)
-                    .await
-            }
         }
     }
 

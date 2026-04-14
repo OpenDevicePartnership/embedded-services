@@ -284,7 +284,7 @@ impl Service<'_> {
     pub(super) async fn handle_ucsi_port_event(
         &mut self,
         port_id: GlobalPortId,
-        port_event: PortStatusChanged,
+        port_event: PortStatusEventBitfield,
         port_status: &PortStatus,
     ) {
         let mut ucsi_event = ConnectorStatusChange::default();

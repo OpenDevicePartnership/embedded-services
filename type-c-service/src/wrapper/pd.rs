@@ -1,13 +1,10 @@
 use crate::wrapper::backing::ControllerState;
-use embassy_futures::yield_now;
-use embassy_sync::pubsub::WaitResult;
 use embassy_time::{Duration, Timer};
 use embedded_services::debug;
 use embedded_usb_pd::constants::{T_PS_TRANSITION_EPR_MS, T_PS_TRANSITION_SPR_MS};
 use embedded_usb_pd::ucsi::{self, lpm};
 use power_policy_interface::psu::{self, PsuState};
 use type_c_interface::port;
-use type_c_interface::port::Cached;
 use type_c_interface::port::{InternalResponseData, Response};
 
 use super::*;
@@ -22,24 +19,6 @@ impl<
 where
     D::Inner: Controller,
 {
-    async fn process_get_pd_alert(
-        &self,
-        port_state: &mut PortState<'_, S>,
-        local_port: LocalPortId,
-    ) -> Result<Option<Ado>, PdError> {
-        loop {
-            match port_state.pd_alerts.1.try_next_message() {
-                Some(WaitResult::Message(alert)) => return Ok(Some(alert)),
-                None => return Ok(None),
-                Some(WaitResult::Lagged(count)) => {
-                    warn!("Port{}: Lagged PD alert channel: {}", local_port.0, count);
-                    // Yield to avoid starving other tasks since we're in a loop and try_next_message isn't async
-                    yield_now().await;
-                }
-            }
-        }
-    }
-
     /// Check the sink ready timeout
     ///
     /// After accepting a sink contract (new contract as consumer), the PD spec guarantees that the
@@ -47,7 +26,7 @@ where
     /// even for controllers that might not always broadcast sink ready events.
     pub(super) fn check_sink_ready_timeout(
         &self,
-        port_state: &mut PortState<'_, S>,
+        port_state: &mut PortState<S>,
         status: &PortStatus,
         port: LocalPortId,
         new_contract: bool,
@@ -107,7 +86,7 @@ where
     async fn process_set_max_sink_voltage(
         &self,
         controller: &mut D::Inner,
-        port_state: &mut PortState<'_, S>,
+        port_state: &mut PortState<S>,
         state: &psu::State,
         local_port: LocalPortId,
         voltage_mv: Option<u16>,
@@ -139,26 +118,6 @@ where
         }
     }
 
-    async fn process_get_port_status(
-        &self,
-        controller: &mut D::Inner,
-        port_state: &mut PortState<'_, S>,
-        local_port: LocalPortId,
-        cached: Cached,
-    ) -> Result<port::PortResponseData, PdError> {
-        if cached.0 {
-            Ok(port::PortResponseData::PortStatus(port_state.status))
-        } else {
-            match controller.get_port_status(local_port).await {
-                Ok(status) => Ok(port::PortResponseData::PortStatus(status)),
-                Err(e) => match e {
-                    Error::Bus(_) => Err(PdError::Failed),
-                    Error::Pd(e) => Err(e),
-                },
-            }
-        }
-    }
-
     /// Handle a port command
     async fn process_port_command(
         &self,
@@ -185,14 +144,6 @@ where
 
         let mut port_state = port.state.lock().await;
         port::Response::Port(match command.data {
-            port::PortCommandData::PortStatus(cached) => {
-                self.process_get_port_status(controller, &mut port_state, local_port, cached)
-                    .await
-            }
-            port::PortCommandData::ClearEvents => {
-                let event = core::mem::take(&mut port_state.pending_events);
-                Ok(port::PortResponseData::ClearEvents(event))
-            }
             port::PortCommandData::RetimerFwUpdateGetState => {
                 match controller.get_rt_fw_update_status(local_port).await {
                     Ok(status) => Ok(port::PortResponseData::RtFwUpdateStatus(status)),
@@ -233,10 +184,6 @@ where
                     Error::Bus(_) => Err(PdError::Failed),
                     Error::Pd(e) => Err(e),
                 },
-            },
-            port::PortCommandData::GetPdAlert => match self.process_get_pd_alert(&mut port_state, local_port).await {
-                Ok(alert) => Ok(port::PortResponseData::PdAlert(alert)),
-                Err(e) => Err(e),
             },
             port::PortCommandData::SetMaxSinkVoltage(voltage_mv) => {
                 match self.registration.pd_controller.lookup_local_port(command.port) {

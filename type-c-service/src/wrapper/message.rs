@@ -3,32 +3,22 @@ use embedded_services::{GlobalRawMutex, ipc::deferred};
 use embedded_usb_pd::{LocalPortId, ado::Ado};
 
 use type_c_interface::{
-    port::event::{PortNotificationSingle, PortStatusChanged},
+    port::event::PortStatusEventBitfield,
     port::{self, DpStatus, PortStatus},
 };
 
-/// Port status changed event data
+/// Port event
 #[derive(Copy, Clone, Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct EventPortStatusChanged {
+pub struct LocalPortEvent {
     /// Port ID
     pub port: LocalPortId,
-    /// Status changed event
-    pub status_event: PortStatusChanged,
-}
-
-/// Port notification event data
-#[derive(Copy, Clone, Debug)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct EventPortNotification {
-    /// Port ID
-    pub port: LocalPortId,
-    /// Notification event
-    pub notification: PortNotificationSingle,
+    /// Port event
+    pub event: type_c_interface::port::event::PortEvent,
 }
 
 /// Power policy command event data
-pub struct EventPowerPolicyCommand {
+pub struct PowerPolicyCommand {
     /// Port ID
     pub port: LocalPortId,
     /// Power policy request
@@ -50,11 +40,9 @@ pub enum EventCfu {
 /// Wrapper events
 pub enum Event<'a> {
     /// Port status changed
-    PortStatusChanged(EventPortStatusChanged),
-    /// Port notification
-    PortNotification(EventPortNotification),
+    PortEvent(LocalPortEvent),
     /// Power policy command received
-    PowerPolicyCommand(EventPowerPolicyCommand),
+    PowerPolicyCommand(PowerPolicyCommand),
     /// Command from TCPM
     ControllerCommand(deferred::Request<'a, GlobalRawMutex, port::Command, port::Response<'static>>),
     /// Cfu event
@@ -68,7 +56,7 @@ pub struct OutputPortStatusChanged {
     /// Port ID
     pub port: LocalPortId,
     /// Status changed event
-    pub status_event: PortStatusChanged,
+    pub status_event: PortStatusEventBitfield,
     /// Port status
     pub status: PortStatus,
 }
@@ -101,22 +89,9 @@ pub struct OutputControllerCommand<'a> {
 
 pub mod vdm {
     //! Events and output for vendor-defined messaging.
-    use super::LocalPortId;
-    use type_c_interface::port::{AttnVdm, OtherVdm};
+    use type_c_interface::port::event::VdmData;
 
-    /// The kind of output from processing a vendor-defined message.
-    #[derive(Copy, Clone, Debug)]
-    #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-    pub enum OutputKind {
-        /// Entered custom mode
-        Entered(OtherVdm),
-        /// Exited custom mode
-        Exited(OtherVdm),
-        /// Received a vendor-defined other message
-        ReceivedOther(OtherVdm),
-        /// Received a vendor-defined attention message
-        ReceivedAttn(AttnVdm),
-    }
+    use super::LocalPortId;
 
     /// Output from processing a vendor-defined message.
     #[derive(Copy, Clone, Debug)]
@@ -124,9 +99,8 @@ pub mod vdm {
     pub struct Output {
         /// The port that the VDM message is associated with.
         pub port: LocalPortId,
-
-        /// The kind of VDM output.
-        pub kind: OutputKind,
+        /// VDM data
+        pub vdm_data: VdmData,
     }
 }
 

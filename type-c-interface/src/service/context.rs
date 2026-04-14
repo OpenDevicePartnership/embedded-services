@@ -1,20 +1,16 @@
-use embassy_sync::signal::Signal;
 use embassy_time::{Duration, with_timeout};
 use embedded_usb_pd::ucsi::{self, lpm};
-use embedded_usb_pd::{GlobalPortId, PdError, ado::Ado};
+use embedded_usb_pd::{GlobalPortId, PdError};
 
-use crate::port::event::{PortEvent, PortPending};
+use crate::port::ControllerId;
 use crate::port::{
     AttnVdm, Command, ControllerStatus, Device, DpConfig, DpStatus, InternalCommandData, InternalResponseData,
-    OtherVdm, PdStateMachineConfig, PortCommand, PortCommandData, PortResponseData, PortStatus, Response,
-    RetimerFwUpdateState, SendVdm, TbtConfig, TypeCStateMachineState, UsbControlConfig,
+    OtherVdm, PdStateMachineConfig, PortCommand, PortCommandData, PortResponseData, Response, RetimerFwUpdateState,
+    SendVdm, TbtConfig, TypeCStateMachineState, UsbControlConfig,
 };
-use crate::port::{Cached, ControllerId};
 use crate::service;
-use crate::service::event::Event;
-use embedded_services::{
-    GlobalRawMutex, IntrusiveNode, broadcaster::immediate as broadcaster, error, intrusive_list, trace,
-};
+use crate::service::event::{Event, PortEvent};
+use embedded_services::{IntrusiveNode, broadcaster::immediate as broadcaster, error, intrusive_list};
 
 /// Default command timeout
 /// set to high value since this is intended to prevent an unresponsive device from blocking the service implementation
@@ -36,11 +32,10 @@ impl DeviceContainer for Device<'_> {
 ///
 /// This struct is going to be merged into the service implementation and removed from here.
 pub struct Context {
-    port_events: Signal<GlobalRawMutex, PortPending>,
     /// Event broadcaster
     broadcaster: broadcaster::Immediate<Event>,
     /// Controller list
-    controllers: intrusive_list::IntrusiveList,
+    pub controllers: intrusive_list::IntrusiveList,
 }
 
 impl Default for Context {
@@ -53,28 +48,9 @@ impl Context {
     /// Create new Context
     pub const fn new() -> Self {
         Self {
-            port_events: Signal::new(),
             broadcaster: broadcaster::Immediate::new(),
             controllers: intrusive_list::IntrusiveList::new(),
         }
-    }
-
-    /// Notify that there are pending events on one or more ports
-    /// Each bit corresponds to a global port ID
-    pub fn notify_ports(&self, pending: PortPending) {
-        let raw_pending: u32 = pending.into();
-        trace!("Notify ports: {:#x}", raw_pending);
-        // Early exit if no events
-        if pending.is_none() {
-            return;
-        }
-
-        self.port_events
-            .signal(if let Some(flags) = self.port_events.try_take() {
-                flags.union(pending)
-            } else {
-                pending
-            });
     }
 
     /// Send a command to the given controller with no timeout
@@ -219,47 +195,6 @@ impl Context {
         match with_timeout(DEFAULT_TIMEOUT, self.send_port_command_no_timeout(port_id, command)).await {
             Ok(response) => response,
             Err(_) => Err(PdError::Timeout),
-        }
-    }
-
-    /// Get the current port events
-    pub async fn get_unhandled_events(&self) -> PortPending {
-        self.port_events.wait().await
-    }
-
-    /// Get the unhandled events for the given port
-    pub async fn get_port_event(&self, port: GlobalPortId) -> Result<PortEvent, PdError> {
-        match self.send_port_command(port, PortCommandData::ClearEvents).await? {
-            PortResponseData::ClearEvents(event) => Ok(event),
-            r => {
-                error!("Invalid response: expected clear events, got {:?}", r);
-                Err(PdError::InvalidResponse)
-            }
-        }
-    }
-
-    /// Get the current port status
-    pub async fn get_port_status(&self, port: GlobalPortId, cached: Cached) -> Result<PortStatus, PdError> {
-        match self
-            .send_port_command(port, PortCommandData::PortStatus(cached))
-            .await?
-        {
-            PortResponseData::PortStatus(status) => Ok(status),
-            r => {
-                error!("Invalid response: expected port status, got {:?}", r);
-                Err(PdError::InvalidResponse)
-            }
-        }
-    }
-
-    /// Get the oldest unhandled PD alert for the given port
-    pub async fn get_pd_alert(&self, port: GlobalPortId) -> Result<Option<Ado>, PdError> {
-        match self.send_port_command(port, PortCommandData::GetPdAlert).await? {
-            PortResponseData::PdAlert(alert) => Ok(alert),
-            r => {
-                error!("Invalid response: expected PD alert, got {:?}", r);
-                Err(PdError::InvalidResponse)
-            }
         }
     }
 
@@ -533,5 +468,20 @@ impl Context {
         self.controllers
             .iter_only::<Device>()
             .fold(0, |acc, controller| acc + controller.num_ports())
+    }
+
+    pub async fn send_port_event(&self, event: PortEvent) -> Result<(), PdError> {
+        let node = self.find_node_by_port(event.port)?;
+
+        node.data::<Device>()
+            .ok_or(PdError::InvalidController)?
+            .ports
+            .iter()
+            .find(|descriptor| descriptor.id == event.port)
+            .ok_or(PdError::InvalidPort)?
+            .sender
+            .send(event)
+            .await;
+        Ok(())
     }
 }

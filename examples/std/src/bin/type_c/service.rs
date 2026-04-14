@@ -17,8 +17,9 @@ use power_policy_service::service::registration::ArrayRegistration;
 use static_cell::StaticCell;
 use std_examples::type_c::mock_controller;
 use std_examples::type_c::mock_controller::Wrapper;
-use type_c_interface::port::ControllerId;
+use type_c_interface::port::{ControllerId, PortRegistration};
 use type_c_interface::service::context::Context;
+use type_c_interface::service::event::PortEvent as ServicePortEvent;
 use type_c_service::service::config::Config;
 use type_c_service::service::{EventReceiver, Service};
 use type_c_service::util::power_capability_from_current;
@@ -27,6 +28,7 @@ use type_c_service::wrapper::message::*;
 use type_c_service::wrapper::proxy::PowerProxyDevice;
 
 const NUM_PD_CONTROLLERS: usize = 1;
+const CHANNEL_CAPACITY: usize = 4;
 const CONTROLLER0_ID: ControllerId = ControllerId(0);
 const PORT0_ID: GlobalPortId = GlobalPortId(0);
 const DELAY_MS: u64 = 1000;
@@ -193,12 +195,18 @@ fn create_wrapper(
     static STATE: StaticCell<mock_controller::ControllerState> = StaticCell::new();
     let state = STATE.init(mock_controller::ControllerState::new());
 
+    static PORT0_CHANNEL: Channel<GlobalRawMutex, ServicePortEvent, CHANNEL_CAPACITY> = Channel::new();
+
     static STORAGE: StaticCell<Storage<1, GlobalRawMutex>> = StaticCell::new();
     let storage = STORAGE.init(Storage::new(
         context,
         CONTROLLER0_ID,
         0, // CFU component ID (unused)
-        [PORT0_ID],
+        [PortRegistration {
+            id: PORT0_ID,
+            sender: PORT0_CHANNEL.dyn_sender(),
+            receiver: PORT0_CHANNEL.dyn_receiver(),
+        }],
     ));
 
     static POLICY_CHANNEL: StaticCell<Channel<GlobalRawMutex, power_policy_interface::psu::event::EventData, 1>> =

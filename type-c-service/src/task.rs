@@ -34,14 +34,7 @@ pub async fn task<M, D, S, V, PowerReceiver: Receiver<PowerPolicyEventData>, con
     }
 
     loop {
-        let event = match event_receiver.wait_next().await {
-            Ok(event) => event,
-            Err(e) => {
-                error!("Error waiting for event: {:#?}", e);
-                continue;
-            }
-        };
-
+        let event = event_receiver.wait_next().await;
         if let Err(e) = service.lock().await.process_event(event).await {
             error!("Type-C service processing error: {:#?}", e);
         }

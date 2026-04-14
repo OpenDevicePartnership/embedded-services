@@ -25,6 +25,8 @@ use power_policy_service::service::registration::ArrayRegistration;
 use static_cell::StaticCell;
 use tps6699x::asynchronous::embassy as tps6699x;
 use type_c_interface::port::ControllerId;
+use type_c_interface::port::PortRegistration;
+use type_c_interface::service::event::PortEvent as ServicePortEvent;
 use type_c_service::driver::tps6699x::{self as tps6699x_drv};
 use type_c_service::service::{EventReceiver, Service};
 use type_c_service::wrapper::ControllerWrapper;
@@ -32,6 +34,8 @@ use type_c_service::wrapper::backing::{IntermediateStorage, ReferencedStorage, S
 use type_c_service::wrapper::proxy::PowerProxyDevice;
 
 extern crate rt685s_evk_example;
+
+const CHANNEL_CAPACITY: usize = 4;
 
 const NUM_PD_CONTROLLERS: usize = 1;
 const CONTROLLER0_ID: ControllerId = ControllerId(0);
@@ -163,12 +167,25 @@ async fn main(spawner: Spawner) {
     static CONTROLLER_CONTEXT: StaticCell<type_c_interface::service::context::Context> = StaticCell::new();
     let controller_context = CONTROLLER_CONTEXT.init(type_c_interface::service::context::Context::new());
 
+    static PORT0_CHANNEL: Channel<GlobalRawMutex, ServicePortEvent, CHANNEL_CAPACITY> = Channel::new();
+    static PORT1_CHANNEL: Channel<GlobalRawMutex, ServicePortEvent, CHANNEL_CAPACITY> = Channel::new();
     static STORAGE: StaticCell<Storage<TPS66994_NUM_PORTS, GlobalRawMutex>> = StaticCell::new();
     let storage = STORAGE.init(Storage::new(
         controller_context,
         CONTROLLER0_ID,
         0, // CFU component ID
-        [PORT0_ID, PORT1_ID],
+        [
+            PortRegistration {
+                id: PORT0_ID,
+                sender: PORT0_CHANNEL.dyn_sender(),
+                receiver: PORT0_CHANNEL.dyn_receiver(),
+            },
+            PortRegistration {
+                id: PORT1_ID,
+                sender: PORT1_CHANNEL.dyn_sender(),
+                receiver: PORT1_CHANNEL.dyn_receiver(),
+            },
+        ],
     ));
 
     static POLICY_CHANNEL0: StaticCell<Channel<GlobalRawMutex, psu::event::EventData, 2>> = StaticCell::new();

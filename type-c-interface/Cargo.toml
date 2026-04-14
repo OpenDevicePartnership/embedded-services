@@ -7,7 +7,6 @@ repository.workspace = true
 
 [dependencies]
 bitfield.workspace = true
-bitvec.workspace = true
 embassy-sync.workspace = true
 embassy-time.workspace = true
 log = { workspace = true, optional = true }
