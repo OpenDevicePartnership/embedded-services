@@ -24,6 +24,7 @@ use type_c_service::service::config::Config;
 use type_c_service::service::{EventReceiver, Service};
 use type_c_service::util::power_capability_from_current;
 use type_c_service::wrapper::backing::Storage;
+use type_c_service::wrapper::event_receiver::ArrayPortEventReceivers;
 use type_c_service::wrapper::message::*;
 use type_c_service::wrapper::proxy::PowerProxyDevice;
 
@@ -58,18 +59,22 @@ type ServiceType = Service<'static>;
 
 #[embassy_executor::task]
 async fn controller_task(
+    mut event_receiver: ArrayPortEventReceivers<'static, 1, mock_controller::InterruptReceiver<'static>>,
     wrapper: &'static Wrapper<'static>,
     controller: &'static Mutex<GlobalRawMutex, mock_controller::Controller<'static>>,
 ) {
     controller.lock().await.custom_function();
 
     loop {
-        let event = wrapper.wait_next().await;
-        if let Err(e) = event {
-            error!("Error waiting for event: {e:?}");
-            continue;
-        }
-        let output = wrapper.process_event(event.unwrap()).await;
+        let event = event_receiver.wait_event().await;
+
+        let output = wrapper
+            .process_event(
+                &mut event_receiver.sink_ready_timeout,
+                &mut event_receiver.cfu_event_receiver,
+                event,
+            )
+            .await;
         if let Err(e) = output {
             error!("Error processing event: {e:?}");
         }
@@ -79,7 +84,7 @@ async fn controller_task(
             info!("Port{}: PD alert received: {:?}", port.0, ado);
         }
 
-        if let Err(e) = wrapper.finalize(output).await {
+        if let Err(e) = wrapper.finalize(&mut event_receiver.power_proxies, output).await {
             error!("Error finalizing output: {e:?}");
         }
     }
@@ -96,7 +101,7 @@ async fn task(spawner: Spawner) {
     static CONTEXT: StaticCell<type_c_interface::service::context::Context> = StaticCell::new();
     let controller_context = CONTEXT.init(type_c_interface::service::context::Context::new());
 
-    let (wrapper, policy_receiver, controller, state) = create_wrapper(controller_context);
+    let (event_receiver, wrapper, policy_receiver, controller, state) = create_wrapper(controller_context);
 
     // Create type-c service
     // The service is the only receiver and we only use a DynImmediatePublisher, which doesn't take a publisher slot
@@ -145,7 +150,8 @@ async fn task(spawner: Spawner) {
         )
         .expect("Failed to create type-c service task"),
     );
-    spawner.spawn(controller_task(wrapper, controller).expect("Failed to create controller task"));
+
+    spawner.spawn(controller_task(event_receiver, wrapper, controller).expect("Failed to create controller task"));
 
     Timer::after_millis(1000).await;
     info!("Simulating connection");
@@ -193,6 +199,7 @@ async fn type_c_service_task(
 fn create_wrapper(
     context: &'static Context,
 ) -> (
+    ArrayPortEventReceivers<'static, 1, mock_controller::InterruptReceiver<'static>>,
     &'static Wrapper<'static>,
     DynamicReceiver<'static, power_policy_interface::psu::event::EventData>,
     &'static Mutex<GlobalRawMutex, mock_controller::Controller<'static>>,
@@ -222,6 +229,10 @@ fn create_wrapper(
     let policy_sender = policy_channel.dyn_sender();
     let policy_receiver = policy_channel.dyn_receiver();
 
+    let (intermediate, power_event_receivers) = storage
+        .try_create_intermediate([("Pd0", policy_sender)])
+        .expect("Failed to create intermediate storage");
+
     static INTERMEDIATE: StaticCell<
         type_c_service::wrapper::backing::IntermediateStorage<
             1,
@@ -229,11 +240,7 @@ fn create_wrapper(
             DynamicSender<'static, psu::event::EventData>,
         >,
     > = StaticCell::new();
-    let intermediate = INTERMEDIATE.init(
-        storage
-            .try_create_intermediate([("Pd0", policy_sender)])
-            .expect("Failed to create intermediate storage"),
-    );
+    let intermediate = INTERMEDIATE.init(intermediate);
 
     static REFERENCED: StaticCell<
         type_c_service::wrapper::backing::ReferencedStorage<
@@ -248,11 +255,19 @@ fn create_wrapper(
             .expect("Failed to create referenced storage"),
     );
 
+    let event_receiver = ArrayPortEventReceivers::new(
+        state.create_interrupt_receiver(),
+        power_event_receivers,
+        &referenced.pd_controller,
+        &storage.cfu_device,
+    );
+
     static CONTROLLER: StaticCell<Mutex<GlobalRawMutex, mock_controller::Controller>> = StaticCell::new();
     let controller = CONTROLLER.init(Mutex::new(mock_controller::Controller::new(state)));
 
     static WRAPPER: StaticCell<mock_controller::Wrapper> = StaticCell::new();
     (
+        event_receiver,
         WRAPPER.init(mock_controller::Wrapper::new(
             controller,
             Default::default(),

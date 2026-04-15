@@ -1,13 +1,11 @@
 //! CFU message bridge
 //! TODO: remove this once we have a more generic FW update implementation
-use crate::wrapper::backing::ControllerState;
+use crate::wrapper::event_receiver::CfuEventReceiver;
 use cfu_service::component::{InternalResponseData, RequestData};
-use embassy_futures::select::{Either, select};
 use embedded_cfu_protocol::protocol_definitions::*;
 use embedded_services::{debug, error};
 use type_c_interface::port::Controller;
 
-use super::message::EventCfu;
 use super::*;
 
 /// Current state of the firmware update process
@@ -103,22 +101,22 @@ where
 
     async fn process_abort_update(
         &self,
-        controller_state: &mut ControllerState,
+        event_receiver: &mut CfuEventReceiver,
         controller: &mut D::Inner,
     ) -> InternalResponseData {
         // abort the update process
         match controller.abort_fw_update().await {
             Ok(_) => {
                 debug!("FW update aborted successfully");
-                controller_state.fw_update_state = FwUpdateState::Idle;
+                event_receiver.fw_update_state = FwUpdateState::Idle;
             }
             Err(Error::Pd(e)) => {
                 error!("Failed to abort FW update: {:?}", e);
-                controller_state.fw_update_state = FwUpdateState::Recovery;
+                event_receiver.fw_update_state = FwUpdateState::Recovery;
             }
             Err(Error::Bus(_)) => {
                 error!("Failed to abort FW update, bus error");
-                controller_state.fw_update_state = FwUpdateState::Recovery;
+                event_receiver.fw_update_state = FwUpdateState::Recovery;
             }
         }
 
@@ -128,7 +126,7 @@ where
     /// Process a GiveContent command
     async fn process_give_content(
         &self,
-        controller_state: &mut ControllerState,
+        event_receiver: &mut CfuEventReceiver,
         controller: &mut D::Inner,
         content: &FwUpdateContentCommand,
     ) -> InternalResponseData {
@@ -162,14 +160,14 @@ where
             }
 
             // Need to start the update
-            self.fw_update_ticker.lock().await.reset();
+            event_receiver.reset_ticker();
             match controller.start_fw_update().await {
                 Ok(_) => {
                     debug!("FW update started successfully");
                 }
                 Err(Error::Pd(e)) => {
                     error!("Failed to start FW update: {:?}", e);
-                    controller_state.fw_update_state = FwUpdateState::Recovery;
+                    event_receiver.fw_update_state = FwUpdateState::Recovery;
                     return InternalResponseData::ContentResponse(FwUpdateContentResponse::new(
                         content.header.sequence_num,
                         CfuUpdateContentResponseStatus::ErrorPrepare,
@@ -177,7 +175,7 @@ where
                 }
                 Err(Error::Bus(_)) => {
                     error!("Failed to start FW update, bus error");
-                    controller_state.fw_update_state = FwUpdateState::Recovery;
+                    event_receiver.fw_update_state = FwUpdateState::Recovery;
                     return InternalResponseData::ContentResponse(FwUpdateContentResponse::new(
                         content.header.sequence_num,
                         CfuUpdateContentResponseStatus::ErrorPrepare,
@@ -185,7 +183,7 @@ where
                 }
             }
 
-            controller_state.fw_update_state = FwUpdateState::InProgress(0);
+            event_receiver.fw_update_state = FwUpdateState::InProgress(0);
         }
 
         match controller
@@ -215,16 +213,16 @@ where
             match controller.finalize_fw_update().await {
                 Ok(_) => {
                     debug!("FW update finalized successfully");
-                    controller_state.fw_update_state = FwUpdateState::Idle;
+                    event_receiver.fw_update_state = FwUpdateState::Idle;
                 }
                 Err(Error::Pd(e)) => {
                     error!("Failed to finalize FW update: {:?}", e);
-                    controller_state.fw_update_state = FwUpdateState::Recovery;
+                    event_receiver.fw_update_state = FwUpdateState::Recovery;
                     return Self::create_offer_rejection();
                 }
                 Err(Error::Bus(_)) => {
                     error!("Failed to finalize FW update, bus error");
-                    controller_state.fw_update_state = FwUpdateState::Recovery;
+                    event_receiver.fw_update_state = FwUpdateState::Recovery;
                     return Self::create_offer_rejection();
                 }
             }
@@ -237,8 +235,8 @@ where
     }
 
     /// Process a CFU tick
-    pub async fn process_cfu_tick(&self, controller_state: &mut ControllerState, controller: &mut D::Inner) {
-        match controller_state.fw_update_state {
+    pub async fn process_cfu_tick(&self, event_receiver: &mut CfuEventReceiver, controller: &mut D::Inner) {
+        match event_receiver.fw_update_state {
             FwUpdateState::Idle => {
                 // No FW update in progress, nothing to do
                 return;
@@ -246,7 +244,7 @@ where
             FwUpdateState::InProgress(ticks) => {
                 if ticks + 1 < DEFAULT_FW_UPDATE_TIMEOUT_TICKS {
                     trace!("CFU tick: {}", ticks);
-                    controller_state.fw_update_state = FwUpdateState::InProgress(ticks + 1);
+                    event_receiver.fw_update_state = FwUpdateState::InProgress(ticks + 1);
                     return;
                 } else {
                     error!("FW update timed out after {} ticks", ticks);
@@ -258,7 +256,7 @@ where
         };
 
         // Update timed out, attempt to exit the FW update
-        controller_state.fw_update_state = FwUpdateState::Recovery;
+        event_receiver.fw_update_state = FwUpdateState::Recovery;
         match controller.abort_fw_update().await {
             Ok(_) => {
                 debug!("FW update aborted successfully");
@@ -273,17 +271,17 @@ where
             }
         }
 
-        controller_state.fw_update_state = FwUpdateState::Idle;
+        event_receiver.fw_update_state = FwUpdateState::Idle;
     }
 
     /// Process a CFU command
     pub async fn process_cfu_command(
         &self,
-        controller_state: &mut ControllerState,
+        event_receiver: &mut CfuEventReceiver,
         controller: &mut D::Inner,
         command: &RequestData,
     ) -> InternalResponseData {
-        if controller_state.fw_update_state == FwUpdateState::Recovery {
+        if event_receiver.fw_update_state == FwUpdateState::Recovery {
             debug!("FW update in recovery state, rejecting command");
             return InternalResponseData::ComponentBusy;
         }
@@ -299,11 +297,11 @@ where
             }
             RequestData::GiveContent(content) => {
                 debug!("Got GiveContent");
-                self.process_give_content(controller_state, controller, content).await
+                self.process_give_content(event_receiver, controller, content).await
             }
             RequestData::AbortUpdate => {
                 debug!("Got AbortUpdate");
-                self.process_abort_update(controller_state, controller).await
+                self.process_abort_update(event_receiver, controller).await
             }
             RequestData::FinalizeUpdate => {
                 debug!("Got FinalizeUpdate");
@@ -327,40 +325,5 @@ where
     /// Sends a CFU response to the command
     pub async fn send_cfu_response(&self, response: InternalResponseData) {
         self.registration.cfu_device.send_response(response).await;
-    }
-
-    /// Wait for a CFU command
-    ///
-    /// Returns None if the FW update ticker has ticked
-    /// DROP SAFETY: No state that needs to be restored
-    pub async fn wait_cfu_command(&self) -> EventCfu {
-        // Only lock long enough to grab our state
-        let fw_update_state = self.controller_state.lock().await.fw_update_state;
-        match fw_update_state {
-            FwUpdateState::Idle => {
-                // No FW update in progress, just wait for a command
-                EventCfu::Request(self.registration.cfu_device.wait_request().await)
-            }
-            FwUpdateState::InProgress(_) => {
-                match select(
-                    self.registration.cfu_device.wait_request(),
-                    self.fw_update_ticker.lock().await.next(),
-                )
-                .await
-                {
-                    Either::First(command) => EventCfu::Request(command),
-                    Either::Second(_) => {
-                        debug!("FW update ticker ticked");
-                        EventCfu::RecoveryTick
-                    }
-                }
-            }
-            FwUpdateState::Recovery => {
-                // Recovery state, wait for the next attempt to recover the device
-                self.fw_update_ticker.lock().await.next().await;
-                debug!("FW update ticker ticked");
-                EventCfu::RecoveryTick
-            }
-        }
     }
 }

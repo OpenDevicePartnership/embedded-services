@@ -23,6 +23,7 @@ use type_c_interface::port::PortRegistration;
 use type_c_interface::service::event::PortEvent as ServicePortEvent;
 use type_c_service::service::{EventReceiver, Service};
 use type_c_service::wrapper::backing::{IntermediateStorage, ReferencedStorage, Storage};
+use type_c_service::wrapper::event_receiver::ArrayPortEventReceivers;
 use type_c_service::wrapper::proxy::PowerProxyDevice;
 
 const CHANNEL_CAPACITY: usize = 4;
@@ -67,10 +68,26 @@ type PowerPolicyServiceType = Mutex<
 type ServiceType = Service<'static>;
 
 #[embassy_executor::task(pool_size = 3)]
-async fn controller_task(wrapper: &'static mock_controller::Wrapper<'static>) {
+async fn controller_task(
+    mut event_receiver: ArrayPortEventReceivers<'static, 1, mock_controller::InterruptReceiver<'static>>,
+    wrapper: &'static mock_controller::Wrapper<'static>,
+) {
     loop {
-        if let Err(e) = wrapper.process_next_event().await {
-            error!("Error processing wrapper: {e:#?}");
+        let event = event_receiver.wait_event().await;
+
+        let output = wrapper
+            .process_event(
+                &mut event_receiver.sink_ready_timeout,
+                &mut event_receiver.cfu_event_receiver,
+                event,
+            )
+            .await;
+        if let Err(e) = output {
+            error!("Error processing event: {e:?}");
+        }
+        let output = output.unwrap();
+        if let Err(e) = wrapper.finalize(&mut event_receiver.power_proxies, output).await {
+            error!("Error finalizing output: {e:#?}");
         }
     }
 }
@@ -106,11 +123,10 @@ async fn task(spawner: Spawner) {
     static INTERMEDIATE0: StaticCell<
         IntermediateStorage<1, GlobalRawMutex, DynamicSender<'static, psu::event::EventData>>,
     > = StaticCell::new();
-    let intermediate0 = INTERMEDIATE0.init(
-        storage0
-            .try_create_intermediate([("Pd0", policy_sender0)])
-            .expect("Failed to create intermediate storage"),
-    );
+    let (intermediate0, power_event_receivers0) = storage0
+        .try_create_intermediate([("Pd0", policy_sender0)])
+        .expect("Failed to create intermediate storage");
+    let intermediate0 = INTERMEDIATE0.init(intermediate0);
 
     static REFERENCED0: StaticCell<ReferencedStorage<1, GlobalRawMutex, DynamicSender<'_, psu::event::EventData>>> =
         StaticCell::new();
@@ -122,6 +138,12 @@ async fn task(spawner: Spawner) {
 
     static STATE0: StaticCell<mock_controller::ControllerState> = StaticCell::new();
     let state0 = STATE0.init(mock_controller::ControllerState::new());
+    let event_receiver0 = ArrayPortEventReceivers::new(
+        state0.create_interrupt_receiver(),
+        power_event_receivers0,
+        &referenced0.pd_controller,
+        &storage0.cfu_device,
+    );
     static CONTROLLER0: StaticCell<Mutex<GlobalRawMutex, mock_controller::Controller>> = StaticCell::new();
     let controller0 = CONTROLLER0.init(Mutex::new(mock_controller::Controller::new(state0)));
     static WRAPPER0: StaticCell<mock_controller::Wrapper> = StaticCell::new();
@@ -152,11 +174,10 @@ async fn task(spawner: Spawner) {
     static INTERMEDIATE1: StaticCell<
         IntermediateStorage<1, GlobalRawMutex, DynamicSender<'static, psu::event::EventData>>,
     > = StaticCell::new();
-    let intermediate1 = INTERMEDIATE1.init(
-        storage1
-            .try_create_intermediate([("Pd1", policy_sender1)])
-            .expect("Failed to create intermediate storage"),
-    );
+    let (intermediate1, power_event_receivers1) = storage1
+        .try_create_intermediate([("Pd1", policy_sender1)])
+        .expect("Failed to create intermediate storage");
+    let intermediate1 = INTERMEDIATE1.init(intermediate1);
 
     static REFERENCED1: StaticCell<ReferencedStorage<1, GlobalRawMutex, DynamicSender<'_, psu::event::EventData>>> =
         StaticCell::new();
@@ -168,6 +189,12 @@ async fn task(spawner: Spawner) {
 
     static STATE1: StaticCell<mock_controller::ControllerState> = StaticCell::new();
     let state1 = STATE1.init(mock_controller::ControllerState::new());
+    let event_receiver1 = ArrayPortEventReceivers::new(
+        state1.create_interrupt_receiver(),
+        power_event_receivers1,
+        &referenced1.pd_controller,
+        &storage1.cfu_device,
+    );
     static CONTROLLER1: StaticCell<Mutex<GlobalRawMutex, mock_controller::Controller>> = StaticCell::new();
     let controller1 = CONTROLLER1.init(Mutex::new(mock_controller::Controller::new(state1)));
     static WRAPPER1: StaticCell<mock_controller::Wrapper> = StaticCell::new();
@@ -198,11 +225,10 @@ async fn task(spawner: Spawner) {
     static INTERMEDIATE2: StaticCell<
         IntermediateStorage<1, GlobalRawMutex, DynamicSender<'static, psu::event::EventData>>,
     > = StaticCell::new();
-    let intermediate2 = INTERMEDIATE2.init(
-        storage2
-            .try_create_intermediate([("Pd2", policy_sender2)])
-            .expect("Failed to create intermediate storage"),
-    );
+    let (intermediate2, power_event_receivers2) = storage2
+        .try_create_intermediate([("Pd2", policy_sender2)])
+        .expect("Failed to create intermediate storage");
+    let intermediate2 = INTERMEDIATE2.init(intermediate2);
 
     static REFERENCED2: StaticCell<ReferencedStorage<1, GlobalRawMutex, DynamicSender<'_, psu::event::EventData>>> =
         StaticCell::new();
@@ -214,6 +240,12 @@ async fn task(spawner: Spawner) {
 
     static STATE2: StaticCell<mock_controller::ControllerState> = StaticCell::new();
     let state2 = STATE2.init(mock_controller::ControllerState::new());
+    let event_receiver2 = ArrayPortEventReceivers::new(
+        state2.create_interrupt_receiver(),
+        power_event_receivers2,
+        &referenced2.pd_controller,
+        &storage2.cfu_device,
+    );
     static CONTROLLER2: StaticCell<Mutex<GlobalRawMutex, mock_controller::Controller>> = StaticCell::new();
     let controller2 = CONTROLLER2.init(Mutex::new(mock_controller::Controller::new(state2)));
     static WRAPPER2: StaticCell<mock_controller::Wrapper> = StaticCell::new();
@@ -283,9 +315,9 @@ async fn task(spawner: Spawner) {
         .expect("Failed to create type-c service task"),
     );
 
-    spawner.spawn(controller_task(wrapper0).expect("Failed to create controller0 task"));
-    spawner.spawn(controller_task(wrapper1).expect("Failed to create controller1 task"));
-    spawner.spawn(controller_task(wrapper2).expect("Failed to create controller2 task"));
+    spawner.spawn(controller_task(event_receiver0, wrapper0).expect("Failed to create controller0 task"));
+    spawner.spawn(controller_task(event_receiver1, wrapper1).expect("Failed to create controller1 task"));
+    spawner.spawn(controller_task(event_receiver2, wrapper2).expect("Failed to create controller2 task"));
 
     const CAPABILITY: PowerCapability = PowerCapability {
         voltage_mv: 20000,

@@ -2,42 +2,17 @@
 //!
 //! TODO: update this documentation when the type-C service is refactored
 //!
-use core::{array::from_fn, ops::Range};
+use core::array::from_fn;
 
 use cfu_service::component::CfuDevice;
 use embassy_sync::{blocking_mutex::raw::RawMutex, mutex::Mutex};
 
-use embassy_time::Instant;
 use embedded_cfu_protocol::protocol_definitions::ComponentId;
 use embedded_services::event;
 
 use type_c_interface::port::{ControllerId, PortRegistration, PortStatus, event::PortStatusEventBitfield};
 
-use crate::{
-    PortEventStreamer,
-    wrapper::{
-        cfu,
-        proxy::{PowerProxyChannel, PowerProxyDevice, PowerProxyReceiver},
-    },
-};
-
-/// Internal per-controller state
-#[derive(Clone)]
-pub struct ControllerState {
-    /// If we're currently doing a firmware update
-    pub(crate) fw_update_state: cfu::FwUpdateState,
-    /// State used to keep track of where we are as we turn the event bitfields into a stream of events
-    pub(crate) port_event_streaming_state: Option<PortEventStreamer<Range<usize>>>,
-}
-
-impl Default for ControllerState {
-    fn default() -> Self {
-        Self {
-            fw_update_state: cfu::FwUpdateState::Idle,
-            port_event_streaming_state: None,
-        }
-    }
-}
+use crate::wrapper::proxy::{PowerProxyChannel, PowerProxyDevice, PowerProxyReceiver};
 
 /// Service registration objects
 pub struct Registration<'a, M: RawMutex> {
@@ -59,7 +34,7 @@ pub struct Storage<'a, const N: usize, M: RawMutex> {
     context: &'a type_c_interface::service::context::Context,
     controller_id: ControllerId,
     pd_ports: [PortRegistration; N],
-    cfu_device: CfuDevice,
+    pub cfu_device: CfuDevice,
     power_proxy_channels: [PowerProxyChannel<M>; N],
 }
 
@@ -83,7 +58,7 @@ impl<'a, const N: usize, M: RawMutex> Storage<'a, N, M> {
     pub fn try_create_intermediate<S: event::Sender<power_policy_interface::psu::event::EventData>>(
         &self,
         power_policy_init: [(&'static str, S); N],
-    ) -> Option<IntermediateStorage<'_, N, M, S>> {
+    ) -> Option<(IntermediateStorage<'_, N, M, S>, [PowerProxyReceiver<'_>; N])> {
         IntermediateStorage::try_from_storage(self, power_policy_init)
     }
 }
@@ -98,8 +73,6 @@ pub struct PortState<S: event::Sender<power_policy_interface::psu::event::EventD
     pub(crate) status: PortStatus,
     /// Software status event
     pub(crate) sw_status_event: PortStatusEventBitfield,
-    /// Sink ready deadline instant
-    pub(crate) sink_ready_deadline: Option<Instant>,
     /// Sender to send events to the power policy service
     pub(crate) power_policy_sender: S,
 }
@@ -109,7 +82,6 @@ impl<S: event::Sender<power_policy_interface::psu::event::EventData>> PortState<
         Self {
             status: PortStatus::default(),
             sw_status_event: PortStatusEventBitfield::default(),
-            sink_ready_deadline: None,
             power_policy_sender,
         }
     }
@@ -124,13 +96,15 @@ pub struct IntermediateStorage<
 > {
     storage: &'a Storage<'a, N, M>,
     ports: [Port<'a, M, S>; N],
-    power_proxy_receivers: [Mutex<M, PowerProxyReceiver<'a>>; N],
 }
 
 impl<'a, const N: usize, M: RawMutex, S: event::Sender<power_policy_interface::psu::event::EventData>>
     IntermediateStorage<'a, N, M, S>
 {
-    fn try_from_storage(storage: &'a Storage<'a, N, M>, power_policy_init: [(&'static str, S); N]) -> Option<Self> {
+    fn try_from_storage(
+        storage: &'a Storage<'a, N, M>,
+        power_policy_init: [(&'static str, S); N],
+    ) -> Option<(Self, [PowerProxyReceiver<'a>; N])> {
         let mut ports = heapless::Vec::<_, N>::new();
         let mut power_proxy_receivers = heapless::Vec::<_, N>::new();
 
@@ -145,16 +119,16 @@ impl<'a, const N: usize, M: RawMutex, S: event::Sender<power_policy_interface::p
                     state: Mutex::new(PortState::new(policy_sender)),
                 })
                 .ok()?;
-            power_proxy_receivers
-                .push(Mutex::new(power_proxy_channel.get_receiver()))
-                .ok()?;
+            power_proxy_receivers.push(power_proxy_channel.get_receiver()).ok()?;
         }
 
-        Some(Self {
-            storage,
-            ports: ports.into_array().ok()?,
-            power_proxy_receivers: power_proxy_receivers.into_array().ok()?,
-        })
+        Some((
+            Self {
+                storage,
+                ports: ports.into_array().ok()?,
+            },
+            power_proxy_receivers.into_array().ok()?,
+        ))
     }
 
     /// Create referenced storage from this intermediate storage
@@ -177,7 +151,7 @@ pub struct ReferencedStorage<
     S: event::Sender<power_policy_interface::psu::event::EventData>,
 > {
     intermediate: &'a IntermediateStorage<'a, N, M, S>,
-    pd_controller: type_c_interface::port::Device<'a>,
+    pub pd_controller: type_c_interface::port::Device<'a>,
     power_devices: [&'a Mutex<M, PowerProxyDevice<'a>>; N],
 }
 
@@ -211,7 +185,6 @@ impl<'a, const N: usize, M: RawMutex, S: event::Sender<power_policy_interface::p
                 power_devices: &self.power_devices,
             },
             ports: &self.intermediate.ports,
-            power_receivers: &self.intermediate.power_proxy_receivers,
         }
     }
 }
@@ -220,5 +193,4 @@ impl<'a, const N: usize, M: RawMutex, S: event::Sender<power_policy_interface::p
 pub struct Backing<'a, M: RawMutex, S: event::Sender<power_policy_interface::psu::event::EventData>> {
     pub(crate) registration: Registration<'a, M>,
     pub(crate) ports: &'a [Port<'a, M, S>],
-    pub(crate) power_receivers: &'a [Mutex<M, PowerProxyReceiver<'a>>],
 }

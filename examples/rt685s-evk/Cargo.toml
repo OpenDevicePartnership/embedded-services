@@ -60,7 +60,7 @@ power-policy-interface = { path = "../../power-policy-interface", features = [
 power-policy-service = { path = "../../power-policy-service", features = [
     "defmt",
 ] }
-tps6699x = { git = "https://github.com/OpenDevicePartnership/tps6699x", features = [
+tps6699x = { git = "https://github.com/OpenDevicePartnership/tps6699x", branch = "v0.2.0", features = [
     "defmt",
     "embassy",
 ] }

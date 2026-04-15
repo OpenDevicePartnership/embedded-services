@@ -1,9 +1,7 @@
-use ::tps6699x::registers::field_sets::IntEventBus1;
 use ::tps6699x::registers::{PdCcPullUp, PpExtVbusSw, PpIntVbusSw};
 use ::tps6699x::{PORT0, PORT1, TPS66993_NUM_PORTS, TPS66994_NUM_PORTS};
 use bitfield::bitfield;
 use bitflags::bitflags;
-use core::array::from_fn;
 use core::future::Future;
 use core::iter::zip;
 use core::num::NonZeroU8;
@@ -18,7 +16,7 @@ use embedded_usb_pd::type_c::Current as TypecCurrent;
 use embedded_usb_pd::ucsi::lpm;
 use embedded_usb_pd::{DataRole, Error, LocalPortId, PdError, PlugOrientation, PowerRole};
 use tps6699x::MAX_SUPPORTED_PORTS;
-use tps6699x::asynchronous::embassy as tps6699x_drv;
+use tps6699x::asynchronous::embassy::{self as tps6699x_drv, interrupt};
 use tps6699x::asynchronous::fw_update::UpdateTarget;
 use tps6699x::asynchronous::fw_update::{
     BorrowedUpdater, BorrowedUpdaterInProgress, disable_all_interrupts, enable_port0_interrupts,
@@ -28,6 +26,7 @@ use tps6699x::command::{
     vdms::{INITIATOR_WAIT_TIME_MS, MAX_NUM_DATA_OBJECTS, Version},
 };
 use tps6699x::fw_update::UpdateConfig as FwUpdateConfig;
+use tps6699x::registers::field_sets::IntEventBus1;
 use tps6699x::registers::port_config::TypeCStateMachine;
 use type_c_interface::port::event::PortEventBitfield;
 use type_c_interface::port::{
@@ -51,7 +50,7 @@ struct FwUpdateState<'a, M: RawMutex, B: I2c> {
     ///
     /// This value is never read, only used to keep the interrupt guard alive
     #[allow(dead_code)]
-    guards: [Option<tps6699x_drv::InterruptGuard<'a, M, B>>; MAX_SUPPORTED_PORTS],
+    guards: [Option<tps6699x_drv::interrupt::InterruptGuard<'a, M, B>>; MAX_SUPPORTED_PORTS],
 }
 
 /// The method used to control USB capabilities.
@@ -83,7 +82,6 @@ pub struct Config {
 }
 
 pub struct Tps6699x<'a, M: RawMutex, B: I2c> {
-    port_events: heapless::Vec<PortEventBitfield, MAX_SUPPORTED_PORTS>,
     tps6699x: tps6699x_drv::Tps6699x<'a, M, B>,
     update_state: Option<FwUpdateState<'a, M, B>>,
     /// Firmware update configuration
@@ -106,7 +104,6 @@ impl<'a, M: RawMutex, B: I2c> Tps6699x<'a, M, B> {
         } else {
             Some(Self {
                 // num_ports validated by branch
-                port_events: heapless::Vec::from_iter((0..num_ports).map(|_| PortEventBitfield::none())),
                 tps6699x,
                 update_state: None,
                 fw_update_config,
@@ -202,116 +199,6 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
         self.tps6699x.reset(&mut delay).await?;
 
         Ok(())
-    }
-
-    /// Wait for an event on any port
-    async fn wait_port_event(&mut self) -> Result<(), Error<Self::BusError>> {
-        let interrupts = self
-            .tps6699x
-            .wait_interrupt_any(false, from_fn(|_| IntEventBus1::all()))
-            .await;
-
-        for (interrupt, event) in zip(interrupts.iter(), self.port_events.iter_mut()) {
-            if *interrupt == IntEventBus1::new_zero() {
-                continue;
-            }
-
-            {
-                if interrupt.plug_event() {
-                    debug!("Event: Plug event");
-                    event.status.set_plug_inserted_or_removed(true);
-                }
-                if interrupt.source_caps_received() {
-                    debug!("Event: Source Caps received");
-                    event.status.set_source_caps_received(true);
-                }
-
-                if interrupt.sink_ready() {
-                    debug!("Event: Sink ready");
-                    event.status.set_sink_ready(true);
-                }
-
-                if interrupt.new_consumer_contract() {
-                    debug!("Event: New contract as consumer, PD controller act as Sink");
-                    // Port is consumer and power negotiation is complete
-                    event.status.set_new_power_contract_as_consumer(true);
-                }
-
-                if interrupt.new_provider_contract() {
-                    debug!("Event: New contract as provider, PD controller act as source");
-                    // Port is provider and power negotiation is complete
-                    event.status.set_new_power_contract_as_provider(true);
-                }
-
-                if interrupt.power_swap_completed() {
-                    debug!("Event: power swap completed");
-                    event.status.set_power_swap_completed(true);
-                }
-
-                if interrupt.data_swap_completed() {
-                    debug!("Event: data swap completed");
-                    event.status.set_data_swap_completed(true);
-                }
-
-                if interrupt.am_entered() {
-                    debug!("Event: alt mode entered");
-                    event.status.set_alt_mode_entered(true);
-                }
-
-                if interrupt.hard_reset() {
-                    debug!("Event: hard reset");
-                    event.status.set_pd_hard_reset(true);
-                }
-
-                if interrupt.crossbar_error() {
-                    debug!("Event: crossbar error");
-                    event.notification.set_usb_mux_error_recovery(true);
-                }
-
-                if interrupt.usvid_mode_entered() {
-                    debug!("Event: user svid mode entered");
-                    event.notification.set_custom_mode_entered(true);
-                }
-
-                if interrupt.usvid_mode_exited() {
-                    debug!("Event: usvid mode exited");
-                    event.notification.set_custom_mode_exited(true);
-                }
-
-                if interrupt.usvid_attention_vdm_received() {
-                    debug!("Event: user svid attention vdm received");
-                    event.notification.set_custom_mode_attention_received(true);
-                }
-
-                if interrupt.usvid_other_vdm_received() {
-                    debug!("Event: user svid other vdm received");
-                    event.notification.set_custom_mode_other_vdm_received(true);
-                }
-
-                if interrupt.discover_mode_completed() {
-                    debug!("Event: discover mode completed");
-                    event.notification.set_discover_mode_completed(true);
-                }
-
-                if interrupt.dp_sid_status_updated() {
-                    debug!("Event: dp sid status updated");
-                    event.notification.set_dp_status_update(true);
-                }
-
-                if interrupt.alert_message_received() {
-                    debug!("Event: alert message received");
-                    event.notification.set_alert(true);
-                }
-            }
-        }
-        Ok(())
-    }
-
-    /// Returns and clears current events for the given port
-    async fn clear_port_events(&mut self, port: LocalPortId) -> Result<PortEventBitfield, Error<Self::BusError>> {
-        Ok(core::mem::take(
-            self.port_events.get_mut(port.0 as usize).ok_or(PdError::InvalidPort)?,
-        ))
     }
 
     /// Returns the current status of the port
@@ -898,4 +785,115 @@ bitfield! {
     pub u32, custom_fw_version, set_custom_fw_version: 31, 0;
     /// TI FW version
     pub u32, ti_fw_version, set_ti_fw_version: 63, 32;
+}
+
+pub struct InterruptReceiver<'a, M: RawMutex, BUS: I2c> {
+    interrupt_receiver: interrupt::InterruptReceiver<'a, M, BUS>,
+}
+
+impl<'a, M: RawMutex, BUS: I2c> InterruptReceiver<'a, M, BUS> {
+    pub fn new(interrupt_receiver: interrupt::InterruptReceiver<'a, M, BUS>) -> Self {
+        Self { interrupt_receiver }
+    }
+}
+
+impl<'a, M: RawMutex, BUS: I2c> crate::wrapper::event_receiver::InterruptReceiver<MAX_SUPPORTED_PORTS>
+    for InterruptReceiver<'a, M, BUS>
+{
+    async fn wait_interrupt(&mut self) -> [PortEventBitfield; MAX_SUPPORTED_PORTS] {
+        let interrupts = self.interrupt_receiver.wait_any(false).await;
+        let mut port_events = [PortEventBitfield::none(); MAX_SUPPORTED_PORTS];
+        for (interrupt, event) in zip(interrupts.iter(), port_events.iter_mut()) {
+            if *interrupt == IntEventBus1::new_zero() {
+                continue;
+            }
+
+            if interrupt.plug_event() {
+                debug!("Event: Plug event");
+                event.status.set_plug_inserted_or_removed(true);
+            }
+            if interrupt.source_caps_received() {
+                debug!("Event: Source Caps received");
+                event.status.set_source_caps_received(true);
+            }
+
+            if interrupt.sink_ready() {
+                debug!("Event: Sink ready");
+                event.status.set_sink_ready(true);
+            }
+
+            if interrupt.new_consumer_contract() {
+                debug!("Event: New contract as consumer, PD controller act as Sink");
+                // Port is consumer and power negotiation is complete
+                event.status.set_new_power_contract_as_consumer(true);
+            }
+
+            if interrupt.new_provider_contract() {
+                debug!("Event: New contract as provider, PD controller act as source");
+                // Port is provider and power negotiation is complete
+                event.status.set_new_power_contract_as_provider(true);
+            }
+
+            if interrupt.power_swap_completed() {
+                debug!("Event: power swap completed");
+                event.status.set_power_swap_completed(true);
+            }
+
+            if interrupt.data_swap_completed() {
+                debug!("Event: data swap completed");
+                event.status.set_data_swap_completed(true);
+            }
+
+            if interrupt.am_entered() {
+                debug!("Event: alt mode entered");
+                event.status.set_alt_mode_entered(true);
+            }
+
+            if interrupt.hard_reset() {
+                debug!("Event: hard reset");
+                event.status.set_pd_hard_reset(true);
+            }
+
+            if interrupt.crossbar_error() {
+                debug!("Event: crossbar error");
+                event.notification.set_usb_mux_error_recovery(true);
+            }
+
+            if interrupt.usvid_mode_entered() {
+                debug!("Event: user svid mode entered");
+                event.notification.set_custom_mode_entered(true);
+            }
+
+            if interrupt.usvid_mode_exited() {
+                debug!("Event: usvid mode exited");
+                event.notification.set_custom_mode_exited(true);
+            }
+
+            if interrupt.usvid_attention_vdm_received() {
+                debug!("Event: user svid attention vdm received");
+                event.notification.set_custom_mode_attention_received(true);
+            }
+
+            if interrupt.usvid_other_vdm_received() {
+                debug!("Event: user svid other vdm received");
+                event.notification.set_custom_mode_other_vdm_received(true);
+            }
+
+            if interrupt.discover_mode_completed() {
+                debug!("Event: discover mode completed");
+                event.notification.set_discover_mode_completed(true);
+            }
+
+            if interrupt.dp_sid_status_updated() {
+                debug!("Event: dp sid status updated");
+                event.notification.set_dp_status_update(true);
+            }
+
+            if interrupt.alert_message_received() {
+                debug!("Event: alert message received");
+                event.notification.set_alert(true);
+            }
+        }
+        port_events
+    }
 }

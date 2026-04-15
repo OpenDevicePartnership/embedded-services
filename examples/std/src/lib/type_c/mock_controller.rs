@@ -7,7 +7,7 @@ use embedded_usb_pd::{Error, ado::Ado};
 use embedded_usb_pd::{LocalPortId, PdError};
 use embedded_usb_pd::{PowerRole, type_c::Current};
 use embedded_usb_pd::{type_c::ConnectionState, ucsi::lpm};
-use log::{debug, info, trace};
+use log::{debug, info};
 
 use power_policy_interface::capability::PowerCapability;
 use type_c_interface::port::SystemPowerState;
@@ -30,6 +30,10 @@ impl ControllerState {
             status: Mutex::new(PortStatus::new()),
             pd_alert: Mutex::new(None),
         }
+    }
+
+    pub fn create_interrupt_receiver(&self) -> InterruptReceiver<'_> {
+        InterruptReceiver { events: &self.events }
     }
 
     /// Simulate a connection
@@ -99,15 +103,11 @@ impl Default for ControllerState {
 
 pub struct Controller<'a> {
     state: &'a ControllerState,
-    events: PortEventBitfield,
 }
 
 impl<'a> Controller<'a> {
     pub fn new(state: &'a ControllerState) -> Self {
-        Self {
-            state,
-            events: PortEventBitfield::none(),
-        }
+        Self { state }
     }
 
     /// Function to demonstrate calling functions directly on the controller
@@ -116,22 +116,21 @@ impl<'a> Controller<'a> {
     }
 }
 
+pub struct InterruptReceiver<'a> {
+    events: &'a Signal<GlobalRawMutex, PortEventBitfield>,
+}
+
+impl<const N: usize> type_c_service::wrapper::event_receiver::InterruptReceiver<N> for InterruptReceiver<'_> {
+    async fn wait_interrupt(&mut self) -> [PortEventBitfield; N] {
+        let events = self.events.wait().await;
+        let mut result = [PortEventBitfield::none(); N];
+        result[0] = events;
+        result
+    }
+}
+
 impl type_c_interface::port::Controller for Controller<'_> {
     type BusError = ();
-
-    async fn wait_port_event(&mut self) -> Result<(), Error<Self::BusError>> {
-        let events = self.state.events.wait().await;
-        trace!("Port event: {events:#?}");
-        self.events = self.events.union(events);
-        Ok(())
-    }
-
-    async fn clear_port_events(&mut self, _port: LocalPortId) -> Result<PortEventBitfield, Error<Self::BusError>> {
-        let events = self.events;
-        debug!("Clear port events: {events:#?}");
-        self.events = PortEventBitfield::none();
-        Ok(events)
-    }
 
     async fn get_port_status(&mut self, _port: LocalPortId) -> Result<PortStatus, Error<Self::BusError>> {
         debug!("Get port status: {:#?}", *self.state.status.lock().await);

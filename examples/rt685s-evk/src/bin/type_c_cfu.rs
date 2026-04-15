@@ -30,10 +30,11 @@ use tps6699x::asynchronous::embassy as tps6699x;
 use type_c_interface::port::ControllerId;
 use type_c_interface::port::PortRegistration;
 use type_c_interface::service::event::PortEvent as ServicePortEvent;
-use type_c_service::driver::tps6699x::{self as tps6699x_drv};
+use type_c_service::driver::tps6699x::{self as tps6699x_drv, InterruptReceiver};
 use type_c_service::service::{EventReceiver, Service};
 use type_c_service::wrapper::ControllerWrapper;
 use type_c_service::wrapper::backing::{IntermediateStorage, ReferencedStorage, Storage};
+use type_c_service::wrapper::event_receiver::ArrayPortEventReceivers;
 use type_c_service::wrapper::proxy::PowerProxyDevice;
 
 extern crate rt685s_evk_example;
@@ -66,7 +67,7 @@ type Wrapper<'a> = ControllerWrapper<
     Validator,
 >;
 type Controller<'a> = tps6699x::controller::Controller<GlobalRawMutex, BusDevice<'a>>;
-type Interrupt<'a> = tps6699x::Interrupt<'a, GlobalRawMutex, BusDevice<'a>>;
+type InterruptProcessor<'a> = tps6699x::interrupt::InterruptProcessor<'a, GlobalRawMutex, BusDevice<'a>>;
 
 type PowerPolicySenderType = MapSender<
     power_policy_interface::service::event::Event<'static, DeviceType>,
@@ -96,16 +97,36 @@ const PORT0_ID: GlobalPortId = GlobalPortId(0);
 const PORT1_ID: GlobalPortId = GlobalPortId(1);
 
 #[embassy_executor::task]
-async fn pd_controller_task(controller: &'static Wrapper<'static>) {
+async fn pd_controller_task(
+    mut event_receiver: ArrayPortEventReceivers<
+        'static,
+        2,
+        InterruptReceiver<'static, GlobalRawMutex, BusDevice<'static>>,
+    >,
+    wrapper: &'static Wrapper<'static>,
+) {
     loop {
-        if let Err(e) = controller.process_next_event().await {
-            error!("Error processing controller event: {:?}", e);
+        let event = event_receiver.wait_event().await;
+
+        let output = wrapper
+            .process_event(
+                &mut event_receiver.sink_ready_timeout,
+                &mut event_receiver.cfu_event_receiver,
+                event,
+            )
+            .await;
+        if let Err(e) = output {
+            error!("Error processing event: {:?}", e);
+        }
+        let output = output.unwrap();
+        if let Err(e) = wrapper.finalize(&mut event_receiver.power_proxies, output).await {
+            error!("Error finalizing output: {:?}", e);
         }
     }
 }
 
 #[embassy_executor::task]
-async fn interrupt_task(mut int_in: Input<'static>, mut interrupt: Interrupt<'static>) {
+async fn interrupt_task(mut int_in: Input<'static>, mut interrupt: InterruptProcessor<'static>) {
     tps6699x::task::interrupt_task(&mut int_in, &mut [&mut interrupt]).await;
 }
 
@@ -204,7 +225,6 @@ async fn type_c_service_task(
     wrappers: [&'static Wrapper<'static>; NUM_PD_CONTROLLERS],
     cfu_client: &'static CfuClient,
 ) {
-    info!("Starting type-c task");
     type_c_service::task::task(service, event_receiver, wrappers, cfu_client).await;
 }
 
@@ -224,15 +244,15 @@ async fn main(spawner: Spawner) {
     let device = I2cDevice::new(bus);
 
     static CONTROLLER: StaticCell<Controller<'static>> = StaticCell::new();
-    let controller = CONTROLLER.init(Controller::new_tps66994(device, ADDR1).unwrap());
-    let (mut tps6699x, interrupt) = controller.make_parts();
+    let controller = CONTROLLER.init(Controller::new_tps66994(device, Default::default(), ADDR1).unwrap());
+    let (mut tps6699x, interrupt_processor, interrupt_receiver) = controller.make_parts();
 
     info!("Resetting PD controller");
     let mut delay = Delay;
     tps6699x.reset(&mut delay).await.unwrap();
 
     info!("Spawining interrupt task");
-    spawner.spawn(interrupt_task(int_in, interrupt).expect("Failed to spawn interrupt task"));
+    spawner.spawn(interrupt_task(int_in, interrupt_processor).expect("Failed to spawn interrupt task"));
 
     // These aren't enabled by default
     tps6699x
@@ -257,7 +277,7 @@ async fn main(spawner: Spawner) {
     let storage = STORAGE.init(Storage::new(
         controller_context,
         CONTROLLER0_ID,
-        0, // CFU component ID
+        CONTROLLER0_CFU_ID,
         [
             PortRegistration {
                 id: PORT0_ID,
@@ -282,14 +302,13 @@ async fn main(spawner: Spawner) {
     let policy_sender1 = policy_channel1.dyn_sender();
     let policy_receiver1 = policy_channel1.dyn_receiver();
 
+    let (intermediate, power_event_receivers) = storage
+        .try_create_intermediate([("Pd0", policy_sender0), ("Pd1", policy_sender1)])
+        .expect("Failed to create intermediate storage");
     static INTERMEDIATE: StaticCell<
         IntermediateStorage<TPS66994_NUM_PORTS, GlobalRawMutex, DynamicSender<'static, psu::event::EventData>>,
     > = StaticCell::new();
-    let intermediate = INTERMEDIATE.init(
-        storage
-            .try_create_intermediate([("Pd0", policy_sender0), ("Pd1", policy_sender1)])
-            .expect("Failed to create intermediate storage"),
-    );
+    let intermediate = INTERMEDIATE.init(intermediate);
 
     static REFERENCED: StaticCell<
         ReferencedStorage<
@@ -377,7 +396,18 @@ async fn main(spawner: Spawner) {
         .expect("Failed to create power policy task"),
     );
 
-    spawner.spawn(pd_controller_task(wrapper).expect("Failed to create pd controller task"));
+    spawner.spawn(
+        pd_controller_task(
+            ArrayPortEventReceivers::new(
+                InterruptReceiver::new(interrupt_receiver),
+                power_event_receivers,
+                &referenced.pd_controller,
+                &storage.cfu_device,
+            ),
+            wrapper,
+        )
+        .expect("Failed to create pd controller task"),
+    );
 
     spawner.spawn(fw_update_task().expect("Failed to create fw update task"));
 }

@@ -1,5 +1,5 @@
-use crate::wrapper::backing::ControllerState;
-use embassy_time::{Duration, Timer};
+use crate::wrapper::event_receiver::SinkReadyTimeoutEvent;
+use embassy_time::Duration;
 use embedded_services::debug;
 use embedded_usb_pd::constants::{T_PS_TRANSITION_EPR_MS, T_PS_TRANSITION_SPR_MS};
 use embedded_usb_pd::ucsi::{self, lpm};
@@ -24,27 +24,28 @@ where
     /// After accepting a sink contract (new contract as consumer), the PD spec guarantees that the
     /// source will be available to provide power after `tPSTransition`. This allows us to handle transitions
     /// even for controllers that might not always broadcast sink ready events.
-    pub(super) fn check_sink_ready_timeout(
+    pub(super) fn check_sink_ready_timeout<const N: usize>(
         &self,
-        port_state: &mut PortState<S>,
-        status: &PortStatus,
+        sink_ready_timeout: &mut SinkReadyTimeoutEvent<N>,
+        previous_status: &PortStatus,
+        new_status: &PortStatus,
         port: LocalPortId,
         new_contract: bool,
         sink_ready: bool,
     ) -> Result<(), PdError> {
-        let contract_changed = port_state.status.available_sink_contract != status.available_sink_contract;
-        let deadline = &mut port_state.sink_ready_deadline;
+        let contract_changed = previous_status.available_sink_contract != new_status.available_sink_contract;
+        let timeout = sink_ready_timeout.get_timeout(port);
 
         // Don't start the timeout if the sink has signaled it's ready or if the contract didn't change.
         // The latter ensures that soft resets won't continually reset the ready timeout
         debug!(
             "Port{}: Check sink ready: new_contract={:?}, sink_ready={:?}, contract_changed={:?}, deadline={:?}",
-            port.0, new_contract, sink_ready, contract_changed, deadline,
+            port.0, new_contract, sink_ready, contract_changed, timeout,
         );
         if new_contract && !sink_ready && contract_changed {
             // Start the timeout
             // Double the spec maximum transition time to provide a safety margin for hardware/controller delays or out-of-spec controllers.
-            let timeout_ms = if status.epr {
+            let timeout_ms = if new_status.epr {
                 T_PS_TRANSITION_EPR_MS
             } else {
                 T_PS_TRANSITION_SPR_MS
@@ -53,39 +54,14 @@ where
             .0 * 2;
 
             debug!("Port{}: Sink ready timeout started for {}ms", port.0, timeout_ms);
-            *deadline = Some(Instant::now() + Duration::from_millis(timeout_ms as u64));
-        } else if deadline.is_some()
-            && (!status.is_connected() || status.available_sink_contract.is_none() || sink_ready)
+            sink_ready_timeout.set_timeout(port, Instant::now() + Duration::from_millis(timeout_ms as u64));
+        } else if timeout.is_some()
+            && (!new_status.is_connected() || new_status.available_sink_contract.is_none() || sink_ready)
         {
             debug!("Port{}: Sink ready timeout cleared", port.0);
-            *deadline = None;
+            sink_ready_timeout.clear_timeout(port);
         }
         Ok(())
-    }
-
-    /// Wait for a sink ready timeout and return the port that has timed out.
-    ///
-    /// DROP SAFETY: No state to restore
-    pub(super) async fn wait_sink_ready_timeout(&self) -> LocalPortId {
-        let futures: [_; MAX_SUPPORTED_PORTS] = from_fn(|i| async move {
-            let Some(port) = self.ports.get(i) else {
-                pending::<()>().await;
-                return;
-            };
-
-            let deadline = port.state.lock().await.sink_ready_deadline;
-            if let Some(deadline) = deadline {
-                Timer::at(deadline).await;
-                debug!("Port{}: Sink ready timeout reached", i);
-                port.state.lock().await.sink_ready_deadline = None;
-            } else {
-                pending::<()>().await;
-            }
-        });
-
-        // DROP SAFETY: Select over drop safe futures
-        let (_, port_index) = select_array(futures).await;
-        LocalPortId(port_index as u8)
     }
 
     /// Process a request to set the maximum sink voltage for a port
@@ -127,11 +103,11 @@ where
     /// Handle a port command
     async fn process_port_command(
         &self,
-        controller_state: &mut ControllerState,
+        cfu_event_receiver: &mut CfuEventReceiver,
         controller: &mut D::Inner,
         command: &port::PortCommand,
     ) -> Response<'static> {
-        if controller_state.fw_update_state.in_progress() {
+        if cfu_event_receiver.fw_update_state.in_progress() {
             debug!("FW update in progress, ignoring port command");
             return port::Response::Port(Err(PdError::Busy));
         }
@@ -322,11 +298,11 @@ where
 
     async fn process_controller_command(
         &self,
-        controller_state: &mut ControllerState,
+        cfu_event_receiver: &mut CfuEventReceiver,
         controller: &mut D::Inner,
         command: &port::InternalCommandData,
     ) -> Response<'static> {
-        if controller_state.fw_update_state.in_progress() {
+        if cfu_event_receiver.fw_update_state.in_progress() {
             debug!("FW update in progress, ignoring controller command");
             return port::Response::Controller(Err(PdError::Busy));
         }
@@ -358,14 +334,14 @@ where
     /// Handle a PD controller command
     pub(super) async fn process_pd_command(
         &self,
-        controller_state: &mut ControllerState,
+        cfu_event_receiver: &mut CfuEventReceiver,
         controller: &mut D::Inner,
         command: &port::Command,
     ) -> Response<'static> {
         match command {
-            port::Command::Port(command) => self.process_port_command(controller_state, controller, command).await,
+            port::Command::Port(command) => self.process_port_command(cfu_event_receiver, controller, command).await,
             port::Command::Controller(command) => {
-                self.process_controller_command(controller_state, controller, command)
+                self.process_controller_command(cfu_event_receiver, controller, command)
                     .await
             }
             port::Command::Lpm(_) => port::Response::Ucsi(ucsi::Response {

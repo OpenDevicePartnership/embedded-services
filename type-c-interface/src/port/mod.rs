@@ -16,7 +16,6 @@ use embedded_services::{GlobalRawMutex, intrusive_list};
 
 pub mod event;
 
-use crate::port::event::PortEventBitfield;
 use crate::service::event::PortEvent as ServicePortEvent;
 
 /// Length of the Other VDM data
@@ -532,19 +531,6 @@ pub trait Controller {
     /// Type of error returned by the bus
     type BusError;
 
-    /// Wait for a port event to occur
-    /// # Implementation guide
-    /// This function should be drop safe.
-    /// Any intermediate side effects must be undone if the returned [`Future`] is dropped before completing.
-    fn wait_port_event(&mut self) -> impl Future<Output = Result<(), Error<Self::BusError>>>;
-    /// Returns and clears current events for the given port
-    /// # Implementation guide
-    /// This function should be drop safe.
-    /// Any intermediate side effects must be undone if the returned [`Future`] is dropped before completing.
-    fn clear_port_events(
-        &mut self,
-        port: LocalPortId,
-    ) -> impl Future<Output = Result<PortEventBitfield, Error<Self::BusError>>>;
     /// Returns the port status
     fn get_port_status(&mut self, port: LocalPortId)
     -> impl Future<Output = Result<PortStatus, Error<Self::BusError>>>;
