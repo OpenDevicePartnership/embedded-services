@@ -89,26 +89,7 @@ impl<F: ReadNorFlash, MARKER, M: RawMutex> ErrorType for PartitionGuard<'_, F, M
     type Error = Error<F::Error>;
 }
 
-impl<F: ReadNorFlash, M: RawMutex> ReadNorFlash for PartitionGuard<'_, F, RO, M> {
-    const READ_SIZE: usize = F::READ_SIZE;
-
-    async fn read(&mut self, offset: u32, bytes: &mut [u8]) -> Result<(), Self::Error> {
-        if bytes.len() > u32::MAX as usize || !self.within_bounds(offset, bytes.len() as u32) {
-            return Err(Error::OutOfBounds);
-        }
-
-        Ok(self
-            .guard
-            .read(offset.checked_add(self.offset).ok_or(Error::OutOfBounds)?, bytes)
-            .await?)
-    }
-
-    fn capacity(&self) -> usize {
-        self.size as usize
-    }
-}
-
-impl<F: ReadNorFlash, M: RawMutex> ReadNorFlash for PartitionGuard<'_, F, RW, M> {
+impl<F: ReadNorFlash, MARKER, M: RawMutex> ReadNorFlash for PartitionGuard<'_, F, MARKER, M> {
     const READ_SIZE: usize = F::READ_SIZE;
 
     async fn read(&mut self, offset: u32, bytes: &mut [u8]) -> Result<(), Self::Error> {
