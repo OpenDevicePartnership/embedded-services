@@ -28,15 +28,19 @@ impl<F, MARKER, M: RawMutex> Partition<'_, F, MARKER, M> {
         F: BlockDevice<SIZE>,
     {
         const { assert!(SIZE <= u32::MAX as usize) };
+
         let Some(offset) = block_address.checked_mul(SIZE as u32) else {
             return Err(Error::OutOfBounds);
         };
+
         if data.len() > u32::MAX as usize {
             return Err(Error::OutOfBounds);
         }
+
         let Some(size) = (data.len() as u32).checked_mul(SIZE as u32) else {
             return Err(Error::OutOfBounds);
         };
+
         if !self.within_bounds(offset, size) {
             Err(Error::OutOfBounds)
         } else {
@@ -63,15 +67,19 @@ impl<F, MARKER, M: RawMutex> PartitionGuard<'_, F, MARKER, M> {
         F: BlockDevice<SIZE>,
     {
         const { assert!(SIZE <= u32::MAX as usize) };
+
         let Some(offset) = block_address.checked_mul(SIZE as u32) else {
             return Err(Error::OutOfBounds);
         };
+
         if data.len() > u32::MAX as usize {
             return Err(Error::OutOfBounds);
         }
+
         let Some(size) = (data.len() as u32).checked_mul(SIZE as u32) else {
             return Err(Error::OutOfBounds);
         };
+
         if !self.within_bounds(offset, size) {
             Err(Error::OutOfBounds)
         } else {

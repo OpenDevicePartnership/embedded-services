@@ -22,10 +22,6 @@ impl<F: ReadNorFlash, MARKER, M: RawMutex> ErrorType for Partition<'_, F, MARKER
     type Error = Error<F::Error>;
 }
 
-impl<F: ReadNorFlash, MARKER, M: RawMutex> ErrorType for PartitionGuard<'_, F, MARKER, M> {
-    type Error = Error<F::Error>;
-}
-
 impl<F: ReadNorFlash, M: RawMutex> ReadNorFlash for Partition<'_, F, RO, M> {
     const READ_SIZE: usize = F::READ_SIZE;
 
@@ -62,7 +58,7 @@ impl<F: NorFlash, M: RawMutex> NorFlash for Partition<'_, F, RW, M> {
     const ERASE_SIZE: usize = F::ERASE_SIZE;
 
     async fn erase(&mut self, from: u32, to: u32) -> Result<(), Self::Error> {
-        if !self.within_bounds(from, to.saturating_sub(from)) {
+        if !self.within_bounds(from, to.checked_sub(from).ok_or(Error::OutOfBounds)?) {
             return Err(Error::OutOfBounds);
         }
 
@@ -89,7 +85,9 @@ impl<F: NorFlash, M: RawMutex> NorFlash for Partition<'_, F, RW, M> {
 
 impl<F: MultiwriteNorFlash, M: RawMutex> MultiwriteNorFlash for Partition<'_, F, RW, M> {}
 
-// PartitionGuard trait implementations
+impl<F: ReadNorFlash, MARKER, M: RawMutex> ErrorType for PartitionGuard<'_, F, MARKER, M> {
+    type Error = Error<F::Error>;
+}
 
 impl<F: ReadNorFlash, M: RawMutex> ReadNorFlash for PartitionGuard<'_, F, RO, M> {
     const READ_SIZE: usize = F::READ_SIZE;
@@ -134,7 +132,7 @@ impl<F: NorFlash, M: RawMutex> NorFlash for PartitionGuard<'_, F, RW, M> {
     const ERASE_SIZE: usize = F::ERASE_SIZE;
 
     async fn erase(&mut self, from: u32, to: u32) -> Result<(), Self::Error> {
-        if !self.within_bounds(from, to.saturating_sub(from)) {
+        if !self.within_bounds(from, to.checked_sub(from).ok_or(Error::OutOfBounds)?) {
             return Err(Error::OutOfBounds);
         }
 
