@@ -44,7 +44,7 @@ embassy-time = { version = "0.5.0", features = [
     "defmt-timestamp-uptime",
 ] }
 mimxrt600-fcb = "0.2.0"
-espi-service = { path = "../../espi-service", features = ["defmt", "imxrt"] }
+espi-service = { path = "../../espi-service", features = ["defmt"] }
 embedded-services = { path = "../../embedded-service", features = ["defmt"] }
 
 embedded-batteries-async = { version = "0.3", features = ["defmt"] }

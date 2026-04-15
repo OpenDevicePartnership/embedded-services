@@ -9,24 +9,13 @@ repository.workspace = true
 ignored = ["log"]
 
 [dependencies]
-bbq2 = { version = "0.4.2", optional = true }
+bbq2 = "0.4.2"
 critical-section.workspace = true
-defmt = { workspace = true, optional = true }
+defmt.workspace = true
 embassy-sync.workspace = true
 embedded-services.workspace = true
-log = { workspace = true, optional = true }
-rtt-target = { version = "0.6.1", optional = true }
+log.workspace = true
+rtt-target = "0.6.1"
 
 [lints]
 workspace = true
-
-[features]
-default = []
-defmt = [
-    "dep:defmt",
-    "dep:rtt-target",
-    "dep:bbq2",
-    "embedded-services/defmt",
-    "embassy-sync/defmt",
-]
-log = ["dep:log", "embedded-services/log"]
