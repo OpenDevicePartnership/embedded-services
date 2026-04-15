@@ -15,7 +15,7 @@ use super::{
     ControllerId,
     controller::{
         ControllerStatus, DpConfig, DpStatus, PortStatus, RetimerFwUpdateState, SendVdm,
-        execute_external_controller_command, execute_external_port_command, lookup_controller,
+        execute_external_controller_command, execute_external_port_command, lookup_controller, lookup_global_port,
     },
 };
 
@@ -259,6 +259,12 @@ pub async fn controller_port_to_global_id(
     port_id: LocalPortId,
 ) -> Result<GlobalPortId, PdError> {
     lookup_controller(controller_id).await?.lookup_global_port(port_id)
+}
+
+/// Convert a global port ID to a (controller ID, local port ID)
+pub async fn global_port_to_controller_port(global_port: GlobalPortId) -> Result<(ControllerId, LocalPortId), PdError> {
+    let (controller, local_port) = lookup_global_port(global_port).await?;
+    Ok((controller.id(), local_port))
 }
 
 /// Get the retimer fw update status of the given port

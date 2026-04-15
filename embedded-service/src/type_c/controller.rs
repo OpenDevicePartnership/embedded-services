@@ -875,6 +875,19 @@ pub(super) async fn lookup_controller(controller_id: ControllerId) -> Result<&'s
         .ok_or(PdError::InvalidController)
 }
 
+/// Lookup the controller and local port ID for a given global port ID.
+pub(super) async fn lookup_global_port(
+    port_id: GlobalPortId,
+) -> Result<(&'static Device<'static>, LocalPortId), PdError> {
+    for controller in CONTEXT.controllers.iter_only::<Device>() {
+        if let Ok(local_port) = controller.lookup_local_port(port_id) {
+            return Ok((controller, local_port));
+        }
+    }
+
+    Err(PdError::InvalidPort)
+}
+
 /// Get total number of ports on the system
 pub(super) fn get_num_ports() -> usize {
     CONTEXT
