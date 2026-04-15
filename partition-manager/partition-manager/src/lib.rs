@@ -67,10 +67,11 @@ impl<'a, F, MARKER, M: RawMutex> Partition<'a, F, MARKER, M> {
     }
 }
 
-/// A guard that provides access to a partition's underlying storage.
+/// A guard that provides exclusive access to a partition's underlying storage.
 ///
 /// Obtained via [`Partition::lock`] or [`Partition::try_lock`].
 /// The underlying mutex is held for the lifetime of this guard.
+#[allow(unused)]
 pub struct PartitionGuard<'a, F, MARKER, M: RawMutex = NoopRawMutex> {
     guard: MutexGuard<'a, M, F>,
     offset: u32,
