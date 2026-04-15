@@ -1,5 +1,5 @@
 use crate::{
-    Error, PartitionManager,
+    Error, PartitionManager, TryLockError,
     test::{
         TestConfig, TestMap,
         mock::{ActionErase, ActionRead, ActionWrite, MockDisk},
@@ -40,6 +40,19 @@ fn bdd() {
                 ActionWrite {
                     offset: 0x1FF8,
                     bytes: Vec::from([0xFF; 8]),
+                }
+                .into(),
+                // PartitionGuard via lock() — read
+                ActionRead {
+                    offset: 0x0000,
+                    bytes: Vec::from([0u8; 8]),
+                }
+                .into(),
+                // PartitionGuard via try_lock() — write
+                ActionErase { offset: 0x108, len: 8 }.into(),
+                ActionWrite {
+                    offset: 0x108,
+                    bytes: Vec::from([1, 2, 3, 4, 5, 6, 7, 8]),
                 }
                 .into(),
             ]),
@@ -86,6 +99,37 @@ fn bdd() {
             let mut buf = [0u8; 8];
             let blocks = slice_to_blocks_mut(&mut buf);
             assert_eq!(slot_a.read(u32::MAX, blocks).await, Err(Error::OutOfBounds));
+
+            // PartitionGuard via lock()
+            {
+                let mut guard = factory.lock().await;
+                let mut buf = [0u8; 8];
+                let blocks = slice_to_blocks_mut(&mut buf);
+                guard.read(0, blocks).await.unwrap();
+            }
+
+            // PartitionGuard via try_lock()
+            {
+                let mut guard = settings.try_lock().unwrap();
+                guard
+                    .write(0x1, slice_to_blocks(&[1, 2, 3, 4, 5, 6, 7, 8]))
+                    .await
+                    .unwrap();
+            }
+
+            // PartitionGuard out of bounds
+            {
+                let mut guard = slot_a.lock().await;
+                let mut buf = [0u8; 8];
+                let blocks = slice_to_blocks_mut(&mut buf);
+                assert_eq!(guard.read(u32::MAX, blocks).await, Err(Error::OutOfBounds));
+            }
+
+            // try_lock fails when lock is already held
+            {
+                let _guard = factory.lock().await;
+                assert_eq!(settings.try_lock().err(), Some(TryLockError));
+            }
         }
 
         disk.check();
