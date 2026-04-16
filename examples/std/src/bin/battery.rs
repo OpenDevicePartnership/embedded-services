@@ -500,7 +500,7 @@ async fn main(spawner: Spawner) {
 
     battery_service::register_fuel_gauge(dev).unwrap();
 
-    spawner.must_spawn(espi_service::task());
-    spawner.must_spawn(wrapper_task(wrap));
-    spawner.must_spawn(battery_service_task());
+    spawner.spawn(espi_service::task().unwrap());
+    spawner.spawn(wrapper_task(wrap).unwrap());
+    spawner.spawn(battery_service_task().unwrap());
 }

@@ -144,7 +144,7 @@ async fn task(spawner: Spawner) {
     controller::init();
 
     info!("Starting controller task");
-    spawner.must_spawn(controller_task());
+    spawner.spawn(controller_task().unwrap());
     // Wait for controller to be registered
     Timer::after_secs(1).await;
 
@@ -168,6 +168,6 @@ fn main() {
     static EXECUTOR: StaticCell<Executor> = StaticCell::new();
     let executor = EXECUTOR.init(Executor::new());
     executor.run(|spawner| {
-        spawner.spawn(task(spawner)).unwrap();
+        spawner.spawn(task(spawner).unwrap());
     });
 }

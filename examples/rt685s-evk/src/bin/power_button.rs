@@ -129,8 +129,8 @@ async fn main(spawner: Spawner) {
     let config_b = ButtonConfig::default();
 
     // Spawn the button tasks
-    spawner.must_spawn(button_task(button_a, config_a));
-    spawner.must_spawn(button_task(button_b, config_b));
+    spawner.spawn(button_task(button_a, config_a).unwrap());
+    spawner.spawn(button_task(button_b, config_b).unwrap());
 
     static RECEIVER: StaticCell<receiver::Receiver> = StaticCell::new();
     let receiver = RECEIVER.init(receiver::Receiver::new());

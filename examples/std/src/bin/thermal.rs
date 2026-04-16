@@ -289,7 +289,7 @@ async fn init_sensor(spawner: Spawner) {
     let sensor = SENSOR.get_or_init(|| ts::sensor::Sensor::new(ts::sensor::DeviceId(0), mock_sensor, profile));
 
     ts::register_sensor(sensor.device()).await.unwrap();
-    spawner.must_spawn(mock_sensor_task(sensor));
+    spawner.spawn(mock_sensor_task(sensor).unwrap());
 }
 
 async fn init_fan(spawner: Spawner) {
@@ -299,7 +299,7 @@ async fn init_fan(spawner: Spawner) {
     let fan = FAN.get_or_init(|| ts::fan::Fan::new(ts::fan::DeviceId(0), mock_fan, ts::fan::Profile::default()));
 
     ts::register_fan(fan.device()).await.unwrap();
-    spawner.must_spawn(mock_fan_task(fan));
+    spawner.spawn(mock_fan_task(fan).unwrap());
 }
 
 async fn init_thermal(spawner: Spawner) {
@@ -353,9 +353,9 @@ async fn handle_requests() -> ! {
 async fn run(spawner: Spawner) {
     embedded_services::init().await;
     init_thermal(spawner).await;
-    spawner.must_spawn(host());
-    spawner.must_spawn(handle_alerts());
-    spawner.must_spawn(handle_requests());
+    spawner.spawn(host().unwrap());
+    spawner.spawn(handle_alerts().unwrap());
+    spawner.spawn(handle_requests().unwrap());
 }
 
 fn main() {
@@ -364,7 +364,7 @@ fn main() {
     static EXECUTOR: StaticCell<Executor> = StaticCell::new();
     let executor = EXECUTOR.init(Executor::new());
     executor.run(|spawner| {
-        spawner.must_spawn(run(spawner));
+        spawner.spawn(run(spawner).unwrap());
     });
 }
 

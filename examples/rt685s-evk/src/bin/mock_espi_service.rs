@@ -182,9 +182,9 @@ async fn main(spawner: Spawner) {
 
     info!("Service initialization complete...");
 
-    spawner.spawn(espi_service::espi_service()).unwrap();
+    spawner.spawn(espi_service::espi_service().unwrap());
 
-    spawner.spawn(battery_service::battery_service_task()).unwrap();
+    spawner.spawn(battery_service::battery_service_task().unwrap());
 
     info!("Subsystem initialization complete...");
 }

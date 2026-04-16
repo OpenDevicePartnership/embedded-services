@@ -156,8 +156,8 @@ async fn main(spawner: Spawner) {
 
     info!("Service initialization complete...");
 
-    spawner.spawn(simple_example::receiver()).unwrap();
-    spawner.spawn(simple_example::sender()).unwrap();
+    spawner.spawn(simple_example::receiver().unwrap());
+    spawner.spawn(simple_example::sender().unwrap());
 
     info!("Subsystem initialization complete...");
 

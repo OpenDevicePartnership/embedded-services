@@ -154,11 +154,11 @@ async fn main(spawner: Spawner) {
         slice::from_raw_parts_mut(start_espi_data, espi_data_len)
     };
 
-    spawner.must_spawn(espi_service_task(espi, memory_map_buffer));
+    spawner.spawn(espi_service_task(espi, memory_map_buffer).unwrap());
 
     battery_service::init().await;
 
-    spawner.spawn(battery_service::battery_update_service()).unwrap();
+    spawner.spawn(battery_service::battery_update_service().unwrap());
 
     loop {
         embassy_time::Timer::after_secs(10).await;

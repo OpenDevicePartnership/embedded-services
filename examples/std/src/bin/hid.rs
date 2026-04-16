@@ -78,13 +78,13 @@ async fn run(spawner: Spawner) {
     let dev1 = DEVICE1.get_or_init(|| Device::new(DEV1_ID));
     comms::register_endpoint(dev1, &dev1.tp).await.unwrap();
     info!("Spawning host task");
-    spawner.spawn(host()).unwrap();
+    spawner.spawn(host().unwrap());
 }
 static EXECUTOR: StaticCell<Executor> = StaticCell::new();
 fn main() {
     env_logger::builder().filter_level(log::LevelFilter::Info).init();
     let executor = EXECUTOR.init(Executor::new());
     executor.run(|spawner| {
-        spawner.spawn(run(spawner)).unwrap();
+        spawner.spawn(run(spawner).unwrap());
     });
 }

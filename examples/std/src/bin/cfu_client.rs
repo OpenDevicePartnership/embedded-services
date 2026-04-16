@@ -40,14 +40,14 @@ async fn run(spawner: Spawner) {
     subs[0] = Some(2);
     let device0 = DEVICE0.get_or_init(|| CfuComponentDefault::new(1, true, subs, CfuWriterNop {}));
     cfu::register_device(device0).await.unwrap();
-    spawner.must_spawn(device_task0(device0));
+    spawner.spawn(device_task0(device0).unwrap());
 
     info!("Creating device 1");
     static DEVICE1: OnceLock<CfuComponentDefault<CfuWriterNop>> = OnceLock::new();
     let device1 =
         DEVICE1.get_or_init(|| CfuComponentDefault::new(2, false, [None; MAX_SUBCMPT_COUNT], CfuWriterNop {}));
     cfu::register_device(device1).await.unwrap();
-    spawner.must_spawn(device_task1(device1));
+    spawner.spawn(device_task1(device1).unwrap());
 
     let dummy_offer0 = FwUpdateOffer::new(
         HostToken::Driver,
@@ -102,7 +102,7 @@ fn main() {
     static EXECUTOR: StaticCell<Executor> = StaticCell::new();
     let executor = EXECUTOR.init(Executor::new());
     executor.run(|spawner| {
-        spawner.must_spawn(cfu_service_task());
-        spawner.must_spawn(run(spawner));
+        spawner.spawn(cfu_service_task().unwrap());
+        spawner.spawn(run(spawner).unwrap());
     });
 }

@@ -88,14 +88,14 @@ async fn run(spawner: Spawner) {
     static DEVICE0: OnceLock<ExampleDevice> = OnceLock::new();
     let device0_mock = DEVICE0.get_or_init(|| ExampleDevice::new(policy::DeviceId(0)));
     policy::register_device(device0_mock).unwrap();
-    spawner.must_spawn(device_task0(device0_mock));
+    spawner.spawn(device_task0(device0_mock).unwrap());
     let device0 = device0_mock.device.try_device_action().await.unwrap();
 
     info!("Creating device 1");
     static DEVICE1: OnceLock<ExampleDevice> = OnceLock::new();
     let device1_mock = DEVICE1.get_or_init(|| ExampleDevice::new(policy::DeviceId(1)));
     policy::register_device(device1_mock).unwrap();
-    spawner.must_spawn(device_task1(device1_mock));
+    spawner.spawn(device_task1(device1_mock).unwrap());
     let device1 = device1_mock.device.try_device_action().await.unwrap();
 
     // Plug in device 0, should become current consumer
@@ -247,8 +247,8 @@ fn main() {
     static EXECUTOR: StaticCell<Executor> = StaticCell::new();
     let executor = EXECUTOR.init(Executor::new());
     executor.run(|spawner| {
-        spawner.must_spawn(power_policy_task(power_policy_service::config::Config::default()));
-        spawner.must_spawn(run(spawner));
-        spawner.must_spawn(receiver_task());
+        spawner.spawn(power_policy_task(power_policy_service::config::Config::default()).unwrap());
+        spawner.spawn(run(spawner).unwrap());
+        spawner.spawn(receiver_task().unwrap());
     });
 }

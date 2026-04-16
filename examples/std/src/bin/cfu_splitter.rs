@@ -191,7 +191,7 @@ async fn run(spawner: Spawner) {
         )
     });
     cfu::register_device(device0).await.unwrap();
-    spawner.must_spawn(device_task(device0));
+    spawner.spawn(device_task(device0).unwrap());
 
     info!("Creating device 1");
     static DEVICE1: OnceLock<mock::Device> = OnceLock::new();
@@ -206,7 +206,7 @@ async fn run(spawner: Spawner) {
         )
     });
     cfu::register_device(device1).await.unwrap();
-    spawner.must_spawn(device_task(device1));
+    spawner.spawn(device_task(device1).unwrap());
 
     info!("Creating splitter");
     static SPLITTER: OnceLock<splitter::Splitter<'static, mock::Customization>> = OnceLock::new();
@@ -214,7 +214,7 @@ async fn run(spawner: Spawner) {
     let customization = mock::Customization {};
     let splitter = SPLITTER.get_or_init(|| splitter::Splitter::new(CFU_SPLITTER_ID, &DEVICES, customization).unwrap());
     splitter.register().await.unwrap();
-    spawner.must_spawn(splitter_task(splitter));
+    spawner.spawn(splitter_task(splitter).unwrap());
 
     info!("Getting FW version");
     let response = route_request(CFU_SPLITTER_ID, RequestData::FwVersionRequest)
@@ -274,7 +274,7 @@ fn main() {
     static EXECUTOR: StaticCell<Executor> = StaticCell::new();
     let executor = EXECUTOR.init(Executor::new());
     executor.run(|spawner| {
-        spawner.must_spawn(cfu_service_task());
-        spawner.must_spawn(run(spawner));
+        spawner.spawn(cfu_service_task().unwrap());
+        spawner.spawn(run(spawner).unwrap());
     });
 }

@@ -45,7 +45,7 @@ async fn opm_task(spawner: Spawner) {
         mock_controller::Wrapper::try_new(controller0, Default::default(), referenced0, mock_controller::Validator)
             .expect("Failed to create wrapper"),
     );
-    spawner.must_spawn(wrapper_task(wrapper0));
+    spawner.spawn(wrapper_task(wrapper0).unwrap());
 
     static STORAGE1: StaticCell<Storage<1, GlobalRawMutex>> = StaticCell::new();
     let storage1 = STORAGE1.init(Storage::new(CONTROLLER1_ID, CFU1_ID, [(PORT1_ID, POWER1_ID)]));
@@ -65,7 +65,7 @@ async fn opm_task(spawner: Spawner) {
         mock_controller::Wrapper::try_new(controller1, Default::default(), referenced1, mock_controller::Validator)
             .expect("Failed to create wrapper"),
     );
-    spawner.must_spawn(wrapper_task(wrapper1));
+    spawner.spawn(wrapper_task(wrapper1).unwrap());
 
     const CAPABILITY: PowerCapability = PowerCapability {
         voltage_mv: 20000,
@@ -245,9 +245,9 @@ async fn task(spawner: Spawner) {
 
     embedded_services::init().await;
 
-    spawner.must_spawn(power_policy_service_task());
-    spawner.must_spawn(type_c_service_task());
-    spawner.must_spawn(opm_task(spawner));
+    spawner.spawn(power_policy_service_task().unwrap());
+    spawner.spawn(type_c_service_task().unwrap());
+    spawner.spawn(opm_task(spawner).unwrap());
 }
 
 fn main() {
@@ -256,6 +256,6 @@ fn main() {
     static EXECUTOR: StaticCell<Executor> = StaticCell::new();
     let executor = EXECUTOR.init(Executor::new());
     executor.run(|spawner| {
-        spawner.must_spawn(task(spawner));
+        spawner.spawn(task(spawner).unwrap());
     });
 }

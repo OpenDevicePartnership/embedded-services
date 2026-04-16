@@ -1,4 +1,33 @@
 /// This example is supposed to init a debug service and a mock eSPI service to demonstrate sending defmt messages from the debug service to the eSPI service
+// On Windows the MSVC linker does not process defmt's ELF linker script (`defmt.x`), so the
+// `__DEFMT_MARKER_*` section-boundary symbols that defmt 1.0.x requires for log-level filtering
+// are undefined at link time.  Provide no-op stubs here so the binary links successfully.
+// Log-level filtering will be non-functional (all levels treated as enabled), which is
+// acceptable for a std development example.
+#[cfg(windows)]
+mod _defmt_linker_stubs {
+    #[unsafe(no_mangle)]
+    pub static __DEFMT_MARKER_TRACE_START: u32 = 0;
+    #[unsafe(no_mangle)]
+    pub static __DEFMT_MARKER_TRACE_END: u32 = 0;
+    #[unsafe(no_mangle)]
+    pub static __DEFMT_MARKER_DEBUG_START: u32 = 0;
+    #[unsafe(no_mangle)]
+    pub static __DEFMT_MARKER_DEBUG_END: u32 = 0;
+    #[unsafe(no_mangle)]
+    pub static __DEFMT_MARKER_INFO_START: u32 = 0;
+    #[unsafe(no_mangle)]
+    pub static __DEFMT_MARKER_INFO_END: u32 = 0;
+    #[unsafe(no_mangle)]
+    pub static __DEFMT_MARKER_WARN_START: u32 = 0;
+    #[unsafe(no_mangle)]
+    pub static __DEFMT_MARKER_WARN_END: u32 = 0;
+    #[unsafe(no_mangle)]
+    pub static __DEFMT_MARKER_ERROR_START: u32 = 0;
+    #[unsafe(no_mangle)]
+    pub static __DEFMT_MARKER_ERROR_END: u32 = 0;
+}
+
 use embassy_executor::{Executor, Spawner};
 use embedded_services::comms::{Endpoint, EndpointID, External};
 use embedded_services::info;
@@ -175,15 +204,15 @@ async fn init_task(spawner: Spawner) {
     info!("init espi service");
     espi_service::init().await;
     // Spawn eSPI request task to drive the OOB request/response flow
-    spawner.must_spawn(espi_service::request_task());
+    spawner.spawn(espi_service::request_task().unwrap());
 
     info!("spawn debug service");
-    spawner.must_spawn(debug_service());
+    spawner.spawn(debug_service().unwrap());
 
     info!("spawn defmt_to_host_task");
-    spawner.must_spawn(defmt_to_host_task());
+    spawner.spawn(defmt_to_host_task().unwrap());
 
-    spawner.must_spawn(defmt_frames_task());
+    spawner.spawn(defmt_frames_task().unwrap());
 }
 
 #[embassy_executor::task]
@@ -206,6 +235,6 @@ fn main() {
 
     executor.run(|spawner| {
         // Spawn debug-service tasks and mock eSPI service
-        spawner.must_spawn(init_task(spawner));
+        spawner.spawn(init_task(spawner).unwrap());
     });
 }

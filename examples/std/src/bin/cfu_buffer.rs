@@ -173,7 +173,7 @@ async fn run(spawner: Spawner) {
         )
     });
     cfu::register_device(device0).await.unwrap();
-    spawner.must_spawn(device_task(device0));
+    spawner.spawn(device_task(device0).unwrap());
 
     info!("Creating buffer");
     static BUFFER: OnceLock<buffer::Buffer<'static>> = OnceLock::new();
@@ -190,7 +190,7 @@ async fn run(spawner: Spawner) {
         )
     });
     buffer.register().await.unwrap();
-    spawner.must_spawn(buffer_task(buffer));
+    spawner.spawn(buffer_task(buffer).unwrap());
 
     info!("Getting FW version");
     let response = route_request(CFU_BUFFER_ID, RequestData::FwVersionRequest)
@@ -256,7 +256,7 @@ fn main() {
     static EXECUTOR: StaticCell<Executor> = StaticCell::new();
     let executor = EXECUTOR.init(Executor::new());
     executor.run(|spawner| {
-        spawner.must_spawn(cfu_service_task());
-        spawner.must_spawn(run(spawner));
+        spawner.spawn(cfu_service_task().unwrap());
+        spawner.spawn(run(spawner).unwrap());
     });
 }

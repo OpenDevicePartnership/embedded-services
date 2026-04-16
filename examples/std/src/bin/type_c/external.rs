@@ -109,8 +109,8 @@ fn main() {
     static EXECUTOR: StaticCell<Executor> = StaticCell::new();
     let executor = EXECUTOR.init(Executor::new());
     executor.run(|spawner| {
-        spawner.must_spawn(type_c_service_task());
-        spawner.must_spawn(task(spawner));
-        spawner.must_spawn(controller_task());
+        spawner.spawn(type_c_service_task().unwrap());
+        spawner.spawn(task(spawner).unwrap());
+        spawner.spawn(controller_task().unwrap());
     });
 }

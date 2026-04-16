@@ -172,10 +172,10 @@ async fn main(spawner: Spawner) {
     type_c::controller::init();
 
     info!("Spawining power policy task");
-    spawner.must_spawn(power_policy_service_task());
+    spawner.spawn(power_policy_service_task().unwrap());
 
     info!("Spawining type-c service task");
-    spawner.must_spawn(type_c_service_task());
+    spawner.spawn(type_c_service_task().unwrap());
 
     let int_in = Input::new(p.PIO1_7, Pull::Up, Inverter::Disabled);
     static BUS: StaticCell<Mutex<GlobalRawMutex, BusMaster<'static>>> = StaticCell::new();
@@ -194,7 +194,7 @@ async fn main(spawner: Spawner) {
     tps6699x.reset(&mut delay).await.unwrap();
 
     info!("Spawining interrupt task");
-    spawner.must_spawn(interrupt_task(int_in, interrupt));
+    spawner.spawn(interrupt_task(int_in, interrupt).unwrap());
 
     // These aren't enabled by default
     tps6699x
@@ -236,7 +236,7 @@ async fn main(spawner: Spawner) {
         WRAPPER.init(ControllerWrapper::try_new(controller_mutex, Default::default(), referenced, Validator).unwrap());
 
     wrapper.register().await.unwrap();
-    spawner.must_spawn(pd_controller_task(wrapper));
+    spawner.spawn(pd_controller_task(wrapper).unwrap());
 
-    spawner.must_spawn(fw_update_task());
+    spawner.spawn(fw_update_task().unwrap());
 }

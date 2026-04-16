@@ -302,7 +302,7 @@ async fn main(spawner: Spawner) {
         slice::from_raw_parts_mut(start_espi_data, espi_data_len)
     };
 
-    spawner.must_spawn(espi_service_task(espi, memory_map_buffer));
+    spawner.spawn(espi_service_task(espi, memory_map_buffer).unwrap());
 
     let config = embassy_imxrt::i2c::master::Config {
         speed: embassy_imxrt::i2c::master::Speed::Standard,
@@ -332,12 +332,12 @@ async fn main(spawner: Spawner) {
         },
     );
 
-    spawner.must_spawn(wrapper_task(wrap));
-    spawner.must_spawn(battery_service_task());
+    spawner.spawn(wrapper_task(wrap).unwrap());
+    spawner.spawn(battery_service_task().unwrap());
 
     battery_service::register_fuel_gauge(fg).unwrap();
 
-    spawner.must_spawn(battery_publish_task(fg));
+    spawner.spawn(battery_publish_task(fg).unwrap());
 
     if let Err(e) = battery_service::execute_event(BatteryEvent {
         device_id: DeviceId(0),

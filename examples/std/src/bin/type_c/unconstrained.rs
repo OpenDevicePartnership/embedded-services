@@ -118,9 +118,9 @@ async fn task(spawner: Spawner) {
     );
 
     info!("Starting controller tasks");
-    spawner.must_spawn(controller_task(wrapper0));
-    spawner.must_spawn(controller_task(wrapper1));
-    spawner.must_spawn(controller_task(wrapper2));
+    spawner.spawn(controller_task(wrapper0).unwrap());
+    spawner.spawn(controller_task(wrapper1).unwrap());
+    spawner.spawn(controller_task(wrapper2).unwrap());
 
     const CAPABILITY: PowerCapability = PowerCapability {
         voltage_mv: 20000,
@@ -190,8 +190,8 @@ fn main() {
     static EXECUTOR: StaticCell<Executor> = StaticCell::new();
     let executor = EXECUTOR.init(Executor::new());
     executor.run(|spawner| {
-        spawner.must_spawn(power_policy_service_task());
-        spawner.must_spawn(type_c_service_task());
-        spawner.must_spawn(task(spawner));
+        spawner.spawn(power_policy_service_task().unwrap());
+        spawner.spawn(type_c_service_task().unwrap());
+        spawner.spawn(task(spawner).unwrap());
     });
 }

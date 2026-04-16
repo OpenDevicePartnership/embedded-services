@@ -139,8 +139,8 @@ async fn run(spawner: Spawner) {
 
     keyboard::enable_broadcast_host().await;
 
-    spawner.must_spawn(host());
-    spawner.must_spawn(device());
+    spawner.spawn(host().unwrap());
+    spawner.spawn(device().unwrap());
 }
 
 fn main() {
@@ -149,6 +149,6 @@ fn main() {
     static EXECUTOR: StaticCell<Executor> = StaticCell::new();
     let executor = EXECUTOR.init(Executor::new());
     executor.run(|spawner| {
-        spawner.must_spawn(run(spawner));
+        spawner.spawn(run(spawner).unwrap());
     });
 }

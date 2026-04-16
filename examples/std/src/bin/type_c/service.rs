@@ -123,7 +123,7 @@ async fn task(spawner: Spawner) {
     let state = STATE.get_or_init(mock_controller::ControllerState::new);
 
     info!("Starting controller task");
-    spawner.must_spawn(controller_task(state));
+    spawner.spawn(controller_task(state).unwrap());
     // Wait for controller to be registered
     Timer::after_secs(1).await;
 
@@ -167,8 +167,8 @@ fn main() {
     static EXECUTOR: StaticCell<Executor> = StaticCell::new();
     let executor = EXECUTOR.init(Executor::new());
     executor.run(|spawner| {
-        spawner.must_spawn(power_policy_service_task());
-        spawner.must_spawn(type_c_service_task());
-        spawner.must_spawn(task(spawner));
+        spawner.spawn(power_policy_service_task().unwrap());
+        spawner.spawn(type_c_service_task().unwrap());
+        spawner.spawn(task(spawner).unwrap());
     });
 }
