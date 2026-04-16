@@ -6,6 +6,7 @@ use bitflags::bitflags;
 use core::array::from_fn;
 use core::future::Future;
 use core::iter::zip;
+use core::num::NonZeroU8;
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use embassy_time::Delay;
 use embedded_hal_async::i2c::I2c;
@@ -372,7 +373,8 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
                     port_status.dual_power = source_pdos[0].dual_role_power();
                     port_status.unconstrained_power = source_pdos[0].unconstrained_power();
                 }
-            } else if pd_status.is_source() {
+            } else if status.port_role() {
+                // port_role is true for source
                 // Implicit source contract
                 let current = TypecCurrent::try_from(port_control.typec_current()).map_err(Error::Pd)?;
                 debug!("Port{} type-C source current: {:#?}", port.0, current);
@@ -808,6 +810,39 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
         command: lpm::LocalCommand,
     ) -> Result<Option<lpm::ResponseData>, Error<Self::BusError>> {
         self.tps6699x.execute_ucsi_command(&command).await
+    }
+
+    async fn execute_electrical_disconnect(
+        &mut self,
+        port: LocalPortId,
+        reconnect_time_s: Option<NonZeroU8>,
+    ) -> Result<(), Error<Self::BusError>> {
+        let reconnect_time_s = reconnect_time_s.map(|t| t.get());
+        match self.tps6699x.execute_disc(port, reconnect_time_s).await? {
+            ReturnValue::Success => Ok(()),
+            r => {
+                debug!("Error executing DISC on port {}: {:#?}", port.0, r);
+                Err(Error::Pd(PdError::InvalidResponse))
+            }
+        }
+    }
+
+    async fn set_power_state(
+        &mut self,
+        port: LocalPortId,
+        state: controller::SystemPowerState,
+    ) -> Result<(), Error<Self::BusError>> {
+        use tps6699x::registers::SystemPowerState as DriverSystemPowerState;
+
+        let driver_state = match state {
+            controller::SystemPowerState::S0 => DriverSystemPowerState::S0,
+            controller::SystemPowerState::S3 => DriverSystemPowerState::S3,
+            controller::SystemPowerState::S4 => DriverSystemPowerState::S4,
+            controller::SystemPowerState::S5 => DriverSystemPowerState::S5,
+            controller::SystemPowerState::S0ix => DriverSystemPowerState::S0Ix,
+        };
+
+        self.tps6699x.set_sx_app_config(port, driver_state).await
     }
 }
 

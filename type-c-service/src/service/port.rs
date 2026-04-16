@@ -1,3 +1,5 @@
+use core::num::NonZeroU8;
+
 use embedded_services::{
     debug, error,
     type_c::{
@@ -64,6 +66,13 @@ impl<'a> Service<'a> {
             }
             external::PortCommandData::SetTypeCStateMachineConfig(state) => {
                 self.process_set_type_c_state_machine_config(command.port, state).await
+            }
+            external::PortCommandData::ExecuteElectricalDisconnect { reconnect_time_s } => {
+                self.process_execute_electrical_disconnect(command.port, reconnect_time_s)
+                    .await
+            }
+            external::PortCommandData::SetSystemPowerState(state) => {
+                self.process_set_power_state(command.port, state).await
             }
         }
     }
@@ -239,6 +248,40 @@ impl<'a> Service<'a> {
         let status = self.context.set_type_c_state_machine_config(port_id, state).await;
         if let Err(e) = status {
             error!("Error setting Type-C state-machine config: {:#?}", e);
+        }
+
+        external::Response::Port(status.map(|_| external::PortResponseData::Complete))
+    }
+
+    /// Process [`external::PortCommandData::ExecuteElectricalDisconnect`] command
+    ///
+    /// The `reconnect_time_s` parameter specifies the time, in seconds, after which the port should automatically reconnect.
+    /// If [`None`], the port will not automatically reconnect.
+    async fn process_execute_electrical_disconnect(
+        &self,
+        port_id: GlobalPortId,
+        reconnect_time_s: Option<NonZeroU8>,
+    ) -> external::Response<'static> {
+        let status = self
+            .context
+            .execute_electrical_disconnect(port_id, reconnect_time_s)
+            .await;
+        if let Err(e) = status {
+            error!("Error executing electrical disconnect: {:#?}", e);
+        }
+
+        external::Response::Port(status.map(|_| external::PortResponseData::Complete))
+    }
+
+    /// Process [`external::PortCommandData::SetSystemPowerState`] command
+    async fn process_set_power_state(
+        &self,
+        port_id: GlobalPortId,
+        state: embedded_services::type_c::controller::SystemPowerState,
+    ) -> external::Response<'static> {
+        let status = self.context.set_power_state(port_id, state).await;
+        if let Err(e) = status {
+            error!("Error setting power state: {:#?}", e);
         }
 
         external::Response::Port(status.map(|_| external::PortResponseData::Complete))

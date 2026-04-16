@@ -35,7 +35,7 @@ use embedded_services::type_c::controller::{self, Controller, PortStatus};
 use embedded_services::type_c::event::{PortEvent, PortNotificationSingle, PortPending, PortStatusChanged};
 use embedded_services::{debug, error, info, trace, warn};
 use embedded_usb_pd::ado::Ado;
-use embedded_usb_pd::{Error, LocalPortId, PdError};
+use embedded_usb_pd::{Error, LocalPortId, PdError, PowerRole};
 
 use crate::wrapper::backing::DynPortState;
 use crate::wrapper::message::*;
@@ -237,6 +237,11 @@ where
             .lookup_global_port(local_port_id)
             .map_err(Error::Pd)?;
 
+        let previous_status = state
+            .port_states()
+            .get(local_port_id.0 as usize)
+            .ok_or(Error::Pd(PdError::InvalidPort))?
+            .status;
         let status = controller.get_port_status(local_port_id).await?;
         trace!("Port{} status: {:#?}", global_port_id.0, status);
 
@@ -289,7 +294,7 @@ where
             self.process_new_consumer_contract(power, &status).await?;
         }
 
-        if status_event.new_power_contract_as_provider() {
+        if status.is_connected() && status.available_source_contract != previous_status.available_source_contract {
             self.process_new_provider_contract(power, &status).await?;
         }
 

@@ -9,6 +9,7 @@ use embedded_services::{comms, error, info, trace};
 
 pub mod buffer;
 pub mod host;
+mod responses;
 pub mod splitter;
 pub mod task;
 

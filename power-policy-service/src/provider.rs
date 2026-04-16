@@ -22,7 +22,7 @@ pub enum PowerState {
 #[derive(Clone, Copy, Default)]
 pub(super) struct State {
     /// Current power state
-    state: PowerState,
+    pub state: PowerState,
 }
 
 impl PowerPolicy {

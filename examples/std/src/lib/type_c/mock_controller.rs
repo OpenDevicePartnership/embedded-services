@@ -1,3 +1,4 @@
+use core::num::NonZeroU8;
 use embassy_sync::{mutex::Mutex, signal::Signal};
 use embedded_cfu_protocol::protocol_definitions::{FwUpdateOfferResponse, HostToken};
 use embedded_services::{
@@ -6,7 +7,7 @@ use embedded_services::{
     type_c::{
         controller::{
             AttnVdm, ControllerStatus, DpConfig, DpPinConfig, DpStatus, OtherVdm, PdStateMachineConfig, PortStatus,
-            RetimerFwUpdateState, SendVdm, TbtConfig, TypeCStateMachineState, UsbControlConfig,
+            RetimerFwUpdateState, SendVdm, SystemPowerState, TbtConfig, TypeCStateMachineState, UsbControlConfig,
         },
         event::PortEvent,
     },
@@ -320,6 +321,24 @@ impl embedded_services::type_c::controller::Controller for Controller<'_> {
             ))),
             _ => Err(PdError::UnrecognizedCommand.into()),
         }
+    }
+
+    async fn execute_electrical_disconnect(
+        &mut self,
+        port: LocalPortId,
+        reconnect_time_s: Option<NonZeroU8>,
+    ) -> Result<(), Error<Self::BusError>> {
+        debug!("Execute electrical disconnect for port {port:?} with reconnect time {reconnect_time_s:?}");
+        Ok(())
+    }
+
+    async fn set_power_state(
+        &mut self,
+        port: LocalPortId,
+        state: SystemPowerState,
+    ) -> Result<(), Error<Self::BusError>> {
+        debug!("Set power state for port {port:?}: {state:?}");
+        Ok(())
     }
 }
 

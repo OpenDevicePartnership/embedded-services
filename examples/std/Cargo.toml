@@ -15,7 +15,7 @@ ignored = ["critical-section"]
 workspace = true
 
 [dependencies]
-embassy-sync = { version = "0.7.2", features = ["log", "std"] }
+embassy-sync = { version = "0.8", features = ["log", "std"] }
 embassy-time = { version = "0.5.0", features = ["log", "std"] }
 embassy-executor = { version = "0.9.1", features = [
     "arch-std",

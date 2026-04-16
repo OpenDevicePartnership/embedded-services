@@ -12,6 +12,8 @@ pub mod provider;
 pub mod task;
 
 pub use config::Config;
+
+use crate::provider::PowerState;
 pub mod charger;
 
 const MAX_CONNECTED_PROVIDERS: usize = 4;
@@ -77,7 +79,16 @@ impl PowerPolicy {
 
     async fn process_notify_disconnect(&self, device: &device::Device) -> Result<(), Error> {
         self.context.send_response(Ok(policy::ResponseData::Complete)).await;
-        if let Some(consumer) = self.state.lock().await.current_consumer_state.take() {
+
+        self.remove_connected_provider(device.id()).await;
+        if let Some(consumer) = self
+            .state
+            .lock()
+            .await
+            .current_consumer_state
+            .take_if(|d| d.device_id == device.id())
+        {
+            // Current PSU is disconnected, disconnect chargers, and attempt to select next PSU
             info!("Device{}: Connected consumer disconnected", consumer.device_id.0);
             self.disconnect_chargers().await?;
 
@@ -85,10 +96,10 @@ impl PowerPolicy {
                 data: CommsData::ConsumerDisconnected(consumer.device_id),
             })
             .await;
+
+            self.update_current_consumer().await?;
         }
 
-        self.remove_connected_provider(device.id()).await;
-        self.update_current_consumer().await?;
         Ok(())
     }
 
@@ -106,6 +117,22 @@ impl PowerPolicy {
     /// Returns true if the device was operating as a provider
     async fn remove_connected_provider(&self, device_id: DeviceId) -> bool {
         if self.state.lock().await.connected_providers.remove(&device_id) {
+            // Determine total requested power draw
+            let mut total_power_mw = 0;
+            for device in self.context.devices().iter_only::<device::Device>() {
+                total_power_mw += device
+                    .provider_capability()
+                    .await
+                    .map_or(0, |cap| cap.capability.max_power_mw());
+            }
+
+            self.state.lock().await.current_provider_state.state =
+                if total_power_mw > self.config.limited_power_threshold_mw {
+                    PowerState::Limited
+                } else {
+                    PowerState::Unlimited
+                };
+
             self.comms_notify(CommsMessage {
                 data: CommsData::ProviderDisconnected(device_id),
             })

@@ -35,15 +35,9 @@ where
         let current_state = power.state().await.kind();
         info!("current power state: {:?}", current_state);
 
-        // Recover if we're not in the correct state
-        if status.is_connected() {
-            if let action::device::AnyState::Detached(state) = power.device_action().await {
-                warn!("Power device is detached, attempting to attach");
-                if let Err(e) = state.attach().await {
-                    error!("Error attaching power device: {:?}", e);
-                    return PdError::Failed.into();
-                }
-            }
+        if status.power_role == PowerRole::Source {
+            info!("Port is source, not notifying of consumer contract");
+            return Ok(());
         }
 
         let available_sink_contract = status.available_sink_contract.map(|c| {
@@ -58,17 +52,36 @@ where
             c
         });
 
+        // Recover if we're not in the correct state
+        if status.is_connected() {
+            if let action::device::AnyState::Detached(state) = power.device_action().await {
+                warn!("Power device is detached, attempting to attach");
+                if let Err(e) = state.attach().await {
+                    error!("Error attaching power device: {:?}", e);
+                    return PdError::Failed.into();
+                }
+            }
+        }
+
         if let Ok(state) = power.try_device_action::<action::Idle>().await {
             if let Err(e) = state.notify_consumer_power_capability(available_sink_contract).await {
                 error!("Error setting power contract: {:?}", e);
                 return PdError::Failed.into();
             }
         } else if let Ok(state) = power.try_device_action::<action::ConnectedConsumer>().await {
+            // Staying a consumer, but we have updated capabilities
             if let Err(e) = state.notify_consumer_power_capability(available_sink_contract).await {
                 error!("Error setting power contract: {:?}", e);
                 return PdError::Failed.into();
             }
         } else if let Ok(state) = power.try_device_action::<action::ConnectedProvider>().await {
+            // Transition from provider to consumer.
+            // This handles role swaps from source to sink.
+            let Ok(state) = state.disconnect().await else {
+                error!("Error disconnecting as provider");
+                return PdError::Failed.into();
+            };
+
             if let Err(e) = state.notify_consumer_power_capability(available_sink_contract).await {
                 error!("Error setting power contract: {:?}", e);
                 return PdError::Failed.into();
@@ -92,6 +105,17 @@ where
         let current_state = power.state().await.kind();
         info!("current power state: {:?}", current_state);
 
+        let contract = status.available_source_contract.map(|c| {
+            let mut c: ProviderPowerCapability = c.into();
+            c.flags.set_psu_type(PsuType::TypeC);
+            c
+        });
+
+        if status.power_role == PowerRole::Sink {
+            info!("Port is sink, not notifying of provider contract");
+            return Ok(());
+        }
+
         if let action::device::AnyState::ConnectedConsumer(state) = power.device_action().await {
             info!("ConnectedConsumer");
             if let Err(e) = state.detach().await {
@@ -111,11 +135,6 @@ where
             }
         }
 
-        let contract = status.available_source_contract.map(|c| {
-            let mut c: ProviderPowerCapability = c.into();
-            c.flags.set_psu_type(PsuType::TypeC);
-            c
-        });
         if let Ok(state) = power.try_device_action::<action::Idle>().await {
             if let Some(contract) = contract {
                 if let Err(e) = state.request_provider_power_capability(contract).await {
@@ -125,6 +144,7 @@ where
             }
         } else if let Ok(state) = power.try_device_action::<action::ConnectedProvider>().await {
             if let Some(contract) = contract {
+                // Staying a provider, but we have updated capabilities
                 if let Err(e) = state.request_provider_power_capability(contract).await {
                     error!("Error setting power contract: {:?}", e);
                     return PdError::Failed.into();
@@ -132,6 +152,21 @@ where
             } else {
                 // No longer need to source, so disconnect
                 if let Err(e) = state.disconnect().await {
+                    error!("Error disconnecting as provider: {:?}", e);
+                    return PdError::Failed.into();
+                }
+            }
+        } else if let Ok(state) = power.try_device_action::<action::ConnectedConsumer>().await {
+            // Transition from consumer to provider.
+            // This handles role swaps from sink to source.
+            let Ok(state) = state.disconnect().await else {
+                error!("Error disconnecting as consumer");
+                return PdError::Failed.into();
+            };
+
+            // If contract is none, we're no longer requesting power on this port
+            if let Some(contract) = contract {
+                if let Err(e) = state.request_provider_power_capability(contract).await {
                     error!("Error setting power contract: {:?}", e);
                     return PdError::Failed.into();
                 }

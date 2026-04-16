@@ -403,6 +403,27 @@ where
                         }),
                 ))
             }
+            controller::PortCommandData::ExecuteElectricalDisconnect { reconnect_time_s } => {
+                match controller
+                    .execute_electrical_disconnect(local_port, reconnect_time_s)
+                    .await
+                {
+                    Ok(()) => Ok(controller::PortResponseData::Complete),
+                    Err(e) => match e {
+                        Error::Bus(_) => Err(PdError::Failed),
+                        Error::Pd(e) => Err(e),
+                    },
+                }
+            }
+            controller::PortCommandData::SetSystemPowerState(power_state) => {
+                match controller.set_power_state(local_port, power_state).await {
+                    Ok(()) => Ok(controller::PortResponseData::Complete),
+                    Err(e) => match e {
+                        Error::Bus(_) => Err(PdError::Failed),
+                        Error::Pd(e) => Err(e),
+                    },
+                }
+            }
         })
     }
 
