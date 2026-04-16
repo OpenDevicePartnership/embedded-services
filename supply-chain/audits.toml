@@ -72,6 +72,30 @@ who = "Jerry Xie <jerryxie@microsoft.com>"
 criteria = "safe-to-deploy"
 version = "1.0.0"
 
+[[audits.embassy-embedded-hal]]
+who = "Jerry Xie <jerryxie@microsoft.com>"
+criteria = "safe-to-deploy"
+delta = "0.5.0 -> 0.6.0"
+notes = "No unsafe code, no build script, no powerful imports. Added Clone for I2C devices. Updated embassy dependencies (embassy-sync 0.7→0.8, embassy-hal-internal 0.3→0.4, embassy-time 0.5→0.5.1). All changes safe."
+
+[[audits.embassy-hal-internal]]
+who = "Jerry Xie <jerryxie@microsoft.com>"
+criteria = "safe-to-deploy"
+delta = "0.3.0 -> 0.4.0"
+notes = "Rust 2024 edition update with new ring buffer methods (available, is_half_full). All unsafe code is sound HAL pattern usage. Build script unchanged (cfg flags only). No powerful imports."
+
+[[audits.embassy-time]]
+who = "Jerry Xie <jerryxie@microsoft.com>"
+criteria = "safe-to-deploy"
+delta = "0.5.0 -> 0.5.1"
+notes = "Rust 2024 edition update with import reordering. Unsafe pin projection patterns unchanged and sound. No build script. No new security concerns."
+
+[[audits.embassy-time-driver]]
+who = "Jerry Xie <jerryxie@microsoft.com>"
+criteria = "safe-to-deploy"
+delta = "0.2.1 -> 0.2.2"
+notes = "Rust 2024 edition update with 375kHz tick rate feature. Empty build.rs, no unsafe code, no powerful imports."
+
 [[audits.embedded-batteries]]
 who = "Felipe Balbi <febalbi@microsoft.com>"
 criteria = "safe-to-deploy"
@@ -164,6 +188,12 @@ who = "Kurtis Dinelle <kdinelle@microsoft.com>"
 criteria = "safe-to-deploy"
 version = "0.2.0"
 notes = "ODP crates are always trusted."
+
+[[audits.embedded-mcu-hal]]
+who = "Jerry Xie <jerryxie@microsoft.com>"
+criteria = "safe-to-deploy"
+version = "0.2.0"
+notes = "Trait-based MCU HAL with zero unsafe code. No build script or powerful imports. Pure trait design with optional chrono/defmt features. Ideal for embedded controllers."
 
 [[audits.embedded-sensors-hal]]
 who = "Kurtis Dinelle <kdinelle@microsoft.com>"
@@ -325,6 +355,12 @@ criteria = "safe-to-deploy"
 delta = "0.7.4 -> 0.7.5"
 notes = "Looks like this is just uptaking a new version of num_enum_derive"
 
+[[audits.num_enum]]
+who = "Jerry Xie <jerryxie@microsoft.com>"
+criteria = "safe-to-deploy"
+delta = "0.7.5 -> 0.7.6"
+notes = "Version bump with test infrastructure updates. No unsafe code, no build script, no powerful imports. Purely additive test changes."
+
 [[audits.num_enum_derive]]
 who = "Matteo Tullo <matteotullo@microsoft.com>"
 criteria = "safe-to-deploy"
@@ -335,6 +371,12 @@ who = "Billy Price <williamp@microsoft.com>"
 criteria = "safe-to-deploy"
 delta = "0.7.4 -> 0.7.5"
 notes = "Looks like mostly improvements to error messaging"
+
+[[audits.num_enum_derive]]
+who = "Jerry Xie <jerryxie@microsoft.com>"
+criteria = "safe-to-deploy"
+delta = "0.7.5 -> 0.7.6"
+notes = "Minor update adding byte literal support for enum discriminants. No unsafe code, no build script, no powerful imports."
 
 [[audits.object]]
 who = "Robert Zieba <robertzieba@microsoft.com>"
