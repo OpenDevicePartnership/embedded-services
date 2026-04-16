@@ -114,8 +114,12 @@ impl<F, M: RawMutex> PartitionManager<F, M> {
 impl<F, MARKER, M: RawMutex> PartitionGuard<'_, F, MARKER, M> {
     /// Checks whether an address range lies within the partition.
     #[allow(unused)]
-    const fn within_bounds(&self, offset: u32, size: u32) -> bool {
-        if let Some(end) = offset.checked_add(size) {
+    const fn within_bounds(&self, offset: u32, size: usize) -> bool {
+        if size > u32::MAX as usize {
+            return false;
+        }
+
+        if let Some(end) = offset.checked_add(size as u32) {
             end <= self.size
         } else {
             false

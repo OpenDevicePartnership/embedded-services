@@ -37,7 +37,7 @@ impl<F, MARKER, M: RawMutex> PartitionGuard<'_, F, MARKER, M> {
             return Err(Error::OutOfBounds);
         };
 
-        if !self.within_bounds(offset, size) {
+        if !self.within_bounds(offset, size as usize) {
             Err(Error::OutOfBounds)
         } else {
             Ok(())

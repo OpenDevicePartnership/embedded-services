@@ -73,7 +73,7 @@ impl<F: ReadNorFlash, MARKER, M: RawMutex> ReadNorFlash for PartitionGuard<'_, F
     const READ_SIZE: usize = F::READ_SIZE;
 
     async fn read(&mut self, offset: u32, bytes: &mut [u8]) -> Result<(), Self::Error> {
-        if bytes.len() > u32::MAX as usize || !self.within_bounds(offset, bytes.len() as u32) {
+        if !self.within_bounds(offset, bytes.len()) {
             return Err(Error::OutOfBounds);
         }
 
@@ -93,7 +93,7 @@ impl<F: NorFlash, M: RawMutex> NorFlash for PartitionGuard<'_, F, RW, M> {
     const ERASE_SIZE: usize = F::ERASE_SIZE;
 
     async fn erase(&mut self, from: u32, to: u32) -> Result<(), Self::Error> {
-        if !self.within_bounds(from, to.checked_sub(from).ok_or(Error::OutOfBounds)?) {
+        if !self.within_bounds(from, to.checked_sub(from).ok_or(Error::OutOfBounds)? as usize) {
             return Err(Error::OutOfBounds);
         }
 
@@ -107,7 +107,7 @@ impl<F: NorFlash, M: RawMutex> NorFlash for PartitionGuard<'_, F, RW, M> {
     }
 
     async fn write(&mut self, offset: u32, bytes: &[u8]) -> Result<(), Self::Error> {
-        if bytes.len() > u32::MAX as usize || !self.within_bounds(offset, bytes.len() as u32) {
+        if !self.within_bounds(offset, bytes.len()) {
             return Err(Error::OutOfBounds);
         }
 
