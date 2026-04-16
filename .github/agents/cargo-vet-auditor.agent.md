@@ -55,6 +55,7 @@ For every crate you review, systematically check ALL of the following:
 - [ ] Does a build.rs exist?
 - [ ] Does it access the filesystem beyond `OUT_DIR` and standard env vars?
 - [ ] Does it make network requests?
+- [ ] If it downloads artifacts, are downloads expected and integrity-checked (hash/signature)?
 - [ ] Does it execute external programs beyond `rustc`/`cc`?
 - [ ] Does it generate code? If so, is the generated code safe?
 - [ ] Does it set `cargo:rustc-link-lib` or `cargo:rustc-link-search`?
@@ -129,5 +130,11 @@ Produce a structured assessment with these exact sections:
 ### Confidence: XX/100
 ### Verdict: safe-to-deploy | NEEDS REVIEW | DO NOT CERTIFY
 ### Recommended notes for cargo vet certify:
-"Brief audit summary for the --notes flag"
+"Brief audit summary. Assisted-by: copilot-cli:MODEL_ID cargo-vet"
 ```
+
+**IMPORTANT:** Always include the `Assisted-by` tag in the recommended notes.
+Replace `MODEL_ID` with the actual model ID you are running as (e.g.,
+`claude-sonnet-4.5`, `claude-opus-4.6`, `claude-haiku-4.5`). This follows
+the Linux kernel's AI attribution convention for transparency. The human
+reviewer remains solely responsible for the final certification.

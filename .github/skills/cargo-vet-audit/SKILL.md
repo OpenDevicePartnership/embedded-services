@@ -76,6 +76,32 @@ cargo vet certify CRATE VERSION --accept-all --criteria safe-to-deploy \
 
 Use the git user's name and email for `--who`.
 
+### AI Attribution in Audit Notes
+
+Following the Linux kernel's AI attribution guidelines, every audit note MUST
+include an `Assisted-by` tag to transparently disclose that the audit was
+performed with AI assistance. Use the format:
+
+```
+Assisted-by: AGENT_NAME:MODEL_ID cargo-vet
+```
+
+Where:
+- `AGENT_NAME` is `copilot-cli` (or the specific agent framework)
+- `MODEL_ID` is the model that performed the review (e.g., `claude-sonnet-4.5`,
+  `claude-opus-4.6`). Determine this from the session's model configuration.
+- `cargo-vet` is the specialized analysis tool used
+
+For example, a complete `--notes` value would be:
+
+```
+"No unsafe, no build script, no I/O. Assisted-by: copilot-cli:claude-opus-4.6 cargo-vet"
+```
+
+The human user remains responsible for reviewing all AI-generated audit
+assessments and certifications. The `--who` field must always identify
+the human reviewer, never the AI agent.
+
 ## Step 6: Verify and Clean Up
 
 1. Run `cargo vet` again to confirm everything passes
