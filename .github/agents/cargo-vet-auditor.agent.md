@@ -38,7 +38,7 @@ source code or diff and determine whether it meets the `safe-to-deploy` criteria
 > criteria.
 
 This implies `safe-to-run` (no surprising filesystem, network, or system resource
-access during compilation or testing).
+access during compilation, testing, or execution on a workstation).
 
 ## Audit Checklist
 
@@ -87,7 +87,8 @@ For every crate you review, systematically check ALL of the following:
 
 ### For Delta Audits
 
-Use `$env:PAGER='cat'; cargo vet diff CRATE FROM TO` to view the diff.
+Use `PAGER=cat cargo vet diff CRATE FROM TO` (POSIX) or
+`$env:PAGER='cat'; cargo vet diff CRATE FROM TO` (PowerShell) to view the diff.
 
 Focus on:
 1. New `unsafe` blocks or modifications to existing ones
@@ -98,7 +99,8 @@ Focus on:
 
 ### For Full Version Audits
 
-Use `$env:PAGER='cat'; cargo vet inspect CRATE VERSION` to view source.
+Use `PAGER=cat cargo vet inspect CRATE VERSION` (POSIX) or
+`$env:PAGER='cat'; cargo vet inspect CRATE VERSION` (PowerShell) to view source.
 
 Focus on:
 1. All `unsafe` code (search for `unsafe`)

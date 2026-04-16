@@ -12,7 +12,9 @@ You are orchestrating a `cargo vet` supply chain audit. Follow this process end-
 
 ## Step 1: Discover Unvetted Crates
 
-Run `cargo vet` (without `--locked` if the lock file needs updating) and parse the output.
+Run `cargo vet` and parse the output. Omit `--locked` only if `imports.lock` needs
+to be refreshed for imported third-party audits; this does not refer to updating
+`Cargo.lock`.
 Categorize each unvetted crate as either:
 
 - **Delta audit** — a version-to-version diff (e.g., `1.0.0 → 1.1.0`)
@@ -38,7 +40,7 @@ multiple agents in parallel when there are many crates to audit.
 Provide each agent with:
 - The crate name and version(s)
 - Whether this is a delta or full audit
-- The exact command to run (`cargo vet diff X Y` or `cargo vet inspect X Y`)
+- The exact command to run (`cargo vet diff CRATE FROM TO` or `cargo vet inspect CRATE VERSION`)
 - The working directory
 
 ## Step 4: Compile Results
