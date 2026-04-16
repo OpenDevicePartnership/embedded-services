@@ -142,9 +142,10 @@ pub async fn compute_total_provider_power_mw() -> u32 {
     let mut total = 0;
     for device in CONTEXT.devices.iter_only::<device::Device>() {
         if let Some(capability) = device.provider_capability().await
-            && device.is_provider().await {
-                total += capability.capability.max_power_mw();
-            }
+            && device.is_provider().await
+        {
+            total += capability.capability.max_power_mw();
+        }
     }
     total
 }

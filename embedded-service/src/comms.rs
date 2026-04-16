@@ -319,9 +319,10 @@ async fn route(message: Message<'_>) -> Result<(), Infallible> {
 
     for rxq in list {
         if let Some(endpoint) = rxq.data::<Endpoint>()
-            && message.to == endpoint.id {
-                endpoint.process(&message);
-            }
+            && message.to == endpoint.id
+        {
+            endpoint.process(&message);
+        }
     }
 
     Ok(())

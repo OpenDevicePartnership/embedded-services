@@ -94,9 +94,10 @@ impl PowerPolicy {
         for node in self.context.devices() {
             let device = node.data::<Device>().ok_or(Error::InvalidDevice)?;
             if let Some(capability) = device.consumer_capability().await
-                && capability.flags.unconstrained_power() {
-                    unconstrained_new.available += 1;
-                }
+                && capability.flags.unconstrained_power()
+            {
+                unconstrained_new.available += 1;
+            }
         }
 
         // The overall unconstrained state is true if an unconstrained consumer is currently connected

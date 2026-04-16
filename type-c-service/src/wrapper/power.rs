@@ -54,13 +54,14 @@ where
 
         // Recover if we're not in the correct state
         if status.is_connected()
-            && let action::device::AnyState::Detached(state) = power.device_action().await {
-                warn!("Power device is detached, attempting to attach");
-                if let Err(e) = state.attach().await {
-                    error!("Error attaching power device: {:?}", e);
-                    return PdError::Failed.into();
-                }
+            && let action::device::AnyState::Detached(state) = power.device_action().await
+        {
+            warn!("Power device is detached, attempting to attach");
+            if let Err(e) = state.attach().await {
+                error!("Error attaching power device: {:?}", e);
+                return PdError::Failed.into();
             }
+        }
 
         if let Ok(state) = power.try_device_action::<action::Idle>().await {
             if let Err(e) = state.notify_consumer_power_capability(available_sink_contract).await {
@@ -125,20 +126,22 @@ where
 
         // Recover if we're not in the correct state
         if status.is_connected()
-            && let action::device::AnyState::Detached(state) = power.device_action().await {
-                warn!("Power device is detached, attempting to attach");
-                if let Err(e) = state.attach().await {
-                    error!("Error attaching power device: {:?}", e);
-                    return PdError::Failed.into();
-                }
+            && let action::device::AnyState::Detached(state) = power.device_action().await
+        {
+            warn!("Power device is detached, attempting to attach");
+            if let Err(e) = state.attach().await {
+                error!("Error attaching power device: {:?}", e);
+                return PdError::Failed.into();
             }
+        }
 
         if let Ok(state) = power.try_device_action::<action::Idle>().await {
             if let Some(contract) = contract
-                && let Err(e) = state.request_provider_power_capability(contract).await {
-                    error!("Error setting power contract: {:?}", e);
-                    return PdError::Failed.into();
-                }
+                && let Err(e) = state.request_provider_power_capability(contract).await
+            {
+                error!("Error setting power contract: {:?}", e);
+                return PdError::Failed.into();
+            }
         } else if let Ok(state) = power.try_device_action::<action::ConnectedProvider>().await {
             if let Some(contract) = contract {
                 // Staying a provider, but we have updated capabilities
@@ -163,10 +166,11 @@ where
 
             // If contract is none, we're no longer requesting power on this port
             if let Some(contract) = contract
-                && let Err(e) = state.request_provider_power_capability(contract).await {
-                    error!("Error setting power contract: {:?}", e);
-                    return PdError::Failed.into();
-                }
+                && let Err(e) = state.request_provider_power_capability(contract).await
+            {
+                error!("Error setting power contract: {:?}", e);
+                return PdError::Failed.into();
+            }
         } else {
             error!("Invalid mode");
             return PdError::InvalidMode.into();
