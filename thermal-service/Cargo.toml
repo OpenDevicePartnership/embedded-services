@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 description = "Thermal service implementation"
 repository = "https://github.com/OpenDevicePartnership/embedded-services"
-rust-version = "1.88"
+rust-version.workspace = true
 license = "MIT"
 
 [package.metadata.cargo-machete]
