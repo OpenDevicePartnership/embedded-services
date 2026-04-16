@@ -209,7 +209,7 @@ impl<'a> Service<'a> {
     async fn process_execute_drst(&self, port_id: GlobalPortId) -> external::Response<'static> {
         let status = self.context.execute_drst(port_id).await;
         if let Err(e) = status {
-            error!("Error executing DP reset: {:#?}", e);
+            error!("Error executing Data reset: {:#?}", e);
         }
 
         external::Response::Port(status.map(|_| external::PortResponseData::Complete))

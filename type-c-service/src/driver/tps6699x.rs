@@ -465,7 +465,7 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
     async fn reconfigure_retimer(&mut self, port: LocalPortId) -> Result<(), Error<Self::BusError>> {
         let input = {
             let mut input = tps6699x::command::muxr::Input(0);
-            input.set_en_retry_on_target_addr_1(true);
+            input.set_en_retry_on_target_addr_tbt(true);
             input
         };
 
@@ -755,7 +755,7 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
         match self.tps6699x.execute_drst(port).await? {
             ReturnValue::Success => Ok(()),
             r => {
-                debug!("Error executing DRST on port {}: {:#?}", port.0, r);
+                error!("Error executing DRST on port {}: {:#?}", port.0, r);
                 Err(Error::Pd(PdError::InvalidResponse))
             }
         }
