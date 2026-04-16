@@ -111,10 +111,10 @@ impl<const SIZE: usize, F: BlockDevice<SIZE>, M: RawMutex> BlockDevice<SIZE> for
         self.check_access(block_address, data)?;
         let start_block = self.start_block(SIZE as u32).ok_or(Error::NotAligned)?;
 
-        Ok(self
-            .guard
+        self.guard
             .read(start_block.checked_add(block_address).ok_or(Error::OutOfBounds)?, data)
-            .await?)
+            .await
+            .map_err(Error::Inner)
     }
 
     async fn write(
@@ -142,10 +142,10 @@ impl<const SIZE: usize, F: BlockDevice<SIZE>, M: RawMutex> BlockDevice<SIZE> for
         self.check_access(block_address, data)?;
         let start_block = self.start_block(SIZE as u32).ok_or(Error::NotAligned)?;
 
-        Ok(self
-            .guard
+        self.guard
             .read(start_block.checked_add(block_address).ok_or(Error::OutOfBounds)?, data)
-            .await?)
+            .await
+            .map_err(Error::Inner)
     }
 
     async fn write(
@@ -156,10 +156,10 @@ impl<const SIZE: usize, F: BlockDevice<SIZE>, M: RawMutex> BlockDevice<SIZE> for
         self.check_access(block_address, data)?;
         let start_block = self.start_block(SIZE as u32).ok_or(Error::NotAligned)?;
 
-        Ok(self
-            .guard
+        self.guard
             .write(start_block.checked_add(block_address).ok_or(Error::OutOfBounds)?, data)
-            .await?)
+            .await
+            .map_err(Error::Inner)
     }
 
     async fn size(&mut self) -> Result<u64, Self::Error> {

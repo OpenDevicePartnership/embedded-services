@@ -97,13 +97,13 @@ impl<F: NorFlash, M: RawMutex> NorFlash for PartitionGuard<'_, F, RW, M> {
             return Err(Error::OutOfBounds);
         }
 
-        Ok(self
-            .guard
+        self.guard
             .erase(
                 from.checked_add(self.offset).ok_or(Error::OutOfBounds)?,
                 to.checked_add(self.offset).ok_or(Error::OutOfBounds)?,
             )
-            .await?)
+            .await
+            .map_err(Error::Inner)
     }
 
     async fn write(&mut self, offset: u32, bytes: &[u8]) -> Result<(), Self::Error> {
@@ -111,10 +111,10 @@ impl<F: NorFlash, M: RawMutex> NorFlash for PartitionGuard<'_, F, RW, M> {
             return Err(Error::OutOfBounds);
         }
 
-        Ok(self
-            .guard
+        self.guard
             .write(offset.checked_add(self.offset).ok_or(Error::OutOfBounds)?, bytes)
-            .await?)
+            .await
+            .map_err(Error::Inner)
     }
 }
 
