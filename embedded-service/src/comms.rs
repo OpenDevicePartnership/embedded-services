@@ -318,11 +318,10 @@ async fn route(message: Message<'_>) -> Result<(), Infallible> {
     let list = get_list(message.to).get().await;
 
     for rxq in list {
-        if let Some(endpoint) = rxq.data::<Endpoint>() {
-            if message.to == endpoint.id {
+        if let Some(endpoint) = rxq.data::<Endpoint>()
+            && message.to == endpoint.id {
                 endpoint.process(&message);
             }
-        }
     }
 
     Ok(())
