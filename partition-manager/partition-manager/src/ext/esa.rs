@@ -26,14 +26,8 @@ impl<F: ReadNorFlash, M: RawMutex> ReadNorFlash for Partition<'_, F, RO, M> {
     const READ_SIZE: usize = F::READ_SIZE;
 
     async fn read(&mut self, offset: u32, bytes: &mut [u8]) -> Result<(), Self::Error> {
-        if bytes.len() > u32::MAX as usize || !self.within_bounds(offset, bytes.len() as u32) {
-            return Err(Error::OutOfBounds);
-        }
-
-        let mut storage = self.storage.lock().await;
-        Ok(storage
-            .read(offset.checked_add(self.offset).ok_or(Error::OutOfBounds)?, bytes)
-            .await?)
+        let mut guard = self.lock().await;
+        guard.read(offset, bytes).await
     }
 
     fn capacity(&self) -> usize {
@@ -45,7 +39,8 @@ impl<F: ReadNorFlash, M: RawMutex> ReadNorFlash for Partition<'_, F, RW, M> {
     const READ_SIZE: usize = F::READ_SIZE;
 
     async fn read(&mut self, offset: u32, bytes: &mut [u8]) -> Result<(), Self::Error> {
-        self.readonly().read(offset, bytes).await
+        let mut guard = self.lock().await;
+        guard.read(offset, bytes).await
     }
 
     fn capacity(&self) -> usize {
@@ -58,28 +53,13 @@ impl<F: NorFlash, M: RawMutex> NorFlash for Partition<'_, F, RW, M> {
     const ERASE_SIZE: usize = F::ERASE_SIZE;
 
     async fn erase(&mut self, from: u32, to: u32) -> Result<(), Self::Error> {
-        if !self.within_bounds(from, to.checked_sub(from).ok_or(Error::OutOfBounds)?) {
-            return Err(Error::OutOfBounds);
-        }
-
-        let mut storage = self.storage.lock().await;
-        Ok(storage
-            .erase(
-                from.checked_add(self.offset).ok_or(Error::OutOfBounds)?,
-                to.checked_add(self.offset).ok_or(Error::OutOfBounds)?,
-            )
-            .await?)
+        let mut guard = self.lock().await;
+        guard.erase(from, to).await
     }
 
     async fn write(&mut self, offset: u32, bytes: &[u8]) -> Result<(), Self::Error> {
-        if bytes.len() > u32::MAX as usize || !self.within_bounds(offset, bytes.len() as u32) {
-            return Err(Error::OutOfBounds);
-        }
-
-        let mut storage = self.storage.lock().await;
-        Ok(storage
-            .write(offset.checked_add(self.offset).ok_or(Error::OutOfBounds)?, bytes)
-            .await?)
+        let mut guard = self.lock().await;
+        guard.write(offset, bytes).await
     }
 }
 
@@ -97,10 +77,10 @@ impl<F: ReadNorFlash, MARKER, M: RawMutex> ReadNorFlash for PartitionGuard<'_, F
             return Err(Error::OutOfBounds);
         }
 
-        Ok(self
-            .guard
+        self.guard
             .read(offset.checked_add(self.offset).ok_or(Error::OutOfBounds)?, bytes)
-            .await?)
+            .await
+            .map_err(Error::Inner)
     }
 
     fn capacity(&self) -> usize {

@@ -79,18 +79,6 @@ pub struct PartitionGuard<'a, F, MARKER, M: RawMutex = NoopRawMutex> {
     _marker: PhantomData<MARKER>,
 }
 
-impl<F, M: RawMutex> Partition<'_, F, RW, M> {
-    /// Temporarily convert a reference to a writable partition into a read-only partition.
-    pub const fn readonly(&mut self) -> Partition<'_, F, RO, M> {
-        Partition {
-            storage: self.storage,
-            offset: self.offset,
-            size: self.size,
-            _marker: PhantomData,
-        }
-    }
-}
-
 /// A partition configuration definition.
 ///
 /// Using [PartitionManager::map] this definition can be turned into a concrete [PartitionMap].
@@ -120,18 +108,6 @@ impl<F, M: RawMutex> PartitionManager<F, M> {
     /// Map a disk to multiple partitions given a partition configuration definition.
     pub fn map<C: PartitionConfig>(&mut self, config: C) -> C::Map<'_, F, M> {
         config.map(&self.storage)
-    }
-}
-
-impl<F, MARKER, M: RawMutex> Partition<'_, F, MARKER, M> {
-    /// Checks whether an address range lies within the partition.
-    #[allow(unused)]
-    const fn within_bounds(&self, offset: u32, size: u32) -> bool {
-        if let Some(end) = offset.checked_add(size) {
-            end <= self.size
-        } else {
-            false
-        }
     }
 }
 
