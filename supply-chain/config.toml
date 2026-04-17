@@ -10,17 +10,11 @@ url = "https://raw.githubusercontent.com/OpenDevicePartnership/rust-crate-audits
 [imports.bytecode-alliance]
 url = "https://raw.githubusercontent.com/bytecodealliance/wasmtime/main/supply-chain/audits.toml"
 
-[imports.embark-studios]
-url = "https://raw.githubusercontent.com/EmbarkStudios/rust-ecosystem/main/audits.toml"
-
 [imports.google]
 url = "https://raw.githubusercontent.com/google/rust-crate-audits/main/audits.toml"
 
 [imports.mozilla]
 url = "https://raw.githubusercontent.com/mozilla/supply-chain/main/audits.toml"
-
-[imports.zcash]
-url = "https://raw.githubusercontent.com/zcash/rust-ecosystem/main/supply-chain/audits.toml"
 
 [policy.embassy-imxrt]
 audit-as-crates-io = false
