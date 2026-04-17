@@ -7,8 +7,10 @@ pub use partition_manager_macros as macros;
 use core::{fmt::Debug, marker::PhantomData};
 use embassy_sync::{
     blocking_mutex::raw::{NoopRawMutex, RawMutex},
-    mutex::Mutex,
+    mutex::{Mutex, MutexGuard},
 };
+
+pub use embassy_sync::mutex::TryLockError;
 
 mod ext;
 
@@ -43,18 +45,38 @@ impl<'a, F, MARKER, M: RawMutex> Partition<'a, F, MARKER, M> {
             _marker: PhantomData,
         }
     }
-}
 
-impl<F, M: RawMutex> Partition<'_, F, RW, M> {
-    /// Temporarily convert a reference to a writable partition into a read-only partition.
-    pub const fn readonly(&mut self) -> Partition<'_, F, RO, M> {
-        Partition {
-            storage: self.storage,
+    /// Lock the underlying storage and return a guard that allows direct operations.
+    pub async fn lock(&self) -> PartitionGuard<'_, F, MARKER, M> {
+        PartitionGuard {
+            guard: self.storage.lock().await,
             offset: self.offset,
             size: self.size,
             _marker: PhantomData,
         }
     }
+
+    /// Attempt to lock the underlying storage without blocking.
+    pub fn try_lock(&self) -> Result<PartitionGuard<'_, F, MARKER, M>, TryLockError> {
+        Ok(PartitionGuard {
+            guard: self.storage.try_lock()?,
+            offset: self.offset,
+            size: self.size,
+            _marker: PhantomData,
+        })
+    }
+}
+
+/// A guard that provides exclusive access to a partition's underlying storage.
+///
+/// Obtained via [`Partition::lock`] or [`Partition::try_lock`].
+/// The underlying mutex is held for the lifetime of this guard.
+#[allow(unused)]
+pub struct PartitionGuard<'a, F, MARKER, M: RawMutex = NoopRawMutex> {
+    guard: MutexGuard<'a, M, F>,
+    offset: u32,
+    size: u32,
+    _marker: PhantomData<MARKER>,
 }
 
 /// A partition configuration definition.
@@ -89,11 +111,15 @@ impl<F, M: RawMutex> PartitionManager<F, M> {
     }
 }
 
-impl<F, MARKER, M: RawMutex> Partition<'_, F, MARKER, M> {
+impl<F, MARKER, M: RawMutex> PartitionGuard<'_, F, MARKER, M> {
     /// Checks whether an address range lies within the partition.
     #[allow(unused)]
-    const fn within_bounds(&self, offset: u32, size: u32) -> bool {
-        if let Some(end) = offset.checked_add(size) {
+    const fn within_bounds(&self, offset: u32, size: usize) -> bool {
+        if size > u32::MAX as usize {
+            return false;
+        }
+
+        if let Some(end) = offset.checked_add(size as u32) {
             end <= self.size
         } else {
             false
