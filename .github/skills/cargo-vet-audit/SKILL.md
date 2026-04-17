@@ -104,9 +104,32 @@ the human reviewer, never the AI agent.
 
 ## Step 6: Verify and Clean Up
 
-1. Run `cargo vet` again to confirm everything passes
-2. Run `cargo vet prune` to remove stale exemptions
-3. Run `cargo vet` one final time to confirm clean state
+Before final verification, detect and remove identical duplicate `[[audits.*]]`
+entries that may have been appended by retried `cargo vet certify` commands.
+
+Duplicate-check workflow:
+
+1. Scan `supply-chain/audits.toml` for byte-for-byte identical audit blocks
+2. If duplicates exist, keep one copy (usually the first) and remove the rest
+3. Re-run `cargo vet` after deduplication to ensure state is still valid
+
+Suggested duplicate detection commands:
+
+```powershell
+# PowerShell: use any local script/command that prints duplicate blocks
+# with crate names and line numbers
+```
+
+```shell
+# POSIX: optional equivalent using awk/python if available
+# (implementation may vary by environment)
+```
+
+Then run the normal cleanup sequence:
+
+4. Run `cargo vet` again to confirm everything passes
+5. Run `cargo vet prune` to remove stale exemptions
+6. Run `cargo vet` one final time to confirm clean state
 
 ## Reviewing Import Sources
 

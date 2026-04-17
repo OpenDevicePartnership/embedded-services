@@ -86,6 +86,21 @@ For every crate you review, systematically check ALL of the following:
 
 ## How to Review
 
+## Duplicate-Audit Guardrail
+
+Before recommending or running certification, check whether an identical
+`[[audits.<crate>]]` entry (same who/criteria/version-or-delta/notes) already
+exists in `supply-chain/audits.toml`.
+
+If an identical entry already exists:
+
+- Do not recommend re-certifying with the same data
+- Report that the crate is already certified with identical audit content
+- If duplicates already exist, explicitly recommend deduplicating by keeping one
+  copy and removing the rest
+
+Rationale: retried `cargo vet certify` commands can append duplicate blocks.
+
 ### For Delta Audits
 
 Use `PAGER=cat cargo vet diff CRATE FROM TO` (POSIX) or
