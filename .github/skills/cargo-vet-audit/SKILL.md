@@ -60,6 +60,29 @@ Confidence scoring rubric:
 
 ## Step 5: Certify
 
+### Exemptions Are a Last Resort
+
+Do **not** add `[[exemptions]]` entries without explicit user confirmation.
+Each exemption bypasses the audit process entirely and must be justified.
+Valid reasons include:
+
+- The crate is only needed for `safe-to-run` (test/dev tooling) and a full
+  audit is disproportionate
+- An upstream import source was removed and the crate needs temporary coverage
+  while a first-party audit is scheduled
+- The user explicitly requests an exemption after reviewing the trade-offs
+
+Always prefer auditing (full or delta) over exempting. When an exemption is
+unavoidable, present it to the user for manual approval before adding it.
+
+Every exemption **must** include a `--notes` explaining why the exemption exists
+and under what conditions it can be removed:
+
+```shell
+cargo vet add-exemption CRATE VERSION --criteria CRITERIA \
+  --notes "Reason for exemption; plan for resolution"
+```
+
 For each crate that passes (confidence ≥ 70), run:
 
 ```shell
