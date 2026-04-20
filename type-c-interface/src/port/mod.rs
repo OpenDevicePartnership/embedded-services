@@ -587,22 +587,6 @@ pub trait Controller {
         unconstrained: bool,
     ) -> impl Future<Output = Result<(), Error<Self::BusError>>>;
 
-    // TODO: remove all these once we migrate to a generic FW update trait
-    // https://github.com/OpenDevicePartnership/embedded-services/issues/242
-    /// Get current FW version
-    fn get_active_fw_version(&mut self) -> impl Future<Output = Result<u32, Error<Self::BusError>>>;
-    /// Start a firmware update
-    fn start_fw_update(&mut self) -> impl Future<Output = Result<(), Error<Self::BusError>>>;
-    /// Abort a firmware update
-    fn abort_fw_update(&mut self) -> impl Future<Output = Result<(), Error<Self::BusError>>>;
-    /// Finalize a firmware update
-    fn finalize_fw_update(&mut self) -> impl Future<Output = Result<(), Error<Self::BusError>>>;
-    /// Write firmware update contents
-    fn write_fw_contents(
-        &mut self,
-        offset: usize,
-        data: &[u8],
-    ) -> impl Future<Output = Result<(), Error<Self::BusError>>>;
     /// Get the Rx Other VDM data for the given port
     fn get_other_vdm(&mut self, port: LocalPortId) -> impl Future<Output = Result<OtherVdm, Error<Self::BusError>>>;
     /// Get the Rx Attention VDM data for the given port

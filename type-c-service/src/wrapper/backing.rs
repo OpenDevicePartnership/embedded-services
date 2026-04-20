@@ -4,10 +4,8 @@
 //!
 use core::array::from_fn;
 
-use cfu_service::component::CfuDevice;
 use embassy_sync::{blocking_mutex::raw::RawMutex, mutex::Mutex};
 
-use embedded_cfu_protocol::protocol_definitions::ComponentId;
 use embedded_services::event;
 
 use type_c_interface::port::{ControllerId, PortRegistration, PortStatus, event::PortStatusEventBitfield};
@@ -18,7 +16,6 @@ use crate::wrapper::proxy::{PowerProxyChannel, PowerProxyDevice, PowerProxyRecei
 pub struct Registration<'a, M: RawMutex> {
     pub context: &'a type_c_interface::service::context::Context,
     pub pd_controller: &'a type_c_interface::port::Device<'a>,
-    pub cfu_device: &'a CfuDevice,
     pub power_devices: &'a [&'a Mutex<M, PowerProxyDevice<'a>>],
 }
 
@@ -34,7 +31,6 @@ pub struct Storage<'a, const N: usize, M: RawMutex> {
     context: &'a type_c_interface::service::context::Context,
     controller_id: ControllerId,
     pd_ports: [PortRegistration; N],
-    pub cfu_device: CfuDevice,
     power_proxy_channels: [PowerProxyChannel<M>; N],
 }
 
@@ -42,14 +38,12 @@ impl<'a, const N: usize, M: RawMutex> Storage<'a, N, M> {
     pub fn new(
         context: &'a type_c_interface::service::context::Context,
         controller_id: ControllerId,
-        cfu_id: ComponentId,
         pd_ports: [PortRegistration; N],
     ) -> Self {
         Self {
             context,
             controller_id,
             pd_ports,
-            cfu_device: CfuDevice::new(cfu_id),
             power_proxy_channels: from_fn(|_| PowerProxyChannel::new()),
         }
     }
@@ -181,7 +175,6 @@ impl<'a, const N: usize, M: RawMutex, S: event::Sender<power_policy_interface::p
             registration: Registration {
                 context: self.intermediate.storage.context,
                 pd_controller: &self.pd_controller,
-                cfu_device: &self.intermediate.storage.cfu_device,
                 power_devices: &self.power_devices,
             },
             ports: &self.intermediate.ports,

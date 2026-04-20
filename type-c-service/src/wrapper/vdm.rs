@@ -6,15 +6,10 @@ use type_c_interface::port::event::VdmNotification;
 use type_c_interface::port::{Controller, event::VdmData};
 use type_c_interface::service::event::{PortEvent, PortEventData};
 
-use super::{ControllerWrapper, FwOfferValidator, message::vdm::Output};
+use super::{ControllerWrapper, message::vdm::Output};
 
-impl<
-    'device,
-    M: RawMutex,
-    D: Lockable,
-    S: event::Sender<power_policy_interface::psu::event::EventData>,
-    V: FwOfferValidator,
-> ControllerWrapper<'device, M, D, S, V>
+impl<'device, M: RawMutex, D: Lockable, S: event::Sender<power_policy_interface::psu::event::EventData>>
+    ControllerWrapper<'device, M, D, S>
 where
     D::Inner: Controller,
 {

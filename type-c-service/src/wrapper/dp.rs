@@ -1,17 +1,12 @@
-use super::{ControllerWrapper, FwOfferValidator};
+use super::ControllerWrapper;
 use crate::wrapper::message::OutputDpStatusChanged;
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use embedded_services::{event, sync::Lockable, trace};
 use embedded_usb_pd::{Error, LocalPortId};
 use type_c_interface::port::Controller;
 
-impl<
-    'device,
-    M: RawMutex,
-    D: Lockable,
-    S: event::Sender<power_policy_interface::psu::event::EventData>,
-    V: FwOfferValidator,
-> ControllerWrapper<'device, M, D, S, V>
+impl<'device, M: RawMutex, D: Lockable, S: event::Sender<power_policy_interface::psu::event::EventData>>
+    ControllerWrapper<'device, M, D, S>
 where
     D::Inner: Controller,
 {

@@ -17,17 +17,16 @@ workspace = true
 bitfield.workspace = true
 bitflags = { workspace = true }
 defmt = { workspace = true, optional = true }
-embedded-cfu-protocol.workspace = true
 embassy-futures.workspace = true
 embassy-sync.workspace = true
 embassy-time.workspace = true
 embedded-hal-async.workspace = true
 embedded-services.workspace = true
 embedded-usb-pd.workspace = true
+fw-update-interface.workspace = true
 heapless.workspace = true
 log = { workspace = true, optional = true }
 tps6699x = { workspace = true, features = ["embassy"] }
-cfu-service.workspace = true
 power-policy-interface.workspace = true
 type-c-interface.workspace = true
 
@@ -46,7 +45,6 @@ defmt = [
     "embassy-sync/defmt",
     "tps6699x/defmt",
     "embedded-usb-pd/defmt",
-    "cfu-service/defmt",
     "power-policy-interface/defmt",
     "type-c-interface/defmt",
 ]
@@ -56,7 +54,6 @@ log = [
     "embassy-time/log",
     "embassy-sync/log",
     "tps6699x/log",
-    "cfu-service/log",
     "power-policy-interface/log",
     "type-c-interface/log",
 ]

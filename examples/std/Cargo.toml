@@ -40,6 +40,7 @@ embedded-cfu-protocol = { git = "https://github.com/OpenDevicePartnership/embedd
 battery-service = { path = "../../battery-service", features = ["log", "mock"] }
 type-c-service = { path = "../../type-c-service", features = ["log"] }
 type-c-interface = { path = "../../type-c-interface", features = ["log"] }
+fw-update-interface = { path = "../../fw-update-interface" }
 
 thermal-service = { path = "../../thermal-service", features = ["log", "mock"] }
 thermal-service-interface = { path = "../../thermal-service-interface" }

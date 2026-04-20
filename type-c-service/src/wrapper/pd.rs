@@ -9,13 +9,8 @@ use type_c_interface::port::{InternalResponseData, Response};
 
 use super::*;
 
-impl<
-    'device,
-    M: RawMutex,
-    D: Lockable,
-    S: event::Sender<power_policy_interface::psu::event::EventData>,
-    V: FwOfferValidator,
-> ControllerWrapper<'device, M, D, S, V>
+impl<'device, M: RawMutex, D: Lockable, S: event::Sender<power_policy_interface::psu::event::EventData>>
+    ControllerWrapper<'device, M, D, S>
 where
     D::Inner: Controller,
 {
@@ -101,17 +96,7 @@ where
     }
 
     /// Handle a port command
-    async fn process_port_command(
-        &self,
-        cfu_event_receiver: &mut CfuEventReceiver,
-        controller: &mut D::Inner,
-        command: &port::PortCommand,
-    ) -> Response<'static> {
-        if cfu_event_receiver.fw_update_state.in_progress() {
-            debug!("FW update in progress, ignoring port command");
-            return port::Response::Port(Err(PdError::Busy));
-        }
-
+    async fn process_port_command(&self, controller: &mut D::Inner, command: &port::PortCommand) -> Response<'static> {
         let local_port = if let Ok(port) = self.registration.pd_controller.lookup_local_port(command.port) {
             port
         } else {
@@ -298,15 +283,9 @@ where
 
     async fn process_controller_command(
         &self,
-        cfu_event_receiver: &mut CfuEventReceiver,
         controller: &mut D::Inner,
         command: &port::InternalCommandData,
     ) -> Response<'static> {
-        if cfu_event_receiver.fw_update_state.in_progress() {
-            debug!("FW update in progress, ignoring controller command");
-            return port::Response::Controller(Err(PdError::Busy));
-        }
-
         match command {
             port::InternalCommandData::Status => {
                 let status = controller.get_controller_status().await;
@@ -334,16 +313,12 @@ where
     /// Handle a PD controller command
     pub(super) async fn process_pd_command(
         &self,
-        cfu_event_receiver: &mut CfuEventReceiver,
         controller: &mut D::Inner,
         command: &port::Command,
     ) -> Response<'static> {
         match command {
-            port::Command::Port(command) => self.process_port_command(cfu_event_receiver, controller, command).await,
-            port::Command::Controller(command) => {
-                self.process_controller_command(cfu_event_receiver, controller, command)
-                    .await
-            }
+            port::Command::Port(command) => self.process_port_command(controller, command).await,
+            port::Command::Controller(command) => self.process_controller_command(controller, command).await,
             port::Command::Lpm(_) => port::Response::Ucsi(ucsi::Response {
                 cci: ucsi::cci::Cci::new_error(),
                 data: None,
