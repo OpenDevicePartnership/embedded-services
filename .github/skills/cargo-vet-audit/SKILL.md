@@ -136,17 +136,9 @@ Duplicate-check workflow:
 2. If duplicates exist, keep one copy (usually the first) and remove the rest
 3. Re-run `cargo vet` after deduplication to ensure state is still valid
 
-Suggested duplicate detection commands:
-
-```powershell
-# PowerShell: use any local script/command that prints duplicate blocks
-# with crate names and line numbers
-```
-
-```shell
-# POSIX: optional equivalent using awk/python if available
-# (implementation may vary by environment)
-```
+To detect duplicates, scan `supply-chain/audits.toml` for repeated blocks
+with identical crate name, who, criteria, version/delta, and notes fields.
+Remove any duplicates before proceeding.
 
 Then run the normal cleanup sequence:
 
