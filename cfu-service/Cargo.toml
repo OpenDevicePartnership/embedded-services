@@ -17,8 +17,18 @@ embassy-sync.workspace = true
 embassy-time.workspace = true
 embedded-cfu-protocol.workspace = true
 embedded-services.workspace = true
+fw-update-interface.workspace = true
 heapless.workspace = true
 log = { workspace = true, optional = true }
+
+[dev-dependencies]
+static_cell.workspace = true
+critical-section = { workspace = true, features = ["std"] }
+embassy-time = { workspace = true, features = ["std", "generic-queue-8"] }
+tokio = { workspace = true, features = ["rt", "macros", "time"] }
+env_logger = "0.11.8"
+log = { workspace = true }
+fw-update-interface-mocks = { workspace = true }
 
 [features]
 default = []
@@ -28,6 +38,7 @@ defmt = [
     "embassy-time/defmt",
     "embassy-sync/defmt",
     "embedded-cfu-protocol/defmt",
+    "fw-update-interface/defmt",
 ]
 log = [
     "dep:log",
@@ -35,4 +46,5 @@ log = [
     "embassy-time/log",
     "embassy-sync/log",
     "embedded-cfu-protocol/log",
+    "fw-update-interface/log",
 ]
