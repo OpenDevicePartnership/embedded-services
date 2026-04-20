@@ -125,12 +125,16 @@ impl State {
     pub fn disconnect(&mut self, clear_caps: bool) -> Result<(), Error> {
         let result = if matches!(
             self.psu_state,
-            PsuState::ConnectedConsumer(_) | PsuState::ConnectedProvider(_)
+            PsuState::ConnectedConsumer(_) | PsuState::ConnectedProvider(_) | PsuState::Idle
         ) {
             Ok(())
         } else {
             Err(Error::InvalidState(
-                &[StateKind::ConnectedConsumer, StateKind::ConnectedProvider],
+                &[
+                    StateKind::ConnectedConsumer,
+                    StateKind::ConnectedProvider,
+                    StateKind::Idle,
+                ],
                 self.psu_state.kind(),
             ))
         };

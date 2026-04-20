@@ -6,6 +6,7 @@
 use core::ptr;
 
 use embedded_services::debug;
+use embedded_services::error;
 use embedded_services::named::Named;
 
 use super::*;
@@ -95,7 +96,6 @@ impl<'device, Reg: Registration<'device>> Service<'device, Reg> {
             e
         } else {
             locked_requester.connect_provider(target_power).await?;
-            locked_requester.state_mut().connect_provider(target_power)?;
             self.post_provider_connected(requester, target_power).await;
             Ok(())
         }

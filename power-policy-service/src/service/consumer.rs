@@ -204,12 +204,7 @@ impl<'device, Reg: Registration<'device>> Service<'device, Reg> {
             if matches!(current_psu.state().psu_state, PsuState::ConnectedConsumer(_)) {
                 // Disconnect the current consumer if needed
                 info!("({}): Disconnecting current consumer", current_psu.name());
-                // disconnect current consumer and set idle
                 current_psu.disconnect().await?;
-                if let Err(e) = current_psu.state_mut().disconnect(false) {
-                    // This should never happen because we check the state above, log an error instead of a panic
-                    error!("({}): Disconnect transition failed: {:#?}", current_psu.name(), e);
-                }
             }
 
             // If no chargers are registered, they won't receive the new power capability.
@@ -236,8 +231,6 @@ impl<'device, Reg: Registration<'device>> Service<'device, Reg> {
             e
         } else {
             psu.connect_consumer(new_consumer.consumer_power_capability).await?;
-            psu.state_mut()
-                .connect_consumer(new_consumer.consumer_power_capability)?;
             self.post_consumer_connected(new_consumer).await
         }
     }

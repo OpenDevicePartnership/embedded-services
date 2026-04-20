@@ -44,29 +44,37 @@ impl<'a, S: Sender<EventData>> Mock<'a, S> {
     }
 
     pub async fn simulate_consumer_connection(&mut self, capability: ConsumerPowerCapability) {
+        self.state.attach().unwrap();
         self.sender.send(EventData::Attached).await;
+        self.state.update_consumer_power_capability(Some(capability)).unwrap();
         self.sender
             .send(EventData::UpdatedConsumerCapability(Some(capability)))
             .await;
     }
 
     pub async fn simulate_detach(&mut self) {
+        self.state.detach();
         self.sender.send(EventData::Detached).await;
     }
 
     pub async fn simulate_provider_connection(&mut self, capability: PowerCapability) {
+        self.state.attach().unwrap();
         self.sender.send(EventData::Attached).await;
 
         let capability = Some(ProviderPowerCapability {
             capability,
             flags: ProviderFlags::none(),
         });
+        self.state
+            .update_requested_provider_power_capability(capability)
+            .unwrap();
         self.sender
             .send(EventData::RequestedProviderCapability(capability))
             .await;
     }
 
     pub async fn simulate_disconnect(&mut self) {
+        self.state.disconnect(true).unwrap();
         self.sender.send(EventData::Disconnected).await;
     }
 
@@ -74,6 +82,9 @@ impl<'a, S: Sender<EventData>> Mock<'a, S> {
         &mut self,
         capability: Option<ProviderPowerCapability>,
     ) {
+        self.state
+            .update_requested_provider_power_capability(capability)
+            .unwrap();
         self.sender
             .send(power_policy_interface::psu::event::EventData::RequestedProviderCapability(capability))
             .await
@@ -84,19 +95,19 @@ impl<'a, S: Sender<EventData>> Psu for Mock<'a, S> {
     async fn connect_consumer(&mut self, capability: ConsumerPowerCapability) -> Result<(), Error> {
         info!("Connect consumer {:#?}", capability);
         self.record_fn_call(FnCall::ConnectConsumer(capability));
-        Ok(())
+        self.state.connect_consumer(capability)
     }
 
     async fn connect_provider(&mut self, capability: ProviderPowerCapability) -> Result<(), Error> {
         info!("Connect provider: {:#?}", capability);
         self.record_fn_call(FnCall::ConnectProvider(capability));
-        Ok(())
+        self.state.connect_provider(capability)
     }
 
     async fn disconnect(&mut self) -> Result<(), Error> {
         info!("Disconnect");
         self.record_fn_call(FnCall::Disconnect);
-        Ok(())
+        self.state.disconnect(false)
     }
 
     fn state(&self) -> &State {
