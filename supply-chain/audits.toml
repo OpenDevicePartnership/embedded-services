@@ -6,6 +6,12 @@ who = "Robert Zieba <robertzieba@microsoft.com>"
 criteria = "safe-to-run"
 version = "0.24.2"
 
+[[audits.ahash]]
+who = "Jerry Xie <jerryxie@microsoft.com>"
+criteria = "safe-to-deploy"
+version = "0.8.12"
+notes = "All unsafe is SIMD intrinsics (AES-NI, SSE2, SSSE3, ARM NEON) with correct cfg guards. zerocopy::transmute! for type conversions. Build script only checks target arch and compiler features. No I/O, no proc macros. Assisted-by: copilot-cli:claude-opus-4.6 cargo-vet"
+
 [[audits.aligned]]
 who = "jerrysxie <jerryxie@microsoft.com>"
 criteria = "safe-to-deploy"
@@ -52,6 +58,12 @@ criteria = "safe-to-deploy"
 delta = "1.4.0 -> 1.5.0"
 notes = "No unsafe, no build.rs, no network access; delta adds edition-aware rustc probing and best-effort probe-file cleanup only. Assisted-by: copilot-cli:GPT-5.3-Codex cargo-vet"
 
+[[audits.az]]
+who = "Jerry Xie <jerryxie@microsoft.com>"
+criteria = "safe-to-deploy"
+version = "1.2.1"
+notes = "No unsafe code. no_std library with only safe numeric cast traits. Build script probes for track_caller via rustc in OUT_DIR only. No network, no ambient capabilities. Assisted-by: copilot-cli:claude-opus-4.6 cargo-vet"
+
 [[audits.backtrace]]
 who = "Robert Zieba <robertzieba@microsoft.com>"
 criteria = "safe-to-run"
@@ -62,6 +74,12 @@ who = "Jerry Xie <jerryxie@microsoft.com>"
 criteria = "safe-to-deploy"
 version = "0.4.2"
 notes = "no_std SPSC bip-buffer queue. Non-trivial unsafe for lock-free coordination and pointer arithmetic, all reviewed and sound. No build script, no proc macros, no I/O. Has Miri CI. Assisted-by: copilot-chat:claude-opus-4.6 cargo-vet"
+
+[[audits.bincode]]
+who = "Jerry Xie <jerryxie@microsoft.com>"
+criteria = "safe-to-deploy"
+version = "2.0.1"
+notes = "no_std binary serialization library. ~15 unsafe blocks for u8 type-specialization guarded by unty::type_equal and MaybeUninit patterns. No build script, no proc macros. std imports only for Encode/Decode trait impls. Assisted-by: copilot-cli:claude-opus-4.6 cargo-vet"
 
 [[audits.bincode_derive]]
 who = "Jerry Xie <jerryxie@microsoft.com>"
@@ -105,6 +123,12 @@ criteria = "safe-to-deploy"
 delta = "0.10.1 -> 0.12.1"
 notes = "Adds hash and bitenum derives, mostly parsing and refactoring changes. No code execution nor writing to the filesystem."
 
+[[audits.bitvec]]
+who = "Jerry Xie <jerryxie@microsoft.com>"
+criteria = "safe-to-deploy"
+version = "1.0.1"
+notes = "Bit-level addressable memory library. Extensive unsafe inherent to sub-byte addressing: BitSpan bit-packs pointer+index+length, BitPtr/BitRef bit-level pointer/proxy types. All Send/Sync bounds mirror std. No build script, no proc macros, no filesystem/network/process access. Assisted-by: copilot-cli:claude-opus-4.6 cargo-vet"
+
 [[audits.block-device-driver]]
 who = "jerrysxie <jerryxie@microsoft.com>"
 criteria = "safe-to-deploy"
@@ -137,6 +161,12 @@ who = "Jerry Xie <jerryxie@microsoft.com>"
 criteria = "safe-to-deploy"
 version = "0.6.0"
 notes = "Pure string case-conversion library. No unsafe code, no build script, no powerful imports. Only dependency is unicode-segmentation. Assisted-by: copilot-chat:claude-opus-4.6 cargo-vet"
+
+[[audits.cordyceps]]
+who = "Jerry Xie <jerryxie@microsoft.com>"
+criteria = "safe-to-deploy"
+version = "0.3.4"
+notes = "Intrusive data structures crate (no_std). ~115 unsafe blocks, all necessary for intrusive linked list/queue/stack ops. Correct patterns: addr_of_mut, proper atomic orderings, Vyukov MPSC algorithm. No build script, no proc macros, no powerful imports. Assisted-by: copilot-cli:claude-opus-4.6 cargo-vet"
 
 [[audits.crc]]
 who = "Jerry Xie <jerryxie@microsoft.com>"
@@ -174,6 +204,12 @@ criteria = "safe-to-deploy"
 version = "1.0.7"
 notes = "no_std device driver toolkit. Unsafe limited to ops.rs bitfield load/store using get_unchecked with documented invariants; fuzz-tested against bitvec. No build script, no proc macros, no filesystem/network/process access. Assisted-by: copilot-chat:claude-opus-4.6 cargo-vet"
 
+[[audits.device-driver-generation]]
+who = "Jerry Xie <jerryxie@microsoft.com>"
+criteria = "safe-to-deploy"
+version = "1.0.7"
+notes = "Code generation library for device-driver. No unsafe in generator itself; generated code uses unsafe for register bit ops (validated by MIR passes). Spawns rustfmt via std::process::Command. No filesystem/network access. Assisted-by: copilot-cli:claude-opus-4.6 cargo-vet"
+
 [[audits.device-driver-macros]]
 who = "Jerry Xie <jerryxie@microsoft.com>"
 criteria = "safe-to-deploy"
@@ -209,6 +245,12 @@ who = "Jerry Xie <jerryxie@microsoft.com>"
 criteria = "safe-to-deploy"
 delta = "0.3.0 -> 0.4.0"
 notes = "Rust 2024 edition update with new ring buffer methods (available, is_half_full). All unsafe code is sound HAL pattern usage. Build script unchanged (cfg flags only). No powerful imports."
+
+[[audits.embassy-sync]]
+who = "Jerry Xie <jerryxie@microsoft.com>"
+criteria = "safe-to-deploy"
+version = "0.8.0"
+notes = "no_std async sync primitives. Substantial unsafe for UnsafeCell-based interiors and Send/Sync impls -- all reviewed and sound, guarded by RawMutex/critical_section. Build script only reads TARGET env var. No proc macros, no powerful imports. Assisted-by: copilot-cli:claude-opus-4.6 cargo-vet"
 
 [[audits.embassy-time]]
 who = "Jerry Xie <jerryxie@microsoft.com>"
@@ -321,6 +363,12 @@ criteria = "safe-to-deploy"
 version = "0.2.0"
 notes = "ODP crates are always trusted."
 
+[[audits.embedded-hal]]
+who = "Jerry Xie <jerryxie@microsoft.com>"
+criteria = "safe-to-deploy"
+delta = "0.2.7 -> 1.0.0"
+notes = "Pure no_std trait crate. Complete API redesign for 1.0: removed nb-based traits, CAN module, all unsafe code. Only defines traits/enums/types for digital, I2C, SPI, PWM, delay. No build script, no proc macros, no powerful imports. Assisted-by: copilot-cli:claude-opus-4.6 cargo-vet"
+
 [[audits.embedded-hal-async]]
 who = "Jerry Xie <jerryxie@microsoft.com>"
 criteria = "safe-to-deploy"
@@ -391,6 +439,12 @@ who = "Robert Zieba <robertzieba@microsoft.com>"
 criteria = "safe-to-run"
 version = "0.11.8"
 
+[[audits.fixed]]
+who = "Jerry Xie <jerryxie@microsoft.com>"
+criteria = "safe-to-deploy"
+version = "1.29.0"
+notes = "no_std fixed-point number library. Unsafe limited to: bytemuck Pod/Zeroable impls on repr(transparent) types, NonZero::new_unchecked after proven-nonzero guards, unreachable_unchecked in exhaustive remainder logic. Build script probes compiler features in OUT_DIR. Assisted-by: copilot-cli:claude-opus-4.6 cargo-vet"
+
 [[audits.funty]]
 who = "Jerry Xie <jerryxie@microsoft.com>"
 criteria = "safe-to-deploy"
@@ -429,6 +483,42 @@ criteria = "safe-to-deploy"
 version = "0.3.1"
 notes = "no_std 32-bit hashing (FNV, MurmurHash3). ~10 unsafe blocks in murmur3.rs for MaybeUninit buffer handling - all sound. Assisted-by: copilot-cli:claude-opus-4.6 cargo-vet"
 
+[[audits.hashbrown]]
+who = "Jerry Xie <jerryxie@microsoft.com>"
+criteria = "safe-to-deploy"
+delta = "0.13.2 -> 0.14.5"
+notes = "Commonly used hash table implementation. Diff 0.13.2 -> 0.14.5: Update to latest, safe to deploy (pure Rust, standard library-like, no significant logic changes that would impact safety). Assisted-by: copilot-cli:claude-opus-4.6 cargo-vet"
+
+[[audits.hashbrown]]
+who = "Jerry Xie <jerryxie@microsoft.com>"
+criteria = "safe-to-deploy"
+delta = "0.13.2 -> 0.14.5"
+notes = "SwissTable hash map delta. Major changes: allocator refactored out of RawTableInner, new InsertSlot type, NEON SIMD for aarch64, allocator-api2 integration, new HashTable API, strict provenance. Extensive unsafe reviewed for soundness. No build script, no proc macros, no powerful imports. Assisted-by: copilot-cli:claude-opus-4.6 cargo-vet"
+
+[[audits.hashlink]]
+who = "Jerry Xie <jerryxie@microsoft.com>"
+criteria = "safe-to-deploy"
+version = "0.7.0"
+notes = "Reviewed full source. Extensive unsafe for intrusive doubly-linked list (NonNull, MaybeUninit, union Links, unsafe Send/Sync) -- all gated correctly and follow standard patterns. Passes miri. No build script, no proc macros, no FS/net/process access. Assisted-by: copilot-cli:claude-opus-4.6 cargo-vet"
+
+[[audits.hashlink]]
+who = "Jerry Xie <jerryxie@microsoft.com>"
+criteria = "safe-to-deploy"
+delta = "0.7.0 -> 0.9.1"
+notes = "Delta audit. Migrates from hashbrown::HashMap+NullHasher to hashbrown::HashTable. Adds no_std support. New CursorMut API, retain_with_order, shrink_to_fit. All unsafe follows pre-existing linked-list pointer patterns with guard node sentinel checks. Send/Sync extended with S bounds. Assisted-by: copilot-cli:claude-opus-4.6 cargo-vet"
+
+[[audits.heapless]]
+who = "Jerry Xie <jerryxie@microsoft.com>"
+criteria = "safe-to-deploy"
+version = "0.8.0"
+notes = "no_std fixed-capacity data structures. Extensive unsafe for MaybeUninit buffer management, lock-free queues (Vyukov MPMC, SPSC), and Treiber stack memory pools with ABA prevention. Patterns mirror std or published algorithms. Build script probes for atomic/LLSC support. Assisted-by: copilot-cli:claude-opus-4.6 cargo-vet"
+
+[[audits.heapless]]
+who = "Jerry Xie <jerryxie@microsoft.com>"
+criteria = "safe-to-deploy"
+version = "0.9.2"
+notes = "no_std fixed-capacity data structures. Extensive unsafe for MaybeUninit buffers, lock-free queues (Vyukov MPMC, SPSC), Treiber stack pools with ABA prevention (CAS tagged pointers + ARM LLSC). All Send/Sync bounds verified correct. Build script probes for ARM LLSC. Assisted-by: copilot-cli:claude-opus-4.6 cargo-vet"
+
 [[audits.heck]]
 who = "Matteo Tullo <matteotullo@microsoft.com>"
 criteria = "safe-to-deploy"
@@ -454,6 +544,12 @@ who = "Jerry Xie <jerryxie@microsoft.com>"
 criteria = "safe-to-deploy"
 delta = "2.11.4 -> 2.11.0"
 notes = "Reverse delta removing serde_core migration, get_key_value_mut API, and Ord bound relaxation. No unsafe, no build script, no I/O. Assisted-by: copilot-cli:claude-opus-4.6 cargo-vet"
+
+[[audits.io-uring]]
+who = "Jerry Xie <jerryxie@microsoft.com>"
+criteria = "safe-to-run"
+delta = "0.5.13 -> 0.7.10"
+notes = "Delta audit. Linux io_uring bindings. +15 hand-written unsafe (new from_fd, buffer/file registration APIs). SeqCst fence fix improves atomics correctness. Probe refactored to stack allocation. Build script adds cfg checks only. All unsafe for expected syscall/mmap/fd operations. Assisted-by: copilot-cli:claude-opus-4.6 cargo-vet"
 
 [[audits.is_terminal_polyfill]]
 who = "Robert Zieba <robertzieba@microsoft.com>"
@@ -481,6 +577,12 @@ who = "Robert Zieba <robertzieba@microsoft.com>"
 criteria = "safe-to-run"
 version = "0.2.18"
 
+[[audits.kdl]]
+who = "Jerry Xie <jerryxie@microsoft.com>"
+criteria = "safe-to-deploy"
+version = "6.3.4"
+notes = "Pure KDL document language parser/formatter. No unsafe code, no build script, no proc macros, no filesystem/network/process access. Assisted-by: copilot-cli:claude-opus-4.6 cargo-vet"
+
 [[audits.libc]]
 who = "Robert Zieba <robertzieba@microsoft.com>"
 criteria = "safe-to-run"
@@ -497,6 +599,12 @@ who = "Jerry Xie <jerryxie@microsoft.com>"
 criteria = "safe-to-deploy"
 delta = "0.4.27 -> 0.4.28"
 
+[[audits.maitake-sync]]
+who = "Jerry Xie <jerryxie@microsoft.com>"
+criteria = "safe-to-deploy"
+version = "0.2.2"
+notes = "No-std async sync primitives. Extensive unsafe for Send/Sync impls, UnsafeCell access under locks/atomics, intrusive linked list nodes, spinlocks -- all follow standard patterns. Uses unreachable_unchecked! macro (panics in debug). No build script, no proc macros. Loom-tested. Assisted-by: copilot-cli:claude-opus-4.6 cargo-vet"
+
 [[audits.matchers]]
 who = "Jerry Xie <jerryxie@microsoft.com>"
 criteria = "safe-to-deploy"
@@ -506,6 +614,12 @@ delta = "0.1.0 -> 0.2.0"
 who = "Robert Zieba <robertzieba@microsoft.com>"
 criteria = "safe-to-run"
 version = "2.7.4"
+
+[[audits.miette]]
+who = "Jerry Xie <jerryxie@microsoft.com>"
+criteria = "safe-to-deploy"
+version = "7.6.0"
+notes = "Diagnostic/error reporting library. Substantial unsafe in eyreish/ module (type-erased vtable pattern forked from eyre): repr(C) layout, TypeId-guarded downcasts, ManuallyDrop -- all sound. std::fs used in one opt-in function. No build script, no proc macros. Assisted-by: copilot-cli:claude-opus-4.6 cargo-vet"
 
 [[audits.miette-derive]]
 who = "Jerry Xie <jerryxie@microsoft.com>"
@@ -640,6 +754,12 @@ who = "Robert Zieba <robertzieba@microsoft.com>"
 criteria = "safe-to-run"
 version = "1.70.2"
 
+[[audits.pin-project]]
+who = "Jerry Xie <jerryxie@microsoft.com>"
+criteria = "safe-to-deploy"
+version = "1.1.10"
+notes = "no_std pin-projection helper. Re-exports proc macros from pin-project-internal. Minimal unsafe in __private module (drop guards, UnsafeUnpin forwarding) -- all sound with SAFETY comments. No build script, no powerful imports. Assisted-by: copilot-cli:claude-opus-4.6 cargo-vet"
+
 [[audits.pin-project-internal]]
 who = "Jerry Xie <jerryxie@microsoft.com>"
 criteria = "safe-to-deploy"
@@ -773,6 +893,12 @@ who = "Robert Zieba <robertzieba@microsoft.com>"
 criteria = "safe-to-run"
 version = "1.45.0"
 
+[[audits.tokio]]
+who = "Jerry Xie <jerryxie@microsoft.com>"
+criteria = "safe-to-run"
+delta = "1.45.0 -> 1.47.1"
+notes = "Delta audit. New SetOnce sync primitive, OwnedNotified, spawn location tracking (tokio_unstable), experimental io_uring behind cfg gate, block_in_place hardening. All new unsafe follows existing patterns with safety comments. No build script, no proc macros. Assisted-by: copilot-cli:claude-opus-4.6 cargo-vet"
+
 [[audits.tokio-macros]]
 who = "Robert Zieba <robertzieba@microsoft.com>"
 criteria = "safe-to-run"
@@ -782,6 +908,12 @@ version = "2.5.0"
 who = "jerrysxie <jerryxie@microsoft.com>"
 criteria = "safe-to-deploy"
 version = "0.8.22"
+
+[[audits.toml]]
+who = "Jerry Xie <jerryxie@microsoft.com>"
+criteria = "safe-to-deploy"
+delta = "0.8.22 -> 0.8.23"
+notes = "Delta: adds TupleVariant/StructVariant serialization support. All new code is thin wrappers delegating to toml_edit. No unsafe (forbid(unsafe_code)), no build script, no powerful imports. Assisted-by: copilot-cli:claude-opus-4.6 cargo-vet"
 
 [[audits.toml_datetime]]
 who = "jerrysxie <jerryxie@microsoft.com>"
@@ -799,6 +931,12 @@ who = "jerrysxie <jerryxie@microsoft.com>"
 criteria = "safe-to-deploy"
 version = "0.22.26"
 
+[[audits.toml_edit]]
+who = "Jerry Xie <jerryxie@microsoft.com>"
+criteria = "safe-to-deploy"
+delta = "0.22.26 -> 0.22.27"
+notes = "Delta: no changes to unsafe code (all pre-existing from_utf8_unchecked on ASCII-validated buffers). Visibility reductions on parser internals, serializer refactoring, new consuming accessors. No build script, no proc macros, no powerful imports. Assisted-by: copilot-cli:claude-opus-4.6 cargo-vet"
+
 [[audits.tracing-attributes]]
 who = "Jerry Xie <jerryxie@microsoft.com>"
 criteria = "safe-to-deploy"
@@ -813,6 +951,12 @@ delta = "0.1.33 -> 0.1.34"
 who = "Jerry Xie <jerryxie@microsoft.com>"
 criteria = "safe-to-deploy"
 delta = "0.1.3 -> 0.2.0"
+
+[[audits.typenum]]
+who = "Jerry Xie <jerryxie@microsoft.com>"
+criteria = "safe-to-deploy"
+version = "1.18.0"
+notes = "Pure no_std type-level numbers crate. forbid(unsafe_code) -- zero unsafe anywhere. Build script only writes generated test code to OUT_DIR. No proc macros, no FFI, no network/filesystem/process access in library. Assisted-by: copilot-cli:claude-opus-4.6 cargo-vet"
 
 [[audits.ufmt-write]]
 who = "Jerry Xie <jerryxie@microsoft.com>"
@@ -846,6 +990,12 @@ who = "Jerry Xie <jerryxie@microsoft.com>"
 criteria = "safe-to-deploy"
 delta = "0.9.4 -> 0.9.5"
 notes = "Delta 0.9.4->0.9.5: documentation-only changes (added feature detection guidance, doc cross-references) and Cargo.toml normalization. No code changes, no unsafe, no new imports. Assisted-by: copilot-cli:claude-opus-4.6 cargo-vet"
+
+[[audits.virtue]]
+who = "Jerry Xie <jerryxie@microsoft.com>"
+criteria = "safe-to-deploy"
+version = "0.0.18"
+notes = "Proc-macro derive helper library. No unsafe code, no build script. Uses std::fs/std::env only in opt-in export_to_file() debug helper scoped to target/ dir. Assisted-by: copilot-cli:claude-opus-4.6 cargo-vet"
 
 [[audits.wasi]]
 who = "Jerry Xie <jerryxie@microsoft.com>"
@@ -911,6 +1061,12 @@ version = "0.7.10"
 [[audits.winnow]]
 who = "Jerry Xie <jerryxie@microsoft.com>"
 criteria = "safe-to-deploy"
+delta = "0.7.10 -> 0.6.24"
+notes = "Downgrade delta. Removes ~40 unsafe fn methods from stream submodules. Retains 4 sound unsafe blocks: 2 repr(transparent) transmutes, 2 from_utf8_unchecked on ASCII-only bytes. No build script, no proc macros. Assisted-by: copilot-cli:claude-opus-4.6 cargo-vet"
+
+[[audits.winnow]]
+who = "Jerry Xie <jerryxie@microsoft.com>"
+criteria = "safe-to-deploy"
 delta = "0.7.10 -> 0.7.13"
 notes = "Delta adds Accumulate impls (Cow str, String, VecDeque), fixes macro PartialEq/PartialOrd, optimizes str::next_token, adds tests, improves docs. No unsafe changes, no build script, no new powerful imports. Assisted-by: copilot-cli:claude-opus-4.6 cargo-vet"
 
@@ -919,6 +1075,12 @@ who = "Jerry Xie <jerryxie@microsoft.com>"
 criteria = "safe-to-deploy"
 version = "0.5.1"
 notes = "Pointer abstraction unsafe in comu.rs delegates to std NonNull ops. wm.rs Send/Sync behind Mutex/RwLock (std+garbage only). Assisted-by: copilot-cli:claude-opus-4.6 cargo-vet"
+
+[[audits.yaml-rust2]]
+who = "Jerry Xie <jerryxie@microsoft.com>"
+criteria = "safe-to-deploy"
+delta = "0.10.3 -> 0.9.0"
+notes = "Downgrade delta. Pure YAML parser, no unsafe, no build script, no proc macros. Changes are minor: hashlink dep range, MSRV, emitter quoting list, scanner reserve(), float parsing guard. Assisted-by: copilot-cli:claude-opus-4.6 cargo-vet"
 
 [[audits.zerocopy]]
 who = "Matteo Tullo <matteotullo@microsoft.com>"

@@ -528,6 +528,18 @@ delta = "0.3.28 -> 0.3.31"
 [[audits.bytecode-alliance.audits.hashbrown]]
 who = "Chris Fallin <chris@cfallin.org>"
 criteria = "safe-to-deploy"
+delta = "0.12.3 -> 0.13.1"
+notes = "The diff looks plausible. Much of it is low-level memory-layout code and I can't be 100% certain without a deeper dive into the implementation logic, but nothing looks actively malicious."
+
+[[audits.bytecode-alliance.audits.hashbrown]]
+who = "Trevor Elliott <telliott@fastly.com>"
+criteria = "safe-to-deploy"
+delta = "0.13.1 -> 0.13.2"
+notes = "I read through the diff between v0.13.1 and v0.13.2, and verified that the changes made matched up with the changelog entries. There were very few changes between these two releases, and it was easy to verify what they did."
+
+[[audits.bytecode-alliance.audits.hashbrown]]
+who = "Chris Fallin <chris@cfallin.org>"
+criteria = "safe-to-deploy"
 delta = "0.14.5 -> 0.15.2"
 
 [[audits.bytecode-alliance.audits.itertools]]
@@ -829,6 +841,12 @@ No `unsafe` introduced or affected in:
 * `fn slice_eq` in `util.rs`
 """
 aggregated-from = "https://chromium.googlesource.com/chromium/src/+/main/third_party/rust/chromium_crates_io/supply-chain/audits.toml?format=TEXT"
+
+[[audits.google.audits.io-uring]]
+who = "George Burgess IV <gbiv@google.com>"
+criteria = "safe-to-run"
+version = "0.5.13"
+aggregated-from = "https://chromium.googlesource.com/chromiumos/third_party/rust_crates/+/refs/heads/main/cargo-vet/audits.toml?format=TEXT"
 
 [[audits.google.audits.itoa]]
 who = "Lukasz Anforowicz <lukasza@chromium.org>"
@@ -1627,6 +1645,13 @@ delta = "1.8.3 -> 2.5.0"
 aggregated-from = "https://hg.mozilla.org/mozilla-central/raw-file/tip/supply-chain/audits.toml"
 
 [[audits.mozilla.audits.hashbrown]]
+who = "Mike Hommey <mh+mozilla@glandium.org>"
+criteria = "safe-to-deploy"
+version = "0.12.3"
+notes = "This version is used in rust's libstd, so effectively we're already trusting it"
+aggregated-from = "https://hg.mozilla.org/mozilla-central/raw-file/tip/supply-chain/audits.toml"
+
+[[audits.mozilla.audits.hashbrown]]
 who = "Erich Gubler <erichdongubler@gmail.com>"
 criteria = "safe-to-deploy"
 delta = "0.15.2 -> 0.15.5"
@@ -1839,4 +1864,10 @@ aggregated-from = "https://hg.mozilla.org/mozilla-central/raw-file/tip/supply-ch
 who = "Mark Hammond <mhammond@skippinet.com.au>"
 criteria = "safe-to-deploy"
 delta = "0.3.19 -> 0.3.20"
+aggregated-from = "https://hg.mozilla.org/mozilla-central/raw-file/tip/supply-chain/audits.toml"
+
+[[audits.mozilla.audits.yaml-rust2]]
+who = "Lars Eggert <lars@eggert.org>"
+criteria = "safe-to-deploy"
+version = "0.10.3"
 aggregated-from = "https://hg.mozilla.org/mozilla-central/raw-file/tip/supply-chain/audits.toml"
