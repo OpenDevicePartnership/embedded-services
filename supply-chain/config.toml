@@ -38,26 +38,6 @@ criteria = "safe-to-deploy"
 version = "2.0.1"
 criteria = "safe-to-deploy"
 
-[[exemptions.bincode_derive]]
-version = "2.0.1"
-criteria = "safe-to-deploy"
-
-[[exemptions.bitfield]]
-version = "0.17.0"
-criteria = "safe-to-deploy"
-
-[[exemptions.bitfield]]
-version = "0.19.2"
-criteria = "safe-to-deploy"
-
-[[exemptions.bitfield-macros]]
-version = "0.19.2"
-criteria = "safe-to-deploy"
-
-[[exemptions.bitfield-struct]]
-version = "0.10.1"
-criteria = "safe-to-deploy"
-
 [[exemptions.bitvec]]
 version = "1.0.1"
 criteria = "safe-to-deploy"
@@ -82,60 +62,20 @@ criteria = "safe-to-deploy"
 version = "1.0.7"
 criteria = "safe-to-deploy"
 
-[[exemptions.embassy-embedded-hal]]
-version = "0.5.0"
-criteria = "safe-to-deploy"
-
-[[exemptions.embassy-futures]]
-version = "0.1.2"
-criteria = "safe-to-deploy"
-
-[[exemptions.embassy-hal-internal]]
-version = "0.3.0"
-criteria = "safe-to-deploy"
-
 [[exemptions.embassy-sync]]
 version = "0.8.0"
-criteria = "safe-to-deploy"
-
-[[exemptions.embassy-time-driver]]
-version = "0.2.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.embedded-hal]]
 version = "1.0.0"
 criteria = "safe-to-deploy"
 
-[[exemptions.embedded-hal-async]]
-version = "1.0.0"
-criteria = "safe-to-deploy"
-
-[[exemptions.embedded-hal-nb]]
-version = "1.0.0"
-criteria = "safe-to-deploy"
-
-[[exemptions.embedded-io-async]]
-version = "0.7.0"
-criteria = "safe-to-deploy"
-
-[[exemptions.embedded-storage]]
-version = "0.3.1"
-criteria = "safe-to-deploy"
-
 [[exemptions.fixed]]
 version = "1.29.0"
 criteria = "safe-to-deploy"
 
-[[exemptions.funty]]
-version = "2.0.0"
-criteria = "safe-to-deploy"
-
 [[exemptions.generator]]
 version = "0.8.5"
-criteria = "safe-to-deploy"
-
-[[exemptions.hash32]]
-version = "0.3.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.hashbrown]]
@@ -170,18 +110,6 @@ criteria = "safe-to-deploy"
 version = "7.6.0"
 criteria = "safe-to-deploy"
 
-[[exemptions.miette-derive]]
-version = "7.6.0"
-criteria = "safe-to-deploy"
-
-[[exemptions.mimxrt600-fcb]]
-version = "0.2.2"
-criteria = "safe-to-deploy"
-
-[[exemptions.mio]]
-version = "1.0.4"
-criteria = "safe-to-run"
-
 [[exemptions.mycelium-bitfield]]
 version = "0.1.5"
 criteria = "safe-to-deploy"
@@ -200,10 +128,6 @@ criteria = "safe-to-deploy"
 
 [[exemptions.pin-project-internal]]
 version = "1.1.10"
-criteria = "safe-to-deploy"
-
-[[exemptions.radium]]
-version = "0.7.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.tokio]]
@@ -232,10 +156,6 @@ criteria = "safe-to-run"
 
 [[exemptions.winnow]]
 version = "0.6.24"
-criteria = "safe-to-deploy"
-
-[[exemptions.wyz]]
-version = "0.5.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.yaml-rust2]]
