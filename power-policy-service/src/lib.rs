@@ -81,13 +81,13 @@ impl PowerPolicy {
         self.context.send_response(Ok(policy::ResponseData::Complete)).await;
 
         self.remove_connected_provider(device.id()).await;
-        if let Some(consumer) = self
+        let current_consumer = self
             .state
             .lock()
             .await
             .current_consumer_state
-            .take_if(|d| d.device_id == device.id())
-        {
+            .take_if(|d| d.device_id == device.id());
+        if let Some(consumer) = current_consumer {
             // Current PSU is disconnected, disconnect chargers, and attempt to select next PSU
             info!("Device{}: Connected consumer disconnected", consumer.device_id.0);
             self.disconnect_chargers().await?;
