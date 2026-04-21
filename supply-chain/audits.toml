@@ -57,6 +57,12 @@ who = "Robert Zieba <robertzieba@microsoft.com>"
 criteria = "safe-to-run"
 version = "0.3.75"
 
+[[audits.bbq2]]
+who = "Jerry Xie <jerryxie@microsoft.com>"
+criteria = "safe-to-deploy"
+version = "0.4.2"
+notes = "no_std SPSC bip-buffer queue. Non-trivial unsafe for lock-free coordination and pointer arithmetic, all reviewed and sound. No build script, no proc macros, no I/O. Has Miri CI. Assisted-by: copilot-chat:claude-opus-4.6 cargo-vet"
+
 [[audits.bincode_derive]]
 who = "Jerry Xie <jerryxie@microsoft.com>"
 criteria = "safe-to-deploy"
@@ -126,6 +132,18 @@ who = "Jerry Xie <jerryxie@microsoft.com>"
 criteria = "safe-to-deploy"
 version = "1.0.0"
 
+[[audits.convert_case]]
+who = "Jerry Xie <jerryxie@microsoft.com>"
+criteria = "safe-to-deploy"
+version = "0.6.0"
+notes = "Pure string case-conversion library. No unsafe code, no build script, no powerful imports. Only dependency is unicode-segmentation. Assisted-by: copilot-chat:claude-opus-4.6 cargo-vet"
+
+[[audits.crc]]
+who = "Jerry Xie <jerryxie@microsoft.com>"
+criteria = "safe-to-deploy"
+version = "3.3.0"
+notes = "No unsafe (forbid(unsafe_code)), no build script, no I/O, no_std pure CRC computation. Assisted-by: copilot-chat:claude-opus-4.6 cargo-vet"
+
 [[audits.crc-catalog]]
 who = "Jerry Xie <jerryxie@microsoft.com>"
 criteria = "safe-to-deploy"
@@ -149,6 +167,12 @@ who = "Jerry Xie <jerryxie@microsoft.com>"
 criteria = "safe-to-deploy"
 version = "0.3.100"
 notes = "Compatibility shim: no_std crate that re-exports defmt 1.x items for 0.3 API compatibility. No unsafe code, no build script, no powerful imports, no logic - pure pub-use re-exports. Assisted-by: copilot-cli:claude-opus-4.6 cargo-vet"
+
+[[audits.device-driver]]
+who = "Jerry Xie <jerryxie@microsoft.com>"
+criteria = "safe-to-deploy"
+version = "1.0.7"
+notes = "no_std device driver toolkit. Unsafe limited to ops.rs bitfield load/store using get_unchecked with documented invariants; fuzz-tested against bitvec. No build script, no proc macros, no filesystem/network/process access. Assisted-by: copilot-chat:claude-opus-4.6 cargo-vet"
 
 [[audits.device-driver-macros]]
 who = "Jerry Xie <jerryxie@microsoft.com>"
@@ -531,6 +555,12 @@ who = "Jerry Xie <jerryxie@microsoft.com>"
 criteria = "safe-to-deploy"
 version = "1.0.1"
 
+[[audits.mycelium-bitfield]]
+who = "Jerry Xie <jerryxie@microsoft.com>"
+criteria = "safe-to-deploy"
+version = "0.1.5"
+notes = "Pure safe no_std bitfield macro crate. No unsafe code, no build script, no proc macros, no dependencies, no powerful imports. Only core:: types used. Assisted-by: copilot-chat:claude-opus-4.6 cargo-vet"
+
 [[audits.nu-ansi-term]]
 who = "Jerry Xie <jerryxie@microsoft.com>"
 criteria = "safe-to-deploy"
@@ -541,6 +571,12 @@ who = "Jerry Xie <jerryxie@microsoft.com>"
 criteria = "safe-to-deploy"
 delta = "0.4.0 -> 0.4.3"
 notes = "Pure re-export facade crate. Delta is edition bump (2018->2021), MSRV bump (1.31->1.60), and sub-crate version bumps. No unsafe, no build script, no I/O. Assisted-by: copilot-cli:claude-opus-4.6 cargo-vet"
+
+[[audits.num-bigint]]
+who = "Jerry Xie <jerryxie@microsoft.com>"
+criteria = "safe-to-deploy"
+delta = "0.4.3 -> 0.4.6"
+notes = "Delta 0.4.3->0.4.6: build.rs removed (radix tables now const fn), new x86 inline asm div_wide with safe fallback (sound), new modinv/ConstZero/Euclid/FromBytes APIs, serde OOM mitigation. No fs/net/process access. Assisted-by: copilot-chat:claude-opus-4.6 cargo-vet"
 
 [[audits.num-complex]]
 who = "Jerry Xie <jerryxie@microsoft.com>"
@@ -593,10 +629,22 @@ who = "Robert Zieba <robertzieba@microsoft.com>"
 criteria = "safe-to-run"
 version = "0.36.7"
 
+[[audits.once_cell]]
+who = "Jerry Xie <jerryxie@microsoft.com>"
+criteria = "safe-to-deploy"
+version = "1.20.1"
+notes = "Single-assignment cells and lazy values. All unsafe reviewed: UnsafeCell access, Send/Sync impls, atomic waiter queue, strict provenance polyfill - all sound with correct bounds. No build script, no proc macros, no powerful imports beyond std::thread/atomic. Assisted-by: copilot-chat:claude-opus-4.6 cargo-vet"
+
 [[audits.once_cell_polyfill]]
 who = "Robert Zieba <robertzieba@microsoft.com>"
 criteria = "safe-to-run"
 version = "1.70.2"
+
+[[audits.pin-project-internal]]
+who = "Jerry Xie <jerryxie@microsoft.com>"
+criteria = "safe-to-deploy"
+version = "1.1.10"
+notes = "Proc-macro for pin projection. forbid(unsafe_code) in macro itself. Generated unsafe is sound pin projection (Pin::new_unchecked, get_unchecked_mut) with compile-time safety enforced via trait tricks. No build script, no I/O. Deps: proc-macro2, quote, syn only. Assisted-by: copilot-chat:claude-opus-4.6 cargo-vet"
 
 [[audits.portable-atomic]]
 who = "Robert Zieba <robertzieba@microsoft.com>"
@@ -798,6 +846,12 @@ who = "Jerry Xie <jerryxie@microsoft.com>"
 criteria = "safe-to-deploy"
 delta = "0.9.4 -> 0.9.5"
 notes = "Delta 0.9.4->0.9.5: documentation-only changes (added feature detection guidance, doc cross-references) and Cargo.toml normalization. No code changes, no unsafe, no new imports. Assisted-by: copilot-cli:claude-opus-4.6 cargo-vet"
+
+[[audits.wasi]]
+who = "Jerry Xie <jerryxie@microsoft.com>"
+criteria = "safe-to-run"
+version = "0.11.1+wasi-snapshot-preview1"
+notes = "Auto-generated WASI snapshot-preview1 bindings from Bytecode Alliance. no_std, no build script, zero runtime deps. Unsafe limited to FFI wrappers for WASI host calls and unreachable_unchecked in exhaustive enum match arms. Assisted-by: copilot-chat:claude-opus-4.6 cargo-vet"
 
 [[audits.windows-targets]]
 who = "Robert Zieba <robertzieba@microsoft.com>"

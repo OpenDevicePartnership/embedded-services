@@ -30,10 +30,6 @@ criteria = "safe-to-deploy"
 version = "1.2.1"
 criteria = "safe-to-deploy"
 
-[[exemptions.bbq2]]
-version = "0.4.2"
-criteria = "safe-to-deploy"
-
 [[exemptions.bincode]]
 version = "2.0.1"
 criteria = "safe-to-deploy"
@@ -42,20 +38,8 @@ criteria = "safe-to-deploy"
 version = "1.0.1"
 criteria = "safe-to-deploy"
 
-[[exemptions.convert_case]]
-version = "0.6.0"
-criteria = "safe-to-deploy"
-
 [[exemptions.cordyceps]]
 version = "0.3.4"
-criteria = "safe-to-deploy"
-
-[[exemptions.crc]]
-version = "3.3.0"
-criteria = "safe-to-deploy"
-
-[[exemptions.device-driver]]
-version = "1.0.7"
 criteria = "safe-to-deploy"
 
 [[exemptions.device-driver-generation]]
@@ -110,23 +94,7 @@ criteria = "safe-to-deploy"
 version = "7.6.0"
 criteria = "safe-to-deploy"
 
-[[exemptions.mycelium-bitfield]]
-version = "0.1.5"
-criteria = "safe-to-deploy"
-
-[[exemptions.num-bigint]]
-version = "0.4.6"
-criteria = "safe-to-deploy"
-
-[[exemptions.once_cell]]
-version = "1.21.3"
-criteria = "safe-to-deploy"
-
 [[exemptions.pin-project]]
-version = "1.1.10"
-criteria = "safe-to-deploy"
-
-[[exemptions.pin-project-internal]]
 version = "1.1.10"
 criteria = "safe-to-deploy"
 
@@ -149,10 +117,6 @@ criteria = "safe-to-deploy"
 [[exemptions.virtue]]
 version = "0.0.18"
 criteria = "safe-to-deploy"
-
-[[exemptions.wasi]]
-version = "0.11.1+wasi-snapshot-preview1"
-criteria = "safe-to-run"
 
 [[exemptions.winnow]]
 version = "0.6.24"
