@@ -57,6 +57,12 @@ who = "Robert Zieba <robertzieba@microsoft.com>"
 criteria = "safe-to-run"
 version = "0.3.75"
 
+[[audits.bitfield]]
+who = "Jerry Xie <jerryxie@microsoft.com>"
+criteria = "safe-to-deploy"
+delta = "0.13.2 -> 0.15.0"
+notes = "Delta audit: BitRange/Bit traits split into read-only and mutable variants (BitRangeMut/BitMut); added mask constant generation; clippy fixes; MSRV bump. No unsafe, no build script, no proc macros, no powerful imports. Assisted-by: copilot-cli:claude-opus-4.6 cargo-vet"
+
 [[audits.bitfield-struct]]
 who = "matteotullo <matteotullo@microsoft.com>"
 criteria = "safe-to-deploy"
@@ -68,6 +74,18 @@ who = "jerrysxie <jerryxie@microsoft.com>"
 criteria = "safe-to-deploy"
 version = "0.2.0"
 
+[[audits.bytemuck]]
+who = "Jerry Xie <jerryxie@microsoft.com>"
+criteria = "safe-to-deploy"
+delta = "1.22.0 -> 1.23.2"
+notes = "Delta 1.22.0->1.23.2: new ZeroableInOption impls for function pointer types (sound, uses guaranteed niche optimization), core::error::Error impls behind feature flag, safe derive helper module. No new unsafe blocks, no build script, no I/O. Assisted-by: copilot-cli:claude-opus-4.6 cargo-vet"
+
+[[audits.cfg-if]]
+who = "Jerry Xie <jerryxie@microsoft.com>"
+criteria = "safe-to-deploy"
+delta = "1.0.0 -> 1.0.3"
+notes = "Delta 1.0.0->1.0.3: formatting/readability refactor of macro identifiers, removed compiler_builtins dep, updated CI. No unsafe, no build script, no imports. Pure macro_rules crate. Assisted-by: copilot-cli:claude-opus-4.6 cargo-vet"
+
 [[audits.colorchoice]]
 who = "Robert Zieba <robertzieba@microsoft.com>"
 criteria = "safe-to-run"
@@ -78,11 +96,35 @@ who = "Jerry Xie <jerryxie@microsoft.com>"
 criteria = "safe-to-deploy"
 version = "1.0.0"
 
+[[audits.crc-catalog]]
+who = "Jerry Xie <jerryxie@microsoft.com>"
+criteria = "safe-to-deploy"
+version = "2.4.0"
+notes = "Pure no_std data-only crate. No unsafe, no build script, no dependencies, no I/O. Contains only const CRC algorithm parameter structs. Assisted-by: copilot-cli:claude-opus-4.6 cargo-vet"
+
 [[audits.crunchy]]
 who = "Jerry Xie <jerryxie@microsoft.com>"
 criteria = "safe-to-deploy"
 delta = "0.2.3 -> 0.2.4"
 notes = "Tiny diff to use newer core/std features via build.rs env var for path separator; no safety impact. Assisted-by: copilot-cli:GPT-5.3-Codex cargo-vet"
+
+[[audits.dd-manifest-tree]]
+who = "Jerry Xie <jerryxie@microsoft.com>"
+criteria = "safe-to-deploy"
+version = "1.0.0"
+notes = "No unsafe code, no build script, no proc macros, no powerful imports. Pure trait abstraction unifying JSON/YAML/TOML value types. Assisted-by: copilot-cli:claude-opus-4.6 cargo-vet"
+
+[[audits.defmt]]
+who = "Jerry Xie <jerryxie@microsoft.com>"
+criteria = "safe-to-deploy"
+version = "0.3.100"
+notes = "Compatibility shim: no_std crate that re-exports defmt 1.x items for 0.3 API compatibility. No unsafe code, no build script, no powerful imports, no logic - pure pub-use re-exports. Assisted-by: copilot-cli:claude-opus-4.6 cargo-vet"
+
+[[audits.device-driver-macros]]
+who = "Jerry Xie <jerryxie@microsoft.com>"
+criteria = "safe-to-deploy"
+version = "1.0.7"
+notes = "Proc macro crate; no unsafe code, no build script. Reads manifest files from disk (relative to CARGO_MANIFEST_DIR) as expected for compile-time codegen. All code generation delegated to device-driver-generation. No network, process, or unexpected filesystem access. Assisted-by: copilot-cli:claude-opus-4.6 cargo-vet"
 
 [[audits.embassy-embedded-hal]]
 who = "Jerry Xie <jerryxie@microsoft.com>"
@@ -201,6 +243,18 @@ criteria = "safe-to-deploy"
 version = "0.2.0"
 notes = "ODP crates are always trusted."
 
+[[audits.embedded-io]]
+who = "Jerry Xie <jerryxie@microsoft.com>"
+criteria = "safe-to-deploy"
+delta = "0.6.1 -> 0.7.1"
+notes = "No unsafe, no build script, no I/O. Trait evolution: Error requires core::error::Error (MSRV 1.81), BufRead: Read, Seek gains seek_relative, new VecDeque impls, defmt bumped to v1. Assisted-by: copilot-cli:claude-opus-4.6 cargo-vet"
+
+[[audits.embedded-io-async]]
+who = "Jerry Xie <jerryxie@microsoft.com>"
+criteria = "safe-to-deploy"
+version = "0.6.1"
+notes = "No unsafe. Build script only detects nightly via rustc --version. Pure async trait definitions for embedded I/O. Assisted-by: copilot-cli:claude-opus-4.6 cargo-vet"
+
 [[audits.embedded-mcu-hal]]
 who = "Jerry Xie <jerryxie@microsoft.com>"
 criteria = "safe-to-deploy"
@@ -218,6 +272,12 @@ who = "Kurtis Dinelle <kdinelle@microsoft.com>"
 criteria = "safe-to-deploy"
 version = "0.3.0"
 notes = "ODP crates are always trusted."
+
+[[audits.embedded-storage-async]]
+who = "Jerry Xie <jerryxie@microsoft.com>"
+criteria = "safe-to-deploy"
+version = "0.4.1"
+notes = "Pure no_std async trait definitions for NOR flash storage. No unsafe code, no build script, no powerful imports. Only dependency is embedded-storage. Assisted-by: copilot-cli:claude-opus-4.6 cargo-vet"
 
 [[audits.env_filter]]
 who = "Robert Zieba <robertzieba@microsoft.com>"
@@ -275,6 +335,12 @@ who = "jerrysxie <jerryxie@microsoft.com>"
 criteria = "safe-to-deploy"
 version = "2.9.0"
 
+[[audits.indexmap]]
+who = "Jerry Xie <jerryxie@microsoft.com>"
+criteria = "safe-to-deploy"
+delta = "2.11.4 -> 2.11.0"
+notes = "Reverse delta removing serde_core migration, get_key_value_mut API, and Ord bound relaxation. No unsafe, no build script, no I/O. Assisted-by: copilot-cli:claude-opus-4.6 cargo-vet"
+
 [[audits.is_terminal_polyfill]]
 who = "Robert Zieba <robertzieba@microsoft.com>"
 criteria = "safe-to-run"
@@ -305,6 +371,12 @@ version = "0.2.18"
 who = "Robert Zieba <robertzieba@microsoft.com>"
 criteria = "safe-to-run"
 version = "0.2.172"
+
+[[audits.litrs]]
+who = "Jerry Xie <jerryxie@microsoft.com>"
+criteria = "safe-to-deploy"
+delta = "0.4.1 -> 0.4.2"
+notes = "Delta 0.4.1->0.4.2: Bug fixes for non-ASCII byte string escapes, removes CR LF normalization to align with spec, fixes error span for out-of-range Unicode escapes. No unsafe code, no build script, no powerful imports. Assisted-by: copilot-cli:claude-opus-4.6 cargo-vet"
 
 [[audits.log]]
 who = "Jerry Xie <jerryxie@microsoft.com>"
@@ -355,6 +427,24 @@ version = "1.0.1"
 who = "Jerry Xie <jerryxie@microsoft.com>"
 criteria = "safe-to-deploy"
 delta = "0.46.0 -> 0.50.1"
+
+[[audits.num]]
+who = "Jerry Xie <jerryxie@microsoft.com>"
+criteria = "safe-to-deploy"
+delta = "0.4.0 -> 0.4.3"
+notes = "Pure re-export facade crate. Delta is edition bump (2018->2021), MSRV bump (1.31->1.60), and sub-crate version bumps. No unsafe, no build script, no I/O. Assisted-by: copilot-cli:claude-opus-4.6 cargo-vet"
+
+[[audits.num-complex]]
+who = "Jerry Xie <jerryxie@microsoft.com>"
+criteria = "safe-to-deploy"
+delta = "0.4.2 -> 0.4.6"
+notes = "Delta 0.4.2->0.4.6: edition 2021 upgrade, const ZERO/ONE/I, c32/c64 constructors, rkyv/bytecheck support, powc zero fix, relaxed serde bounds. No new unsafe, no build script, no powerful imports. Assisted-by: copilot-cli:claude-opus-4.6 cargo-vet"
+
+[[audits.num-iter]]
+who = "Jerry Xie <jerryxie@microsoft.com>"
+criteria = "safe-to-deploy"
+delta = "0.1.43 -> 0.1.45"
+notes = "Delta audit: edition upgrade to 2018, MSRV 1.31, build.rs removed, i128 now unconditional, DoubleEndedIterator uses Integer::dec(). No unsafe, no powerful imports, no_std only. Assisted-by: copilot-cli:claude-opus-4.6 cargo-vet"
 
 [[audits.num_enum]]
 who = "Matteo Tullo <matteotullo@microsoft.com>"
@@ -478,6 +568,12 @@ criteria = "safe-to-deploy"
 delta = "0.6.8 -> 0.6.9"
 notes = "Trivial delta: metadata, lint config, and doc formatting only. No functional code changes, no unsafe, no build script, no I/O. Assisted-by: copilot-cli:claude-opus-4.6 cargo-vet"
 
+[[audits.slab]]
+who = "Jerry Xie <jerryxie@microsoft.com>"
+criteria = "safe-to-run"
+delta = "0.4.8 -> 0.4.11"
+notes = "Delta 0.4.8->0.4.11: new get_disjoint_mut uses unsafe (MaybeUninit + raw ptrs) with sound bounds/overlap checks. build.rs removed. No powerful imports. Assisted-by: copilot-cli:claude-opus-4.6 cargo-vet"
+
 [[audits.smbus-pec]]
 who = "Matteo Tullo <matteotullo@microsoft.com>"
 criteria = "safe-to-deploy"
@@ -530,6 +626,12 @@ who = "jerrysxie <jerryxie@microsoft.com>"
 criteria = "safe-to-deploy"
 version = "0.6.9"
 
+[[audits.toml_datetime]]
+who = "Jerry Xie <jerryxie@microsoft.com>"
+criteria = "safe-to-deploy"
+delta = "0.6.9 -> 0.6.11"
+notes = "Delta 0.6.9->0.6.11: parser refactored from char-by-char to lexer-based tokenizer with improved error messages; no unsafe (forbid(unsafe_code)), no build script, no powerful imports. Assisted-by: copilot-cli:claude-opus-4.6 cargo-vet"
+
 [[audits.toml_edit]]
 who = "jerrysxie <jerryxie@microsoft.com>"
 criteria = "safe-to-deploy"
@@ -555,6 +657,12 @@ who = "Jerry Xie <jerryxie@microsoft.com>"
 criteria = "safe-to-deploy"
 version = "0.1.0"
 
+[[audits.unty]]
+who = "Jerry Xie <jerryxie@microsoft.com>"
+criteria = "safe-to-deploy"
+version = "0.0.4"
+notes = "Tiny no_std crate (1 file, ~120 LOC, zero deps). Two unsafe blocks: transmute_copy guarded by TypeId check in unty(), and a dtolnay-pattern transmute in non_static_type_id(). Both documented; no build script, no powerful imports. Assisted-by: copilot-cli:claude-opus-4.6 cargo-vet"
+
 [[audits.usb-device]]
 who = "Jerry Xie <jerryxie@microsoft.com>"
 criteria = "safe-to-deploy"
@@ -570,6 +678,12 @@ who = "Jerry Xie <jerryxie@microsoft.com>"
 criteria = "safe-to-deploy"
 version = "0.1.1"
 notes = "No unsafe code; build.rs only sets target atomic cfg via env; no fs/net/process capability use observed; behavior matches value-inspection purpose. Assisted-by: copilot-cli:GPT-5.3-Codex cargo-vet"
+
+[[audits.version_check]]
+who = "Jerry Xie <jerryxie@microsoft.com>"
+criteria = "safe-to-deploy"
+delta = "0.9.4 -> 0.9.5"
+notes = "Delta 0.9.4->0.9.5: documentation-only changes (added feature detection guidance, doc cross-references) and Cargo.toml normalization. No code changes, no unsafe, no new imports. Assisted-by: copilot-cli:claude-opus-4.6 cargo-vet"
 
 [[audits.windows-targets]]
 who = "Robert Zieba <robertzieba@microsoft.com>"
@@ -625,6 +739,12 @@ version = "0.52.6"
 who = "jerrysxie <jerryxie@microsoft.com>"
 criteria = "safe-to-deploy"
 version = "0.7.10"
+
+[[audits.winnow]]
+who = "Jerry Xie <jerryxie@microsoft.com>"
+criteria = "safe-to-deploy"
+delta = "0.7.10 -> 0.7.13"
+notes = "Delta adds Accumulate impls (Cow str, String, VecDeque), fixes macro PartialEq/PartialOrd, optimizes str::next_token, adds tests, improves docs. No unsafe changes, no build script, no new powerful imports. Assisted-by: copilot-cli:claude-opus-4.6 cargo-vet"
 
 [[audits.zerocopy]]
 who = "Matteo Tullo <matteotullo@microsoft.com>"
