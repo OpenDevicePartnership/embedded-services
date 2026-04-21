@@ -487,12 +487,6 @@ notes = "no_std 32-bit hashing (FNV, MurmurHash3). ~10 unsafe blocks in murmur3.
 who = "Jerry Xie <jerryxie@microsoft.com>"
 criteria = "safe-to-deploy"
 delta = "0.13.2 -> 0.14.5"
-notes = "Commonly used hash table implementation. Diff 0.13.2 -> 0.14.5: Update to latest, safe to deploy (pure Rust, standard library-like, no significant logic changes that would impact safety). Assisted-by: copilot-cli:claude-opus-4.6 cargo-vet"
-
-[[audits.hashbrown]]
-who = "Jerry Xie <jerryxie@microsoft.com>"
-criteria = "safe-to-deploy"
-delta = "0.13.2 -> 0.14.5"
 notes = "SwissTable hash map delta. Major changes: allocator refactored out of RawTableInner, new InsertSlot type, NEON SIMD for aarch64, allocator-api2 integration, new HashTable API, strict provenance. Extensive unsafe reviewed for soundness. No build script, no proc macros, no powerful imports. Assisted-by: copilot-cli:claude-opus-4.6 cargo-vet"
 
 [[audits.hashlink]]
@@ -542,8 +536,8 @@ version = "2.9.0"
 [[audits.indexmap]]
 who = "Jerry Xie <jerryxie@microsoft.com>"
 criteria = "safe-to-deploy"
-delta = "2.11.4 -> 2.11.0"
-notes = "Reverse delta removing serde_core migration, get_key_value_mut API, and Ord bound relaxation. No unsafe, no build script, no I/O. Assisted-by: copilot-cli:claude-opus-4.6 cargo-vet"
+delta = "2.9.0 -> 2.11.0"
+notes = "Forward delta audit covering serde_core migration, get_key_value_mut API, and Ord bound relaxation. No unsafe, no build script, no I/O. Assisted-by: copilot-cli:claude-opus-4.6 cargo-vet"
 
 [[audits.io-uring]]
 who = "Jerry Xie <jerryxie@microsoft.com>"
@@ -1054,15 +1048,15 @@ criteria = "safe-to-run"
 version = "0.52.6"
 
 [[audits.winnow]]
+who = "Jerry Xie <jerryxie@microsoft.com>"
+criteria = "safe-to-deploy"
+version = "0.6.24"
+notes = "Direct audit of 0.6.24. Contains fewer unsafe stream APIs than 0.7.10. Retains 4 sound unsafe blocks: 2 repr(transparent) transmutes, 2 from_utf8_unchecked on ASCII-only bytes. No build script, no proc macros. Assisted-by: copilot-cli:claude-opus-4.6 cargo-vet"
+
+[[audits.winnow]]
 who = "jerrysxie <jerryxie@microsoft.com>"
 criteria = "safe-to-deploy"
 version = "0.7.10"
-
-[[audits.winnow]]
-who = "Jerry Xie <jerryxie@microsoft.com>"
-criteria = "safe-to-deploy"
-delta = "0.7.10 -> 0.6.24"
-notes = "Downgrade delta. Removes ~40 unsafe fn methods from stream submodules. Retains 4 sound unsafe blocks: 2 repr(transparent) transmutes, 2 from_utf8_unchecked on ASCII-only bytes. No build script, no proc macros. Assisted-by: copilot-cli:claude-opus-4.6 cargo-vet"
 
 [[audits.winnow]]
 who = "Jerry Xie <jerryxie@microsoft.com>"
@@ -1079,8 +1073,8 @@ notes = "Pointer abstraction unsafe in comu.rs delegates to std NonNull ops. wm.
 [[audits.yaml-rust2]]
 who = "Jerry Xie <jerryxie@microsoft.com>"
 criteria = "safe-to-deploy"
-delta = "0.10.3 -> 0.9.0"
-notes = "Downgrade delta. Pure YAML parser, no unsafe, no build script, no proc macros. Changes are minor: hashlink dep range, MSRV, emitter quoting list, scanner reserve(), float parsing guard. Assisted-by: copilot-cli:claude-opus-4.6 cargo-vet"
+version = "0.9.0"
+notes = "Pure YAML parser, no unsafe, no build script, no proc macros. Reviewed version 0.9.0 directly; differences from 0.10.x are minor: hashlink dep range, MSRV, emitter quoting list, scanner reserve(), float parsing guard. Assisted-by: copilot-cli:claude-opus-4.6 cargo-vet"
 
 [[audits.zerocopy]]
 who = "Matteo Tullo <matteotullo@microsoft.com>"
