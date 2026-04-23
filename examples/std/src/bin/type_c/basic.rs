@@ -2,7 +2,7 @@ use embassy_executor::{Executor, Spawner};
 use embassy_sync::channel::Channel;
 use embassy_time::Timer;
 use embedded_services::GlobalRawMutex;
-use embedded_usb_pd::ucsi::lpm;
+
 use embedded_usb_pd::{GlobalPortId, PdError as Error};
 use log::*;
 use static_cell::StaticCell;
@@ -16,7 +16,6 @@ const PORT1_ID: GlobalPortId = GlobalPortId(1);
 const CHANNEL_CAPACITY: usize = 4;
 
 mod test_controller {
-    use embedded_usb_pd::ucsi;
     use type_c_interface::port::{ControllerStatus, PortRegistration};
 
     use super::*;
@@ -63,25 +62,6 @@ mod test_controller {
             }
         }
 
-        async fn process_ucsi_command(&self, command: &lpm::GlobalCommand) -> ucsi::GlobalResponse {
-            match command.operation() {
-                lpm::CommandData::ConnectorReset => {
-                    info!("Reset for port {:#?}", command.port());
-                    ucsi::Response {
-                        cci: ucsi::cci::Cci::new_cmd_complete(),
-                        data: None,
-                    }
-                }
-                rest => {
-                    info!("UCSI command {:#?} for port {:#?}", rest, command.port());
-                    ucsi::Response {
-                        cci: ucsi::cci::Cci::new_cmd_complete(),
-                        data: None,
-                    }
-                }
-            }
-        }
-
         async fn process_port_command(&self, command: port::PortCommand) -> Result<port::PortResponseData, Error> {
             info!("Port command for port {}", command.port.0);
             Ok(port::PortResponseData::Complete)
@@ -93,7 +73,6 @@ mod test_controller {
                 port::Command::Controller(command) => {
                     port::Response::Controller(self.process_controller_command(command).await)
                 }
-                port::Command::Lpm(command) => port::Response::Ucsi(self.process_ucsi_command(&command).await),
                 port::Command::Port(command) => port::Response::Port(self.process_port_command(command).await),
             };
 

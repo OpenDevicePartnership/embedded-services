@@ -1,5 +1,5 @@
 use embassy_time::{Duration, with_timeout};
-use embedded_usb_pd::ucsi::{self, lpm};
+use embedded_usb_pd::ucsi::lpm;
 use embedded_usb_pd::{GlobalPortId, PdError};
 
 use crate::port::ControllerId;
@@ -120,45 +120,6 @@ impl Context {
                 }
             })
             .ok_or(PdError::InvalidPort)
-    }
-
-    /// Send a command to the given port
-    pub async fn send_port_command_ucsi_no_timeout(
-        &self,
-        port_id: GlobalPortId,
-        command: lpm::CommandData,
-    ) -> Result<ucsi::GlobalResponse, PdError> {
-        let node = self.find_node_by_port(port_id)?;
-
-        match node
-            .data::<Device>()
-            .ok_or(PdError::InvalidController)?
-            .execute_command(Command::Lpm(lpm::Command::new(port_id, command)))
-            .await
-        {
-            Response::Ucsi(response) => Ok(response),
-            r => {
-                error!("Invalid response: expected LPM, got {:?}", r);
-                Err(PdError::InvalidResponse)
-            }
-        }
-    }
-
-    /// Send a command to the given port with a timeout
-    pub async fn send_port_command_ucsi(
-        &self,
-        port_id: GlobalPortId,
-        command: lpm::CommandData,
-    ) -> Result<ucsi::GlobalResponse, PdError> {
-        match with_timeout(
-            DEFAULT_TIMEOUT,
-            self.send_port_command_ucsi_no_timeout(port_id, command),
-        )
-        .await
-        {
-            Ok(response) => response,
-            Err(_) => Err(PdError::Timeout),
-        }
     }
 
     /// Send a command to the given port with no timeout

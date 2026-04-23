@@ -3,7 +3,7 @@ use core::future::Future;
 use core::num::NonZeroU8;
 
 use embassy_sync::channel::{DynamicReceiver, DynamicSender};
-use embedded_usb_pd::ucsi::{self, lpm};
+use embedded_usb_pd::ucsi::lpm;
 use embedded_usb_pd::{
     DataRole, Error, GlobalPortId, LocalPortId, PdError, PlugOrientation, PowerRole,
     ado::Ado,
@@ -404,8 +404,6 @@ pub enum Command {
     Controller(InternalCommandData),
     /// Port command
     Port(PortCommand),
-    /// UCSI command passthrough
-    Lpm(lpm::GlobalCommand),
 }
 
 /// Controller-specific response data
@@ -427,8 +425,6 @@ pub type InternalResponse<'a> = Result<InternalResponseData<'a>, PdError>;
 pub enum Response<'a> {
     /// Controller response
     Controller(InternalResponse<'a>),
-    /// UCSI response passthrough
-    Ucsi(ucsi::GlobalResponse),
     /// Port response
     Port(PortResponse),
 }

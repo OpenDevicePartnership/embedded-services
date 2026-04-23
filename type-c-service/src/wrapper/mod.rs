@@ -192,13 +192,13 @@ where
     }
 
     /// Process port status changed events
-    async fn process_port_status_changed<'b, const N: usize>(
+    async fn process_port_status_changed<const N: usize>(
         &self,
         sink_ready_timeout: &mut SinkReadyTimeoutEvent<N>,
         controller: &mut D::Inner,
         local_port_id: LocalPortId,
         status_event: PortStatusEventBitfield,
-    ) -> Result<Output<'b>, Error<<D::Inner as Controller>::BusError>> {
+    ) -> Result<Output, Error<<D::Inner as Controller>::BusError>> {
         let global_port_id = self
             .registration
             .pd_controller
@@ -300,12 +300,12 @@ where
     }
 
     /// Process a port notification
-    async fn process_port_event<'b, const N: usize>(
+    async fn process_port_event<const N: usize>(
         &self,
         sink_ready_timeout: &mut SinkReadyTimeoutEvent<N>,
         controller: &mut D::Inner,
         event: LocalPortEvent,
-    ) -> Result<Output<'b>, Error<<D::Inner as Controller>::BusError>> {
+    ) -> Result<Output, Error<<D::Inner as Controller>::BusError>> {
         match event.event {
             InterfacePortEvent::StatusChanged(status_event) => {
                 self.process_port_status_changed(sink_ready_timeout, controller, event.port, status_event)
@@ -339,12 +339,12 @@ where
 
     /// Top-level processing function
     /// Only call this fn from one place in a loop. Otherwise a deadlock could occur.
-    pub async fn process_event<'b, const N: usize>(
+    pub async fn process_event<const N: usize>(
         &self,
         sink_ready_timeout: &mut SinkReadyTimeoutEvent<N>,
         cfu_event_receiver: &mut CfuEventReceiver,
-        event: Event<'b>,
-    ) -> Result<Output<'b>, Error<<D::Inner as Controller>::BusError>> {
+        event: Event,
+    ) -> Result<Output, Error<<D::Inner as Controller>::BusError>> {
         let mut controller = self.controller.lock().await;
         match event {
             Event::PortEvent(port_event) => {
@@ -356,12 +356,6 @@ where
                     .process_power_command(cfu_event_receiver, &mut controller, port, &request)
                     .await;
                 Ok(Output::PowerPolicyCommand(OutputPowerPolicyCommand { port, response }))
-            }
-            Event::ControllerCommand(request) => {
-                let response = self
-                    .process_pd_command(cfu_event_receiver, &mut controller, &request.command)
-                    .await;
-                Ok(Output::ControllerCommand(OutputControllerCommand { request, response }))
             }
             Event::CfuEvent(event) => match event {
                 EventCfu::Request(request) => {
@@ -380,10 +374,10 @@ where
     }
 
     /// Event loop finalize
-    pub async fn finalize<'b, const N: usize>(
+    pub async fn finalize<const N: usize>(
         &self,
         event_receiver: &mut ArrayPowerProxyEventReceiver<'device, N>,
-        output: Output<'b>,
+        output: Output,
     ) -> Result<(), Error<<D::Inner as Controller>::BusError>> {
         match output {
             Output::Nop => Ok(()),
@@ -399,10 +393,6 @@ where
                     .send_response(port, response)
                     .await
                     .map_err(|_| Error::Pd(PdError::Failed))?;
-                Ok(())
-            }
-            Output::ControllerCommand(OutputControllerCommand { request, response }) => {
-                request.respond(response);
                 Ok(())
             }
             Output::CfuRecovery => {
@@ -421,12 +411,12 @@ where
     }
 
     /// Combined processing and finialization function
-    pub async fn process_and_finalize_event<'b, const N: usize>(
+    pub async fn process_and_finalize_event<const N: usize>(
         &self,
         sink_ready_timeout: &mut SinkReadyTimeoutEvent<N>,
         cfu_event_receiver: &mut CfuEventReceiver,
         power_event_receiver: &mut ArrayPowerProxyEventReceiver<'device, N>,
-        event: Event<'b>,
+        event: Event,
     ) -> Result<(), Error<<D::Inner as Controller>::BusError>> {
         let output = self
             .process_event(sink_ready_timeout, cfu_event_receiver, event)
