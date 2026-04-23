@@ -1,4 +1,5 @@
 #![no_std]
+pub mod bridge;
 pub mod driver;
 pub mod service;
 pub mod task;

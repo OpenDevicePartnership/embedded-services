@@ -25,6 +25,8 @@ use std_examples::type_c::mock_controller;
 use type_c_interface::port::{ControllerId, PortRegistration};
 use type_c_interface::service::context::Context;
 use type_c_interface::service::event::PortEvent as ServicePortEvent;
+use type_c_service::bridge::Bridge;
+use type_c_service::bridge::event_receiver::EventReceiver as BridgeEventReceiver;
 use type_c_service::service::config::Config;
 use type_c_service::service::{EventReceiver, Service};
 use type_c_service::wrapper::backing::Storage;
@@ -196,6 +198,18 @@ async fn opm_task(_context: &'static Context, _state: [&'static mock_controller:
 }
 
 #[embassy_executor::task(pool_size = 2)]
+async fn bridge_task(
+    mut event_receiver: BridgeEventReceiver,
+    mut bridge: Bridge<'static, Mutex<GlobalRawMutex, mock_controller::Controller<'static>>>,
+) -> ! {
+    loop {
+        let event = event_receiver.wait_next().await;
+        let output = bridge.process_event(event).await;
+        event_receiver.finalize(output);
+    }
+}
+
+#[embassy_executor::task(pool_size = 2)]
 async fn wrapper_task(
     mut event_receiver: ArrayPortEventReceivers<'static, 1, mock_controller::InterruptReceiver<'static>>,
     wrapper: &'static mock_controller::Wrapper<'static>,
@@ -296,7 +310,6 @@ async fn task(spawner: Spawner) {
     let event_receiver0 = ArrayPortEventReceivers::new(
         state0.create_interrupt_receiver(),
         power_event_receivers0,
-        &referenced0.pd_controller,
         &storage0.cfu_device,
     );
     static CONTROLLER0: StaticCell<Mutex<GlobalRawMutex, mock_controller::Controller>> = StaticCell::new();
@@ -308,6 +321,8 @@ async fn task(spawner: Spawner) {
         referenced0,
         mock_controller::Validator,
     ));
+    let bridge_receiver0 = BridgeEventReceiver::new(&referenced0.pd_controller);
+    let bridge0 = Bridge::new(controller0, &referenced0.pd_controller);
 
     static POLICY_CHANNEL1: StaticCell<Channel<GlobalRawMutex, psu::event::EventData, 2>> = StaticCell::new();
     let policy_channel1 = POLICY_CHANNEL1.init(Channel::new());
@@ -356,7 +371,6 @@ async fn task(spawner: Spawner) {
     let event_receiver1 = ArrayPortEventReceivers::new(
         state1.create_interrupt_receiver(),
         power_event_receivers1,
-        &referenced1.pd_controller,
         &storage1.cfu_device,
     );
     static CONTROLLER1: StaticCell<Mutex<GlobalRawMutex, mock_controller::Controller>> = StaticCell::new();
@@ -368,6 +382,8 @@ async fn task(spawner: Spawner) {
         referenced1,
         mock_controller::Validator,
     ));
+    let bridge_receiver1 = BridgeEventReceiver::new(&referenced1.pd_controller);
+    let bridge1 = Bridge::new(controller1, &referenced1.pd_controller);
 
     // Create power policy service
     static POWER_SERVICE_CONTEXT: StaticCell<power_policy_service::service::context::Context> = StaticCell::new();
@@ -450,6 +466,8 @@ async fn task(spawner: Spawner) {
         )
         .expect("Failed to create type-c service task"),
     );
+    spawner.spawn(bridge_task(bridge_receiver0, bridge0).expect("Failed to create bridge0 task"));
+    spawner.spawn(bridge_task(bridge_receiver1, bridge1).expect("Failed to create bridge1 task"));
     spawner.spawn(wrapper_task(event_receiver0, wrapper0).expect("Failed to create wrapper0 task"));
     spawner.spawn(wrapper_task(event_receiver1, wrapper1).expect("Failed to create wrapper1 task"));
     spawner.spawn(opm_task(controller_context, [state0, state1]).expect("Failed to create opm task"));

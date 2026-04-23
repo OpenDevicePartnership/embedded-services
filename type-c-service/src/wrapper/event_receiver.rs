@@ -2,7 +2,7 @@
 use core::array;
 use core::future::pending;
 use core::pin::pin;
-use embassy_futures::select::{Either, Either5, select, select_slice, select5};
+use embassy_futures::select::{Either, Either4, select, select_slice, select4};
 use embassy_time::{Instant, Ticker, Timer};
 use embedded_services::{debug, trace};
 use embedded_usb_pd::LocalPortId;
@@ -13,7 +13,6 @@ use crate::wrapper::cfu::FwUpdateState;
 use crate::wrapper::message::{Event, EventCfu, LocalPortEvent, PowerPolicyCommand};
 use crate::wrapper::proxy::PowerProxyReceiver;
 use type_c_interface::port::event::{PortEvent, PortEventBitfield, PortStatusEventBitfield};
-use type_c_interface::port::{self};
 
 /// Trait used for receiving interrupt from the controller.
 pub trait InterruptReceiver<const N: usize> {
@@ -222,8 +221,6 @@ pub struct ArrayPortEventReceivers<'device, const N: usize, PortInterrupts: Inte
     pub port_events: PortEventReceiver<N, PortInterrupts>,
     /// Power proxy event receiver
     pub power_proxies: ArrayPowerProxyEventReceiver<'device, N>,
-    /// PD controller
-    pub pd_controller: &'static port::Device<'static>,
     /// CFU event receiver
     pub cfu_event_receiver: CfuEventReceiver,
     /// Sink ready timeout event receiver
@@ -237,13 +234,11 @@ impl<'device, const N: usize, PortInterrupts: InterruptReceiver<N>>
     pub fn new(
         port_interrupts: PortInterrupts,
         power_proxies: [PowerProxyReceiver<'device>; N],
-        pd_controller: &'static port::Device<'static>,
         cfu_device: &'static cfu_service::component::CfuDevice,
     ) -> Self {
         Self {
             port_events: PortEventReceiver::new(port_interrupts),
             power_proxies: ArrayPowerProxyEventReceiver::new(power_proxies),
-            pd_controller,
             cfu_event_receiver: CfuEventReceiver::new(cfu_device),
             sink_ready_timeout: SinkReadyTimeoutEvent::new(),
         }
@@ -252,21 +247,19 @@ impl<'device, const N: usize, PortInterrupts: InterruptReceiver<N>>
     /// Wait for the next port event from any port.
     ///
     /// Returns the local port ID and the event bitfield.
-    pub async fn wait_event(&mut self) -> Event<'device> {
-        match select5(
+    pub async fn wait_event(&mut self) -> Event {
+        match select4(
             self.port_events.wait_next(),
             self.power_proxies.wait_next(),
-            self.pd_controller.receive(),
             self.cfu_event_receiver.wait_next(),
             self.sink_ready_timeout.wait_next(),
         )
         .await
         {
-            Either5::First(event) => Event::PortEvent(event),
-            Either5::Second(command) => Event::PowerPolicyCommand(command),
-            Either5::Third(request) => Event::ControllerCommand(request),
-            Either5::Fourth(cfu_event) => Event::CfuEvent(cfu_event),
-            Either5::Fifth(port) => {
+            Either4::First(event) => Event::PortEvent(event),
+            Either4::Second(command) => Event::PowerPolicyCommand(command),
+            Either4::Third(cfu_event) => Event::CfuEvent(cfu_event),
+            Either4::Fourth(port) => {
                 let mut status_event = PortStatusEventBitfield::none();
                 status_event.set_sink_ready(true);
                 Event::PortEvent(LocalPortEvent {

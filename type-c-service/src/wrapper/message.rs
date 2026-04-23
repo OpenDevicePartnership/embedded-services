@@ -1,10 +1,9 @@
 //! [`crate::wrapper::ControllerWrapper`] message types
-use embedded_services::{GlobalRawMutex, ipc::deferred};
 use embedded_usb_pd::{LocalPortId, ado::Ado};
 
 use type_c_interface::{
     port::event::PortStatusEventBitfield,
-    port::{self, DpStatus, PortStatus},
+    port::{DpStatus, PortStatus},
 };
 
 /// Port event
@@ -38,13 +37,11 @@ pub enum EventCfu {
 }
 
 /// Wrapper events
-pub enum Event<'a> {
+pub enum Event {
     /// Port status changed
     PortEvent(LocalPortEvent),
     /// Power policy command received
     PowerPolicyCommand(PowerPolicyCommand),
-    /// Command from TCPM
-    ControllerCommand(deferred::Request<'a, GlobalRawMutex, port::Command, port::Response<'static>>),
     /// Cfu event
     CfuEvent(EventCfu),
 }
@@ -79,14 +76,6 @@ pub struct OutputPowerPolicyCommand {
     pub response: power_policy_interface::psu::InternalResponseData,
 }
 
-/// Controller command output data
-pub struct OutputControllerCommand<'a> {
-    /// Controller request
-    pub request: deferred::Request<'a, GlobalRawMutex, port::Command, port::Response<'static>>,
-    /// Response
-    pub response: port::Response<'static>,
-}
-
 pub mod vdm {
     //! Events and output for vendor-defined messaging.
     use type_c_interface::port::event::VdmData;
@@ -115,7 +104,7 @@ pub struct OutputDpStatusChanged {
 }
 
 /// [`crate::wrapper::ControllerWrapper`] output
-pub enum Output<'a> {
+pub enum Output {
     /// No-op when nothing specific is needed
     Nop,
     /// Port status changed
@@ -126,8 +115,6 @@ pub enum Output<'a> {
     Vdm(vdm::Output),
     /// Power policy command received
     PowerPolicyCommand(OutputPowerPolicyCommand),
-    /// TPCM command response
-    ControllerCommand(OutputControllerCommand<'a>),
     /// CFU recovery tick
     CfuRecovery,
     /// CFU response

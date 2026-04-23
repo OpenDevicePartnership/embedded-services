@@ -21,6 +21,8 @@ use std_examples::type_c::mock_controller;
 use type_c_interface::port::ControllerId;
 use type_c_interface::port::PortRegistration;
 use type_c_interface::service::event::PortEvent as ServicePortEvent;
+use type_c_service::bridge::Bridge;
+use type_c_service::bridge::event_receiver::EventReceiver as BridgeEventReceiver;
 use type_c_service::service::{EventReceiver, Service};
 use type_c_service::wrapper::backing::{IntermediateStorage, ReferencedStorage, Storage};
 use type_c_service::wrapper::event_receiver::ArrayPortEventReceivers;
@@ -66,6 +68,18 @@ type PowerPolicyServiceType = Mutex<
 >;
 
 type ServiceType = Service<'static>;
+
+#[embassy_executor::task(pool_size = 3)]
+async fn bridge_task(
+    mut event_receiver: BridgeEventReceiver,
+    mut bridge: Bridge<'static, Mutex<GlobalRawMutex, mock_controller::Controller<'static>>>,
+) -> ! {
+    loop {
+        let event = event_receiver.wait_next().await;
+        let output = bridge.process_event(event).await;
+        event_receiver.finalize(output);
+    }
+}
 
 #[embassy_executor::task(pool_size = 3)]
 async fn controller_task(
@@ -141,7 +155,6 @@ async fn task(spawner: Spawner) {
     let event_receiver0 = ArrayPortEventReceivers::new(
         state0.create_interrupt_receiver(),
         power_event_receivers0,
-        &referenced0.pd_controller,
         &storage0.cfu_device,
     );
     static CONTROLLER0: StaticCell<Mutex<GlobalRawMutex, mock_controller::Controller>> = StaticCell::new();
@@ -153,6 +166,8 @@ async fn task(spawner: Spawner) {
         referenced0,
         crate::mock_controller::Validator,
     ));
+    let bridge_receiver0 = BridgeEventReceiver::new(&referenced0.pd_controller);
+    let bridge0 = Bridge::new(controller0, &referenced0.pd_controller);
 
     static POLICY_CHANNEL1: StaticCell<Channel<GlobalRawMutex, psu::event::EventData, 1>> = StaticCell::new();
     let policy_channel1 = POLICY_CHANNEL1.init(Channel::new());
@@ -192,7 +207,6 @@ async fn task(spawner: Spawner) {
     let event_receiver1 = ArrayPortEventReceivers::new(
         state1.create_interrupt_receiver(),
         power_event_receivers1,
-        &referenced1.pd_controller,
         &storage1.cfu_device,
     );
     static CONTROLLER1: StaticCell<Mutex<GlobalRawMutex, mock_controller::Controller>> = StaticCell::new();
@@ -204,6 +218,8 @@ async fn task(spawner: Spawner) {
         referenced1,
         crate::mock_controller::Validator,
     ));
+    let bridge_receiver1 = BridgeEventReceiver::new(&referenced1.pd_controller);
+    let bridge1 = Bridge::new(controller1, &referenced1.pd_controller);
 
     static POLICY_CHANNEL2: StaticCell<Channel<GlobalRawMutex, psu::event::EventData, 1>> = StaticCell::new();
     let policy_channel2 = POLICY_CHANNEL2.init(Channel::new());
@@ -243,7 +259,6 @@ async fn task(spawner: Spawner) {
     let event_receiver2 = ArrayPortEventReceivers::new(
         state2.create_interrupt_receiver(),
         power_event_receivers2,
-        &referenced2.pd_controller,
         &storage2.cfu_device,
     );
     static CONTROLLER2: StaticCell<Mutex<GlobalRawMutex, mock_controller::Controller>> = StaticCell::new();
@@ -255,6 +270,8 @@ async fn task(spawner: Spawner) {
         referenced2,
         crate::mock_controller::Validator,
     ));
+    let bridge_receiver2 = BridgeEventReceiver::new(&referenced2.pd_controller);
+    let bridge2 = Bridge::new(controller2, &referenced2.pd_controller);
 
     // The service is the only receiver and we only use a DynImmediatePublisher, which doesn't take a publisher slot
     static POWER_POLICY_CHANNEL: StaticCell<
@@ -315,6 +332,9 @@ async fn task(spawner: Spawner) {
         .expect("Failed to create type-c service task"),
     );
 
+    spawner.spawn(bridge_task(bridge_receiver0, bridge0).expect("Failed to create bridge0 task"));
+    spawner.spawn(bridge_task(bridge_receiver1, bridge1).expect("Failed to create bridge1 task"));
+    spawner.spawn(bridge_task(bridge_receiver2, bridge2).expect("Failed to create bridge2 task"));
     spawner.spawn(controller_task(event_receiver0, wrapper0).expect("Failed to create controller0 task"));
     spawner.spawn(controller_task(event_receiver1, wrapper1).expect("Failed to create controller1 task"));
     spawner.spawn(controller_task(event_receiver2, wrapper2).expect("Failed to create controller2 task"));
