@@ -1,7 +1,6 @@
 use std::num::NonZeroU8;
 
 use embassy_sync::{channel, mutex::Mutex, signal::Signal};
-use embedded_cfu_protocol::protocol_definitions::{FwUpdateOfferResponse, HostToken};
 use embedded_services::GlobalRawMutex;
 use embedded_usb_pd::{Error, ado::Ado};
 use embedded_usb_pd::{LocalPortId, PdError};
@@ -200,26 +199,6 @@ impl type_c_interface::port::Controller for Controller<'_> {
         Ok(())
     }
 
-    async fn get_active_fw_version(&mut self) -> Result<u32, Error<Self::BusError>> {
-        Ok(0)
-    }
-
-    async fn start_fw_update(&mut self) -> Result<(), Error<Self::BusError>> {
-        Ok(())
-    }
-
-    async fn abort_fw_update(&mut self) -> Result<(), Error<Self::BusError>> {
-        Ok(())
-    }
-
-    async fn finalize_fw_update(&mut self) -> Result<(), Error<Self::BusError>> {
-        Ok(())
-    }
-
-    async fn write_fw_contents(&mut self, _offset: usize, _data: &[u8]) -> Result<(), Error<Self::BusError>> {
-        Ok(())
-    }
-
     async fn set_max_sink_voltage(
         &mut self,
         port: LocalPortId,
@@ -342,23 +321,9 @@ impl type_c_interface::port::Controller for Controller<'_> {
     }
 }
 
-pub struct Validator;
-
-impl type_c_service::wrapper::FwOfferValidator for Validator {
-    fn validate(
-        &self,
-        _current: embedded_cfu_protocol::protocol_definitions::FwVersion,
-        _offer: &embedded_cfu_protocol::protocol_definitions::FwUpdateOffer,
-    ) -> embedded_cfu_protocol::protocol_definitions::FwUpdateOfferResponse {
-        // For this example, we always accept the new version
-        FwUpdateOfferResponse::new_accept(HostToken::Driver)
-    }
-}
-
 pub type Wrapper<'a> = type_c_service::wrapper::ControllerWrapper<
     'a,
     GlobalRawMutex,
     Mutex<GlobalRawMutex, Controller<'a>>,
     channel::DynamicSender<'a, power_policy_interface::psu::event::EventData>,
-    Validator,
 >;

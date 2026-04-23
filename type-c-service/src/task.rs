@@ -12,22 +12,20 @@ use crate::{
 };
 
 /// Task to run the Type-C service, running the default event loop
-pub async fn task<M, D, S, V, PowerReceiver: Receiver<PowerPolicyEventData>, const N: usize>(
+pub async fn task<M, D, S, PowerReceiver: Receiver<PowerPolicyEventData>, const N: usize>(
     service: &'static impl Lockable<Inner = Service<'static>>,
     mut event_receiver: EventReceiver<'static, PowerReceiver>,
-    wrappers: [&'static ControllerWrapper<'static, M, D, S, V>; N],
-    cfu_client: &'static cfu_service::CfuClient,
+    wrappers: [&'static ControllerWrapper<'static, M, D, S>; N],
 ) where
     M: embassy_sync::blocking_mutex::raw::RawMutex,
     D: embedded_services::sync::Lockable,
     S: event::Sender<power_policy_interface::psu::event::EventData>,
-    V: crate::wrapper::FwOfferValidator,
     <D as embedded_services::sync::Lockable>::Inner: type_c_interface::port::Controller,
 {
     info!("Starting type-c task");
 
     for controller_wrapper in wrappers {
-        if controller_wrapper.register(cfu_client).is_err() {
+        if controller_wrapper.register().is_err() {
             error!("Failed to register a controller");
             return;
         }

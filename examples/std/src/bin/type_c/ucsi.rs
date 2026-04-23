@@ -37,8 +37,6 @@ const CONTROLLER0_ID: ControllerId = ControllerId(0);
 const CONTROLLER1_ID: ControllerId = ControllerId(1);
 const PORT0_ID: GlobalPortId = GlobalPortId(0);
 const PORT1_ID: GlobalPortId = GlobalPortId(1);
-const CFU0_ID: u8 = 0x00;
-const CFU1_ID: u8 = 0x01;
 
 type DeviceType = Mutex<GlobalRawMutex, PowerProxyDevice<'static>>;
 
@@ -204,11 +202,7 @@ async fn wrapper_task(
         let event = event_receiver.wait_event().await;
 
         let output = wrapper
-            .process_event(
-                &mut event_receiver.sink_ready_timeout,
-                &mut event_receiver.cfu_event_receiver,
-                event,
-            )
+            .process_event(&mut event_receiver.sink_ready_timeout, event)
             .await;
         if let Err(e) = output {
             error!("Error processing event: {e:?}");
@@ -233,10 +227,9 @@ async fn type_c_service_task(
     service: &'static Mutex<GlobalRawMutex, ServiceType>,
     event_receiver: EventReceiver<'static, PowerPolicyReceiverType>,
     wrappers: [&'static Wrapper<'static>; NUM_PD_CONTROLLERS],
-    cfu_client: &'static CfuClient,
 ) {
     info!("Starting type-c task");
-    type_c_service::task::task(service, event_receiver, wrappers, cfu_client).await;
+    type_c_service::task::task(service, event_receiver, wrappers).await;
 }
 
 #[embassy_executor::task]
@@ -253,7 +246,6 @@ async fn task(spawner: Spawner) {
     let storage0 = STORAGE0.init(Storage::new(
         controller_context,
         CONTROLLER0_ID,
-        CFU0_ID,
         [PortRegistration {
             id: PORT0_ID,
             sender: PORT0_CHANNEL.dyn_sender(),
@@ -297,7 +289,6 @@ async fn task(spawner: Spawner) {
         state0.create_interrupt_receiver(),
         power_event_receivers0,
         &referenced0.pd_controller,
-        &storage0.cfu_device,
     );
     static CONTROLLER0: StaticCell<Mutex<GlobalRawMutex, mock_controller::Controller>> = StaticCell::new();
     let controller0 = CONTROLLER0.init(Mutex::new(mock_controller::Controller::new(state0)));
@@ -306,7 +297,6 @@ async fn task(spawner: Spawner) {
         controller0,
         Default::default(),
         referenced0,
-        mock_controller::Validator,
     ));
 
     static POLICY_CHANNEL1: StaticCell<Channel<GlobalRawMutex, psu::event::EventData, 2>> = StaticCell::new();
@@ -319,7 +309,6 @@ async fn task(spawner: Spawner) {
     let storage1 = STORAGE1.init(Storage::new(
         controller_context,
         CONTROLLER1_ID,
-        CFU1_ID,
         [PortRegistration {
             id: PORT1_ID,
             sender: PORT1_CHANNEL.dyn_sender(),
@@ -357,7 +346,6 @@ async fn task(spawner: Spawner) {
         state1.create_interrupt_receiver(),
         power_event_receivers1,
         &referenced1.pd_controller,
-        &storage1.cfu_device,
     );
     static CONTROLLER1: StaticCell<Mutex<GlobalRawMutex, mock_controller::Controller>> = StaticCell::new();
     let controller1 = CONTROLLER1.init(Mutex::new(mock_controller::Controller::new(state1)));
@@ -366,7 +354,6 @@ async fn task(spawner: Spawner) {
         controller1,
         Default::default(),
         referenced1,
-        mock_controller::Validator,
     ));
 
     // Create power policy service
@@ -426,10 +413,6 @@ async fn task(spawner: Spawner) {
         controller_context,
     )));
 
-    // Spin up CFU service
-    static CFU_CLIENT: OnceLock<CfuClient> = OnceLock::new();
-    let cfu_client = CfuClient::new(&CFU_CLIENT).await;
-
     spawner.spawn(
         power_policy_task(
             ArrayEventReceivers::new(
@@ -446,7 +429,6 @@ async fn task(spawner: Spawner) {
             type_c_service,
             EventReceiver::new(controller_context, power_policy_subscriber),
             [wrapper0, wrapper1],
-            cfu_client,
         )
         .expect("Failed to create type-c service task"),
     );

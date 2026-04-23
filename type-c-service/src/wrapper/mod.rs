@@ -3,7 +3,6 @@
 //! # Supported service messaging
 //! This struct currently supports messages from the following services:
 //! * Type-C: [`type_c_interface::port::Command`]
-//! * CFU: [`cfu_service::Request`]
 //! # Event loop
 //! This struct follows a standard process/finalize event loop.
 //!
@@ -15,12 +14,10 @@
 use core::ops::DerefMut;
 
 use crate::wrapper::backing::PortState;
-use crate::wrapper::event_receiver::{ArrayPowerProxyEventReceiver, CfuEventReceiver, SinkReadyTimeoutEvent};
-use cfu_service::CfuClient;
+use crate::wrapper::event_receiver::{ArrayPowerProxyEventReceiver, SinkReadyTimeoutEvent};
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use embassy_sync::signal::Signal;
 use embassy_time::Instant;
-use embedded_cfu_protocol::protocol_definitions::{FwUpdateOffer, FwUpdateOfferResponse, FwVersion};
 use embedded_services::event;
 use embedded_services::sync::Lockable;
 use embedded_services::{error, info, trace};
@@ -32,7 +29,6 @@ use type_c_interface::service::event::{PortEvent as ServicePortEvent, PortEventD
 use crate::wrapper::message::*;
 
 pub mod backing;
-mod cfu;
 pub mod config;
 mod dp;
 pub mod event_receiver;
@@ -51,14 +47,6 @@ pub const DEFAULT_FW_UPDATE_TICK_INTERVAL_MS: u64 = 5000;
 /// 300 seconds at 5 seconds per tick
 pub const DEFAULT_FW_UPDATE_TIMEOUT_TICKS: u8 = 60;
 
-/// Trait for validating firmware versions before applying an update
-// TODO: remove this once we have a better framework for OEM customization
-// See https://github.com/OpenDevicePartnership/embedded-services/issues/326
-pub trait FwOfferValidator {
-    /// Determine if we are accepting the firmware update offer, returns a CFU offer response
-    fn validate(&self, current: FwVersion, offer: &FwUpdateOffer) -> FwUpdateOfferResponse;
-}
-
 /// Maximum number of supported ports
 pub const MAX_SUPPORTED_PORTS: usize = 2;
 
@@ -68,13 +56,10 @@ pub struct ControllerWrapper<
     M: RawMutex,
     D: Lockable,
     S: event::Sender<power_policy_interface::psu::event::EventData>,
-    V: FwOfferValidator,
 > where
     D::Inner: Controller,
 {
     controller: &'device D,
-    /// Trait object for validating firmware versions
-    fw_version_validator: V,
     /// Registration information for services
     pub registration: backing::Registration<'device, M>,
     /// SW port status event signal
@@ -85,13 +70,8 @@ pub struct ControllerWrapper<
     pub ports: &'device [backing::Port<'device, M, S>],
 }
 
-impl<
-    'device,
-    M: RawMutex,
-    D: Lockable,
-    S: event::Sender<power_policy_interface::psu::event::EventData>,
-    V: FwOfferValidator,
-> ControllerWrapper<'device, M, D, S, V>
+impl<'device, M: RawMutex, D: Lockable, S: event::Sender<power_policy_interface::psu::event::EventData>>
+    ControllerWrapper<'device, M, D, S>
 where
     D::Inner: Controller,
 {
@@ -100,7 +80,6 @@ where
         controller: &'device D,
         config: config::Config,
         storage: &'device backing::ReferencedStorage<'device, N, M, S>,
-        fw_version_validator: V,
     ) -> Self {
         const {
             assert!(N > 0 && N <= MAX_SUPPORTED_PORTS, "Invalid number of ports");
@@ -110,7 +89,6 @@ where
         Self {
             controller,
             config,
-            fw_version_validator,
             registration: backing.registration,
             sw_status_event: Signal::new(),
             ports: backing.ports,
@@ -342,7 +320,6 @@ where
     pub async fn process_event<'b, const N: usize>(
         &self,
         sink_ready_timeout: &mut SinkReadyTimeoutEvent<N>,
-        cfu_event_receiver: &mut CfuEventReceiver,
         event: Event<'b>,
     ) -> Result<Output<'b>, Error<<D::Inner as Controller>::BusError>> {
         let mut controller = self.controller.lock().await;
@@ -352,30 +329,13 @@ where
                     .await
             }
             Event::PowerPolicyCommand(PowerPolicyCommand { port, request }) => {
-                let response = self
-                    .process_power_command(cfu_event_receiver, &mut controller, port, &request)
-                    .await;
+                let response = self.process_power_command(&mut controller, port, &request).await;
                 Ok(Output::PowerPolicyCommand(OutputPowerPolicyCommand { port, response }))
             }
             Event::ControllerCommand(request) => {
-                let response = self
-                    .process_pd_command(cfu_event_receiver, &mut controller, &request.command)
-                    .await;
+                let response = self.process_pd_command(&mut controller, &request.command).await;
                 Ok(Output::ControllerCommand(OutputControllerCommand { request, response }))
             }
-            Event::CfuEvent(event) => match event {
-                EventCfu::Request(request) => {
-                    let response = self
-                        .process_cfu_command(cfu_event_receiver, &mut controller, &request)
-                        .await;
-                    Ok(Output::CfuResponse(response))
-                }
-                EventCfu::RecoveryTick => {
-                    // FW Update tick, process timeouts and recovery attempts
-                    self.process_cfu_tick(cfu_event_receiver, &mut controller).await;
-                    Ok(Output::CfuRecovery)
-                }
-            },
         }
     }
 
@@ -405,14 +365,6 @@ where
                 request.respond(response);
                 Ok(())
             }
-            Output::CfuRecovery => {
-                // Nothing to do here
-                Ok(())
-            }
-            Output::CfuResponse(response) => {
-                self.send_cfu_response(response).await;
-                Ok(())
-            }
             Output::DpStatusUpdate(_) => {
                 // Nothing to do here
                 Ok(())
@@ -424,18 +376,15 @@ where
     pub async fn process_and_finalize_event<'b, const N: usize>(
         &self,
         sink_ready_timeout: &mut SinkReadyTimeoutEvent<N>,
-        cfu_event_receiver: &mut CfuEventReceiver,
         power_event_receiver: &mut ArrayPowerProxyEventReceiver<'device, N>,
         event: Event<'b>,
     ) -> Result<(), Error<<D::Inner as Controller>::BusError>> {
-        let output = self
-            .process_event(sink_ready_timeout, cfu_event_receiver, event)
-            .await?;
+        let output = self.process_event(sink_ready_timeout, event).await?;
         self.finalize(power_event_receiver, output).await
     }
 
     /// Register all devices with their respective services
-    pub fn register(&'static self, cfu_client: &CfuClient) -> Result<(), Error<<D::Inner as Controller>::BusError>> {
+    pub fn register(&'static self) -> Result<(), Error<<D::Inner as Controller>::BusError>> {
         self.registration
             .context
             .register_controller(self.registration.pd_controller)
@@ -446,26 +395,12 @@ where
                 );
                 Error::Pd(PdError::Failed)
             })?;
-
-        //TODO: Remove when we have a more general framework in place
-        cfu_client.register_device(self.registration.cfu_device).map_err(|_| {
-            error!(
-                "Controller{}: Failed to register CFU device",
-                self.registration.pd_controller.id().0
-            );
-            Error::Pd(PdError::Failed)
-        })?;
         Ok(())
     }
 }
 
-impl<
-    'device,
-    M: RawMutex,
-    C: Lockable,
-    S: event::Sender<power_policy_interface::psu::event::EventData>,
-    V: FwOfferValidator,
-> Lockable for ControllerWrapper<'device, M, C, S, V>
+impl<'device, M: RawMutex, C: Lockable, S: event::Sender<power_policy_interface::psu::event::EventData>> Lockable
+    for ControllerWrapper<'device, M, C, S>
 where
     <C as Lockable>::Inner: Controller,
 {

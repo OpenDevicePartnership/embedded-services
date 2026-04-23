@@ -2,15 +2,13 @@
 use core::array;
 use core::future::pending;
 use core::pin::pin;
-use embassy_futures::select::{Either, Either5, select, select_slice, select5};
-use embassy_time::{Instant, Ticker, Timer};
+use embassy_futures::select::{Either4, select_slice, select4};
+use embassy_time::{Instant, Timer};
 use embedded_services::{debug, trace};
 use embedded_usb_pd::LocalPortId;
 
 use crate::PortEventStreamer;
-use crate::wrapper::DEFAULT_FW_UPDATE_TICK_INTERVAL_MS;
-use crate::wrapper::cfu::FwUpdateState;
-use crate::wrapper::message::{Event, EventCfu, LocalPortEvent, PowerPolicyCommand};
+use crate::wrapper::message::{Event, LocalPortEvent, PowerPolicyCommand};
 use crate::wrapper::proxy::PowerProxyReceiver;
 use type_c_interface::port::event::{PortEvent, PortEventBitfield, PortStatusEventBitfield};
 use type_c_interface::port::{self};
@@ -101,56 +99,6 @@ impl<'device, const N: usize> ArrayPowerProxyEventReceiver<'device, N> {
     }
 }
 
-/// Struct to receive CFU events.
-pub struct CfuEventReceiver {
-    /// FW update ticker used to check for timeouts and recovery attempts
-    fw_update_ticker: Ticker,
-    /// CFU device used for firmware updates
-    cfu_device: &'static cfu_service::component::CfuDevice,
-    pub fw_update_state: FwUpdateState,
-}
-
-impl CfuEventReceiver {
-    /// Create a new CFU event receiver
-    pub fn new(cfu_device: &'static cfu_service::component::CfuDevice) -> Self {
-        Self {
-            fw_update_ticker: Ticker::every(embassy_time::Duration::from_millis(DEFAULT_FW_UPDATE_TICK_INTERVAL_MS)),
-            cfu_device,
-            fw_update_state: FwUpdateState::Idle,
-        }
-    }
-
-    /// Wait for the next CFU event
-    pub async fn wait_next(&mut self) -> EventCfu {
-        match self.fw_update_state {
-            FwUpdateState::Idle => {
-                // No FW update in progress, just wait for a command
-                EventCfu::Request(self.cfu_device.wait_request().await)
-            }
-            FwUpdateState::InProgress(_) => {
-                match select(self.cfu_device.wait_request(), self.fw_update_ticker.next()).await {
-                    Either::First(command) => EventCfu::Request(command),
-                    Either::Second(_) => {
-                        debug!("FW update ticker ticked");
-                        EventCfu::RecoveryTick
-                    }
-                }
-            }
-            FwUpdateState::Recovery => {
-                // Recovery state, wait for the next attempt to recover the device
-                self.fw_update_ticker.next().await;
-                debug!("FW update ticker ticked");
-                EventCfu::RecoveryTick
-            }
-        }
-    }
-
-    /// Reset the firmware update ticker
-    pub fn reset_ticker(&mut self) {
-        self.fw_update_ticker.reset();
-    }
-}
-
 /// Struct to receive sink ready timeout events.
 pub struct SinkReadyTimeoutEvent<const N: usize> {
     timeouts: [Option<Instant>; N],
@@ -224,8 +172,6 @@ pub struct ArrayPortEventReceivers<'device, const N: usize, PortInterrupts: Inte
     pub power_proxies: ArrayPowerProxyEventReceiver<'device, N>,
     /// PD controller
     pub pd_controller: &'static port::Device<'static>,
-    /// CFU event receiver
-    pub cfu_event_receiver: CfuEventReceiver,
     /// Sink ready timeout event receiver
     pub sink_ready_timeout: SinkReadyTimeoutEvent<N>,
 }
@@ -238,13 +184,11 @@ impl<'device, const N: usize, PortInterrupts: InterruptReceiver<N>>
         port_interrupts: PortInterrupts,
         power_proxies: [PowerProxyReceiver<'device>; N],
         pd_controller: &'static port::Device<'static>,
-        cfu_device: &'static cfu_service::component::CfuDevice,
     ) -> Self {
         Self {
             port_events: PortEventReceiver::new(port_interrupts),
             power_proxies: ArrayPowerProxyEventReceiver::new(power_proxies),
             pd_controller,
-            cfu_event_receiver: CfuEventReceiver::new(cfu_device),
             sink_ready_timeout: SinkReadyTimeoutEvent::new(),
         }
     }
@@ -253,20 +197,18 @@ impl<'device, const N: usize, PortInterrupts: InterruptReceiver<N>>
     ///
     /// Returns the local port ID and the event bitfield.
     pub async fn wait_event(&mut self) -> Event<'device> {
-        match select5(
+        match select4(
             self.port_events.wait_next(),
             self.power_proxies.wait_next(),
             self.pd_controller.receive(),
-            self.cfu_event_receiver.wait_next(),
             self.sink_ready_timeout.wait_next(),
         )
         .await
         {
-            Either5::First(event) => Event::PortEvent(event),
-            Either5::Second(command) => Event::PowerPolicyCommand(command),
-            Either5::Third(request) => Event::ControllerCommand(request),
-            Either5::Fourth(cfu_event) => Event::CfuEvent(cfu_event),
-            Either5::Fifth(port) => {
+            Either4::First(event) => Event::PortEvent(event),
+            Either4::Second(command) => Event::PowerPolicyCommand(command),
+            Either4::Third(request) => Event::ControllerCommand(request),
+            Either4::Fourth(port) => {
                 let mut status_event = PortStatusEventBitfield::none();
                 status_event.set_sink_ready(true);
                 Event::PortEvent(LocalPortEvent {
