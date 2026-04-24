@@ -85,7 +85,8 @@ impl<'a> PowerProxyDevice<'a> {
 
 impl<'a> Psu for PowerProxyDevice<'a> {
     async fn disconnect(&mut self) -> Result<(), power_policy_interface::psu::Error> {
-        self.execute(PolicyCommandData::Disconnect).await?.complete_or_err()
+        self.execute(PolicyCommandData::Disconnect).await?.complete_or_err()?;
+        self.psu_state.disconnect(false)
     }
 
     async fn connect_provider(
@@ -94,7 +95,8 @@ impl<'a> Psu for PowerProxyDevice<'a> {
     ) -> Result<(), power_policy_interface::psu::Error> {
         self.execute(PolicyCommandData::ConnectAsProvider(capability))
             .await?
-            .complete_or_err()
+            .complete_or_err()?;
+        self.psu_state.connect_provider(capability)
     }
 
     async fn connect_consumer(
@@ -103,7 +105,8 @@ impl<'a> Psu for PowerProxyDevice<'a> {
     ) -> Result<(), power_policy_interface::psu::Error> {
         self.execute(PolicyCommandData::ConnectAsConsumer(capability))
             .await?
-            .complete_or_err()
+            .complete_or_err()?;
+        self.psu_state.connect_consumer(capability)
     }
 
     fn state(&self) -> &power_policy_interface::psu::State {

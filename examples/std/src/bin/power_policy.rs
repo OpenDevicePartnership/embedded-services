@@ -51,18 +51,21 @@ impl<'a> ExampleDevice<'a> {
     }
 
     pub async fn simulate_attach(&mut self) {
+        let _ = self.state.attach();
         self.sender
             .send(power_policy_interface::psu::event::EventData::Attached)
             .await;
     }
 
     pub async fn simulate_update_consumer_power_capability(&mut self, capability: Option<ConsumerPowerCapability>) {
+        let _ = self.state.update_consumer_power_capability(capability);
         self.sender
             .send(power_policy_interface::psu::event::EventData::UpdatedConsumerCapability(capability))
             .await;
     }
 
     pub async fn simulate_detach(&mut self) {
+        self.state.detach();
         self.sender
             .send(power_policy_interface::psu::event::EventData::Detached)
             .await;
@@ -72,6 +75,7 @@ impl<'a> ExampleDevice<'a> {
         &mut self,
         capability: Option<ProviderPowerCapability>,
     ) {
+        let _ = self.state.update_requested_provider_power_capability(capability);
         self.sender
             .send(power_policy_interface::psu::event::EventData::RequestedProviderCapability(capability))
             .await
@@ -81,17 +85,17 @@ impl<'a> ExampleDevice<'a> {
 impl Psu for ExampleDevice<'_> {
     async fn disconnect(&mut self) -> Result<(), Error> {
         debug!("ExampleDevice disconnect");
-        Ok(())
+        self.state.disconnect(false)
     }
 
     async fn connect_provider(&mut self, capability: ProviderPowerCapability) -> Result<(), Error> {
         debug!("ExampleDevice connect_provider with {capability:?}");
-        Ok(())
+        self.state.connect_provider(capability)
     }
 
     async fn connect_consumer(&mut self, capability: ConsumerPowerCapability) -> Result<(), Error> {
         debug!("ExampleDevice connect_consumer with {capability:?}");
-        Ok(())
+        self.state.connect_consumer(capability)
     }
 
     fn state(&self) -> &psu::State {

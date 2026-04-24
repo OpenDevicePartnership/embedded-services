@@ -9,7 +9,7 @@ pub mod registration;
 pub mod task;
 
 use embedded_services::named::Named;
-use embedded_services::{error, event::Sender, info, sync::Lockable};
+use embedded_services::{event::Sender, info, sync::Lockable};
 
 use power_policy_interface::{
     capability::{ConsumerPowerCapability, PowerCapability, ProviderPowerCapability},
@@ -93,18 +93,14 @@ impl<'device, Reg: Registration<'device>> Service<'device, Reg> {
     }
 
     async fn process_notify_attach(&self, device: &'device Reg::Psu) {
-        let mut device = device.lock().await;
+        let device = device.lock().await;
         info!("({}): Received notify attached", device.name());
-        if let Err(e) = device.state_mut().attach() {
-            error!("({}): Invalid state for attach: {:#?}", device.name(), e);
-        }
     }
 
     async fn process_notify_detach(&mut self, device: &'device Reg::Psu) -> Result<(), Error> {
         {
-            let mut device = device.lock().await;
+            let device = device.lock().await;
             info!("({}): Received notify detached", device.name());
-            device.state_mut().detach();
         }
 
         self.post_provider_removed(device).await;
@@ -118,19 +114,12 @@ impl<'device, Reg: Registration<'device>> Service<'device, Reg> {
         capability: Option<ConsumerPowerCapability>,
     ) -> Result<(), Error> {
         {
-            let mut device = device.lock().await;
+            let device = device.lock().await;
             info!(
                 "({}): Received notify consumer capability: {:#?}",
                 device.name(),
                 capability,
             );
-            if let Err(e) = device.state_mut().update_consumer_power_capability(capability) {
-                error!(
-                    "({}): Invalid state for notify consumer capability, catching up: {:#?}",
-                    device.name(),
-                    e,
-                );
-            }
         }
 
         self.update_current_consumer().await
@@ -142,22 +131,12 @@ impl<'device, Reg: Registration<'device>> Service<'device, Reg> {
         capability: Option<ProviderPowerCapability>,
     ) -> Result<(), Error> {
         {
-            let mut requester = requester.lock().await;
+            let requester = requester.lock().await;
             info!(
                 "({}): Received request provider capability: {:#?}",
                 requester.name(),
                 capability,
             );
-            if let Err(e) = requester
-                .state_mut()
-                .update_requested_provider_power_capability(capability)
-            {
-                error!(
-                    "({}): Invalid state for notify provider capability, catching up: {:#?}",
-                    requester.name(),
-                    e,
-                );
-            }
         }
 
         self.connect_provider(requester).await
@@ -165,16 +144,8 @@ impl<'device, Reg: Registration<'device>> Service<'device, Reg> {
 
     async fn process_notify_disconnect(&mut self, device: &'device Reg::Psu) -> Result<(), Error> {
         {
-            let mut locked_device = device.lock().await;
+            let locked_device = device.lock().await;
             info!("({}): Received notify disconnect", locked_device.name());
-
-            if let Err(e) = locked_device.state_mut().disconnect(true) {
-                error!(
-                    "({}): Invalid state for notify disconnect, catching up: {:#?}",
-                    locked_device.name(),
-                    e,
-                );
-            }
         }
 
         self.post_provider_removed(device).await;

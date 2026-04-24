@@ -69,7 +69,7 @@ where
         &self,
         controller: &mut D::Inner,
         port_state: &mut PortState<S>,
-        state: &psu::State,
+        state: &mut psu::State,
         local_port: LocalPortId,
         voltage_mv: Option<u16>,
     ) -> Result<port::PortResponseData, PdError> {
@@ -84,6 +84,7 @@ where
                     "Port{}: Disconnecting consumer before setting max sink voltage",
                     local_port.0
                 );
+                let _ = state.disconnect(true);
                 port_state
                     .power_policy_sender
                     .send(power_policy_interface::psu::event::EventData::Disconnected)
@@ -170,11 +171,11 @@ where
             port::PortCommandData::SetMaxSinkVoltage(voltage_mv) => {
                 match self.registration.pd_controller.lookup_local_port(command.port) {
                     Ok(local_port) => {
-                        let psu_state = port.proxy.lock().await.psu_state;
+                        let mut proxy = port.proxy.lock().await;
                         self.process_set_max_sink_voltage(
                             controller,
                             &mut port_state,
-                            &psu_state,
+                            &mut proxy.psu_state,
                             local_port,
                             voltage_mv,
                         )
