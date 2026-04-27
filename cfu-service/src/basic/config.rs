@@ -3,7 +3,7 @@
 use embassy_time::Duration;
 
 /// Base interval for checking for FW update timeouts and recovery attempts
-pub const DEFAULT_FW_UPDATE_TICK_INTERVAL: Duration = Duration::from_millis(5000);
+pub const DEFAULT_FW_UPDATE_TICK_INTERVAL: Duration = Duration::from_secs(5);
 /// Default number of ticks before we consider a firmware update to have timed out
 /// 300 seconds at 5 seconds per tick
 pub const DEFAULT_FW_UPDATE_TIMEOUT_TICKS: u32 = 60;
