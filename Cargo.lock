@@ -331,14 +331,20 @@ checksum = "2fd1289c04a9ea8cb22300a459a72a385d7c73d3259e2ed7dcb2af674838cfa9"
 name = "cfu-service"
 version = "0.1.0"
 dependencies = [
+ "critical-section",
  "defmt 0.3.100",
  "embassy-futures",
  "embassy-sync",
  "embassy-time",
  "embedded-cfu-protocol",
  "embedded-services",
+ "env_logger",
+ "fw-update-interface",
+ "fw-update-interface-mocks",
  "heapless 0.8.0",
  "log",
+ "static_cell",
+ "tokio",
 ]
 
 [[package]]
@@ -940,6 +946,25 @@ name = "futures-sink"
 version = "0.3.31"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e575fab7d1e0dcb8d0c7bcf9a63ee213816ab51902e6d244a95819acacf1d4f7"
+
+[[package]]
+name = "fw-update-interface"
+version = "0.1.0"
+dependencies = [
+ "defmt 0.3.100",
+ "embedded-services",
+ "log",
+ "tokio",
+]
+
+[[package]]
+name = "fw-update-interface-mocks"
+version = "0.1.0"
+dependencies = [
+ "embedded-services",
+ "fw-update-interface",
+ "tokio",
+]
 
 [[package]]
 name = "generator"

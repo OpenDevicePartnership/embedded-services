@@ -237,6 +237,7 @@ dependencies = [
  "embassy-time",
  "embedded-cfu-protocol",
  "embedded-services",
+ "fw-update-interface",
  "heapless 0.8.0",
  "log",
 ]
@@ -707,6 +708,14 @@ name = "futures-sink"
 version = "0.3.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c39754e157331b013978ec91992bde1ac089843443c49cbc7f46150b0fad0893"
+
+[[package]]
+name = "fw-update-interface"
+version = "0.1.0"
+dependencies = [
+ "embedded-services",
+ "log",
+]
 
 [[package]]
 name = "generator"

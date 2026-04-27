@@ -6,12 +6,17 @@ use embedded_cfu_protocol::components::CfuComponentTraits;
 use embedded_cfu_protocol::protocol_definitions::*;
 use embedded_services::{GlobalRawMutex, comms, error, info, intrusive_list, trace};
 
+pub mod basic;
 pub mod buffer;
 pub mod component;
+pub mod customization;
 pub mod host;
 mod responses;
 pub mod splitter;
 pub mod task;
+
+#[cfg(test)]
+pub mod mocks;
 
 pub struct CfuClient {
     /// Cfu Client context
