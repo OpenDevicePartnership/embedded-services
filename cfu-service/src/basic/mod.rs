@@ -109,7 +109,8 @@ impl<'a, Device: Lockable<Inner: FwUpdate>, Shared: Lockable<Inner = SharedState
 
     /// Process a GetFwVersion command
     pub async fn process_get_fw_version(&mut self) -> InternalResponseData {
-        let version = match self.device.lock().await.get_active_fw_version().await {
+        let result = self.device.lock().await.get_active_fw_version().await;
+        let version = match result {
             Ok(v) => v,
             Err(e) => {
                 error!("Failed to get active firmware version: {:?}", e);
@@ -131,7 +132,8 @@ impl<'a, Device: Lockable<Inner: FwUpdate>, Shared: Lockable<Inner = SharedState
             return Self::create_offer_rejection();
         }
 
-        let version = match self.device.lock().await.get_active_fw_version().await {
+        let result = self.device.lock().await.get_active_fw_version().await;
+        let version = match result {
             Ok(v) => v,
             Err(e) => {
                 error!("Failed to get active firmware version: {:?}", e);
@@ -171,11 +173,10 @@ impl<'a, Device: Lockable<Inner: FwUpdate>, Shared: Lockable<Inner = SharedState
         };
 
         debug!("Got content {:#?}", content);
-        let mut locked_device = self.device.lock().await;
         if content.header.flags & FW_UPDATE_FLAG_FIRST_BLOCK != 0 {
             debug!("Got first block");
 
-            let result = locked_device.start_fw_update().await;
+            let result = self.device.lock().await.start_fw_update().await;
             match result {
                 Ok(_) => {
                     debug!("FW update started successfully");
@@ -190,14 +191,19 @@ impl<'a, Device: Lockable<Inner: FwUpdate>, Shared: Lockable<Inner = SharedState
                 }
             }
 
-            let mut shared_state = self.shared_state.lock().await;
-            shared_state.enter_in_progress(self.config.recovery.tick_interval);
+            self.shared_state
+                .lock()
+                .await
+                .enter_in_progress(self.config.recovery.tick_interval);
         }
 
-        match locked_device
-            .write_fw_contents(content.header.firmware_address as usize, data)
+        let result = self
+            .device
+            .lock()
             .await
-        {
+            .write_fw_contents(content.header.firmware_address as usize, data)
+            .await;
+        match result {
             Ok(_) => {
                 debug!("Block written successfully");
             }
@@ -211,7 +217,8 @@ impl<'a, Device: Lockable<Inner: FwUpdate>, Shared: Lockable<Inner = SharedState
         }
 
         if content.header.flags & FW_UPDATE_FLAG_LAST_BLOCK != 0 {
-            match locked_device.finalize_fw_update().await {
+            let result = self.device.lock().await.finalize_fw_update().await;
+            match result {
                 Ok(_) => {
                     debug!("FW update finalized successfully");
                     self.shared_state.lock().await.enter_idle();
@@ -237,7 +244,8 @@ impl<'a, Device: Lockable<Inner: FwUpdate>, Shared: Lockable<Inner = SharedState
     pub async fn process_recovery_tick(&mut self) {
         // Update timed out, attempt to abort
         self.shared_state.lock().await.enter_recovery();
-        match self.device.lock().await.abort_fw_update().await {
+        let result = self.device.lock().await.abort_fw_update().await;
+        match result {
             Ok(_) => {
                 debug!("FW update aborted successfully");
                 self.shared_state.lock().await.enter_idle();
@@ -250,7 +258,8 @@ impl<'a, Device: Lockable<Inner: FwUpdate>, Shared: Lockable<Inner = SharedState
 
     /// Process a CFU command, dispatching to the appropriate handler
     pub async fn process_cfu_command(&mut self, command: &RequestData) -> InternalResponseData {
-        if self.shared_state.lock().await.fw_update_state == FwUpdateState::Recovery {
+        let fw_update_state = self.shared_state.lock().await.fw_update_state;
+        if fw_update_state == FwUpdateState::Recovery {
             debug!("FW update in recovery state, rejecting command");
             return InternalResponseData::ComponentBusy;
         }
