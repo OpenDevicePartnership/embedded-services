@@ -1251,7 +1251,6 @@ name = "power-policy-interface"
 version = "0.1.0"
 dependencies = [
  "bitfield 0.17.0",
- "embassy-futures",
  "embassy-sync",
  "embedded-batteries-async",
  "embedded-services",

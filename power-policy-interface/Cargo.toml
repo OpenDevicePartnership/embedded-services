@@ -15,7 +15,6 @@ workspace = true
 defmt = { workspace = true, optional = true }
 embassy-sync.workspace = true
 embedded-services.workspace = true
-embassy-futures.workspace = true
 num_enum.workspace = true
 bitfield.workspace = true
 log = { workspace = true, optional = true }
@@ -25,3 +24,6 @@ embedded-batteries-async.workspace = true
 default = []
 defmt = ["dep:defmt", "embedded-services/defmt", "embassy-sync/defmt"]
 log = ["dep:log", "embedded-services/log", "embassy-sync/log"]
+
+[dev-dependencies]
+critical-section = { workspace = true, features = ["std"] }

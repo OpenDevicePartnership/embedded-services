@@ -3,16 +3,18 @@ use core::ptr;
 
 pub mod config;
 pub mod consumer;
-pub mod context;
 pub mod provider;
 pub mod registration;
 pub mod task;
 
 use embedded_services::named::Named;
+use embedded_services::trace;
 use embedded_services::{error, event::Sender, info, sync::Lockable};
 
+use power_policy_interface::charger::{Charger, PsuState};
 use power_policy_interface::{
-    capability::{ConsumerPowerCapability, PowerCapability, ProviderPowerCapability},
+    capability::{ConsumerPowerCapability, ProviderPowerCapability},
+    charger::{Event as ChargerEvent, EventData as ChargerEventData},
     psu::{
         Error, Psu,
         event::{Event as PsuEvent, EventData as PsuEventData},
@@ -57,8 +59,6 @@ where
 pub struct Service<'device, Reg: Registration<'device>> {
     /// Service registration
     registration: Reg,
-    /// Power policy context
-    pub context: &'device context::Context,
     /// State
     state: InternalState<'device, Reg::Psu>,
     /// Config
@@ -67,10 +67,9 @@ pub struct Service<'device, Reg: Registration<'device>> {
 
 impl<'device, Reg: Registration<'device>> Service<'device, Reg> {
     /// Create a new power policy
-    pub fn new(registration: Reg, context: &'device context::Context, config: config::Config) -> Self {
+    pub fn new(registration: Reg, config: config::Config) -> Self {
         Self {
             registration,
-            context,
             state: InternalState::default(),
             config,
         }
@@ -206,5 +205,34 @@ impl<'device, Reg: Registration<'device>> Service<'device, Reg> {
             }
             PsuEventData::Disconnected => self.process_notify_disconnect(device).await,
         }
+    }
+
+    async fn process_psu_state_change(
+        &mut self,
+        charger: &'device Reg::Charger,
+        psu_state: PsuState,
+    ) -> Result<(), Error> {
+        // Currently a no-op, but functionality might be added in the future.
+        let locked_charger = charger.lock().await;
+        trace!(
+            "Charger PSU state change to {:?} event recvd in charger state {:?}",
+            psu_state,
+            locked_charger.state()
+        );
+        Ok(())
+    }
+
+    pub async fn process_charger_event(&mut self, event: ChargerEvent<'device, Reg::Charger>) -> Result<(), Error> {
+        let charger = event.charger;
+
+        match event.event {
+            ChargerEventData::PsuStateChange(psu_state) => self.process_psu_state_change(charger, psu_state).await?,
+            _ => {
+                return Err(Error::Charger(
+                    power_policy_interface::charger::ChargerError::UnknownEvent,
+                ));
+            }
+        };
+        Ok(())
     }
 }

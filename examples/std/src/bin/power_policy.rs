@@ -5,19 +5,28 @@ use embassy_sync::{
     mutex::Mutex,
 };
 use embassy_time::{self as _, Timer};
+use embedded_batteries_async::charger::{MilliAmps, MilliVolts};
 use embedded_services::{GlobalRawMutex, event::NoopSender, named::Named};
 use log::*;
-use power_policy_interface::psu::{Error, Psu};
 use power_policy_interface::{
     capability::{ConsumerFlags, ConsumerPowerCapability, PowerCapability, ProviderPowerCapability},
-    psu,
+    charger, psu,
 };
-use power_policy_service::{psu::ArrayEventReceivers, service::registration::ArrayRegistration};
+use power_policy_interface::{
+    charger::Charger,
+    psu::{Error, Psu},
+};
+use power_policy_service::{
+    charger::ChargerEventReceivers, psu::PsuEventReceivers, service::registration::ArrayRegistration,
+};
 use static_cell::StaticCell;
 
 type ServiceType = Mutex<
     GlobalRawMutex,
-    power_policy_service::service::Service<'static, ArrayRegistration<'static, DeviceType, 2, NoopSender, 1>>,
+    power_policy_service::service::Service<
+        'static,
+        ArrayRegistration<'static, DeviceType, 2, NoopSender, 1, ChargerType, 1>,
+    >,
 >;
 
 const LOW_POWER: PowerCapability = PowerCapability {
@@ -111,6 +120,97 @@ impl Named for ExampleDevice<'_> {
 
 type DeviceType = Mutex<GlobalRawMutex, ExampleDevice<'static>>;
 
+struct ExampleCharger<'a> {
+    sender: channel::DynamicSender<'a, power_policy_interface::charger::event::EventData>,
+    state: charger::State,
+}
+
+impl<'a> ExampleCharger<'a> {
+    fn new(sender: channel::DynamicSender<'a, power_policy_interface::charger::event::EventData>) -> Self {
+        Self {
+            sender,
+            state: charger::State::default(),
+        }
+    }
+
+    fn assert_state(&self, internal_state: charger::InternalState, capability: Option<ConsumerPowerCapability>) {
+        assert_eq!(*self.state.internal_state(), internal_state);
+        assert_eq!(*self.state.capability(), capability);
+    }
+
+    pub async fn simulate_psu_state_change(&mut self, psu_state: charger::PsuState) {
+        self.sender.send(charger::EventData::PsuStateChange(psu_state)).await;
+        self.state_mut().on_psu_state_change(psu_state).unwrap();
+    }
+
+    pub fn simulate_timeout(&mut self) {
+        self.state_mut().on_timeout();
+    }
+
+    pub async fn simulate_check_ready(&mut self) {
+        self.is_ready().await.unwrap();
+    }
+
+    pub async fn simulate_init_request(&mut self) {
+        self.init_charger().await.unwrap();
+    }
+}
+
+impl<'a> embedded_batteries_async::charger::ErrorType for ExampleCharger<'a> {
+    type Error = core::convert::Infallible;
+}
+
+impl<'a> embedded_batteries_async::charger::Charger for ExampleCharger<'a> {
+    async fn charging_current(&mut self, current: MilliAmps) -> Result<MilliAmps, Self::Error> {
+        Ok(current)
+    }
+
+    async fn charging_voltage(&mut self, voltage: MilliVolts) -> Result<MilliVolts, Self::Error> {
+        Ok(voltage)
+    }
+}
+
+impl<'a> charger::Charger for ExampleCharger<'a> {
+    type ChargerError = core::convert::Infallible;
+
+    async fn init_charger(&mut self) -> Result<charger::PsuState, Self::ChargerError> {
+        info!("Charger init");
+        self.state_mut().on_initialized(charger::PsuState::Detached).unwrap();
+        Ok(charger::PsuState::Detached)
+    }
+
+    fn attach_handler(
+        &mut self,
+        capability: ConsumerPowerCapability,
+    ) -> impl Future<Output = Result<(), Self::ChargerError>> {
+        info!("Charger attach: {:?}", capability);
+        self.state_mut().on_policy_attach(capability);
+        async { Ok(()) }
+    }
+
+    fn detach_handler(&mut self) -> impl Future<Output = Result<(), Self::ChargerError>> {
+        info!("Charger detach");
+        self.state_mut().on_policy_detach();
+        async { Ok(()) }
+    }
+
+    async fn is_ready(&mut self) -> Result<(), Self::ChargerError> {
+        info!("Charger check ready");
+        self.state_mut().on_ready_success();
+        Ok(())
+    }
+
+    fn state(&self) -> &charger::State {
+        &self.state
+    }
+
+    fn state_mut(&mut self) -> &mut charger::State {
+        &mut self.state
+    }
+}
+
+type ChargerType = Mutex<GlobalRawMutex, ExampleCharger<'static>>;
+
 #[embassy_executor::task]
 async fn run(spawner: Spawner) {
     embedded_services::init().await;
@@ -135,34 +235,63 @@ async fn run(spawner: Spawner) {
         device1_event_channel.dyn_sender(),
     )));
 
-    static SERVICE_CONTEXT: StaticCell<power_policy_service::service::context::Context> = StaticCell::new();
-    let service_context = SERVICE_CONTEXT.init(power_policy_service::service::context::Context::new());
+    info!("Creating charger 0");
+    static CHARGER0_EVENT_CHANNEL: StaticCell<
+        Channel<NoopRawMutex, power_policy_interface::charger::event::EventData, 4>,
+    > = StaticCell::new();
+    let charger0_event_channel = CHARGER0_EVENT_CHANNEL.init(Channel::new());
+    static CHARGER0: StaticCell<ChargerType> = StaticCell::new();
+    let charger0 = CHARGER0.init(Mutex::new(ExampleCharger::new(charger0_event_channel.dyn_sender())));
 
     let registration = ArrayRegistration {
         psus: [device0, device1],
         service_senders: [NoopSender],
+        chargers: [charger0],
     };
 
     static SERVICE: StaticCell<ServiceType> = StaticCell::new();
     let service = SERVICE.init(Mutex::new(power_policy_service::service::Service::new(
         registration,
-        service_context,
         power_policy_service::service::config::Config::default(),
     )));
 
     spawner.spawn(
         power_policy_task(
-            ArrayEventReceivers::new(
+            PsuEventReceivers::new(
                 [device0, device1],
                 [
                     device0_event_channel.dyn_receiver(),
                     device1_event_channel.dyn_receiver(),
                 ],
             ),
+            ChargerEventReceivers::new([charger0], [charger0_event_channel.dyn_receiver()]),
             service,
         )
         .expect("Failed to create power policy task"),
     );
+
+    // Check ready charger 0, should transition to Powered(Init)
+    info!("Charger 0 check ready");
+    {
+        let mut chrg0 = charger0.lock().await;
+        chrg0.simulate_check_ready().await;
+        chrg0.assert_state(charger::InternalState::Powered(charger::PoweredSubstate::Init), None);
+    }
+
+    Timer::after_millis(PER_CALL_DELAY_MS).await;
+
+    // Check ready charger 0, should transition to Powered(PsuDetached)
+    info!("Charger 0 init");
+    {
+        let mut chrg0 = charger0.lock().await;
+        // For production code, use more robust error handling (eg. retries) instead of blowing up.
+        chrg0.simulate_init_request().await;
+        chrg0.assert_state(
+            charger::InternalState::Powered(charger::PoweredSubstate::PsuDetached),
+            None,
+        );
+    }
+    Timer::after_millis(PER_CALL_DELAY_MS).await;
 
     // Plug in device 0, should become current consumer
     info!("Connecting device 0");
@@ -175,9 +304,22 @@ async fn run(spawner: Spawner) {
         }))
         .await;
     }
-    Timer::after_millis(PER_CALL_DELAY_MS).await;
 
+    Timer::after_millis(PER_CALL_DELAY_MS).await;
+    {
+        // Simulate PSU attach
+        let mut chrg0 = charger0.lock().await;
+        chrg0.simulate_psu_state_change(charger::PsuState::Attached).await;
+        chrg0.assert_state(
+            charger::InternalState::Powered(charger::PoweredSubstate::PsuAttached),
+            Some(ConsumerPowerCapability {
+                capability: LOW_POWER,
+                flags: ConsumerFlags::none().with_unconstrained_power(),
+            }),
+        );
+    }
     // Plug in device 1, should become current consumer
+    // Charger should detach from device 0 and attach to device 1 with higher power
     info!("Connecting device 1");
     {
         let mut dev1 = device1.lock().await;
@@ -186,6 +328,14 @@ async fn run(spawner: Spawner) {
             .await;
     }
     Timer::after_millis(PER_CALL_DELAY_MS).await;
+
+    {
+        let chrg0 = charger0.lock().await;
+        chrg0.assert_state(
+            charger::InternalState::Powered(charger::PoweredSubstate::PsuAttached),
+            Some(HIGH_POWER.into()),
+        );
+    }
 
     // Unplug device 0, device 1 should remain current consumer
     info!("Unplugging device 0");
@@ -206,12 +356,21 @@ async fn run(spawner: Spawner) {
     Timer::after_millis(PER_CALL_DELAY_MS).await;
 
     // Unplug device 1, device 0 should become current consumer
+    // Charger should detach from device 1 and attach to device 0 with lower power
     info!("Unplugging device 1");
     {
         let mut dev1 = device1.lock().await;
         dev1.simulate_detach().await;
     }
     Timer::after_millis(PER_CALL_DELAY_MS).await;
+
+    {
+        let chrg0 = charger0.lock().await;
+        chrg0.assert_state(
+            charger::InternalState::Powered(charger::PoweredSubstate::PsuAttached),
+            Some(LOW_POWER.into()),
+        );
+    }
 
     // Replug device 1, device 1 becomes current consumer
     info!("Connecting device 1");
@@ -232,9 +391,82 @@ async fn run(spawner: Spawner) {
     }
     Timer::after_millis(PER_CALL_DELAY_MS).await;
 
+    // Charger should still have device 1 capability
+    {
+        let chrg0 = charger0.lock().await;
+        chrg0.assert_state(
+            charger::InternalState::Powered(charger::PoweredSubstate::PsuAttached),
+            Some(HIGH_POWER.into()),
+        );
+    }
+
+    // Detach device 1, no consumers available
+    // Charger should detach and clear capability
+    info!("Detaching device 1");
     {
         let mut dev1 = device1.lock().await;
         dev1.simulate_detach().await;
+    }
+    Timer::after_millis(PER_CALL_DELAY_MS).await;
+
+    {
+        let chrg0 = charger0.lock().await;
+        chrg0.assert_state(
+            charger::InternalState::Powered(charger::PoweredSubstate::PsuAttached),
+            None,
+        );
+    }
+
+    // Simulate charger PSU detach, charger should transition to PsuDetached
+    info!("Simulating charger PSU detach");
+    {
+        let mut chrg0 = charger0.lock().await;
+        chrg0.simulate_psu_state_change(charger::PsuState::Detached).await;
+        chrg0.assert_state(
+            charger::InternalState::Powered(charger::PoweredSubstate::PsuDetached),
+            None,
+        );
+    }
+    Timer::after_millis(PER_CALL_DELAY_MS).await;
+
+    // Simulate charger PSU reattach
+    info!("Simulating charger PSU reattach");
+    {
+        let mut chrg0 = charger0.lock().await;
+        chrg0.simulate_psu_state_change(charger::PsuState::Attached).await;
+        chrg0.assert_state(
+            charger::InternalState::Powered(charger::PoweredSubstate::PsuAttached),
+            None,
+        );
+    }
+    Timer::after_millis(PER_CALL_DELAY_MS).await;
+
+    // Simulate charger timeout, should transition to Unpowered
+    info!("Simulating charger timeout");
+    {
+        let mut chrg0 = charger0.lock().await;
+        chrg0.simulate_timeout();
+        chrg0.assert_state(charger::InternalState::Unpowered, None);
+    }
+    Timer::after_millis(PER_CALL_DELAY_MS).await;
+
+    // Recover charger: CheckReady -> Init -> PsuDetached
+    info!("Recovering charger: CheckReady");
+    {
+        let mut chrg0 = charger0.lock().await;
+        chrg0.simulate_check_ready().await;
+        chrg0.assert_state(charger::InternalState::Powered(charger::PoweredSubstate::Init), None);
+    }
+    Timer::after_millis(PER_CALL_DELAY_MS).await;
+
+    info!("Recovering charger: InitRequest");
+    {
+        let mut chrg0 = charger0.lock().await;
+        chrg0.simulate_init_request().await;
+        chrg0.assert_state(
+            charger::InternalState::Powered(charger::PoweredSubstate::PsuDetached),
+            None,
+        );
     }
     Timer::after_millis(PER_CALL_DELAY_MS).await;
 
@@ -286,15 +518,21 @@ async fn run(spawner: Spawner) {
 
 #[embassy_executor::task]
 async fn power_policy_task(
-    psu_events: ArrayEventReceivers<
+    psu_events: PsuEventReceivers<
         'static,
         2,
         DeviceType,
         channel::DynamicReceiver<'static, power_policy_interface::psu::event::EventData>,
     >,
+    charger_events: ChargerEventReceivers<
+        'static,
+        1,
+        ChargerType,
+        channel::DynamicReceiver<'static, power_policy_interface::charger::event::EventData>,
+    >,
     power_policy: &'static ServiceType,
 ) {
-    power_policy_service::service::task::task(psu_events, power_policy).await;
+    power_policy_service::service::task::task(psu_events, charger_events, power_policy).await;
 }
 
 fn main() {

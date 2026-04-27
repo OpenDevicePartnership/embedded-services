@@ -1,14 +1,12 @@
 use core::cmp::Ordering;
+use embedded_services::error;
 use embedded_services::named::Named;
-use embedded_services::{debug, error};
 
 use super::*;
 
-use power_policy_interface::capability::ConsumerFlags;
-use power_policy_interface::charger::Device as ChargerDevice;
 use power_policy_interface::psu;
 use power_policy_interface::service::event::Event as ServiceEvent;
-use power_policy_interface::{capability::ConsumerPowerCapability, charger::PolicyEvent, psu::PsuState};
+use power_policy_interface::{capability::ConsumerPowerCapability, psu::PsuState};
 
 /// State of the current consumer
 #[derive(Debug, PartialEq, Eq)]
@@ -135,26 +133,26 @@ impl<'device, Reg: Registration<'device>> Service<'device, Reg> {
         embassy_time::Timer::after_millis(800).await;
 
         // If no chargers are registered, they won't receive the new power capability.
-        for node in self.context.charger_devices() {
-            let device = node.data::<ChargerDevice>().ok_or(Error::InvalidDevice)?;
+        for node in self.registration.chargers() {
+            let mut locked_charger = node.lock().await;
             // Chargers should be powered at this point, but in case they are not...
-            if let power_policy_interface::charger::ChargerResponseData::UnpoweredAck = device
-                .execute_command(PolicyEvent::PolicyConfiguration(
-                    connected_consumer.consumer_power_capability,
-                ))
-                .await?
-            {
+            if locked_charger.state().is_unpowered() {
                 // Force charger CheckReady and InitRequest to get it into an initialized state.
                 // This condition can get hit if we did not have a previous consumer and the charger is unpowered.
                 info!("Charger is unpowered, forcing charger CheckReady and Init sequence");
-                self.context.check_chargers_ready().await?;
-                self.context.init_chargers().await?;
-                device
-                    .execute_command(PolicyEvent::PolicyConfiguration(
-                        connected_consumer.consumer_power_capability,
-                    ))
-                    .await?;
+
+                locked_charger.is_ready().await.map_err(|e| Error::Charger(e.into()))?;
+                locked_charger
+                    .init_charger()
+                    .await
+                    .map_err(|e| Error::Charger(e.into()))?;
             }
+
+            // Attach and update state to new capability
+            locked_charger
+                .attach_handler(connected_consumer.consumer_power_capability)
+                .await
+                .map_err(|e| Error::Charger(e.into()))?;
         }
         self.broadcast_event(ServiceEvent::ConsumerConnected(
             connected_consumer.psu,
@@ -165,21 +163,15 @@ impl<'device, Reg: Registration<'device>> Service<'device, Reg> {
         Ok(())
     }
 
-    /// Disconnect all chargers
+    /// Disconnect all chargers, skipping over unpowered chargers
     pub(super) async fn disconnect_chargers(&self) -> Result<(), Error> {
-        for node in self.context.charger_devices() {
-            let device = node.data::<ChargerDevice>().ok_or(Error::InvalidDevice)?;
-            if let power_policy_interface::charger::ChargerResponseData::UnpoweredAck = device
-                .execute_command(PolicyEvent::PolicyConfiguration(ConsumerPowerCapability {
-                    capability: PowerCapability {
-                        voltage_mv: 0,
-                        current_ma: 0,
-                    },
-                    flags: ConsumerFlags::none(),
-                }))
-                .await?
-            {
-                debug!("Charger is unpowered, continuing disconnect_chargers()...");
+        for charger in self.registration.chargers() {
+            let mut locked_charger = charger.lock().await;
+            if !locked_charger.state().is_unpowered() {
+                locked_charger
+                    .detach_handler()
+                    .await
+                    .map_err(|e| Error::Charger(e.into()))?;
             }
         }
 
@@ -278,6 +270,7 @@ impl<'device, Reg: Registration<'device>> Service<'device, Reg> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use power_policy_interface::capability::PowerCapability;
 
     const P0: PowerCapability = PowerCapability {
         voltage_mv: 5000,

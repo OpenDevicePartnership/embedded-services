@@ -17,8 +17,9 @@ use embedded_usb_pd::ucsi::ppm::set_notification_enable::NotificationEnable;
 use embedded_usb_pd::ucsi::{Command, lpm, ppm};
 use log::*;
 use power_policy_interface::capability::PowerCapability;
+use power_policy_interface::charger::mock::ChargerType;
 use power_policy_interface::psu;
-use power_policy_service::psu::ArrayEventReceivers;
+use power_policy_service::psu::PsuEventReceivers;
 use power_policy_service::service::registration::ArrayRegistration;
 use static_cell::StaticCell;
 use std_examples::type_c::mock_controller;
@@ -57,7 +58,7 @@ type PowerPolicyServiceType = Mutex<
     GlobalRawMutex,
     power_policy_service::service::Service<
         'static,
-        ArrayRegistration<'static, DeviceType, 2, PowerPolicySenderType, 1>,
+        ArrayRegistration<'static, DeviceType, 2, PowerPolicySenderType, 1, ChargerType, 0>,
     >,
 >;
 
@@ -222,10 +223,10 @@ async fn wrapper_task(
 
 #[embassy_executor::task]
 async fn power_policy_task(
-    psu_events: ArrayEventReceivers<'static, 2, DeviceType, DynamicReceiver<'static, psu::event::EventData>>,
+    psu_events: PsuEventReceivers<'static, 2, DeviceType, DynamicReceiver<'static, psu::event::EventData>>,
     power_policy: &'static PowerPolicyServiceType,
 ) {
-    power_policy_service::service::task::task(psu_events, power_policy).await;
+    power_policy_service::service::task::psu_task(psu_events, power_policy).await;
 }
 
 #[embassy_executor::task]
@@ -370,9 +371,6 @@ async fn task(spawner: Spawner) {
     ));
 
     // Create power policy service
-    static POWER_SERVICE_CONTEXT: StaticCell<power_policy_service::service::context::Context> = StaticCell::new();
-    let power_service_context = POWER_SERVICE_CONTEXT.init(power_policy_service::service::context::Context::new());
-
     // The service is the only receiver and we only use a DynImmediatePublisher, which doesn't take a publisher slot
     static POWER_POLICY_CHANNEL: StaticCell<
         PubSubChannel<GlobalRawMutex, power_policy_interface::service::event::EventData, 4, 1, 0>,
@@ -387,12 +385,12 @@ async fn task(spawner: Spawner) {
     let power_policy_registration = ArrayRegistration {
         psus: [&wrapper0.ports[0].proxy, &wrapper1.ports[0].proxy],
         service_senders: [power_policy_sender],
+        chargers: [],
     };
 
     static POWER_SERVICE: StaticCell<PowerPolicyServiceType> = StaticCell::new();
     let power_service = POWER_SERVICE.init(Mutex::new(power_policy_service::service::Service::new(
         power_policy_registration,
-        power_service_context,
         power_policy_service::service::config::Config::default(),
     )));
 
@@ -432,7 +430,7 @@ async fn task(spawner: Spawner) {
 
     spawner.spawn(
         power_policy_task(
-            ArrayEventReceivers::new(
+            PsuEventReceivers::new(
                 [&wrapper0.ports[0].proxy, &wrapper1.ports[0].proxy],
                 [policy_receiver0, policy_receiver1],
             ),

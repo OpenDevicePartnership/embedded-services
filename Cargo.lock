@@ -1530,8 +1530,8 @@ name = "power-policy-interface"
 version = "0.1.0"
 dependencies = [
  "bitfield 0.17.0",
+ "critical-section",
  "defmt 0.3.100",
- "embassy-futures",
  "embassy-sync",
  "embedded-batteries-async",
  "embedded-services",
@@ -1548,6 +1548,7 @@ dependencies = [
  "embassy-futures",
  "embassy-sync",
  "embassy-time",
+ "embedded-batteries-async",
  "embedded-services",
  "env_logger",
  "heapless 0.8.0",

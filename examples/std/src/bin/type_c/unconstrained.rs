@@ -13,8 +13,9 @@ use embedded_services::event::MapSender;
 use embedded_usb_pd::GlobalPortId;
 use log::*;
 use power_policy_interface::capability::PowerCapability;
+use power_policy_interface::charger::mock::ChargerType;
 use power_policy_interface::psu;
-use power_policy_service::psu::ArrayEventReceivers;
+use power_policy_service::psu::PsuEventReceivers;
 use power_policy_service::service::registration::ArrayRegistration;
 use static_cell::StaticCell;
 use std_examples::type_c::mock_controller;
@@ -61,7 +62,7 @@ type PowerPolicyServiceType = Mutex<
     GlobalRawMutex,
     power_policy_service::service::Service<
         'static,
-        ArrayRegistration<'static, DeviceType, 3, PowerPolicySenderType, 1>,
+        ArrayRegistration<'static, DeviceType, 3, PowerPolicySenderType, 1, ChargerType, 0>,
     >,
 >;
 
@@ -97,9 +98,6 @@ async fn task(spawner: Spawner) {
     embedded_services::init().await;
 
     // Create power policy service
-    static POWER_SERVICE_CONTEXT: StaticCell<power_policy_service::service::context::Context> = StaticCell::new();
-    let power_service_context = POWER_SERVICE_CONTEXT.init(power_policy_service::service::context::Context::new());
-
     static CONTROLLER_CONTEXT: StaticCell<type_c_interface::service::context::Context> = StaticCell::new();
     let controller_context = CONTROLLER_CONTEXT.init(type_c_interface::service::context::Context::new());
 
@@ -274,12 +272,12 @@ async fn task(spawner: Spawner) {
             &wrapper2.ports[0].proxy,
         ],
         service_senders: [power_policy_sender],
+        chargers: [],
     };
 
     static POWER_SERVICE: StaticCell<PowerPolicyServiceType> = StaticCell::new();
     let power_service = POWER_SERVICE.init(Mutex::new(power_policy_service::service::Service::new(
         power_policy_registration,
-        power_service_context,
         power_policy_service::service::config::Config::default(),
     )));
 
@@ -293,7 +291,7 @@ async fn task(spawner: Spawner) {
 
     spawner.spawn(
         power_policy_task(
-            ArrayEventReceivers::new(
+            PsuEventReceivers::new(
                 [
                     &wrapper0.ports[0].proxy,
                     &wrapper1.ports[0].proxy,
@@ -370,10 +368,10 @@ async fn task(spawner: Spawner) {
 
 #[embassy_executor::task]
 async fn power_policy_task(
-    psu_events: ArrayEventReceivers<'static, 3, DeviceType, DynamicReceiver<'static, psu::event::EventData>>,
+    psu_events: PsuEventReceivers<'static, 3, DeviceType, DynamicReceiver<'static, psu::event::EventData>>,
     power_policy: &'static PowerPolicyServiceType,
 ) {
-    power_policy_service::service::task::task(psu_events, power_policy).await;
+    power_policy_service::service::task::psu_task(psu_events, power_policy).await;
 }
 
 #[embassy_executor::task]

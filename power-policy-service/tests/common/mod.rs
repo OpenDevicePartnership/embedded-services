@@ -21,13 +21,13 @@ use power_policy_interface::{
     service::{UnconstrainedState, event::Event as ServiceEvent},
 };
 use power_policy_service::service::{Service, config::Config};
-use power_policy_service::{psu::ArrayEventReceivers, service::registration::ArrayRegistration};
+use power_policy_service::{psu::PsuEventReceivers, service::registration::ArrayRegistration};
 
 pub mod mock;
 
 use mock::Mock;
 
-use crate::common::mock::FnCall;
+use crate::common::mock::{ChargerType, FnCall};
 
 pub const MINIMAL_POWER: PowerCapability = PowerCapability {
     voltage_mv: 5000,
@@ -58,6 +58,8 @@ pub type ServiceType<'device, 'sender> = Service<
         2,
         DynamicSender<'sender, ServiceEvent<'device, DeviceType<'device>>>,
         1,
+        ChargerType<'device>,
+        0,
     >,
 >;
 
@@ -66,7 +68,7 @@ pub type ServiceMutex<'device, 'sender> = Mutex<GlobalRawMutex, ServiceType<'dev
 async fn power_policy_task<'device, 'sender, const N: usize>(
     completion_signal: &'device Signal<GlobalRawMutex, ()>,
     power_policy: &ServiceMutex<'device, 'sender>,
-    mut event_receivers: ArrayEventReceivers<'device, N, DeviceType<'device>, DynamicReceiver<'device, EventData>>,
+    mut event_receivers: PsuEventReceivers<'device, N, DeviceType<'device>, DynamicReceiver<'device, EventData>>,
 ) {
     while let Either::First(result) = select(event_receivers.wait_event(), completion_signal.wait()).await {
         power_policy.lock().await.process_psu_event(result).await.unwrap();
@@ -111,7 +113,6 @@ pub async fn run_test(timeout: Duration, mut test: impl Test, config: Config) {
     let device1_receiver = device1_event_channel.dyn_receiver();
     let device1 = Mutex::new(Mock::new("PSU1", device1_sender, &device1_signal));
 
-    let service_context = power_policy_service::service::context::Context::new();
     let completion_signal = Signal::new();
 
     // For simplicity, Test::run is only generic over a single lifetime. But this causes issues with the drop checker because
@@ -124,11 +125,11 @@ pub async fn run_test(timeout: Duration, mut test: impl Test, config: Config) {
     let power_policy_registration = ArrayRegistration {
         psus: [&device0, &device1],
         service_senders: [service_event_channel.dyn_sender()],
+        chargers: [],
     };
 
     let power_policy = Mutex::new(power_policy_service::service::Service::new(
         power_policy_registration,
-        &service_context,
         config,
     ));
 
@@ -138,7 +139,7 @@ pub async fn run_test(timeout: Duration, mut test: impl Test, config: Config) {
             power_policy_task(
                 &completion_signal,
                 &power_policy,
-                ArrayEventReceivers::new([&device0, &device1], [device0_receiver, device1_receiver]),
+                PsuEventReceivers::new([&device0, &device1], [device0_receiver, device1_receiver]),
             ),
             async {
                 test.run(

@@ -78,6 +78,7 @@ ignore = [
     { id = "RUSTSEC-2024-0436", reason = "there are no suitable replacements for paste right now; paste has been archived as read-only. It only affects compile time concatenation in macros. We will allow it for now" },
     { id = "RUSTSEC-2023-0089", reason = "this is a deprecation warning for a dependency of a dependency. https://github.com/jamesmunns/postcard/issues/223 tracks fixing the dependency; until that's resolved, we can accept the deprecated code as it has no known vulnerabilities." },
     { id = "RUSTSEC-2025-0141", reason = "bincode is unmaintained, planning on migrating to an alternative." },
+    { id = "RUSTSEC-2026-0110", reason = "bare-metal is deprecated and archived, which cortex-m has a dependency on. Need cortex-m to migrate away from it." },
 ]
 # If this is true, then cargo deny will use the git executable to fetch advisory database.
 # If this is false, then it uses a built-in git library.

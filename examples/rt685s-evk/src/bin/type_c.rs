@@ -20,7 +20,7 @@ use embedded_services::event::MapSender;
 use embedded_services::{error, info};
 use embedded_usb_pd::GlobalPortId;
 use power_policy_interface::psu;
-use power_policy_service::psu::ArrayEventReceivers;
+use power_policy_service::psu::PsuEventReceivers;
 use power_policy_service::service::registration::ArrayRegistration;
 use static_cell::StaticCell;
 use tps6699x::asynchronous::embassy as tps6699x;
@@ -44,6 +44,7 @@ const PORT0_ID: GlobalPortId = GlobalPortId(0);
 const PORT1_ID: GlobalPortId = GlobalPortId(1);
 
 type DeviceType = Mutex<GlobalRawMutex, PowerProxyDevice<'static>>;
+type ChargerType = power_policy_interface::charger::mock::ChargerType;
 
 bind_interrupts!(struct Irqs {
     FLEXCOMM2 => embassy_imxrt::i2c::InterruptHandler<peripherals::FLEXCOMM2>;
@@ -86,7 +87,7 @@ type PowerPolicyServiceType = Mutex<
     GlobalRawMutex,
     power_policy_service::service::Service<
         'static,
-        ArrayRegistration<'static, DeviceType, 2, PowerPolicySenderType, 1>,
+        ArrayRegistration<'static, DeviceType, 2, PowerPolicySenderType, 1, ChargerType, 0>,
     >,
 >;
 
@@ -128,10 +129,10 @@ async fn interrupt_task(mut int_in: Input<'static>, mut interrupt: InterruptProc
 
 #[embassy_executor::task]
 async fn power_policy_task(
-    psu_events: ArrayEventReceivers<'static, 2, DeviceType, DynamicReceiver<'static, psu::event::EventData>>,
+    psu_events: PsuEventReceivers<'static, 2, DeviceType, DynamicReceiver<'static, psu::event::EventData>>,
     power_policy: &'static PowerPolicyServiceType,
 ) {
-    power_policy_service::service::task::task(psu_events, power_policy).await;
+    power_policy_service::service::task::psu_task(psu_events, power_policy).await;
 }
 
 #[embassy_executor::task]
@@ -263,18 +264,15 @@ async fn main(spawner: Spawner) {
     let power_policy_subscriber = power_policy_channel.dyn_subscriber().unwrap();
 
     // Create power policy service
-    static POWER_SERVICE_CONTEXT: StaticCell<power_policy_service::service::context::Context> = StaticCell::new();
-    let power_service_context = POWER_SERVICE_CONTEXT.init(power_policy_service::service::context::Context::new());
-
     let power_policy_registration = ArrayRegistration {
         psus: [&wrapper.ports[0].proxy, &wrapper.ports[1].proxy],
+        chargers: [],
         service_senders: [power_policy_sender],
     };
 
     static POWER_SERVICE: StaticCell<PowerPolicyServiceType> = StaticCell::new();
     let power_service = POWER_SERVICE.init(Mutex::new(power_policy_service::service::Service::new(
         power_policy_registration,
-        power_service_context,
         power_policy_service::service::config::Config::default(),
     )));
 
@@ -299,7 +297,7 @@ async fn main(spawner: Spawner) {
     info!("Spawining power policy task");
     spawner.spawn(
         power_policy_task(
-            ArrayEventReceivers::new(
+            PsuEventReceivers::new(
                 [&wrapper.ports[0].proxy, &wrapper.ports[1].proxy],
                 [policy_receiver0, policy_receiver1],
             ),
