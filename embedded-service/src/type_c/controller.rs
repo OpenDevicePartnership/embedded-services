@@ -794,7 +794,7 @@ pub trait Controller {
     /// Trigger a hard reset on the given port.
     fn hard_reset(&mut self, port: LocalPortId) -> impl Future<Output = Result<(), Error<Self::BusError>>>;
 
-    /// Get the latest response from the Discover Identity command targetting SOP.
+    /// Get the latest response from the Discover Identity command targeting SOP.
     fn get_discover_identity_sop_response(
         &mut self,
         port: LocalPortId,
@@ -805,7 +805,7 @@ pub trait Controller {
         >,
     >;
 
-    /// Get the latest response from the Discover Identity command targetting SOP'.
+    /// Get the latest response from the Discover Identity command targeting SOP'.
     fn get_discover_identity_sop_prime_response(
         &mut self,
         port: LocalPortId,
@@ -1424,7 +1424,7 @@ impl ContextToken {
         }
     }
 
-    /// Get the latest response from the Discover Identity command targetting SOP.
+    /// Get the latest response from the Discover Identity command targeting SOP.
     pub async fn get_discover_identity_sop_response(
         &self,
         port: GlobalPortId,
@@ -1441,7 +1441,7 @@ impl ContextToken {
         }
     }
 
-    /// Get the latest response from the Discover Identity command targetting SOP'.
+    /// Get the latest response from the Discover Identity command targeting SOP'.
     pub async fn get_discover_identity_sop_prime_response(
         &self,
         port: GlobalPortId,
