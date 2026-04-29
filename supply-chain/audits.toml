@@ -204,6 +204,12 @@ criteria = "safe-to-deploy"
 version = "1.0.7"
 notes = "no_std device driver toolkit. Unsafe limited to ops.rs bitfield load/store using get_unchecked with documented invariants; fuzz-tested against bitvec. No build script, no proc macros, no filesystem/network/process access. Assisted-by: copilot-chat:claude-opus-4.6 cargo-vet"
 
+[[audits.device-driver]]
+who = "Adam Sasine <asasine@users.noreply.github.com>"
+criteria = "safe-to-deploy"
+delta = "1.0.7 -> 1.0.9"
+notes = "Fixes compilation bugs for large registers but does not change invariants or testing strategy."
+
 [[audits.device-driver-generation]]
 who = "Jerry Xie <jerryxie@microsoft.com>"
 criteria = "safe-to-deploy"
