@@ -23,7 +23,7 @@ pub(super) struct State {
     ///
     /// We provide a battery charging status only after the port has negotiated power.
     /// This prevents the port from temporarily reporting slow or no charging before the contract has finalized.
-    valid_battery_charging_capability: heapless::FnvIndexSet<GlobalPortId, MAX_SUPPORTED_PORTS>,
+    valid_battery_charging_capability: heapless::index_set::FnvIndexSet<GlobalPortId, MAX_SUPPORTED_PORTS>,
     /// PSU connected
     pub(super) psu_connected: bool,
 }

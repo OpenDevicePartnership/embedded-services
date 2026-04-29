@@ -27,7 +27,7 @@ struct InternalState {
     /// System unconstrained power
     unconstrained: UnconstrainedState,
     /// Connected providers
-    connected_providers: heapless::FnvIndexSet<DeviceId, MAX_CONNECTED_PROVIDERS>,
+    connected_providers: heapless::index_set::FnvIndexSet<DeviceId, MAX_CONNECTED_PROVIDERS>,
 }
 
 /// Power policy state

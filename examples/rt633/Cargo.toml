@@ -39,7 +39,7 @@ embassy-executor = { version = "0.10.0", features = [
     "executor-interrupt",
     "defmt",
 ] }
-embassy-time = { version = "0.5.0", features = [
+embassy-time = { version = "0.5.1", features = [
     "defmt",
     "defmt-timestamp-uptime",
 ] }

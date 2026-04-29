@@ -270,6 +270,11 @@ criteria = "safe-to-deploy"
 delta = "0.2.1 -> 0.2.2"
 notes = "Rust 2024 edition update with 375kHz tick rate feature. Empty build.rs, no unsafe code, no powerful imports."
 
+[[audits.embassy-time-queue-utils]]
+who = "Felipe Balbi <febalbi@microsoft.com>"
+criteria = "safe-to-deploy"
+delta = "0.3.0 -> 0.3.2"
+
 [[audits.embedded-batteries]]
 who = "Felipe Balbi <febalbi@microsoft.com>"
 criteria = "safe-to-deploy"
