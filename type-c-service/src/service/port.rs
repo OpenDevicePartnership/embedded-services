@@ -316,7 +316,7 @@ impl<'a> Service<'a> {
         external::Response::Port(status.map(|_| external::PortResponseData::Complete))
     }
 
-    /// Process [`external::PortCommandData::DiscoverIdentitySop`] command
+    /// Process [`external::PortCommandData::GetDiscoverIdentitySop`] command
     async fn process_get_discover_identity_sop_response(&self, port_id: GlobalPortId) -> external::Response<'static> {
         let status = self.context.get_discover_identity_sop_response(port_id).await;
         if let Err(e) = status {
@@ -326,7 +326,7 @@ impl<'a> Service<'a> {
         external::Response::Port(status.map(external::PortResponseData::DiscoverIdentitySop))
     }
 
-    /// Process [`external::PortCommandData::DiscoverIdentitySopPrime`] command
+    /// Process [`external::PortCommandData::GetDiscoverIdentitySopPrime`] command
     async fn process_get_discover_identity_sop_prime_response(
         &self,
         port_id: GlobalPortId,
