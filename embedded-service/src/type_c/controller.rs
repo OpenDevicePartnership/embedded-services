@@ -270,24 +270,27 @@ pub enum TypeCStateMachineState {
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct DiscoveredSvids {
     num_sop: usize,
-    sop: [Svid; 8],
+    sop: [Svid; Self::NUM_SVIDS],
 
     num_sop_prime: usize,
-    sop_prime: [Svid; 8],
+    sop_prime: [Svid; Self::NUM_SVIDS],
 }
 
 impl DiscoveredSvids {
+    /// The number of SVIDs that can be reported in a single [`PortResponseData::DiscoveredSvids`] response.
+    const NUM_SVIDS: usize = 8;
+
     /// Create a new response object from `sop` and `sop_prime`.
-    pub fn new(sop: Vec<Svid, 8>, sop_prime: Vec<Svid, 8>) -> Self {
+    pub fn new(sop: Vec<Svid, { Self::NUM_SVIDS }>, sop_prime: Vec<Svid, { Self::NUM_SVIDS }>) -> Self {
         let num_sop = sop.len();
         let num_sop_prime = sop_prime.len();
 
-        let mut sop_array = [Svid(0); 8];
+        let mut sop_array = [Svid(0); _];
         for (svid, dest) in sop.into_iter().zip(sop_array.iter_mut()) {
             *dest = svid;
         }
 
-        let mut sop_prime_array = [Svid(0); 8];
+        let mut sop_prime_array = [Svid(0); _];
         for (svid, dest) in sop_prime.into_iter().zip(sop_prime_array.iter_mut()) {
             *dest = svid;
         }
