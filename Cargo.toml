@@ -30,6 +30,7 @@ members = [
     "type-c-interface",
     "fw-update-interface",
     "fw-update-interface-mocks",
+    "mctp-rs",
 ]
 exclude = ["examples/*"]
 
@@ -95,7 +96,7 @@ embedded-storage-async = "0.4.1"
 embedded-usb-pd = { git = "https://github.com/OpenDevicePartnership/embedded-usb-pd", default-features = false }
 fw-update-interface = { path = "./fw-update-interface" }
 fw-update-interface-mocks = { path = "./fw-update-interface-mocks" }
-mctp-rs = { git = "https://github.com/dymk/mctp-rs" }
+mctp-rs = { path = "./mctp-rs" }
 num_enum = { version = "0.7.5", default-features = false }
 portable-atomic = { version = "1.11", default-features = false }
 power-policy-interface = { path = "./power-policy-interface" }
