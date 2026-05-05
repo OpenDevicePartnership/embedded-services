@@ -1,0 +1,89 @@
+# rustfmt configuration for surfdbg-rs
+# See https://rust-lang.github.io/rustfmt/ for all options
+#
+# This configuration uses nightly rustfmt features.
+# Run: cargo +nightly fmt
+#
+# To install nightly rustfmt:
+#   rustup toolchain install nightly --component rustfmt
+
+# Edition must match Cargo.toml
+edition = "2024"
+
+# Enable unstable features
+unstable_features = true
+
+# ===== Import/Use Formatting (NIGHTLY) =====
+
+# Merge imports from the same crate into a single use statement
+# Options: Preserve, Crate, Module, Item, One
+imports_granularity = "Crate"
+
+# Group imports by: std/core/alloc, external crates, self/super/crate
+# This creates clean separation between different import categories
+group_imports = "StdExternalCrate"
+
+# Reorder import statements alphabetically
+reorder_imports = true
+
+# Indent style for imports
+imports_indent = "Block"
+
+# ===== Module Formatting (NIGHTLY) =====
+
+# Reorder module declarations alphabetically
+reorder_modules = true
+
+# ===== Documentation and Comments (NIGHTLY) =====
+
+# Normalize doc attributes to use /// style
+normalize_doc_attributes = true
+
+# Wrap comments at max width
+wrap_comments = true
+
+# Width for comments (defaults to max_width if not set)
+comment_width = 100
+
+# Format code in doc comments
+format_code_in_doc_comments = true
+
+# Normalize comments to use standard style
+normalize_comments = true
+
+# ===== General Formatting =====
+
+# Maximum width of each line
+max_width = 100
+
+# Use spaces instead of tabs for indentation
+hard_tabs = false
+
+# Number of spaces per tab
+tab_spaces = 4
+
+# How to handle line breaks in chains
+chain_width = 60
+
+# Use field initialization shorthand if possible
+use_field_init_shorthand = true
+
+# Use try shorthand (? operator)
+use_try_shorthand = true
+
+# Merge multiple derives into a single attribute
+merge_derives = true
+
+# ===== Advanced Formatting (NIGHTLY) =====
+
+# Format string literals where possible
+format_strings = false
+
+# Format macro bodies
+format_macro_bodies = true
+
+# Format macro matchers
+format_macro_matchers = true
+
+# Reorder impl items (keep false to preserve author's logical ordering)
+reorder_impl_items = false
