@@ -619,7 +619,7 @@ dependencies = [
 [[package]]
 name = "espi-device"
 version = "0.1.0"
-source = "git+https://github.com/OpenDevicePartnership/haf-ec-service#9805f13c044b0e314d415410c57a8a59a40eabeb"
+source = "git+https://github.com/OpenDevicePartnership/haf-ec-service#0d21aa34fd8691c6544533e6c72fe41824dc2fa8"
 dependencies = [
  "bit-register",
  "bitflags",
@@ -896,7 +896,6 @@ dependencies = [
 [[package]]
 name = "mctp-rs"
 version = "0.1.0"
-source = "git+https://github.com/dymk/mctp-rs#f3121512468e4776c4b1d2d648b54c7271b97bd9"
 dependencies = [
  "bit-register",
  "espi-device",

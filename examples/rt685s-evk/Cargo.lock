@@ -904,7 +904,6 @@ dependencies = [
 [[package]]
 name = "mctp-rs"
 version = "0.1.0"
-source = "git+https://github.com/dymk/mctp-rs#3d941ba5205ca7781bf37e3dc7c5dfdc99a082d6"
 dependencies = [
  "bit-register",
  "defmt 0.3.100",

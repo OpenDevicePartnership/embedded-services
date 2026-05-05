@@ -3,6 +3,11 @@ name = "mctp-rs"
 version = "0.1.0"
 edition = "2024"
 
+[package.metadata.cargo-machete]
+# Optional deps gated by features — cargo-machete sees them as unused at
+# default features but they ARE consumed when the relevant feature is on.
+ignored = ["embedded-batteries", "espi-device", "uuid"]
+
 [features]
 default = []
 espi = ["dep:espi-device"]

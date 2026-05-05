@@ -174,6 +174,10 @@ criteria = "safe-to-deploy"
 version = "1.0.7"
 criteria = "safe-to-deploy"
 
+[[exemptions.diff]]
+version = "0.1.13"
+criteria = "safe-to-run"
+
 [[exemptions.embassy-embedded-hal]]
 version = "0.5.0"
 criteria = "safe-to-deploy"
@@ -258,6 +262,22 @@ criteria = "safe-to-deploy"
 version = "2.0.0"
 criteria = "safe-to-deploy"
 
+[[exemptions.futures-macro]]
+version = "0.3.31"
+criteria = "safe-to-run"
+
+[[exemptions.futures-task]]
+version = "0.3.32"
+criteria = "safe-to-run"
+
+[[exemptions.futures-timer]]
+version = "3.0.3"
+criteria = "safe-to-run"
+
+[[exemptions.futures-util]]
+version = "0.3.31"
+criteria = "safe-to-run"
+
 [[exemptions.generator]]
 version = "0.8.5"
 criteria = "safe-to-deploy"
@@ -268,6 +288,10 @@ criteria = "safe-to-deploy"
 
 [[exemptions.hashbrown]]
 version = "0.14.5"
+criteria = "safe-to-deploy"
+
+[[exemptions.hashbrown]]
+version = "0.17.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.hashlink]]
@@ -284,6 +308,10 @@ criteria = "safe-to-deploy"
 
 [[exemptions.indexmap]]
 version = "2.11.0"
+criteria = "safe-to-deploy"
+
+[[exemptions.indexmap]]
+version = "2.14.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.io-uring]]
@@ -350,6 +378,18 @@ criteria = "safe-to-deploy"
 version = "1.1.10"
 criteria = "safe-to-deploy"
 
+[[exemptions.pin-utils]]
+version = "0.1.0"
+criteria = "safe-to-run"
+
+[[exemptions.pretty_assertions]]
+version = "1.4.1"
+criteria = "safe-to-run"
+
+[[exemptions.proc-macro-crate]]
+version = "3.5.0"
+criteria = "safe-to-run"
+
 [[exemptions.proc-macro-error-attr2]]
 version = "2.0.0"
 criteria = "safe-to-deploy"
@@ -373,6 +413,10 @@ criteria = "safe-to-deploy"
 [[exemptions.semver]]
 version = "0.9.0"
 criteria = "safe-to-deploy"
+
+[[exemptions.semver]]
+version = "1.0.28"
+criteria = "safe-to-run"
 
 [[exemptions.semver-parser]]
 version = "0.7.0"
@@ -398,9 +442,21 @@ criteria = "safe-to-deploy"
 version = "0.6.11"
 criteria = "safe-to-deploy"
 
+[[exemptions.toml_datetime]]
+version = "1.1.1+spec-1.1.0"
+criteria = "safe-to-run"
+
 [[exemptions.toml_edit]]
 version = "0.22.27"
 criteria = "safe-to-deploy"
+
+[[exemptions.toml_edit]]
+version = "0.25.11+spec-1.1.0"
+criteria = "safe-to-run"
+
+[[exemptions.toml_parser]]
+version = "1.1.2+spec-1.1.0"
+criteria = "safe-to-run"
 
 [[exemptions.typenum]]
 version = "1.18.0"
@@ -438,6 +494,10 @@ criteria = "safe-to-deploy"
 version = "0.7.13"
 criteria = "safe-to-deploy"
 
+[[exemptions.winnow]]
+version = "1.0.2"
+criteria = "safe-to-run"
+
 [[exemptions.wyz]]
 version = "0.5.1"
 criteria = "safe-to-deploy"
@@ -445,3 +505,7 @@ criteria = "safe-to-deploy"
 [[exemptions.yaml-rust2]]
 version = "0.9.0"
 criteria = "safe-to-deploy"
+
+[[exemptions.yansi]]
+version = "1.0.1"
+criteria = "safe-to-run"
