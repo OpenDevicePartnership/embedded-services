@@ -211,8 +211,8 @@ mod tests {
 
     use super::*;
     use crate::{
-        error::ProtocolError, mctp_command_code::MctpControlCommandCode,
-        mctp_packet_context::MctpPacketContext, test_util::*,
+        error::ProtocolError, mctp_command_code::MctpControlCommandCode, mctp_packet_context::MctpPacketContext,
+        test_util::*,
     };
 
     struct Packet(&'static [u8]);
@@ -249,16 +249,11 @@ mod tests {
         let mut context = MctpPacketContext::<TestMedium>::new(TestMedium::new(), &mut buffer);
 
         assert_eq!(
-            context
-                .deserialize_packet(GET_ENDPOINT_ID_PACKET_NO_EOM.0)
-                .unwrap(),
+            context.deserialize_packet(GET_ENDPOINT_ID_PACKET_NO_EOM.0).unwrap(),
             None
         );
 
-        let message = context
-            .deserialize_packet(EMPTY_PACKET_EOM.0)
-            .unwrap()
-            .unwrap();
+        let message = context.deserialize_packet(EMPTY_PACKET_EOM.0).unwrap().unwrap();
 
         assert_eq!(message.can_parse_as::<MctpControl>(), true);
         assert_eq!(message.message_integrity_check, None);
@@ -302,9 +297,7 @@ mod tests {
                 0b0000_0000, // source endpoint id
                 0b0000_0000, // som, eom, seq (0), to, tag
             ]),
-            Err(MctpPacketError::ProtocolError(
-                ProtocolError::ExpectedStartOfMessage,
-            ))
+            Err(MctpPacketError::ProtocolError(ProtocolError::ExpectedStartOfMessage,))
         );
     }
 
@@ -313,9 +306,7 @@ mod tests {
         let mut buffer = [0; 1024];
         let mut context = MctpPacketContext::<TestMedium>::new(TestMedium::new(), &mut buffer);
 
-        context
-            .deserialize_packet(GET_ENDPOINT_ID_PACKET_NO_EOM.0)
-            .unwrap();
+        context.deserialize_packet(GET_ENDPOINT_ID_PACKET_NO_EOM.0).unwrap();
 
         assert_eq!(
             context.deserialize_packet(&[
@@ -325,9 +316,7 @@ mod tests {
                 0b0000_0000, // source endpoint id
                 0b1000_0000, // som, eom, seq (0), to, tag
             ]),
-            Err(MctpPacketError::ProtocolError(
-                ProtocolError::UnexpectedStartOfMessage,
-            ))
+            Err(MctpPacketError::ProtocolError(ProtocolError::UnexpectedStartOfMessage,))
         );
     }
 
@@ -337,9 +326,7 @@ mod tests {
         let mut context = MctpPacketContext::<TestMedium>::new(TestMedium::new(), &mut buffer);
 
         // message tag = 0
-        context
-            .deserialize_packet(GET_ENDPOINT_ID_PACKET_NO_EOM.0)
-            .unwrap();
+        context.deserialize_packet(GET_ENDPOINT_ID_PACKET_NO_EOM.0).unwrap();
 
         // message tag = 1
         assert_eq!(
@@ -350,22 +337,18 @@ mod tests {
                 0b0000_0000, // source endpoint id
                 0b0101_0010, // som, eom, seq (1), to, tag (2)
             ]),
-            Err(MctpPacketError::ProtocolError(
-                ProtocolError::MessageTagMismatch(
-                    MctpMessageTag::try_from(3).unwrap(),
-                    MctpMessageTag::try_from(2).unwrap(),
-                ),
-            ))
+            Err(MctpPacketError::ProtocolError(ProtocolError::MessageTagMismatch(
+                MctpMessageTag::try_from(3).unwrap(),
+                MctpMessageTag::try_from(2).unwrap(),
+            ),))
         );
     }
 
     #[test]
     fn test_send_packet() {
         let mut buffer = [0; 1024];
-        let mut context = MctpPacketContext::<TestMedium>::new(
-            TestMedium::new().with_headers(&[0xA, 0xB], &[0xC, 0xD]),
-            &mut buffer,
-        );
+        let mut context =
+            MctpPacketContext::<TestMedium>::new(TestMedium::new().with_headers(&[0xA, 0xB], &[0xC, 0xD]), &mut buffer);
 
         let reply_context = MctpReplyContext {
             destination_endpoint_id: EndpointId::try_from(236).unwrap(),
@@ -375,10 +358,7 @@ mod tests {
             medium_context: (),
         };
 
-        let message = (
-            VendorDefinedPciHeader(0x1234),
-            VendorDefinedPci(&[0xA5, 0xB6]),
-        );
+        let message = (VendorDefinedPciHeader(0x1234), VendorDefinedPci(&[0xA5, 0xB6]));
 
         let mut state = context.serialize_packet(reply_context, message).unwrap();
 
@@ -430,10 +410,7 @@ mod tests {
 
         // 10 byte to send over 3 packets
         let data_to_send = [0xA5, 0xB6, 0xC7, 0xD8, 0xE9, 0xFA, 0x0B, 0x1C, 0x2D, 0x3E];
-        let message = (
-            VendorDefinedPciHeader(0x1234),
-            VendorDefinedPci(&data_to_send),
-        );
+        let message = (VendorDefinedPciHeader(0x1234), VendorDefinedPci(&data_to_send));
 
         let mut state = context.serialize_packet(reply_context, message).unwrap();
 
@@ -520,8 +497,7 @@ mod tests {
     fn test_buffer_overflow_protection() {
         // Test that buffer overflow is properly prevented
         let mut small_buffer = [0u8; 16]; // Very small buffer
-        let mut context =
-            MctpPacketContext::<TestMedium>::new(TestMedium::new(), &mut small_buffer);
+        let mut context = MctpPacketContext::<TestMedium>::new(TestMedium::new(), &mut small_buffer);
 
         // Create a packet that would cause overflow without protection
         let large_packet = [
@@ -569,8 +545,7 @@ mod tests {
     fn test_multi_packet_buffer_overflow() {
         // Test buffer overflow with multiple packets
         let mut small_buffer = [0u8; 20]; // Small buffer that can fit first packet but not second
-        let mut context =
-            MctpPacketContext::<TestMedium>::new(TestMedium::new(), &mut small_buffer);
+        let mut context = MctpPacketContext::<TestMedium>::new(TestMedium::new(), &mut small_buffer);
 
         // First packet - fits in buffer
         let first_packet = [
@@ -717,8 +692,7 @@ mod tests {
     fn test_zero_size_assembly_buffer() {
         // Test with zero-size assembly buffer
         let mut empty_buffer = [0u8; 0];
-        let mut context =
-            MctpPacketContext::<TestMedium>::new(TestMedium::new(), &mut empty_buffer);
+        let mut context = MctpPacketContext::<TestMedium>::new(TestMedium::new(), &mut empty_buffer);
 
         let packet = [
             0b0000_0001, // mctp reserved, header version

@@ -37,10 +37,7 @@ impl MctpMedium for TestMedium {
     type Error = &'static str;
     type ReplyContext = ();
 
-    fn deserialize<'buf>(
-        &self,
-        packet: &'buf [u8],
-    ) -> MctpPacketResult<(Self::Frame, &'buf [u8]), Self> {
+    fn deserialize<'buf>(&self, packet: &'buf [u8]) -> MctpPacketResult<(Self::Frame, &'buf [u8]), Self> {
         let packet_len = packet.len();
 
         // check that header / trailer is present and correct

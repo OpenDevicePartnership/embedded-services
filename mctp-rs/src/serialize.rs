@@ -33,8 +33,7 @@ impl<'buf, M: MctpMedium> SerializePacketState<'buf, M> {
                     ));
                 }
 
-                let message_size =
-                    (max_packet_size - TRANSPORT_HEADER_SIZE).min(self.message_buffer.len());
+                let message_size = (max_packet_size - TRANSPORT_HEADER_SIZE).min(self.message_buffer.len());
 
                 // if there is no room for any of the body, and the body is not empty,
                 // then return an error, otherwise we infinate loop sending packets with headers and
@@ -67,8 +66,7 @@ impl<'buf, M: MctpMedium> SerializePacketState<'buf, M> {
 
                 // write the transport header and message body
                 let mut cursor = 0;
-                buffer[cursor..cursor + TRANSPORT_HEADER_SIZE]
-                    .copy_from_slice(&transport_header.to_be_bytes());
+                buffer[cursor..cursor + TRANSPORT_HEADER_SIZE].copy_from_slice(&transport_header.to_be_bytes());
                 cursor += TRANSPORT_HEADER_SIZE;
                 // message body is the rest of the buffer, up to the packet size
                 buffer[cursor..cursor + body.len()].copy_from_slice(body);

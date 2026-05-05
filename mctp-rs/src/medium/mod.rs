@@ -18,10 +18,7 @@ pub trait MctpMedium: Sized {
 
     /// deserialize the packet into the medium specific header and remainder of the packet -
     /// this includes the mctp transport header, and mctp packet payload
-    fn deserialize<'buf>(
-        &self,
-        packet: &'buf [u8],
-    ) -> MctpPacketResult<(Self::Frame, &'buf [u8]), Self>;
+    fn deserialize<'buf>(&self, packet: &'buf [u8]) -> MctpPacketResult<(Self::Frame, &'buf [u8]), Self>;
 
     /// serialize the packet into the medium specific header and the payload
     fn serialize<'buf, F>(

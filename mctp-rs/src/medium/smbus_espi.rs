@@ -25,21 +25,17 @@ impl MctpMedium for SmbusEspiMedium {
     type Error = &'static str;
     type ReplyContext = SmbusEspiReplyContext;
 
-    fn deserialize<'buf>(
-        &self,
-        packet: &'buf [u8],
-    ) -> MctpPacketResult<(Self::Frame, &'buf [u8]), Self> {
+    fn deserialize<'buf>(&self, packet: &'buf [u8]) -> MctpPacketResult<(Self::Frame, &'buf [u8]), Self> {
         // Check if packet has enough bytes for header
         if packet.len() < 4 {
-            return Err(MctpPacketError::MediumError(
-                "Packet too short to parse smbus header",
-            ));
+            return Err(MctpPacketError::MediumError("Packet too short to parse smbus header"));
         }
 
-        let header_value =
-            u32::from_be_bytes(packet[0..4].try_into().map_err(|_| {
-                MctpPacketError::MediumError("Packet too short to parse smbus header")
-            })?);
+        let header_value = u32::from_be_bytes(
+            packet[0..4]
+                .try_into()
+                .map_err(|_| MctpPacketError::MediumError("Packet too short to parse smbus header"))?,
+        );
         // strip off the smbus header
         let packet = &packet[4..];
         let header = SmbusEspiMediumHeader::try_from(header_value)
@@ -66,9 +62,7 @@ impl MctpMedium for SmbusEspiMedium {
     {
         // Reserve space for header (4 bytes) and PEC (1 byte)
         if buffer.len() < 5 {
-            return Err(MctpPacketError::MediumError(
-                "Buffer too small for smbus frame",
-            ));
+            return Err(MctpPacketError::MediumError("Buffer too small for smbus frame"));
         }
 
         // split off a buffer where we will write the header, the rest is for body + PEC
@@ -89,8 +83,7 @@ impl MctpMedium for SmbusEspiMedium {
             command_code: SmbusCommandCode::Mctp,
             ..Default::default()
         };
-        let header_value =
-            TryInto::<u32>::try_into(header).map_err(MctpPacketError::MediumError)?;
+        let header_value = TryInto::<u32>::try_into(header).map_err(MctpPacketError::MediumError)?;
         header_slice.copy_from_slice(&header_value.to_be_bytes());
 
         // with the header written, compute the PEC byte
@@ -108,9 +101,7 @@ impl MctpMedium for SmbusEspiMedium {
 }
 
 #[repr(u8)]
-#[derive(
-    Debug, Copy, Clone, PartialEq, Eq, num_enum::IntoPrimitive, num_enum::TryFromPrimitive, Default,
-)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, num_enum::IntoPrimitive, num_enum::TryFromPrimitive, Default)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 enum SmbusCommandCode {
     #[default]
@@ -227,9 +218,7 @@ mod tests {
         let result = medium.deserialize(&short_packet);
         assert_eq!(
             result,
-            Err(MctpPacketError::MediumError(
-                "Packet too short to parse smbus header"
-            ))
+            Err(MctpPacketError::MediumError("Packet too short to parse smbus header"))
         );
     }
 
@@ -281,10 +270,7 @@ mod tests {
         packet[8] = pec;
 
         let result = medium.deserialize(&packet);
-        assert_eq!(
-            result,
-            Err(MctpPacketError::MediumError("Invalid smbus header"))
-        );
+        assert_eq!(result, Err(MctpPacketError::MediumError("Invalid smbus header")));
     }
 
     #[test]
@@ -366,9 +352,7 @@ mod tests {
 
         assert_eq!(
             result,
-            Err(MctpPacketError::MediumError(
-                "Buffer too small for smbus frame"
-            ))
+            Err(MctpPacketError::MediumError("Buffer too small for smbus frame"))
         );
     }
 
@@ -520,22 +504,13 @@ mod tests {
     #[test]
     fn test_smbus_command_code_conversion() {
         // Test valid command code
-        assert_eq!(
-            SmbusCommandCode::try_from_bits(0x0F).unwrap(),
-            SmbusCommandCode::Mctp
-        );
+        assert_eq!(SmbusCommandCode::try_from_bits(0x0F).unwrap(), SmbusCommandCode::Mctp);
 
         // Test out of range (> 0xFF)
-        assert_eq!(
-            SmbusCommandCode::try_from_bits(0x100),
-            Err("Command code out of range")
-        );
+        assert_eq!(SmbusCommandCode::try_from_bits(0x100), Err("Command code out of range"));
 
         // Test invalid command code
-        assert_eq!(
-            SmbusCommandCode::try_from_bits(0x10),
-            Err("Invalid command code")
-        );
+        assert_eq!(SmbusCommandCode::try_from_bits(0x10), Err("Invalid command code"));
 
         // Test conversion to bits
         assert_eq!(SmbusCommandCode::Mctp.try_into_bits().unwrap(), 0x0F);
@@ -650,9 +625,7 @@ mod tests {
         let medium = SmbusEspiMedium;
         let mut buffer = [0u8; 16];
 
-        let result = medium
-            .serialize(reply_context, &mut buffer, |_| Ok(0))
-            .unwrap();
+        let result = medium.serialize(reply_context, &mut buffer, |_| Ok(0)).unwrap();
 
         let header_value = u32::from_be_bytes([result[0], result[1], result[2], result[3]]);
         let response_header = SmbusEspiMediumHeader::try_from(header_value).unwrap();
@@ -742,9 +715,7 @@ mod tests {
 
         assert_eq!(
             result,
-            Err(MctpPacketError::MediumError(
-                "Buffer too small for smbus frame"
-            ))
+            Err(MctpPacketError::MediumError("Buffer too small for smbus frame"))
         );
     }
 
@@ -758,9 +729,7 @@ mod tests {
             let result = medium.deserialize(&short_packet[..packet_size]);
             assert_eq!(
                 result,
-                Err(MctpPacketError::MediumError(
-                    "Packet too short to parse smbus header"
-                ))
+                Err(MctpPacketError::MediumError("Packet too short to parse smbus header"))
             );
         }
     }

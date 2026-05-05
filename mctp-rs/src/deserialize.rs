@@ -1,6 +1,6 @@
 use crate::{
-    MctpMessageBuffer, MctpPacketError, error::MctpPacketResult,
-    mctp_transport_header::MctpTransportHeader, medium::MctpMedium,
+    MctpMessageBuffer, MctpPacketError, error::MctpPacketResult, mctp_transport_header::MctpTransportHeader,
+    medium::MctpMedium,
 };
 
 pub(crate) fn parse_transport_header<M: MctpMedium>(
@@ -11,9 +11,11 @@ pub(crate) fn parse_transport_header<M: MctpMedium>(
             "Packet is too small, cannot parse transport header",
         ));
     }
-    let transport_header_value = u32::from_be_bytes(packet[0..4].try_into().map_err(|_| {
-        MctpPacketError::HeaderParseError("Packet is too small, cannot parse transport header")
-    })?);
+    let transport_header_value = u32::from_be_bytes(
+        packet[0..4]
+            .try_into()
+            .map_err(|_| MctpPacketError::HeaderParseError("Packet is too small, cannot parse transport header"))?,
+    );
     let transport_header = MctpTransportHeader::try_from(transport_header_value)
         .map_err(|_| MctpPacketError::HeaderParseError("Invalid transport header"))?;
     let packet = &packet[4..];
