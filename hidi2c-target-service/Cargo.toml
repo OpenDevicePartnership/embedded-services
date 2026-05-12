@@ -1,0 +1,28 @@
+[package]
+name = "hidi2c-target-service"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+defmt = { workspace = true, optional = true }
+
+embassy-futures.workspace = true
+embassy-sync.workspace = true
+embassy-time.workspace = true
+embedded-hal.workspace = true
+embedded-mcu-hal.workspace = true
+embedded-services.workspace = true
+generic-array.workspace = true
+num_enum.workspace = true
+odp-service-common.workspace = true
+typenum.workspace = true
+zerocopy = { workspace = true, features = ["derive"] }
+
+[features]
+defmt = ["dep:defmt", "embedded-mcu-hal/defmt", "embedded-services/defmt"]
+
+[lints]
+workspace = true

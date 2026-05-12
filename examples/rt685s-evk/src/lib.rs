@@ -3,6 +3,8 @@
 use mimxrt600_fcb::FlexSPIFlashConfigurationBlock;
 use {defmt_rtt as _, panic_probe as _};
 
+pub mod mocks;
+
 #[unsafe(link_section = ".otfad")]
 #[used]
 static OTFAD: [u8; 256] = [0; 256];

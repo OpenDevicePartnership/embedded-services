@@ -1,5 +1,5 @@
 use battery_service_interface::*;
-use embedded_services::relay::{MessageSerializationError, SerializableMessage};
+use embedded_services::relay::mctp::{MessageSerializationError, SerializableMessage};
 
 #[derive(num_enum::IntoPrimitive, num_enum::TryFromPrimitive, Copy, Clone, Debug, PartialEq)]
 #[repr(u16)]

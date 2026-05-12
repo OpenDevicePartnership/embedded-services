@@ -33,7 +33,7 @@ embassy-imxrt = { git = "https://github.com/OpenDevicePartnership/embassy-imxrt"
 ] }
 
 embassy-embedded-hal = { version = "0.6.0", features = ["defmt"] }
-
+embedded-mcu-hal = { version = "0.3.0", features = ["defmt"] }
 embassy-sync = { version = "0.8", features = ["defmt"] }
 embassy-executor = { version = "0.10.0", features = [
     "platform-cortex-m",
@@ -50,6 +50,11 @@ mimxrt600-fcb = "0.1.0"
 
 embedded-cfu-protocol = { git = "https://github.com/OpenDevicePartnership/embedded-cfu" }
 embedded-services = { path = "../../embedded-service", features = ["defmt"] }
+hidi2c-target-service = { path = "../../hidi2c-target-service", features = [
+    "defmt",
+] }
+
+num_enum = { version = "0.7.5", default-features = false }
 odp-service-common = { path = "../../odp-service-common" }
 power-button-service = { path = "../../power-button-service", features = [
     "defmt",
@@ -77,6 +82,7 @@ time-alarm-service-interface = { path = "../../time-alarm-service-interface", fe
 time-alarm-service-relay = { path = "../../time-alarm-service-relay", features = [
     "defmt",
 ] }
+typenum = "1.20"
 
 static_cell = "2.1.0"
 
@@ -84,7 +90,7 @@ platform-service = { path = "../../platform-service", features = [
     "defmt",
     "imxrt685",
 ] }
-embedded-mcu-hal = "0.3.0"
+zerocopy = "0.8"
 
 cfu-service = { path = "../../cfu-service", features = ["defmt"] }
 
