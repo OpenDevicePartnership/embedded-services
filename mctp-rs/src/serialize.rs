@@ -30,10 +30,7 @@ impl<'buf, M: MctpMedium> SerializePacketState<'buf, M> {
             self.reply_context.medium_context,
             self.assembly_buffer,
             |encoder: &mut EncodingEncoder<'_, M::Encoding>| {
-                let max_wire = self
-                    .medium
-                    .max_message_body_size()
-                    .min(encoder.remaining_wire());
+                let max_wire = self.medium.max_message_body_size().min(encoder.remaining_wire());
 
                 // Build the transport header first (with end_of_message
                 // tentatively 0) so we can measure its wire footprint
@@ -124,9 +121,7 @@ impl<'buf, M: MctpMedium> SerializePacketState<'buf, M> {
                 // write the transport header and message body via the
                 // medium-supplied encoder.
                 let map_encode_err = |e: EncodeError| match e {
-                    EncodeError::BufferFull => {
-                        MctpPacketError::SerializeError("encoding: buffer full")
-                    }
+                    EncodeError::BufferFull => MctpPacketError::SerializeError("encoding: buffer full"),
                 };
                 encoder.write_all(&header_bytes).map_err(map_encode_err)?;
                 encoder.write_all(body).map_err(map_encode_err)?;
