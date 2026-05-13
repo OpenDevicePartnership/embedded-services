@@ -1,25 +1,45 @@
 use crate::{
-    MctpMessageBuffer, MctpPacketError, error::MctpPacketResult, mctp_transport_header::MctpTransportHeader,
+    MctpMessageBuffer, MctpPacketError,
+    buffer_encoding::{DecodeError, EncodingDecoder},
+    error::MctpPacketResult,
+    mctp_transport_header::MctpTransportHeader,
     medium::MctpMedium,
 };
 
-pub(crate) fn parse_transport_header<M: MctpMedium>(
-    packet: &[u8],
-) -> MctpPacketResult<(MctpTransportHeader, &[u8]), M> {
-    if packet.len() < 4 {
-        return Err(MctpPacketError::HeaderParseError(
-            "Packet is too small, cannot parse transport header",
-        ));
+pub(crate) fn map_decode_err<M: MctpMedium>(
+    e: DecodeError,
+    on_premature: &'static str,
+    on_escape: &'static str,
+) -> MctpPacketError<M> {
+    match e {
+        DecodeError::PrematureEnd => MctpPacketError::HeaderParseError(on_premature),
+        DecodeError::InvalidEscape => MctpPacketError::HeaderParseError(on_escape),
     }
-    let transport_header_value = u32::from_be_bytes(
-        packet[0..4]
-            .try_into()
-            .map_err(|_| MctpPacketError::HeaderParseError("Packet is too small, cannot parse transport header"))?,
-    );
-    let transport_header = MctpTransportHeader::try_from(transport_header_value)
-        .map_err(|_| MctpPacketError::HeaderParseError("Invalid transport header"))?;
-    let packet = &packet[4..];
-    Ok((transport_header, packet))
+}
+
+pub(crate) fn parse_transport_header<M: MctpMedium>(
+    decoder: &mut EncodingDecoder<'_, M::Encoding>,
+) -> MctpPacketResult<MctpTransportHeader, M> {
+    // Read 4 decoded bytes through the encoding-aware decoder. We do NOT
+    // pre-check `decoder.remaining_wire() < 4` because for stuffing
+    // encodings wire length is not decoded length; PrematureEnd from
+    // `read()` is the canonical "ran out of bytes while decoding the
+    // header" signal — it correctly handles BOTH the Passthrough case
+    // (wire < 4) AND the stuffing case (wire >= 4 but yields < 4 decoded
+    // bytes).
+    let mut header_bytes = [0u8; 4];
+    for slot in header_bytes.iter_mut() {
+        *slot = decoder.read().map_err(|e| {
+            map_decode_err::<M>(
+                e,
+                "Packet is too small, cannot parse transport header",
+                "Invalid encoding escape sequence in transport header",
+            )
+        })?;
+    }
+    let transport_header_value = u32::from_be_bytes(header_bytes);
+    MctpTransportHeader::try_from(transport_header_value)
+        .map_err(|_| MctpPacketError::HeaderParseError("Invalid transport header"))
 }
 
 pub(crate) fn parse_message_body<M: MctpMedium>(

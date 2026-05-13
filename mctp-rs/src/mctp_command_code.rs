@@ -1,7 +1,9 @@
 use bit_register::{NumBytes, TryFromBits, TryIntoBits};
 
 #[repr(u8)]
-#[derive(Copy, Clone, PartialEq, Eq, Debug, Default, num_enum::IntoPrimitive, num_enum::TryFromPrimitive)]
+#[derive(
+    Copy, Clone, PartialEq, Eq, Debug, Default, num_enum::IntoPrimitive, num_enum::TryFromPrimitive,
+)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum MctpControlCommandCode {
     #[default]

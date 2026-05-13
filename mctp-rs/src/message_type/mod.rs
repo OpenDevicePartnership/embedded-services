@@ -18,5 +18,8 @@ pub trait MctpMessageTrait<'buf>: Sized {
 
     fn serialize<M: MctpMedium>(self, buffer: &mut [u8]) -> MctpPacketResult<usize, M>;
 
-    fn deserialize<M: MctpMedium>(header: &Self::Header, buffer: &'buf [u8]) -> MctpPacketResult<Self, M>;
+    fn deserialize<M: MctpMedium>(
+        header: &Self::Header,
+        buffer: &'buf [u8],
+    ) -> MctpPacketResult<Self, M>;
 }

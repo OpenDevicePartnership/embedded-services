@@ -1,6 +1,6 @@
 use crate::{
-    endpoint_id::EndpointId, mctp_completion_code::MctpCompletionCode, mctp_message_tag::MctpMessageTag,
-    mctp_sequence_number::MctpSequenceNumber, medium::MctpMedium,
+    endpoint_id::EndpointId, mctp_completion_code::MctpCompletionCode,
+    mctp_message_tag::MctpMessageTag, mctp_sequence_number::MctpSequenceNumber, medium::MctpMedium,
 };
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, thiserror::Error)]

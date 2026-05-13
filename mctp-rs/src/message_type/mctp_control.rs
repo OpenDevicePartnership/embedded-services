@@ -35,7 +35,9 @@ impl MctpMessageHeaderTrait for MctpControlHeader {
 
         check_request_and_completion_code(self.request_bit, self.completion_code)?;
 
-        buffer[0] = (self.request_bit as u8) << 7 | (self.datagram_bit as u8) << 6 | (self.instance_id & 0b0001_1111);
+        buffer[0] = (self.request_bit as u8) << 7
+            | (self.datagram_bit as u8) << 6
+            | (self.instance_id & 0b0001_1111);
         buffer[1] = self.command_code as u8;
         buffer[2] = self.completion_code.into();
         Ok(3)
@@ -49,10 +51,10 @@ impl MctpMessageHeaderTrait for MctpControlHeader {
         let request_bit = buffer[0] & 0b1000_0000 != 0;
         let datagram_bit = buffer[0] & 0b0100_0000 != 0;
         let instance_id = buffer[0] & 0b0001_1111;
-        let command_code =
-            MctpControlCommandCode::try_from(buffer[1]).map_err(|_| HeaderParseError("invalid mctp command code"))?;
-        let completion_code =
-            MctpCompletionCode::try_from(buffer[2]).map_err(|_| HeaderParseError("invalid mctp completion code"))?;
+        let command_code = MctpControlCommandCode::try_from(buffer[1])
+            .map_err(|_| HeaderParseError("invalid mctp command code"))?;
+        let completion_code = MctpCompletionCode::try_from(buffer[2])
+            .map_err(|_| HeaderParseError("invalid mctp completion code"))?;
 
         check_request_and_completion_code(request_bit, completion_code)?;
 
@@ -94,12 +96,21 @@ impl<'buf> MctpMessageTrait<'buf> for MctpControl {
         }
     }
 
-    fn deserialize<M: MctpMedium>(header: &Self::Header, buffer: &'buf [u8]) -> MctpPacketResult<Self, M> {
+    fn deserialize<M: MctpMedium>(
+        header: &Self::Header,
+        buffer: &'buf [u8],
+    ) -> MctpPacketResult<Self, M> {
         let message = match (header.request_bit, header.command_code) {
-            (true, MctpControlCommandCode::SetEndpointId) => Self::SetEndpointIdRequest(try_into_array(buffer)?),
+            (true, MctpControlCommandCode::SetEndpointId) => {
+                Self::SetEndpointIdRequest(try_into_array(buffer)?)
+            }
             (true, MctpControlCommandCode::GetEndpointId) => Self::GetEndpointIdRequest,
-            (false, MctpControlCommandCode::SetEndpointId) => Self::SetEndpointIdResponse(try_into_array(buffer)?),
-            (false, MctpControlCommandCode::GetEndpointId) => Self::GetEndpointIdResponse(try_into_array(buffer)?),
+            (false, MctpControlCommandCode::SetEndpointId) => {
+                Self::SetEndpointIdResponse(try_into_array(buffer)?)
+            }
+            (false, MctpControlCommandCode::GetEndpointId) => {
+                Self::GetEndpointIdResponse(try_into_array(buffer)?)
+            }
             _ => {
                 return Err(HeaderParseError("invalid mctp control command code"));
             }
@@ -108,7 +119,10 @@ impl<'buf> MctpMessageTrait<'buf> for MctpControl {
     }
 }
 
-fn copy_and_check_len<const N: usize, M: MctpMedium>(buffer: &mut [u8], data: [u8; N]) -> MctpPacketResult<usize, M> {
+fn copy_and_check_len<const N: usize, M: MctpMedium>(
+    buffer: &mut [u8],
+    data: [u8; N],
+) -> MctpPacketResult<usize, M> {
     if buffer.len() < N {
         return Err(crate::MctpPacketError::SerializeError(
             "buffer too small for mctp control message",
@@ -120,7 +134,9 @@ fn copy_and_check_len<const N: usize, M: MctpMedium>(buffer: &mut [u8], data: [u
 
 fn try_into_array<const N: usize, M: MctpMedium>(buffer: &[u8]) -> MctpPacketResult<[u8; N], M> {
     if buffer.len() < N {
-        return Err(HeaderParseError("buffer too small for mctp control message"));
+        return Err(HeaderParseError(
+            "buffer too small for mctp control message",
+        ));
     }
     Ok(buffer[..N].try_into().unwrap())
 }

@@ -14,10 +14,10 @@
 //! # use mctp_rs::*;
 //! # #[derive(Debug, Clone, Copy)] struct MyMedium { mtu: usize }
 //! # #[derive(Debug, Clone, Copy)] struct MyMediumFrame { packet_size: usize }
-//! # impl MctpMedium for MyMedium { type Frame=MyMediumFrame; type Error=&'static str; type ReplyContext=();
+//! # impl MctpMedium for MyMedium { type Frame=MyMediumFrame; type Error=&'static str; type ReplyContext=(); type Encoding=PassthroughEncoding;
 //! #   fn max_message_body_size(&self)->usize{self.mtu}
-//! #   fn deserialize<'b>(&self,p:&'b [u8])->MctpPacketResult<(Self::Frame,&'b [u8]),Self>{Ok((MyMediumFrame{packet_size:p.len()},p))}
-//! #   fn serialize<'b,F>(&self,_:Self::ReplyContext,b:&'b mut [u8],w:F)->MctpPacketResult<&'b [u8],Self> where F: for<'a> FnOnce(&'a mut [u8])->MctpPacketResult<usize,Self>{let n=w(b)?;Ok(&b[..n])}}
+//! #   fn deserialize<'b>(&self,p:&'b [u8])->MctpPacketResult<(Self::Frame,EncodingDecoder<'b,Self::Encoding>),Self>{Ok((MyMediumFrame{packet_size:p.len()},EncodingDecoder::new(p)))}
+//! #   fn serialize<'b,F>(&self,_:Self::ReplyContext,b:&'b mut [u8],w:F)->MctpPacketResult<&'b [u8],Self> where F: for<'a> FnOnce(&mut EncodingEncoder<'a,Self::Encoding>)->MctpPacketResult<(),Self>{let n={let mut e=EncodingEncoder::<Self::Encoding>::new(b);w(&mut e)?;e.wire_position()};Ok(&b[..n])}}
 //! # impl MctpMediumFrame<MyMedium> for MyMediumFrame { fn packet_size(&self)->usize{self.packet_size} fn reply_context(&self)->(){()}}
 //! let mut assembly_buffer = [0u8; 1024];
 //! let medium = MyMedium { mtu: 256 };
@@ -59,9 +59,9 @@
 //! # use mctp_rs::*;
 //! # #[derive(Debug, Clone, Copy)] struct MyMedium { mtu: usize }
 //! # #[derive(Debug, Clone, Copy)] struct MyMediumFrame { packet_size: usize }
-//! # impl MctpMedium for MyMedium { type Frame=MyMediumFrame; type Error=&'static str; type ReplyContext=(); fn max_message_body_size(&self)->usize{self.mtu}
-//! #   fn deserialize<'b>(&self,p:&'b [u8])->MctpPacketResult<(Self::Frame,&'b [u8]),Self>{Ok((MyMediumFrame{packet_size:p.len()},p))}
-//! #   fn serialize<'b,F>(&self,_:Self::ReplyContext,b:&'b mut [u8],w:F)->MctpPacketResult<&'b [u8],Self> where F: for<'a> FnOnce(&'a mut [u8])->MctpPacketResult<usize,Self>{let n=w(b)?;Ok(&b[..n])}}
+//! # impl MctpMedium for MyMedium { type Frame=MyMediumFrame; type Error=&'static str; type ReplyContext=(); type Encoding=PassthroughEncoding; fn max_message_body_size(&self)->usize{self.mtu}
+//! #   fn deserialize<'b>(&self,p:&'b [u8])->MctpPacketResult<(Self::Frame,EncodingDecoder<'b,Self::Encoding>),Self>{Ok((MyMediumFrame{packet_size:p.len()},EncodingDecoder::new(p)))}
+//! #   fn serialize<'b,F>(&self,_:Self::ReplyContext,b:&'b mut [u8],w:F)->MctpPacketResult<&'b [u8],Self> where F: for<'a> FnOnce(&mut EncodingEncoder<'a,Self::Encoding>)->MctpPacketResult<(),Self>{let n={let mut e=EncodingEncoder::<Self::Encoding>::new(b);w(&mut e)?;e.wire_position()};Ok(&b[..n])}}
 //! # impl MctpMediumFrame<MyMedium> for MyMediumFrame { fn packet_size(&self)->usize{self.packet_size} fn reply_context(&self)->(){()}}
 //! let mut buf = [0u8; 1024];
 //! let mut ctx = MctpPacketContext::new(MyMedium { mtu: 64 }, &mut buf);
@@ -109,6 +109,7 @@
 //!     type Frame = MyMediumFrame;
 //!     type Error = &'static str;
 //!     type ReplyContext = ();
+//!     type Encoding = PassthroughEncoding;
 //!
 //!     fn max_message_body_size(&self) -> usize {
 //!         self.mtu
@@ -117,13 +118,13 @@
 //!     fn deserialize<'buf>(
 //!         &self,
 //!         packet: &'buf [u8],
-//!     ) -> MctpPacketResult<(Self::Frame, &'buf [u8]), Self> {
+//!     ) -> MctpPacketResult<(Self::Frame, EncodingDecoder<'buf, Self::Encoding>), Self> {
 //!         // Strip/validate transport headers as needed for your bus and return MCTP payload slice
 //!         Ok((
 //!             MyMediumFrame {
 //!                 packet_size: packet.len(),
 //!             },
-//!             packet,
+//!             EncodingDecoder::new(packet),
 //!         ))
 //!     }
 //!
@@ -134,11 +135,17 @@
 //!         message_writer: F,
 //!     ) -> MctpPacketResult<&'buf [u8], Self>
 //!     where
-//!         F: for<'a> FnOnce(&'a mut [u8]) -> MctpPacketResult<usize, Self>,
+//!         F: for<'a> FnOnce(
+//!             &mut EncodingEncoder<'a, Self::Encoding>,
+//!         ) -> MctpPacketResult<(), Self>,
 //!     {
 //!         // Prepend transport headers as needed, then ask the writer to write MCTP payload
-//!         let message_len = message_writer(buffer)?;
-//!         Ok(&buffer[..message_len])
+//!         let written = {
+//!             let mut encoder = EncodingEncoder::<Self::Encoding>::new(buffer);
+//!             message_writer(&mut encoder)?;
+//!             encoder.wire_position()
+//!         };
+//!         Ok(&buffer[..written])
 //!     }
 //! }
 //!
@@ -152,6 +159,7 @@
 //! }
 //! ```
 
+mod buffer_encoding;
 mod deserialize;
 mod endpoint_id;
 pub mod error;
@@ -167,11 +175,18 @@ mod serialize;
 #[cfg(test)]
 mod test_util;
 
+pub use buffer_encoding::{
+    BufferEncoding, DecodeError, EncodeError, EncodingDecoder, EncodingEncoder, PassthroughEncoding,
+};
 pub use endpoint_id::EndpointId;
 pub use error::{MctpPacketError, MctpPacketResult};
 pub use mctp_message_tag::MctpMessageTag;
 pub use mctp_packet_context::{MctpPacketContext, MctpReplyContext};
 pub use mctp_sequence_number::MctpSequenceNumber;
+#[cfg(feature = "serial")]
+pub use medium::serial::{
+    CONST_MTU, EC_EID, MctpSerialMedium, MctpSerialMediumFrame, SP_EID, SerialEncoding,
+};
 pub use medium::*;
 pub use message_type::*;
 
@@ -211,8 +226,8 @@ mod tests {
 
     use super::*;
     use crate::{
-        error::ProtocolError, mctp_command_code::MctpControlCommandCode, mctp_packet_context::MctpPacketContext,
-        test_util::*,
+        error::ProtocolError, mctp_command_code::MctpControlCommandCode,
+        mctp_packet_context::MctpPacketContext, test_util::*,
     };
 
     struct Packet(&'static [u8]);
@@ -249,11 +264,16 @@ mod tests {
         let mut context = MctpPacketContext::<TestMedium>::new(TestMedium::new(), &mut buffer);
 
         assert_eq!(
-            context.deserialize_packet(GET_ENDPOINT_ID_PACKET_NO_EOM.0).unwrap(),
+            context
+                .deserialize_packet(GET_ENDPOINT_ID_PACKET_NO_EOM.0)
+                .unwrap(),
             None
         );
 
-        let message = context.deserialize_packet(EMPTY_PACKET_EOM.0).unwrap().unwrap();
+        let message = context
+            .deserialize_packet(EMPTY_PACKET_EOM.0)
+            .unwrap()
+            .unwrap();
 
         assert_eq!(message.can_parse_as::<MctpControl>(), true);
         assert_eq!(message.message_integrity_check, None);
@@ -297,7 +317,9 @@ mod tests {
                 0b0000_0000, // source endpoint id
                 0b0000_0000, // som, eom, seq (0), to, tag
             ]),
-            Err(MctpPacketError::ProtocolError(ProtocolError::ExpectedStartOfMessage,))
+            Err(MctpPacketError::ProtocolError(
+                ProtocolError::ExpectedStartOfMessage,
+            ))
         );
     }
 
@@ -306,7 +328,9 @@ mod tests {
         let mut buffer = [0; 1024];
         let mut context = MctpPacketContext::<TestMedium>::new(TestMedium::new(), &mut buffer);
 
-        context.deserialize_packet(GET_ENDPOINT_ID_PACKET_NO_EOM.0).unwrap();
+        context
+            .deserialize_packet(GET_ENDPOINT_ID_PACKET_NO_EOM.0)
+            .unwrap();
 
         assert_eq!(
             context.deserialize_packet(&[
@@ -316,7 +340,9 @@ mod tests {
                 0b0000_0000, // source endpoint id
                 0b1000_0000, // som, eom, seq (0), to, tag
             ]),
-            Err(MctpPacketError::ProtocolError(ProtocolError::UnexpectedStartOfMessage,))
+            Err(MctpPacketError::ProtocolError(
+                ProtocolError::UnexpectedStartOfMessage,
+            ))
         );
     }
 
@@ -326,7 +352,9 @@ mod tests {
         let mut context = MctpPacketContext::<TestMedium>::new(TestMedium::new(), &mut buffer);
 
         // message tag = 0
-        context.deserialize_packet(GET_ENDPOINT_ID_PACKET_NO_EOM.0).unwrap();
+        context
+            .deserialize_packet(GET_ENDPOINT_ID_PACKET_NO_EOM.0)
+            .unwrap();
 
         // message tag = 1
         assert_eq!(
@@ -337,18 +365,22 @@ mod tests {
                 0b0000_0000, // source endpoint id
                 0b0101_0010, // som, eom, seq (1), to, tag (2)
             ]),
-            Err(MctpPacketError::ProtocolError(ProtocolError::MessageTagMismatch(
-                MctpMessageTag::try_from(3).unwrap(),
-                MctpMessageTag::try_from(2).unwrap(),
-            ),))
+            Err(MctpPacketError::ProtocolError(
+                ProtocolError::MessageTagMismatch(
+                    MctpMessageTag::try_from(3).unwrap(),
+                    MctpMessageTag::try_from(2).unwrap(),
+                ),
+            ))
         );
     }
 
     #[test]
     fn test_send_packet() {
         let mut buffer = [0; 1024];
-        let mut context =
-            MctpPacketContext::<TestMedium>::new(TestMedium::new().with_headers(&[0xA, 0xB], &[0xC, 0xD]), &mut buffer);
+        let mut context = MctpPacketContext::<TestMedium>::new(
+            TestMedium::new().with_headers(&[0xA, 0xB], &[0xC, 0xD]),
+            &mut buffer,
+        );
 
         let reply_context = MctpReplyContext {
             destination_endpoint_id: EndpointId::try_from(236).unwrap(),
@@ -358,7 +390,10 @@ mod tests {
             medium_context: (),
         };
 
-        let message = (VendorDefinedPciHeader(0x1234), VendorDefinedPci(&[0xA5, 0xB6]));
+        let message = (
+            VendorDefinedPciHeader(0x1234),
+            VendorDefinedPci(&[0xA5, 0xB6]),
+        );
 
         let mut state = context.serialize_packet(reply_context, message).unwrap();
 
@@ -410,7 +445,10 @@ mod tests {
 
         // 10 byte to send over 3 packets
         let data_to_send = [0xA5, 0xB6, 0xC7, 0xD8, 0xE9, 0xFA, 0x0B, 0x1C, 0x2D, 0x3E];
-        let message = (VendorDefinedPciHeader(0x1234), VendorDefinedPci(&data_to_send));
+        let message = (
+            VendorDefinedPciHeader(0x1234),
+            VendorDefinedPci(&data_to_send),
+        );
 
         let mut state = context.serialize_packet(reply_context, message).unwrap();
 
@@ -497,7 +535,8 @@ mod tests {
     fn test_buffer_overflow_protection() {
         // Test that buffer overflow is properly prevented
         let mut small_buffer = [0u8; 16]; // Very small buffer
-        let mut context = MctpPacketContext::<TestMedium>::new(TestMedium::new(), &mut small_buffer);
+        let mut context =
+            MctpPacketContext::<TestMedium>::new(TestMedium::new(), &mut small_buffer);
 
         // Create a packet that would cause overflow without protection
         let large_packet = [
@@ -545,7 +584,8 @@ mod tests {
     fn test_multi_packet_buffer_overflow() {
         // Test buffer overflow with multiple packets
         let mut small_buffer = [0u8; 20]; // Small buffer that can fit first packet but not second
-        let mut context = MctpPacketContext::<TestMedium>::new(TestMedium::new(), &mut small_buffer);
+        let mut context =
+            MctpPacketContext::<TestMedium>::new(TestMedium::new(), &mut small_buffer);
 
         // First packet - fits in buffer
         let first_packet = [
@@ -692,7 +732,8 @@ mod tests {
     fn test_zero_size_assembly_buffer() {
         // Test with zero-size assembly buffer
         let mut empty_buffer = [0u8; 0];
-        let mut context = MctpPacketContext::<TestMedium>::new(TestMedium::new(), &mut empty_buffer);
+        let mut context =
+            MctpPacketContext::<TestMedium>::new(TestMedium::new(), &mut empty_buffer);
 
         let packet = [
             0b0000_0001, // mctp reserved, header version

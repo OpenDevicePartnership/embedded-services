@@ -77,7 +77,10 @@ mod tests {
         }
 
         // Test valid ranges still work
-        assert_eq!(MctpCompletionCode::try_from(0x00).unwrap(), MctpCompletionCode::Success);
+        assert_eq!(
+            MctpCompletionCode::try_from(0x00).unwrap(),
+            MctpCompletionCode::Success
+        );
         assert_eq!(
             MctpCompletionCode::try_from(0x05).unwrap(),
             MctpCompletionCode::ErrorUnsupportedCmd

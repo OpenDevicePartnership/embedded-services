@@ -1,6 +1,9 @@
 use bit_register::bit_register;
 
-use crate::{endpoint_id::EndpointId, mctp_message_tag::MctpMessageTag, mctp_sequence_number::MctpSequenceNumber};
+use crate::{
+    endpoint_id::EndpointId, mctp_message_tag::MctpMessageTag,
+    mctp_sequence_number::MctpSequenceNumber,
+};
 
 bit_register! {
     #[derive(Debug, Default, PartialEq, Eq, Copy, Clone)]

@@ -1,5 +1,6 @@
 use crate::{
     MctpPacketError,
+    buffer_encoding::{EncodingDecoder, EncodingEncoder, PassthroughEncoding},
     error::MctpPacketResult,
     medium::{MctpMedium, MctpMediumFrame},
 };
@@ -36,8 +37,12 @@ impl MctpMedium for TestMedium {
     type Frame = TestMediumFrame;
     type Error = &'static str;
     type ReplyContext = ();
+    type Encoding = PassthroughEncoding;
 
-    fn deserialize<'buf>(&self, packet: &'buf [u8]) -> MctpPacketResult<(Self::Frame, &'buf [u8]), Self> {
+    fn deserialize<'buf>(
+        &self,
+        packet: &'buf [u8],
+    ) -> MctpPacketResult<(Self::Frame, EncodingDecoder<'buf, Self::Encoding>), Self> {
         let packet_len = packet.len();
 
         // check that header / trailer is present and correct
@@ -51,8 +56,8 @@ impl MctpMedium for TestMedium {
             return Err(MctpPacketError::MediumError("trailer mismatch"));
         }
 
-        let packet = &packet[self.header.len()..packet_len - self.trailer.len()];
-        Ok((TestMediumFrame(packet_len), packet))
+        let inner = &packet[self.header.len()..packet_len - self.trailer.len()];
+        Ok((TestMediumFrame(packet_len), EncodingDecoder::new(inner)))
     }
     fn max_message_body_size(&self) -> usize {
         self.mtu
@@ -64,7 +69,7 @@ impl MctpMedium for TestMedium {
         message_writer: F,
     ) -> MctpPacketResult<&'buf [u8], Self>
     where
-        F: for<'a> FnOnce(&'a mut [u8]) -> MctpPacketResult<usize, Self>,
+        F: for<'a> FnOnce(&mut EncodingEncoder<'a, Self::Encoding>) -> MctpPacketResult<(), Self>,
     {
         let header_len = self.header.len();
         let trailer_len = self.trailer.len();
@@ -82,8 +87,15 @@ impl MctpMedium for TestMedium {
         let max_message_size = max_packet_size - header_len - trailer_len;
 
         buffer[0..header_len].copy_from_slice(self.header);
-        let size = message_writer(&mut buffer[header_len..header_len + max_message_size])?;
-        let len = header_len + size;
+
+        let body_wire_len = {
+            let body_buf = &mut buffer[header_len..header_len + max_message_size];
+            let mut encoder = EncodingEncoder::<Self::Encoding>::new(body_buf);
+            message_writer(&mut encoder)?;
+            encoder.wire_position()
+        };
+
+        let len = header_len + body_wire_len;
         buffer[len..len + trailer_len].copy_from_slice(self.trailer);
         Ok(&buffer[..len + trailer_len])
     }

@@ -21,7 +21,8 @@ impl MctpMessageHeaderTrait for VendorDefinedPciHeader {
                 "buffer too small for vendor defined pci header",
             ));
         }
-        let header = VendorDefinedPciHeader(u16::from_be_bytes(buffer[..HEADER_LEN].try_into().unwrap()));
+        let header =
+            VendorDefinedPciHeader(u16::from_be_bytes(buffer[..HEADER_LEN].try_into().unwrap()));
         Ok((header, &buffer[HEADER_LEN..]))
     }
 }
@@ -41,7 +42,10 @@ impl<'buf> MctpMessageTrait<'buf> for VendorDefinedPci<'buf> {
         Ok(self_len)
     }
 
-    fn deserialize<M: MctpMedium>(_: &Self::Header, buffer: &'buf [u8]) -> MctpPacketResult<VendorDefinedPci<'buf>, M> {
+    fn deserialize<M: MctpMedium>(
+        _: &Self::Header,
+        buffer: &'buf [u8],
+    ) -> MctpPacketResult<VendorDefinedPci<'buf>, M> {
         let message = VendorDefinedPci(buffer);
         Ok(message)
     }
