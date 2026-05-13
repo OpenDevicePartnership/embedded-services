@@ -48,7 +48,7 @@ pub enum Event<'port, Port: Lockable<Inner: Pd>> {
 
 impl<'port, Reg: Registration<'port>> Service<'port, Reg> {
     /// Create a new service the given configuration
-    pub fn create(config: config::Config, registration: Reg) -> Self {
+    pub fn new(config: config::Config, registration: Reg) -> Self {
         Self {
             ucsi: ucsi::State::default(),
             config,

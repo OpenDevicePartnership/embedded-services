@@ -33,7 +33,7 @@ concurrency:
 name: check
 env:
   # Crates that require std and won't build on embedded-targets
-  STD_CRATES: "fw-update-interface-mocks"
+  STD_EXCLUDED_CRATES: "--exclude fw-update-interface-mocks --exclude type-c-interface-mocks"
 jobs:
 
   fmt:
@@ -121,7 +121,7 @@ jobs:
         run: cargo hack $COMMON_HACK_ARGS clippy --locked --target ${{ matrix.target }}
       - name: cargo hack
         if: ${{ matrix.target != 'x86_64-unknown-linux-gnu' }}
-        run: cargo hack $COMMON_HACK_ARGS clippy --exclude $STD_CRATES --locked --target ${{ matrix.target }}
+        run: cargo hack $COMMON_HACK_ARGS clippy $STD_EXCLUDED_CRATES --locked --target ${{ matrix.target }}
 
   deny:
     # cargo-deny checks licenses, advisories, sources, and bans for
@@ -219,8 +219,8 @@ jobs:
       - name: cargo +${{ matrix.msrv }} check
         if: ${{ matrix.target != 'x86_64-unknown-linux-gnu' }}
         run: |
-          cargo check -F log --locked --workspace --exclude $STD_CRATES --target ${{ matrix.target }}
-          cargo check -F defmt --locked --workspace --exclude $STD_CRATES --target ${{ matrix.target }}
+          cargo check -F log --locked --workspace $STD_EXCLUDED_CRATES  --target ${{ matrix.target }}
+          cargo check -F defmt --locked --workspace $STD_EXCLUDED_CRATES --target ${{ matrix.target }}
 
   check-arm-examples:
     runs-on: ubuntu-latest

@@ -50,7 +50,7 @@ pub struct PortEvent<'port, Port: Lockable<Inner: Pd>> {
 }
 
 /// Message generated when a debug accessory is connected or disconnected
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct DebugAccessoryData {
     /// Connected
@@ -58,7 +58,7 @@ pub struct DebugAccessoryData {
 }
 
 /// UCSI connector change message
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct UsciChangeIndicatorData {
     /// Port
@@ -68,7 +68,7 @@ pub struct UsciChangeIndicatorData {
 }
 
 /// Top-level comms message
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum EventData {
     DebugAccessory(DebugAccessoryData),

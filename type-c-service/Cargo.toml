@@ -35,6 +35,12 @@ embassy-time = { workspace = true, features = ["std", "generic-queue-8"] }
 embassy-sync = { workspace = true, features = ["std"] }
 embassy-futures.workspace = true
 tokio = { workspace = true, features = ["rt", "macros", "time"] }
+log.workspace = true
+env_logger = "0.11.8"
+type-c-interface-mocks.workspace = true
+power-policy-service.workspace = true
+paste.workspace = true
+critical-section = { workspace = true, features = ["std"] }
 
 [features]
 default = []
@@ -48,6 +54,7 @@ defmt = [
     "power-policy-interface/defmt",
     "type-c-interface/defmt",
     "fw-update-interface/defmt",
+    "power-policy-service/defmt",
 ]
 log = [
     "dep:log",
@@ -58,4 +65,5 @@ log = [
     "power-policy-interface/log",
     "type-c-interface/log",
     "fw-update-interface/log",
+    "power-policy-service/log",
 ]

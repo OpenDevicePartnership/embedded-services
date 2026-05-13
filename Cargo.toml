@@ -31,6 +31,7 @@ members = [
     "fw-update-interface",
     "fw-update-interface-mocks",
     "mctp-rs",
+    "type-c-interface-mocks",
 ]
 exclude = ["examples/*"]
 
@@ -114,6 +115,7 @@ thermal-service-relay = { path = "./thermal-service-relay" }
 time-alarm-service-interface = { path = "./time-alarm-service-interface" }
 time-alarm-service-relay = { path = "./time-alarm-service-relay" }
 type-c-interface = { path = "./type-c-interface" }
+type-c-interface-mocks = { path = "./type-c-interface-mocks" }
 syn = "2.0"
 tps6699x = { git = "https://github.com/OpenDevicePartnership/tps6699x", branch = "v0.2.0" }
 tokio = { version = "1.42.0" }

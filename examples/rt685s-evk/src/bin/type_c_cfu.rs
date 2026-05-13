@@ -376,7 +376,7 @@ async fn main(spawner: Spawner) {
     )));
 
     static TYPE_C_SERVICE: StaticCell<Mutex<GlobalRawMutex, TypeCServiceType>> = StaticCell::new();
-    let type_c_service = TYPE_C_SERVICE.init(Mutex::new(Service::create(
+    let type_c_service = TYPE_C_SERVICE.init(Mutex::new(Service::new(
         Default::default(),
         TypeCRegistrationType {
             ports: [port0, port1],

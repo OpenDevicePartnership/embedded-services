@@ -144,7 +144,7 @@ async fn task(spawner: Spawner) {
     )));
 
     static TYPE_C_SERVICE: StaticCell<Mutex<GlobalRawMutex, ServiceType>> = StaticCell::new();
-    let type_c_service = TYPE_C_SERVICE.init(Mutex::new(Service::create(
+    let type_c_service = TYPE_C_SERVICE.init(Mutex::new(Service::new(
         Config::default(),
         type_c_service::service::registration::ArrayRegistration {
             ports: [port],

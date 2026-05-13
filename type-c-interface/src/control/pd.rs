@@ -7,7 +7,7 @@ use embedded_usb_pd::{
 };
 
 /// Port status
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct PortStatus {
     /// Current available source contract
