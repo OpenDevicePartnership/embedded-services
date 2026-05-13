@@ -22,6 +22,10 @@ audit-as-crates-io = false
 [policy.keyberon]
 audit-as-crates-io = false
 
+[[exemptions.crc]]
+version = "3.4.0"
+criteria = "safe-to-deploy"
+
 [[exemptions.diff]]
 version = "0.1.13"
 criteria = "safe-to-run"

@@ -619,7 +619,7 @@ dependencies = [
 [[package]]
 name = "espi-device"
 version = "0.1.0"
-source = "git+https://github.com/OpenDevicePartnership/haf-ec-service#0d21aa34fd8691c6544533e6c72fe41824dc2fa8"
+source = "git+https://github.com/OpenDevicePartnership/haf-ec-service#09eda26a729738adbd177231600acdb981690375"
 dependencies = [
  "bit-register",
  "bitflags",
