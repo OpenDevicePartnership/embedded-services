@@ -1,10 +1,14 @@
 //! Comms service message definitions
 
+use embedded_services::sync::Lockable;
 use embedded_usb_pd::{GlobalPortId, ado::Ado};
 
 use crate::{
     control::{dp::DpStatus, pd::PortStatus},
-    port::event::{PortStatusEventBitfield, VdmData},
+    port::{
+        event::{PortStatusEventBitfield, VdmData},
+        pd::Pd,
+    },
 };
 
 /// Struct containing data for a [`PortEventData::StatusChanged`] event
@@ -40,17 +44,15 @@ pub enum PortEventData {
 /// Struct containing a complete port event
 #[derive(Copy, Clone, Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct PortEvent {
-    pub port: GlobalPortId,
+pub struct PortEvent<'port, Port: Lockable<Inner: Pd>> {
+    pub port: &'port Port,
     pub event: PortEventData,
 }
 
 /// Message generated when a debug accessory is connected or disconnected
 #[derive(Copy, Clone, Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct DebugAccessory {
-    /// Port
-    pub port: GlobalPortId,
+pub struct DebugAccessoryData {
     /// Connected
     pub connected: bool,
 }
@@ -58,7 +60,7 @@ pub struct DebugAccessory {
 /// UCSI connector change message
 #[derive(Copy, Clone, Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct UsciChangeIndicator {
+pub struct UsciChangeIndicatorData {
     /// Port
     pub port: GlobalPortId,
     /// Notify OPM
@@ -68,9 +70,24 @@ pub struct UsciChangeIndicator {
 /// Top-level comms message
 #[derive(Copy, Clone, Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub enum Event {
-    /// Debug accessory message
-    DebugAccessory(DebugAccessory),
-    /// UCSI CCI message
-    UcsiCci(UsciChangeIndicator),
+pub enum EventData {
+    DebugAccessory(DebugAccessoryData),
+    UsciChangeIndicator(UsciChangeIndicatorData),
+}
+
+/// Top-level comms message
+#[derive(Copy, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct Event<'port, Port: Lockable<Inner: Pd>> {
+    pub port: &'port Port,
+    pub event: EventData,
+}
+
+impl<'port, Port: Lockable<Inner: Pd>> Clone for Event<'port, Port> {
+    fn clone(&self) -> Self {
+        Self {
+            port: self.port,
+            event: self.event,
+        }
+    }
 }

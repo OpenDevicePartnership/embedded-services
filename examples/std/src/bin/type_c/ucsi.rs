@@ -6,7 +6,7 @@ use embassy_sync::mutex::Mutex;
 use embassy_sync::once_lock::OnceLock;
 use embassy_sync::pubsub::{DynImmediatePublisher, DynSubscriber, PubSubChannel};
 use embedded_services::IntrusiveList;
-use embedded_services::event::MapSender;
+use embedded_services::event::{MapSender, NoopSender};
 use embedded_services::{GlobalRawMutex, event};
 use embedded_usb_pd::ucsi::lpm::get_connector_capability::OperationModeFlags;
 use embedded_usb_pd::ucsi::ppm::ack_cc_ci::Ack;
@@ -24,26 +24,16 @@ use static_cell::StaticCell;
 use std_examples::type_c::mock_controller::{self, InterruptReceiver, Port};
 use type_c_interface::controller::ControllerId;
 use type_c_interface::port::event::PortEventBitfield;
-use type_c_interface::port::{Device, PortRegistration};
-use type_c_interface::service::context::Context;
 use type_c_interface::service::event::{PortEvent as ServicePortEvent, PortEventData as ServicePortEventData};
-use type_c_service::bridge::Bridge;
-use type_c_service::bridge::event_receiver::EventReceiver as BridgeEventReceiver;
 use type_c_service::controller::event::Event as PortEvent;
 use type_c_service::controller::event_receiver::InterruptReceiver as _;
 use type_c_service::controller::event_receiver::{EventReceiver as PortEventReceiver, PortEventSplitter};
 use type_c_service::controller::macros::PortComponents;
 use type_c_service::controller::state::SharedState;
 use type_c_service::define_controller_port_static_cell_channel;
+use type_c_service::service::Service;
 use type_c_service::service::config::Config;
-use type_c_service::service::{EventReceiver as ServiceEventReceiver, Service};
-
-const CHANNEL_CAPACITY: usize = 4;
-const NUM_PD_CONTROLLERS: usize = 2;
-const CONTROLLER0_ID: ControllerId = ControllerId(0);
-const CONTROLLER1_ID: ControllerId = ControllerId(1);
-const PORT0_ID: GlobalPortId = GlobalPortId(0);
-const PORT1_ID: GlobalPortId = GlobalPortId(1);
+use type_c_service::service::registration::PortData;
 
 type ControllerType = Mutex<GlobalRawMutex, mock_controller::Controller<'static>>;
 type PortType = Mutex<GlobalRawMutex, Port<'static>>;
@@ -67,7 +57,19 @@ type PowerPolicyServiceType = Mutex<
     >,
 >;
 
-type ServiceType = Service<'static>;
+const PORT_COUNT: usize = 2;
+type TypeCServiceSenderType = NoopSender;
+type PortReceiverType = DynamicReceiver<'static, type_c_interface::service::event::PortEventData>;
+type TypeCServiceEventReceiverType = type_c_service::service::event_receiver::ArrayEventReceiver<
+    'static,
+    PORT_COUNT,
+    PortType,
+    PortReceiverType,
+    PowerPolicyReceiverType,
+>;
+type TypeCRegistrationType =
+    type_c_service::service::registration::ArrayRegistration<'static, PortType, PORT_COUNT, TypeCServiceSenderType, 1>;
+type TypeCServiceType = Service<'static, TypeCRegistrationType>;
 type SharedStateType = Mutex<GlobalRawMutex, SharedState>;
 type PortEventReceiverType = PortEventReceiver<
     'static,
@@ -77,7 +79,7 @@ type PortEventReceiverType = PortEventReceiver<
 >;
 
 #[embassy_executor::task]
-async fn opm_task(_context: &'static Context, _state: [&'static mock_controller::ControllerState; NUM_PD_CONTROLLERS]) {
+async fn opm_task(_state: [&'static mock_controller::ControllerState; PORT_COUNT]) {
     // TODO: migrate this logic to an integration test when we move away from 'static lifetimes.
     /*const CAPABILITY: PowerCapability = PowerCapability {
         voltage_mv: 20000,
@@ -209,18 +211,6 @@ async fn opm_task(_context: &'static Context, _state: [&'static mock_controller:
 }
 
 #[embassy_executor::task(pool_size = 2)]
-async fn bridge_task(
-    mut event_receiver: BridgeEventReceiver,
-    mut bridge: Bridge<'static, Mutex<GlobalRawMutex, mock_controller::Controller<'static>>>,
-) -> ! {
-    loop {
-        let event = event_receiver.wait_next().await;
-        let output = bridge.process_event(event).await;
-        event_receiver.finalize(output);
-    }
-}
-
-#[embassy_executor::task(pool_size = 2)]
 async fn port_task(mut event_receiver: PortEventReceiverType, port: &'static PortType) {
     loop {
         let event = event_receiver.wait_event().await;
@@ -252,8 +242,8 @@ async fn power_policy_task(
 
 #[embassy_executor::task]
 async fn type_c_service_task(
-    service: &'static Mutex<GlobalRawMutex, ServiceType>,
-    event_receiver: ServiceEventReceiver<'static, PowerPolicyReceiverType>,
+    service: &'static Mutex<GlobalRawMutex, TypeCServiceType>,
+    event_receiver: TypeCServiceEventReceiverType,
 ) {
     type_c_service::task::task(service, event_receiver).await;
 }
@@ -264,26 +254,10 @@ async fn task(spawner: Spawner) {
 
     embedded_services::init().await;
 
-    static CONTROLLER_CONTEXT: StaticCell<Context> = StaticCell::new();
-    let controller_context = CONTROLLER_CONTEXT.init(Context::new());
-
     static STATE0: StaticCell<mock_controller::ControllerState> = StaticCell::new();
     let state0 = STATE0.init(mock_controller::ControllerState::new());
     static CONTROLLER0: StaticCell<ControllerType> = StaticCell::new();
-    let controller0 = CONTROLLER0.init(Mutex::new(mock_controller::Controller::new(state0)));
-
-    static PORT_CHANNEL0: Channel<GlobalRawMutex, ServicePortEvent, CHANNEL_CAPACITY> = Channel::new();
-    static PORT_REGISTRATION0: StaticCell<[PortRegistration; 1]> = StaticCell::new();
-    let port_registration0 = PORT_REGISTRATION0.init([PortRegistration {
-        id: PORT0_ID,
-        sender: PORT_CHANNEL0.dyn_sender(),
-        receiver: PORT_CHANNEL0.dyn_receiver(),
-    }]);
-
-    static PD_REGISTRATION0: StaticCell<Device<'static>> = StaticCell::new();
-    let pd_registration0 = PD_REGISTRATION0.init(Device::new(CONTROLLER0_ID, port_registration0));
-
-    controller_context.register_controller(pd_registration0).unwrap();
+    let controller0 = CONTROLLER0.init(Mutex::new(mock_controller::Controller::new(state0, "Controller0")));
 
     define_controller_port_static_cell_channel!(pub(self), port0, GlobalRawMutex, Mutex<GlobalRawMutex, mock_controller::Controller<'static>>);
     let PortComponents {
@@ -291,35 +265,13 @@ async fn task(spawner: Spawner) {
         power_policy_receiver: policy_receiver0,
         event_receiver: event_receiver0,
         interrupt_sender: port0_interrupt_sender,
-    } = port0::create(
-        "PD0",
-        LocalPortId(0),
-        PORT0_ID,
-        Default::default(),
-        controller0,
-        controller_context,
-    );
-
-    let bridge_receiver0 = BridgeEventReceiver::new(pd_registration0);
-    let bridge0 = Bridge::new(controller0, pd_registration0);
+        type_c_receiver: type_c_receiver0,
+    } = port0::create("PD0", LocalPortId(0), Default::default(), controller0);
 
     static STATE1: StaticCell<mock_controller::ControllerState> = StaticCell::new();
     let state1 = STATE1.init(mock_controller::ControllerState::new());
     static CONTROLLER1: StaticCell<ControllerType> = StaticCell::new();
-    let controller1 = CONTROLLER1.init(Mutex::new(mock_controller::Controller::new(state1)));
-
-    static PORT1_CHANNEL: Channel<GlobalRawMutex, ServicePortEvent, CHANNEL_CAPACITY> = Channel::new();
-    static PORT_REGISTRATION1: StaticCell<[PortRegistration; 1]> = StaticCell::new();
-    let port_registration1 = PORT_REGISTRATION1.init([PortRegistration {
-        id: PORT1_ID,
-        sender: PORT1_CHANNEL.dyn_sender(),
-        receiver: PORT1_CHANNEL.dyn_receiver(),
-    }]);
-
-    static PD_REGISTRATION1: StaticCell<Device<'static>> = StaticCell::new();
-    let pd_registration1 = PD_REGISTRATION1.init(Device::new(CONTROLLER1_ID, port_registration1));
-
-    controller_context.register_controller(pd_registration1).unwrap();
+    let controller1 = CONTROLLER1.init(Mutex::new(mock_controller::Controller::new(state1, "Controller1")));
 
     define_controller_port_static_cell_channel!(pub(self), port1, GlobalRawMutex, Mutex<GlobalRawMutex, mock_controller::Controller<'static>>);
     let PortComponents {
@@ -327,17 +279,8 @@ async fn task(spawner: Spawner) {
         power_policy_receiver: policy_receiver1,
         event_receiver: event_receiver1,
         interrupt_sender: port1_interrupt_sender,
-    } = port1::create(
-        "PD1",
-        LocalPortId(0),
-        PORT1_ID,
-        Default::default(),
-        controller1,
-        controller_context,
-    );
-
-    let bridge_receiver1 = BridgeEventReceiver::new(pd_registration1);
-    let bridge1 = Bridge::new(controller1, pd_registration1);
+        type_c_receiver: type_c_receiver1,
+    } = port1::create("PD1", LocalPortId(0), Default::default(), controller1);
 
     // Create power policy service
     // The service is the only receiver and we only use a DynImmediatePublisher, which doesn't take a publisher slot
@@ -364,7 +307,7 @@ async fn task(spawner: Spawner) {
     )));
 
     // Create type-c service
-    static TYPE_C_SERVICE: StaticCell<Mutex<GlobalRawMutex, ServiceType>> = StaticCell::new();
+    static TYPE_C_SERVICE: StaticCell<Mutex<GlobalRawMutex, TypeCServiceType>> = StaticCell::new();
     let type_c_service = TYPE_C_SERVICE.init(Mutex::new(Service::create(
         Config {
             ucsi_capabilities: UcsiCapabilities {
@@ -390,7 +333,18 @@ async fn task(spawner: Spawner) {
             ),
             ..Default::default()
         },
-        controller_context,
+        TypeCRegistrationType {
+            ports: [port0, port1],
+            service_senders: [NoopSender],
+            port_data: [
+                PortData {
+                    local_port: Some(LocalPortId(0)),
+                },
+                PortData {
+                    local_port: Some(LocalPortId(1)),
+                },
+            ],
+        },
     )));
 
     spawner.spawn(
@@ -404,12 +358,14 @@ async fn task(spawner: Spawner) {
     spawner.spawn(
         type_c_service_task(
             type_c_service,
-            ServiceEventReceiver::new(controller_context, power_policy_subscriber),
+            TypeCServiceEventReceiverType::new(
+                [port0, port1],
+                [type_c_receiver0, type_c_receiver1],
+                power_policy_subscriber,
+            ),
         )
         .expect("Failed to create type-c service task"),
     );
-    spawner.spawn(bridge_task(bridge_receiver0, bridge0).expect("Failed to create bridge0 task"));
-    spawner.spawn(bridge_task(bridge_receiver1, bridge1).expect("Failed to create bridge1 task"));
     spawner.spawn(port_task(event_receiver0, port0).expect("Failed to create wrapper0 task"));
     spawner.spawn(
         interrupt_splitter_task(
@@ -426,7 +382,7 @@ async fn task(spawner: Spawner) {
         )
         .expect("Failed to create interrupt splitter 1 task"),
     );
-    spawner.spawn(opm_task(controller_context, [state0, state1]).expect("Failed to create opm task"));
+    spawner.spawn(opm_task([state0, state1]).expect("Failed to create opm task"));
 }
 
 fn main() {

@@ -10,9 +10,11 @@ impl<
     'device,
     C: Lockable<Inner: Pd + MaxSinkVoltage>,
     Shared: Lockable<Inner = SharedState>,
+    TypeCSender: Sender<type_c_interface::service::event::PortEventData>,
     PowerSender: Sender<power_policy_interface::psu::event::EventData>,
     LoopbackSender: Sender<event::Loopback>,
-> type_c_interface::port::max_sink_voltage::MaxSinkVoltage for Port<'device, C, Shared, PowerSender, LoopbackSender>
+> type_c_interface::port::max_sink_voltage::MaxSinkVoltage
+    for Port<'device, C, Shared, TypeCSender, PowerSender, LoopbackSender>
 {
     async fn set_max_sink_voltage(&mut self, voltage_mv: Option<u16>) -> Result<(), PdError> {
         self.controller

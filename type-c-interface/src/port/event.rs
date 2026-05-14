@@ -6,7 +6,8 @@
 //! Consequently [`PortNotificationEventBitfield`] implements iterator traits to allow for processing these events as a stream.
 use bitfield::bitfield;
 
-use crate::port::{AttnVdm, OtherVdm};
+use crate::control::vdm::AttnVdm;
+use crate::control::vdm::OtherVdm;
 
 bitfield! {
     /// Raw bitfield of possible port status events

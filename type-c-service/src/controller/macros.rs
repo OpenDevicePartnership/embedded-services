@@ -7,6 +7,7 @@ use type_c_interface::port::event::PortEventBitfield;
 use crate::controller::{event_receiver::EventReceiver, state};
 
 pub const DEFAULT_POWER_POLICY_CHANNEL_SIZE: usize = 2;
+pub const DEFAULT_TYPE_C_CHANNEL_SIZE: usize = 2;
 pub const DEFAULT_LOOPBACK_CHANNEL_SIZE: usize = 1;
 pub const DEFAULT_INTERRUPT_CHANNEL_SIZE: usize = 4;
 
@@ -15,6 +16,7 @@ pub struct PortComponents<
     'a,
     Port,
     SharedState: Lockable<Inner = state::SharedState>,
+    TypeCReceiver: Receiver<type_c_interface::service::event::PortEventData>,
     PowerPolicyReceveiver: Receiver<power_policy_interface::psu::event::EventData>,
     LoopbackReceiver: Receiver<crate::controller::event::Loopback>,
     InterruptReceiver: Receiver<PortEventBitfield>,
@@ -22,6 +24,8 @@ pub struct PortComponents<
 > {
     /// Port instance
     pub port: &'a Port,
+    /// Type-C service event receiver
+    pub type_c_receiver: TypeCReceiver,
     /// Power policy event receiver
     pub power_policy_receiver: PowerPolicyReceveiver,
     /// Port event receiver
@@ -45,6 +49,11 @@ macro_rules! define_controller_port_static_cell_channel {
             /// Type alias for the power policy receiver
             pub type InnerPowerPolicyReceiverType =
                 ::embassy_sync::channel::DynamicReceiver<'static, ::power_policy_interface::psu::event::EventData>;
+
+            /// Type alias for the type-c service event sender
+            pub type InnerTypeCSenderType = ::embassy_sync::channel::DynamicSender<'static, ::type_c_interface::service::event::PortEventData>;
+            /// Type alias for the type-c service event receiver
+            pub type InnerTypeCReceiverType = ::embassy_sync::channel::DynamicReceiver<'static, ::type_c_interface::service::event::PortEventData>;
 
             /// Type alias for the loopback sender
             pub type InnerLoopbackSenderType =
@@ -72,6 +81,8 @@ macro_rules! define_controller_port_static_cell_channel {
                     $controller,
                     // Shared state type
                     InnerSharedStateType,
+                    // Type-C service event sender type
+                    InnerTypeCSenderType,
                     // Power policy event sender type
                     InnerPowerPolicySenderType,
                     // Loopback event sender type
@@ -79,6 +90,14 @@ macro_rules! define_controller_port_static_cell_channel {
                 >,
             >;
 
+            /// Channel to send events to the type-c service
+            static TYPE_C_CHANNEL: ::static_cell::StaticCell<
+                ::embassy_sync::channel::Channel<
+                    $mutex,
+                    ::type_c_interface::service::event::PortEventData,
+                    { $crate::controller::macros::DEFAULT_TYPE_C_CHANNEL_SIZE },
+                >,
+            > = ::static_cell::StaticCell::new();
             /// Channel to send events to the power policy service
             static POWER_POLICY_CHANNEL: ::static_cell::StaticCell<
                 ::embassy_sync::channel::Channel<
@@ -113,14 +132,13 @@ macro_rules! define_controller_port_static_cell_channel {
             pub fn create(
                 name: &'static str,
                 port: ::embedded_usb_pd::LocalPortId,
-                global_port: ::embedded_usb_pd::GlobalPortId,
                 config: $crate::controller::config::Config,
                 controller: &'static $controller,
-                context: &'static type_c_interface::service::context::Context,
             ) -> $crate::controller::macros::PortComponents<
                 'static,
                 InnerPortType,
                 InnerSharedStateType,
+                InnerTypeCReceiverType,
                 InnerPowerPolicyReceiverType,
                 InnerLoopbackReceiverType,
                 InnerInterruptReceiverType,
@@ -134,6 +152,10 @@ macro_rules! define_controller_port_static_cell_channel {
                 let power_policy_sender = power_policy_channel.dyn_sender();
                 let power_policy_receiver = power_policy_channel.dyn_receiver();
 
+                let type_c_channel = TYPE_C_CHANNEL.init(::embassy_sync::channel::Channel::new());
+                let type_c_sender = type_c_channel.dyn_sender();
+                let type_c_receiver = type_c_channel.dyn_receiver();
+
                 let loopback_channel = LOOPBACK_CHANNEL.init(::embassy_sync::channel::Channel::new());
                 let loopback_sender = loopback_channel.dyn_sender();
                 let loopback_receiver = loopback_channel.dyn_receiver();
@@ -146,12 +168,11 @@ macro_rules! define_controller_port_static_cell_channel {
                     name,
                     config,
                     port,
-                    global_port,
                     controller,
                     shared_state,
+                    type_c_sender,
                     power_policy_sender,
                     loopback_sender,
-                    context,
                 )));
                 let event_receiver = $crate::controller::event_receiver::EventReceiver::new(
                     shared_state,
@@ -160,6 +181,7 @@ macro_rules! define_controller_port_static_cell_channel {
                 );
                 $crate::controller::macros::PortComponents {
                     port,
+                    type_c_receiver,
                     power_policy_receiver,
                     event_receiver,
                     interrupt_sender,

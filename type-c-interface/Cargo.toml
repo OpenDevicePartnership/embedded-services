@@ -10,8 +10,6 @@ ignored = ["log"]
 
 [dependencies]
 bitfield.workspace = true
-embassy-sync.workspace = true
-embassy-time.workspace = true
 log = { workspace = true, optional = true }
 defmt = { workspace = true, optional = true }
 embedded-services.workspace = true
@@ -25,16 +23,8 @@ workspace = true
 default = []
 defmt = [
     "dep:defmt",
-    "embassy-sync/defmt",
-    "embassy-time/defmt",
     "embedded-services/defmt",
     "embedded-usb-pd/defmt",
     "power-policy-interface/defmt",
 ]
-log = [
-    "dep:log",
-    "embassy-sync/log",
-    "embassy-time/log",
-    "embedded-services/log",
-    "power-policy-interface/log",
-]
+log = ["dep:log", "embedded-services/log", "power-policy-interface/log"]

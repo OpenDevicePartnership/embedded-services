@@ -1,3 +1,4 @@
+use embedded_services::named::Named;
 use embedded_usb_pd::{LocalPortId, PdError, ado::Ado};
 
 use crate::control::{
@@ -9,7 +10,7 @@ use crate::control::{
 };
 
 /// Trait for basic functionality from the PD spec.
-pub trait Pd {
+pub trait Pd: Named {
     /// Returns the port status
     fn get_port_status(&mut self, port: LocalPortId) -> impl Future<Output = Result<PortStatus, PdError>>;
 

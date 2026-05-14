@@ -1,7 +1,8 @@
+use embedded_services::named::Named;
 use embedded_usb_pd::{LocalPortId, PdError};
 
 /// System power state related controller functionality
-pub trait SystemPowerStateStatus {
+pub trait SystemPowerStateStatus: Named {
     /// Set the system power state on the given port.
     ///
     /// This notifies the PD controller of the current system power state,

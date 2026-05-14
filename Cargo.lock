@@ -2260,8 +2260,6 @@ version = "0.1.0"
 dependencies = [
  "bitfield 0.17.0",
  "defmt 0.3.100",
- "embassy-sync",
- "embassy-time",
  "embedded-services",
  "embedded-usb-pd",
  "log",

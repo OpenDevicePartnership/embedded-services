@@ -11,9 +11,10 @@ impl<
     'device,
     C: Lockable<Inner: Pd + Retimer>,
     Shared: Lockable<Inner = SharedState>,
+    TypeCSender: Sender<type_c_interface::service::event::PortEventData>,
     PowerSender: Sender<power_policy_interface::psu::event::EventData>,
     LoopbackSender: Sender<event::Loopback>,
-> type_c_interface::port::retimer::Retimer for Port<'device, C, Shared, PowerSender, LoopbackSender>
+> type_c_interface::port::retimer::Retimer for Port<'device, C, Shared, TypeCSender, PowerSender, LoopbackSender>
 {
     async fn get_rt_fw_update_status(&mut self) -> Result<RetimerFwUpdateState, PdError> {
         self.controller.lock().await.get_rt_fw_update_status(self.port).await

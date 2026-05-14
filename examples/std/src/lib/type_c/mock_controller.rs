@@ -2,6 +2,7 @@ use std::num::NonZeroU8;
 
 use embassy_sync::{channel, mutex::Mutex, signal::Signal};
 use embedded_services::GlobalRawMutex;
+use embedded_services::named::Named;
 use embedded_usb_pd::ado::Ado;
 use embedded_usb_pd::{LocalPortId, PdError};
 use embedded_usb_pd::{PowerRole, type_c::Current};
@@ -107,11 +108,12 @@ impl Default for ControllerState {
 
 pub struct Controller<'a> {
     state: &'a ControllerState,
+    name: &'static str,
 }
 
 impl<'a> Controller<'a> {
-    pub fn new(state: &'a ControllerState) -> Self {
-        Self { state }
+    pub fn new(state: &'a ControllerState, name: &'static str) -> Self {
+        Self { state, name }
     }
 
     /// Function to demonstrate calling functions directly on the controller
@@ -130,6 +132,12 @@ impl<const N: usize> type_c_service::controller::event_receiver::InterruptReceiv
         let mut result = [PortEventBitfield::none(); N];
         result[0] = events;
         result
+    }
+}
+
+impl Named for Controller<'_> {
+    fn name(&self) -> &'static str {
+        self.name
     }
 }
 
@@ -316,6 +324,7 @@ pub type Port<'a> = type_c_service::controller::Port<
     'a,
     Mutex<GlobalRawMutex, Controller<'a>>,
     Mutex<GlobalRawMutex, SharedState>,
+    channel::DynamicSender<'a, type_c_interface::service::event::PortEventData>,
     channel::DynamicSender<'a, power_policy_interface::psu::event::EventData>,
     channel::DynamicSender<'a, type_c_service::controller::event::Loopback>,
 >;

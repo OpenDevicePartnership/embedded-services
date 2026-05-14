@@ -19,9 +19,10 @@ impl<
     'device,
     C: Lockable<Inner: Pd>,
     Shared: Lockable<Inner = SharedState>,
+    TypeCSender: Sender<type_c_interface::service::event::PortEventData>,
     PowerSender: Sender<power_policy_interface::psu::event::EventData>,
     LoopbackSender: Sender<event::Loopback>,
-> Port<'device, C, Shared, PowerSender, LoopbackSender>
+> Port<'device, C, Shared, TypeCSender, PowerSender, LoopbackSender>
 {
     /// Handle a new contract as consumer
     pub(super) async fn process_new_consumer_contract(&mut self, new_status: &PortStatus) -> Result<(), PdError> {
@@ -114,9 +115,10 @@ impl<
     'device,
     C: Lockable<Inner: Pd>,
     Shared: Lockable<Inner = SharedState>,
+    TypeCSender: Sender<type_c_interface::service::event::PortEventData>,
     PowerSender: Sender<power_policy_interface::psu::event::EventData>,
     LoopbackSender: Sender<event::Loopback>,
-> Psu for Port<'device, C, Shared, PowerSender, LoopbackSender>
+> Psu for Port<'device, C, Shared, TypeCSender, PowerSender, LoopbackSender>
 {
     async fn disconnect(&mut self) -> Result<(), PsuError> {
         self.controller
@@ -169,9 +171,11 @@ impl<
     'device,
     C: Lockable<Inner: Pd + SystemPowerStateStatus>,
     Shared: Lockable<Inner = SharedState>,
+    TypeCSender: Sender<type_c_interface::service::event::PortEventData>,
     PowerSender: Sender<power_policy_interface::psu::event::EventData>,
     LoopbackSender: Sender<event::Loopback>,
-> type_c_interface::port::power::SystemPowerStateStatus for Port<'device, C, Shared, PowerSender, LoopbackSender>
+> type_c_interface::port::power::SystemPowerStateStatus
+    for Port<'device, C, Shared, TypeCSender, PowerSender, LoopbackSender>
 {
     async fn set_system_power_state_status(
         &mut self,

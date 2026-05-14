@@ -11,9 +11,10 @@ impl<
     'device,
     C: Lockable<Inner: Pd + StateMachine>,
     Shared: Lockable<Inner = SharedState>,
+    TypeCSender: Sender<type_c_interface::service::event::PortEventData>,
     PowerSender: Sender<power_policy_interface::psu::event::EventData>,
     LoopbackSender: Sender<event::Loopback>,
-> type_c_interface::port::type_c::StateMachine for Port<'device, C, Shared, PowerSender, LoopbackSender>
+> type_c_interface::port::type_c::StateMachine for Port<'device, C, Shared, TypeCSender, PowerSender, LoopbackSender>
 {
     async fn set_type_c_state_machine_config(&mut self, state: TypeCStateMachineState) -> Result<(), PdError> {
         self.controller

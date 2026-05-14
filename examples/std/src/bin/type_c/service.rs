@@ -1,13 +1,13 @@
 use embassy_executor::{Executor, Spawner};
-use embassy_sync::channel::{Channel, DynamicReceiver, DynamicSender};
+use embassy_sync::channel::{DynamicReceiver, DynamicSender};
 use embassy_sync::mutex::Mutex;
 use embassy_sync::pubsub::{DynImmediatePublisher, DynSubscriber, PubSubChannel};
 use embassy_time::Timer;
 use embedded_services::GlobalRawMutex;
-use embedded_services::event::MapSender;
+use embedded_services::event::{MapSender, NoopSender};
+use embedded_usb_pd::LocalPortId;
 use embedded_usb_pd::ado::Ado;
 use embedded_usb_pd::type_c::Current;
-use embedded_usb_pd::{GlobalPortId, LocalPortId};
 use log::*;
 use power_policy_interface::charger::mock::ChargerType;
 use power_policy_interface::psu;
@@ -16,25 +16,17 @@ use power_policy_service::service::registration::ArrayRegistration;
 use static_cell::StaticCell;
 use std_examples::type_c::mock_controller::Port;
 use std_examples::type_c::mock_controller::{self, InterruptReceiver};
-use type_c_interface::controller::ControllerId;
 use type_c_interface::port::event::PortEventBitfield;
-use type_c_interface::port::{Device, PortRegistration};
-use type_c_interface::service::event::PortEvent as ServicePortEvent;
 use type_c_interface::service::event::PortEventData as ServicePortEventData;
-use type_c_service::bridge::Bridge;
-use type_c_service::bridge::event_receiver::EventReceiver as BridgeEventReceiver;
 use type_c_service::controller::event_receiver::InterruptReceiver as _;
 use type_c_service::controller::event_receiver::{EventReceiver as PortEventReceiver, PortEventSplitter};
 use type_c_service::controller::macros::PortComponents;
 use type_c_service::controller::state::SharedState;
 use type_c_service::define_controller_port_static_cell_channel;
+use type_c_service::service::Service;
 use type_c_service::service::config::Config;
-use type_c_service::service::{EventReceiver as ServiceEventReceiver, Service};
 use type_c_service::util::power_capability_from_current;
 
-const CHANNEL_CAPACITY: usize = 4;
-const CONTROLLER0_ID: ControllerId = ControllerId(0);
-const PORT0_ID: GlobalPortId = GlobalPortId(0);
 const DELAY_MS: u64 = 1000;
 
 type ControllerType = Mutex<GlobalRawMutex, mock_controller::Controller<'static>>;
@@ -59,7 +51,20 @@ type PowerPolicyServiceType = Mutex<
     >,
 >;
 
-type ServiceType = Service<'static>;
+const PORT_COUNT: usize = 1;
+type PortReceiverType = DynamicReceiver<'static, type_c_interface::service::event::PortEventData>;
+type TypeCServiceEventReceiverType = type_c_service::service::event_receiver::ArrayEventReceiver<
+    'static,
+    PORT_COUNT,
+    PortType,
+    PortReceiverType,
+    PowerPolicyReceiverType,
+>;
+type TypeCServiceSenderType = NoopSender;
+type TypeCRegistrationType =
+    type_c_service::service::registration::ArrayRegistration<'static, PortType, PORT_COUNT, TypeCServiceSenderType, 1>;
+
+type ServiceType = type_c_service::service::Service<'static, TypeCRegistrationType>;
 type SharedStateType = Mutex<GlobalRawMutex, SharedState>;
 type PortEventReceiverType = PortEventReceiver<
     'static,
@@ -96,47 +101,14 @@ async fn interrupt_splitter_task(
 }
 
 #[embassy_executor::task]
-async fn bridge_task(
-    mut event_receiver: BridgeEventReceiver,
-    mut bridge: Bridge<'static, Mutex<GlobalRawMutex, mock_controller::Controller<'static>>>,
-) -> ! {
-    loop {
-        let event = event_receiver.wait_next().await;
-        let output = bridge.process_event(event).await;
-        event_receiver.finalize(output);
-    }
-}
-
-#[embassy_executor::task]
 async fn task(spawner: Spawner) {
     embedded_services::init().await;
-
-    // Create power policy service
-    static CONTEXT: StaticCell<type_c_interface::service::context::Context> = StaticCell::new();
-    let controller_context = CONTEXT.init(type_c_interface::service::context::Context::new());
 
     static STATE: StaticCell<mock_controller::ControllerState> = StaticCell::new();
     let state = STATE.init(mock_controller::ControllerState::new());
 
     static CONTROLLER: StaticCell<ControllerType> = StaticCell::new();
-    let controller = CONTROLLER.init(Mutex::new(mock_controller::Controller::new(state)));
-
-    static PORT_CHANNEL: Channel<GlobalRawMutex, ServicePortEvent, CHANNEL_CAPACITY> = Channel::new();
-
-    static PORT_REGISTRATION: StaticCell<[PortRegistration; 1]> = StaticCell::new();
-    let port_registration = PORT_REGISTRATION.init([PortRegistration {
-        id: PORT0_ID,
-        sender: PORT_CHANNEL.dyn_sender(),
-        receiver: PORT_CHANNEL.dyn_receiver(),
-    }]);
-
-    static PD_REGISTRATION: StaticCell<Device<'static>> = StaticCell::new();
-    let pd_registration = PD_REGISTRATION.init(Device::new(CONTROLLER0_ID, port_registration));
-
-    controller_context.register_controller(pd_registration).unwrap();
-
-    let bridge_receiver = BridgeEventReceiver::new(pd_registration);
-    let bridge = Bridge::new(controller, pd_registration);
+    let controller = CONTROLLER.init(Mutex::new(mock_controller::Controller::new(state, "Controller0")));
 
     define_controller_port_static_cell_channel!(pub(self), port, GlobalRawMutex, Mutex<GlobalRawMutex, mock_controller::Controller<'static>>);
     let PortComponents {
@@ -144,14 +116,8 @@ async fn task(spawner: Spawner) {
         power_policy_receiver,
         event_receiver,
         interrupt_sender: port_interrupt_sender,
-    } = port::create(
-        "PD0",
-        LocalPortId(0),
-        PORT0_ID,
-        Default::default(),
-        controller,
-        controller_context,
-    );
+        type_c_receiver,
+    } = port::create("PD0", LocalPortId(0), Default::default(), controller);
 
     // Create type-c service
     // The service is the only receiver and we only use a DynImmediatePublisher, which doesn't take a publisher slot
@@ -178,7 +144,16 @@ async fn task(spawner: Spawner) {
     )));
 
     static TYPE_C_SERVICE: StaticCell<Mutex<GlobalRawMutex, ServiceType>> = StaticCell::new();
-    let type_c_service = TYPE_C_SERVICE.init(Mutex::new(Service::create(Config::default(), controller_context)));
+    let type_c_service = TYPE_C_SERVICE.init(Mutex::new(Service::create(
+        Config::default(),
+        type_c_service::service::registration::ArrayRegistration {
+            ports: [port],
+            service_senders: [NoopSender],
+            port_data: [type_c_service::service::registration::PortData {
+                local_port: Some(LocalPortId(0)),
+            }],
+        },
+    )));
 
     // Spin up power policy service
     spawner.spawn(
@@ -188,12 +163,11 @@ async fn task(spawner: Spawner) {
     spawner.spawn(
         type_c_service_task(
             type_c_service,
-            ServiceEventReceiver::new(controller_context, power_policy_subscriber),
+            TypeCServiceEventReceiverType::new([port], [type_c_receiver], power_policy_subscriber),
         )
         .expect("Failed to create type-c service task"),
     );
 
-    spawner.spawn(bridge_task(bridge_receiver, bridge).expect("Failed to create bridge task"));
     spawner.spawn(port_task(event_receiver, port).expect("Failed to create controller task"));
 
     spawner.spawn(
@@ -239,7 +213,7 @@ async fn power_policy_psu_task(
 #[embassy_executor::task]
 async fn type_c_service_task(
     service: &'static Mutex<GlobalRawMutex, ServiceType>,
-    event_receiver: ServiceEventReceiver<'static, PowerPolicyReceiverType>,
+    event_receiver: TypeCServiceEventReceiverType,
 ) {
     info!("Starting type-c task");
     type_c_service::task::task(service, event_receiver).await;

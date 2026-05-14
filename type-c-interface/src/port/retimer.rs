@@ -1,9 +1,10 @@
+use embedded_services::named::Named;
 use embedded_usb_pd::PdError;
 
 use crate::control::retimer::RetimerFwUpdateState;
 
 /// Retimer-related functionality
-pub trait Retimer {
+pub trait Retimer: Named {
     /// Returns the retimer fw update state
     fn get_rt_fw_update_status(&mut self) -> impl Future<Output = Result<RetimerFwUpdateState, PdError>>;
     /// Set retimer fw update state

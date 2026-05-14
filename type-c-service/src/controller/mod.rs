@@ -1,14 +1,12 @@
 //! Struct that manages per-port state, interfacing with a controller object that exposes multiple ports.
 use embedded_services::{debug, error, event::Sender, info, named::Named, sync::Lockable};
-use embedded_usb_pd::{GlobalPortId, LocalPortId, PdError};
+use embedded_usb_pd::{LocalPortId, PdError};
 use power_policy_interface::psu::PsuState;
 use type_c_interface::control::pd::PortStatus;
 use type_c_interface::controller::pd::Pd;
 use type_c_interface::port::event::PortEventBitfield;
 use type_c_interface::port::{event::PortEvent as InterfacePortEvent, event::PortStatusEventBitfield};
-use type_c_interface::service::event::{
-    PortEvent as ServicePortEvent, PortEventData as ServicePortEventData, StatusChangedData,
-};
+use type_c_interface::service::event::{PortEventData as ServicePortEventData, StatusChangedData};
 
 use crate::controller::event::{Event, Loopback};
 use crate::controller::state::SharedState;
@@ -30,13 +28,12 @@ pub struct Port<
     'device,
     C: Lockable<Inner: Pd>,
     Shared: Lockable<Inner = SharedState>,
+    TypeCSender: Sender<type_c_interface::service::event::PortEventData>,
     PowerSender: Sender<power_policy_interface::psu::event::EventData>,
     LoopbackSender: Sender<event::Loopback>,
 > {
     /// Local port
     port: LocalPortId,
-    /// Global port
-    global_port: GlobalPortId,
     /// Controller
     controller: &'device C,
     /// Per-port PSU state
@@ -45,14 +42,14 @@ pub struct Port<
     name: &'static str,
     /// Cached port status
     status: PortStatus,
+    /// Sender for type-c service events
+    type_c_sender: TypeCSender,
     /// Sender for power policy events
     power_policy_sender: PowerSender,
     /// Configuration
     config: config::Config,
     /// Shared state
     shared_state: &'device Shared,
-    /// Type-C service context
-    context: &'device type_c_interface::service::context::Context,
     /// Loopback sender
     loopback_sender: LoopbackSender,
 }
@@ -61,36 +58,35 @@ impl<
     'device,
     C: Lockable<Inner: Pd>,
     Shared: Lockable<Inner = SharedState>,
+    TypeCSender: Sender<type_c_interface::service::event::PortEventData>,
     PowerSender: Sender<power_policy_interface::psu::event::EventData>,
     LoopbackSender: Sender<event::Loopback>,
-> Port<'device, C, Shared, PowerSender, LoopbackSender>
+> Port<'device, C, Shared, TypeCSender, PowerSender, LoopbackSender>
 {
     /// Create new Port instance
-    // Argument count will be reduced as the last bit of refactoring is done
+    // TODO: refactor arguments into a registration struct
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         name: &'static str,
         config: config::Config,
         port: LocalPortId,
-        global_port: GlobalPortId,
         controller: &'device C,
         shared_state: &'device Shared,
+        type_c_sender: TypeCSender,
         power_policy_sender: PowerSender,
         loopback_sender: LoopbackSender,
-        context: &'device type_c_interface::service::context::Context,
     ) -> Self {
         Self {
             name,
             controller,
             port,
-            global_port,
             status: PortStatus::default(),
             psu_state: power_policy_interface::psu::State::default(),
             power_policy_sender,
             config,
             shared_state,
-            context,
             loopback_sender,
+            type_c_sender,
         }
     }
 
@@ -153,12 +149,7 @@ impl<
             current_status: new_status,
         });
         self.status = new_status;
-        self.context
-            .send_port_event(ServicePortEvent {
-                port: self.global_port,
-                event,
-            })
-            .await?;
+        self.type_c_sender.send(event).await;
         Ok(event)
     }
 
@@ -227,9 +218,10 @@ impl<
     'device,
     C: Lockable<Inner: Pd>,
     Shared: Lockable<Inner = SharedState>,
+    TypeCSender: Sender<type_c_interface::service::event::PortEventData>,
     PowerSender: Sender<power_policy_interface::psu::event::EventData>,
     LoopbackSender: Sender<event::Loopback>,
-> Named for Port<'device, C, Shared, PowerSender, LoopbackSender>
+> Named for Port<'device, C, Shared, TypeCSender, PowerSender, LoopbackSender>
 {
     fn name(&self) -> &'static str {
         self.name

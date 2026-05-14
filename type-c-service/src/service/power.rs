@@ -1,14 +1,17 @@
+use core::ptr;
+
+use embedded_services::sync::Lockable as _;
 use power_policy_interface::service as power_policy;
+use power_policy_interface::service::event::EventData as PowerPolicyEventData;
+use type_c_interface::port::pd::Pd as _;
 
 use super::*;
 
-impl Service<'_> {
+impl<'a, Reg: Registration<'a>> Service<'a, Reg> {
     /// Set the unconstrained state for all ports
     pub(super) async fn set_unconstrained_all(&mut self, unconstrained: bool) -> Result<(), Error> {
-        for port_index in 0..self.context.get_num_ports() {
-            self.context
-                .set_unconstrained_power(GlobalPortId(port_index as u8), unconstrained)
-                .await?;
+        for port in self.registration.ports() {
+            port.lock().await.set_unconstrained_power(unconstrained).await?;
         }
         Ok(())
     }
@@ -28,25 +31,27 @@ impl Service<'_> {
                 self.set_unconstrained_all(true).await?;
             } else {
                 // Only one unconstrained device is present, see if that's one of our ports
-                let num_ports = self.context.get_num_ports();
-                let unconstrained_port = self
-                    .state
-                    .port_status
-                    .iter()
-                    .take(num_ports)
-                    .position(|status| status.available_sink_contract.is_some() && status.unconstrained_power);
+                let mut unconstrained_port = None;
+                for port in self.registration.ports().iter() {
+                    let status = port.lock().await.get_port_status().await?;
+                    if status.available_sink_contract.is_some() && status.unconstrained_power {
+                        unconstrained_port = Some(*port);
+                        break;
+                    }
+                }
 
-                if let Some(unconstrained_index) = unconstrained_port {
+                if let Some(unconstrained_port) = unconstrained_port {
                     // One of our ports is the unconstrained consumer
                     // If it switches to sourcing then the system will no longer be unconstrained
                     // So set that port to constrained and unconstrain all others
                     info!(
-                        "Setting port{} to constrained, all others unconstrained",
-                        unconstrained_index
+                        "Setting port ({}) to constrained, all others unconstrained",
+                        unconstrained_port.lock().await.name()
                     );
-                    for port_index in 0..num_ports {
-                        self.context
-                            .set_unconstrained_power(GlobalPortId(port_index as u8), port_index != unconstrained_index)
+                    for port in self.registration.ports().iter() {
+                        port.lock()
+                            .await
+                            .set_unconstrained_power(!ptr::eq(*port, unconstrained_port))
                             .await?;
                     }
                 } else {
@@ -66,21 +71,22 @@ impl Service<'_> {
     }
 
     /// Process power policy events
-    pub(super) async fn process_power_policy_event(&mut self, message: &PowerPolicyEvent) -> Result<(), Error> {
+    pub(super) async fn process_power_policy_event(&mut self, message: &PowerPolicyEventData) -> Result<(), Error> {
         match message {
-            PowerPolicyEvent::Unconstrained(state) => self.process_unconstrained_state_change(state).await,
-            PowerPolicyEvent::ConsumerDisconnected => {
-                self.state.ucsi.psu_connected = false;
+            PowerPolicyEventData::Unconstrained(state) => self.process_unconstrained_state_change(state).await,
+            PowerPolicyEventData::ConsumerDisconnected => {
+                self.ucsi.psu_connected = false;
                 // Notify OPM because this can affect battery charging capability status
                 self.pend_ucsi_connected_ports().await;
                 Ok(())
             }
-            PowerPolicyEvent::ConsumerConnected => {
-                self.state.ucsi.psu_connected = true;
+            PowerPolicyEventData::ConsumerConnected(_) => {
+                self.ucsi.psu_connected = true;
                 // Notify OPM because this can affect battery charging capability status
                 self.pend_ucsi_connected_ports().await;
                 Ok(())
             }
+            _ => Ok(()), // Other events don't require any action from the service
         }
     }
 }
