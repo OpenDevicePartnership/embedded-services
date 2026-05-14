@@ -30,8 +30,9 @@ pub enum DecodeError {
     PrematureEnd,
     /// An escape byte was followed by a byte not in the medium's
     /// accept-list (strict-XOR rule per RFC1662 §4.2 / DSP0253 §6.4).
-    /// The caller should reject the entire frame. Currently unreachable;
-    /// produced only by stuffing encodings introduced in a later phase.
+    /// The caller should reject the entire frame. Reachable via
+    /// `SerialEncoding` when the byte following an escape (`0x7D`) is
+    /// neither `0x5E` nor `0x5D`.
     InvalidEscape,
 }
 
