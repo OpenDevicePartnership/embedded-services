@@ -12,7 +12,7 @@ use crate::{
 /// Represents the state needed to construct a repsonse to a request:
 /// the MCTP transport source/destination, the sequence number to use for
 /// the reply, and the medium-specific context that came with the request.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct MctpReplyContext<M: MctpMedium> {
     pub destination_endpoint_id: EndpointId,

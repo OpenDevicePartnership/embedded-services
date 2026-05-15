@@ -293,6 +293,27 @@ impl MctpMedium for MctpSerialMedium {
 
         Ok(&buffer[..end_pos + 1])
     }
+
+    fn frame_complete(&self, buf: &[u8]) -> MctpPacketResult<Option<usize>, Self> {
+        // This medium's `serialize` emits `[revision, byte_count, ...stuffed body,
+        // fcs_msb, fcs_lsb, 0x7E]` — only an END flag, no leading START flag.
+        //
+        // The `body_start` check below is forward-defensive: DSP0253 variants are
+        // permitted to emit a leading 0x7E flag, and this lets `frame_complete`
+        // accept that case too (skip the leading flag, then find the next 0x7E).
+        // Either pattern returns the full frame length to the caller.
+        if buf.is_empty() {
+            return Ok(None);
+        }
+        let body_start = if buf[0] == END_FLAG { 1 } else { 0 };
+        if body_start >= buf.len() {
+            return Ok(None);
+        }
+        match buf[body_start..].iter().position(|&b| b == END_FLAG) {
+            Some(idx) => Ok(Some(body_start + idx + 1)),
+            None => Ok(None),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -712,5 +733,61 @@ mod medium_tests {
         }
         assert!(packet_count >= 2, "expected multi-packet split, got {packet_count}");
         assert_eq!(total_decoded_body, payload.len());
+    }
+
+    // ----- frame_complete tests -----
+
+    #[test]
+    fn frame_complete_empty_buf_returns_none() {
+        assert_eq!(MctpSerialMedium.frame_complete(&[]).unwrap(), None);
+    }
+
+    #[test]
+    fn frame_complete_no_end_flag_returns_none() {
+        // Bytes present but no 0x7E anywhere → partial frame
+        let buf = [0x01, 0x05, 0xAA, 0xBB, 0xCC];
+        assert_eq!(MctpSerialMedium.frame_complete(&buf).unwrap(), None);
+    }
+
+    #[test]
+    fn frame_complete_only_end_flag_returns_none() {
+        // A lone 0x7E is treated as a leading flag (skipped); after
+        // skipping there are no bytes left, so partial.
+        let buf = [END_FLAG];
+        assert_eq!(MctpSerialMedium.frame_complete(&buf).unwrap(), None);
+    }
+
+    #[test]
+    fn frame_complete_no_leading_flag_finds_end_flag() {
+        // [ revision, byte_count, ...body, fcs_msb, fcs_lsb, 0x7E ]
+        // matches what MctpSerialMedium::serialize emits — no leading flag.
+        let buf = [SERIAL_REVISION, 0x03, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, END_FLAG];
+        assert_eq!(MctpSerialMedium.frame_complete(&buf).unwrap(), Some(8));
+    }
+
+    #[test]
+    fn frame_complete_with_leading_flag_skips_and_finds_end_flag() {
+        // Forward-defensive: some DSP0253 variants emit a leading START
+        // flag. frame_complete should skip the leading 0x7E and find the
+        // trailing one, returning the FULL length (including leading flag).
+        let buf = [END_FLAG, SERIAL_REVISION, 0x02, 0xAA, 0xBB, 0xCC, 0xDD, END_FLAG];
+        assert_eq!(MctpSerialMedium.frame_complete(&buf).unwrap(), Some(8));
+    }
+
+    #[test]
+    fn frame_complete_extra_bytes_after_end_flag_returns_first_frame_len() {
+        // First frame is 6 bytes (incl. END flag); 2 trailing bytes belong
+        // to the next frame (caller's problem).
+        let buf = [SERIAL_REVISION, 0x01, 0xAA, 0xBB, 0xCC, END_FLAG, 0x99, 0x88];
+        assert_eq!(MctpSerialMedium.frame_complete(&buf).unwrap(), Some(6));
+    }
+
+    #[test]
+    fn frame_complete_back_to_back_after_leading_flag() {
+        // Edge case: leading flag, then payload, then end flag, then more
+        // bytes. Should return length of first frame INCLUDING the leading
+        // flag; trailing bytes belong to a subsequent frame.
+        let buf = [END_FLAG, SERIAL_REVISION, 0x01, 0xAA, 0xBB, END_FLAG, 0x77];
+        assert_eq!(MctpSerialMedium.frame_complete(&buf).unwrap(), Some(6));
     }
 }

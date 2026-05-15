@@ -17,7 +17,8 @@
 //! # impl MctpMedium for MyMedium { type Frame=MyMediumFrame; type Error=&'static str; type ReplyContext=(); type Encoding=PassthroughEncoding;
 //! #   fn max_message_body_size(&self)->usize{self.mtu}
 //! #   fn deserialize<'b>(&self,p:&'b [u8])->MctpPacketResult<(Self::Frame,EncodingDecoder<'b,Self::Encoding>),Self>{Ok((MyMediumFrame{packet_size:p.len()},EncodingDecoder::new(p)))}
-//! #   fn serialize<'b,F>(&self,_:Self::ReplyContext,b:&'b mut [u8],w:F)->MctpPacketResult<&'b [u8],Self> where F: for<'a> FnOnce(&mut EncodingEncoder<'a,Self::Encoding>)->MctpPacketResult<(),Self>{let n={let mut e=EncodingEncoder::<Self::Encoding>::new(b);w(&mut e)?;e.wire_position()};Ok(&b[..n])}}
+//! #   fn serialize<'b,F>(&self,_:Self::ReplyContext,b:&'b mut [u8],w:F)->MctpPacketResult<&'b [u8],Self> where F: for<'a> FnOnce(&mut EncodingEncoder<'a,Self::Encoding>)->MctpPacketResult<(),Self>{let n={let mut e=EncodingEncoder::<Self::Encoding>::new(b);w(&mut e)?;e.wire_position()};Ok(&b[..n])}
+//! #   fn frame_complete(&self,b:&[u8])->MctpPacketResult<Option<usize>,Self>{if b.is_empty(){Ok(None)}else{Ok(Some(b.len()))}}}
 //! # impl MctpMediumFrame<MyMedium> for MyMediumFrame { fn packet_size(&self)->usize{self.packet_size} fn reply_context(&self)->(){()}}
 //! let mut assembly_buffer = [0u8; 1024];
 //! let medium = MyMedium { mtu: 256 };
@@ -61,7 +62,8 @@
 //! # #[derive(Debug, Clone, Copy)] struct MyMediumFrame { packet_size: usize }
 //! # impl MctpMedium for MyMedium { type Frame=MyMediumFrame; type Error=&'static str; type ReplyContext=(); type Encoding=PassthroughEncoding; fn max_message_body_size(&self)->usize{self.mtu}
 //! #   fn deserialize<'b>(&self,p:&'b [u8])->MctpPacketResult<(Self::Frame,EncodingDecoder<'b,Self::Encoding>),Self>{Ok((MyMediumFrame{packet_size:p.len()},EncodingDecoder::new(p)))}
-//! #   fn serialize<'b,F>(&self,_:Self::ReplyContext,b:&'b mut [u8],w:F)->MctpPacketResult<&'b [u8],Self> where F: for<'a> FnOnce(&mut EncodingEncoder<'a,Self::Encoding>)->MctpPacketResult<(),Self>{let n={let mut e=EncodingEncoder::<Self::Encoding>::new(b);w(&mut e)?;e.wire_position()};Ok(&b[..n])}}
+//! #   fn serialize<'b,F>(&self,_:Self::ReplyContext,b:&'b mut [u8],w:F)->MctpPacketResult<&'b [u8],Self> where F: for<'a> FnOnce(&mut EncodingEncoder<'a,Self::Encoding>)->MctpPacketResult<(),Self>{let n={let mut e=EncodingEncoder::<Self::Encoding>::new(b);w(&mut e)?;e.wire_position()};Ok(&b[..n])}
+//! #   fn frame_complete(&self,b:&[u8])->MctpPacketResult<Option<usize>,Self>{if b.is_empty(){Ok(None)}else{Ok(Some(b.len()))}}}
 //! # impl MctpMediumFrame<MyMedium> for MyMediumFrame { fn packet_size(&self)->usize{self.packet_size} fn reply_context(&self)->(){()}}
 //! let mut buf = [0u8; 1024];
 //! let mut ctx = MctpPacketContext::new(MyMedium { mtu: 64 }, &mut buf);
@@ -146,6 +148,11 @@
 //!             encoder.wire_position()
 //!         };
 //!         Ok(&buffer[..written])
+//!     }
+//!
+//!     fn frame_complete(&self, buf: &[u8]) -> MctpPacketResult<Option<usize>, Self> {
+//!         // Trivial: treat any non-empty buffer as a complete frame.
+//!         if buf.is_empty() { Ok(None) } else { Ok(Some(buf.len())) }
 //!     }
 //! }
 //!

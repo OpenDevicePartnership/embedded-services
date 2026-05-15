@@ -20,8 +20,8 @@ pub trait MctpMedium: Sized {
     type ReplyContext: core::fmt::Debug + Copy + Clone + PartialEq + Eq;
 
     /// the byte-stuffing transform used by this medium when (de)serializing
-    /// wire bytes. Stateless — see [`crate::buffer_encoding`]. Most media
-    /// use [`PassthroughEncoding`](crate::buffer_encoding::PassthroughEncoding)
+    /// wire bytes. Stateless — see [`BufferEncoding`](crate::BufferEncoding).
+    /// Most media use [`PassthroughEncoding`](crate::PassthroughEncoding)
     /// (no transform); media that need byte-stuffing (e.g., DSP0253 serial)
     /// supply their own impl.
     type Encoding: BufferEncoding;
@@ -55,6 +55,17 @@ pub trait MctpMedium: Sized {
     ) -> MctpPacketResult<&'buf [u8], Self>
     where
         F: for<'a> FnOnce(&mut EncodingEncoder<'a, Self::Encoding>) -> MctpPacketResult<(), Self>;
+
+    /// Returns `Ok(Some(len))` when `buf` contains a complete medium-framed
+    /// packet starting at `buf[0]`, where `len` is the total byte count of
+    /// that packet. Returns `Ok(None)` when `buf` has a partial frame
+    /// (caller should read more bytes and retry). Returns `Err(...)` when
+    /// `buf` is malformed.
+    ///
+    /// Used by generic consumers (e.g., `uart-service::Service<R, M>`)
+    /// to assemble packets from byte streams without knowing medium
+    /// framing details.
+    fn frame_complete(&self, buf: &[u8]) -> MctpPacketResult<Option<usize>, Self>;
 }
 
 pub trait MctpMediumFrame<M: MctpMedium>: Clone + Copy {

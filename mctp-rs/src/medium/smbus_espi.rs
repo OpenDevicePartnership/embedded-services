@@ -106,6 +106,18 @@ impl MctpMedium for SmbusEspiMedium {
     fn max_message_body_size(&self) -> usize {
         32
     }
+
+    fn frame_complete(&self, buf: &[u8]) -> MctpPacketResult<Option<usize>, Self> {
+        // SmbusEspi framing: [dst_addr | src_addr | byte_count | cmd_code]
+        //                    [ body bytes (byte_count) ] [ PEC byte ]
+        // Total: 4 + byte_count + 1 = 5 + byte_count
+        if buf.len() < 4 {
+            return Ok(None);
+        }
+        let byte_count = buf[2] as usize;
+        let total = 4 + byte_count + 1;
+        if buf.len() < total { Ok(None) } else { Ok(Some(total)) }
+    }
 }
 
 #[repr(u8)]
@@ -844,5 +856,64 @@ mod tests {
             result_small.err().unwrap(),
             MctpPacketError::SerializeError("encode error")
         );
+    }
+
+    // ----- frame_complete tests -----
+
+    #[test]
+    fn frame_complete_empty_buf_returns_none() {
+        assert_eq!(SmbusEspiMedium.frame_complete(&[]).unwrap(), None);
+    }
+
+    #[test]
+    fn frame_complete_partial_header_returns_none() {
+        // SmbusEspi header is 4 bytes (dst, src, byte_count, cmd_code).
+        // Any byte count from 1 to 3 means we don't know byte_count yet.
+        for n in 1..4 {
+            let buf: Vec<u8> = (0..n).map(|_| 0u8).collect();
+            assert_eq!(
+                SmbusEspiMedium.frame_complete(&buf).unwrap(),
+                None,
+                "partial header ({} bytes) should be incomplete",
+                n
+            );
+        }
+    }
+
+    #[test]
+    fn frame_complete_exact_frame_returns_total_len() {
+        // header (4) + body (byte_count = 3) + PEC (1) = 8 bytes
+        let buf: [u8; 8] = [0x20, 0x10, 0x03, 0x0F, 0xAA, 0xBB, 0xCC, 0xDD];
+        assert_eq!(SmbusEspiMedium.frame_complete(&buf).unwrap(), Some(8));
+    }
+
+    #[test]
+    fn frame_complete_short_of_body_returns_none() {
+        // byte_count says 5, but we only have 4 header + 3 body bytes (no PEC yet)
+        let buf: [u8; 7] = [0x20, 0x10, 0x05, 0x0F, 0xAA, 0xBB, 0xCC];
+        assert_eq!(SmbusEspiMedium.frame_complete(&buf).unwrap(), None);
+    }
+
+    #[test]
+    fn frame_complete_short_of_pec_returns_none() {
+        // byte_count = 2 → expects 4 + 2 + 1 = 7 bytes; we have 6
+        let buf: [u8; 6] = [0x20, 0x10, 0x02, 0x0F, 0xAA, 0xBB];
+        assert_eq!(SmbusEspiMedium.frame_complete(&buf).unwrap(), None);
+    }
+
+    #[test]
+    fn frame_complete_extra_bytes_after_frame_returns_first_frame_len() {
+        // First frame: 4 + 1 + 1 = 6 bytes. Buffer has 8 bytes (2 trailing).
+        // frame_complete reports the length of the FIRST frame; trailing
+        // bytes are the caller's problem (e.g., next iteration of the loop).
+        let buf: [u8; 8] = [0x20, 0x10, 0x01, 0x0F, 0xAA, 0xBB, 0xCC, 0xDD];
+        assert_eq!(SmbusEspiMedium.frame_complete(&buf).unwrap(), Some(6));
+    }
+
+    #[test]
+    fn frame_complete_zero_byte_count_returns_5_bytes() {
+        // Edge case: byte_count = 0 means 4 header + 0 body + 1 PEC = 5 bytes
+        let buf: [u8; 5] = [0x20, 0x10, 0x00, 0x0F, 0xCC];
+        assert_eq!(SmbusEspiMedium.frame_complete(&buf).unwrap(), Some(5));
     }
 }

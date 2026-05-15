@@ -62,6 +62,15 @@ impl MctpMedium for TestMedium {
     fn max_message_body_size(&self) -> usize {
         self.mtu
     }
+    fn frame_complete(&self, buf: &[u8]) -> MctpPacketResult<Option<usize>, Self> {
+        // TestMedium frames are length-bounded by the buffer passed in;
+        // for tests we treat any non-empty buffer as a complete frame.
+        if buf.len() < self.header.len() + self.trailer.len() {
+            Ok(None)
+        } else {
+            Ok(Some(buf.len()))
+        }
+    }
     fn serialize<'buf, F>(
         &self,
         _: Self::ReplyContext,
