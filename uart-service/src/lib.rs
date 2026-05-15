@@ -1,8 +1,9 @@
 //! uart-service
 //!
-//! To keep things consistent with eSPI service, this also uses the `SmbusEspiMedium` (though not
-//! strictly necessary, this helps minimize code changes on the host side when swicthing between
-//! eSPI or UART).
+//! UART transport for MCTP packets, generic over [`mctp_rs::MctpMedium`].
+//! Use [`DefaultService`] for the SmbusEspi-medium baseline; use
+//! [`Service::new`] directly with another medium (e.g. DSP0253 serial)
+//! for non-SmbusEspi callers.
 //!
 //! Revisit: Will also need to consider how to handle notifications (likely need to have user
 //! provide GPIO pin we can use).
@@ -16,14 +17,12 @@ use embedded_io_async::Write as UartWrite;
 use embedded_services::GlobalRawMutex;
 use embedded_services::relay::mctp::{RelayHandler, RelayHeader, RelayResponse};
 use embedded_services::trace;
-use mctp_rs::smbus_espi::SmbusEspiMedium;
-use mctp_rs::smbus_espi::SmbusEspiReplyContext;
+use mctp_rs::MctpMedium;
+use mctp_rs::smbus_espi::{SmbusEspiMedium, SmbusEspiReplyContext};
 
 // Should be as large as the largest possible MCTP packet and its metadata.
 const BUF_SIZE: usize = 256;
 const HOST_TX_QUEUE_SIZE: usize = 5;
-const SMBUS_HEADER_SIZE: usize = 4;
-const SMBUS_LEN_IDX: usize = 2;
 
 #[derive(Clone)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
@@ -34,48 +33,64 @@ pub(crate) struct HostResultMessage<R: RelayHandler> {
 
 #[derive(Debug, Clone, Copy)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub enum Error {
+pub enum Error<M: MctpMedium> {
     /// Comms error.
     Comms,
     /// UART error.
     Uart,
     /// MCTP serialization error.
-    Mctp(mctp_rs::MctpPacketError<SmbusEspiMedium>),
+    Mctp(mctp_rs::MctpPacketError<M>),
     /// Other serialization error.
     Serialize(&'static str),
-    /// Index/slice error.
-    IndexSlice,
     /// Buffer error.
     Buffer(embedded_services::buffer::Error),
 }
 
-pub struct Service<R: RelayHandler> {
+/// UART-driven MCTP relay service, generic over the medium `M`.
+///
+/// # `M: Copy` bound
+///
+/// The `Copy` bound on `M` is required because [`MctpPacketContext`]
+/// takes the medium by value, and `Service` needs to construct a fresh
+/// `MctpPacketContext` on each request and each response (the
+/// `MctpPacketContext` borrows the assembly buffer for the duration of
+/// one packet, so it must be re-created per round-trip). Storing `M` by
+/// value and copying it into each new context is the simplest shape;
+/// it's free for both shipped media (`SmbusEspiMedium`, `MctpSerialMedium`
+/// are zero-sized types). A future medium with internal state that
+/// cannot be `Copy` would need either an `&'_ M`-based redesign of
+/// `MctpPacketContext` or an interior-mutability wrapper.
+///
+/// [`MctpPacketContext`]: mctp_rs::MctpPacketContext
+pub struct Service<R: RelayHandler, M: MctpMedium + Copy> {
     host_tx_queue: Channel<GlobalRawMutex, HostResultMessage<R>, HOST_TX_QUEUE_SIZE>,
     relay_handler: R,
+    medium: M,
+    reply_context: mctp_rs::MctpReplyContext<M>,
 }
 
-impl<R: RelayHandler> Service<R> {
-    pub fn new(relay_handler: R) -> Result<Self, Error> {
+impl<R: RelayHandler, M: MctpMedium + Copy> Service<R, M> {
+    pub fn new(relay_handler: R, medium: M, reply_context: mctp_rs::MctpReplyContext<M>) -> Result<Self, Error<M>> {
         Ok(Self {
             host_tx_queue: Channel::new(),
             relay_handler,
+            medium,
+            reply_context,
         })
     }
 
-    async fn process_response<T: UartWrite>(&self, uart: &mut T, response: HostResultMessage<R>) -> Result<(), Error> {
+    async fn process_response<T: UartWrite>(
+        &self,
+        uart: &mut T,
+        response: HostResultMessage<R>,
+    ) -> Result<(), Error<M>> {
         let mut assembly_buf = [0u8; BUF_SIZE];
-        let mut mctp_ctx = mctp_rs::MctpPacketContext::new(SmbusEspiMedium, &mut assembly_buf);
+        let mut mctp_ctx = mctp_rs::MctpPacketContext::<M>::new(self.medium, &mut assembly_buf);
 
-        let reply_context: mctp_rs::MctpReplyContext<SmbusEspiMedium> = mctp_rs::MctpReplyContext {
-            source_endpoint_id: mctp_rs::EndpointId::Id(0x80),
-            destination_endpoint_id: mctp_rs::EndpointId::Id(response.handler_service_id.into()),
-            packet_sequence_number: mctp_rs::MctpSequenceNumber::new(0),
-            message_tag: mctp_rs::MctpMessageTag::try_from(3).map_err(Error::Serialize)?,
-            medium_context: SmbusEspiReplyContext {
-                destination_slave_address: 1,
-                source_slave_address: 0,
-            }, // Medium-specific context
-        };
+        // Start from the stored reply_context, override the per-response
+        // destination_endpoint_id from the responding service.
+        let mut reply_context = self.reply_context;
+        reply_context.destination_endpoint_id = mctp_rs::EndpointId::Id(response.handler_service_id.into());
 
         let header = response.message.create_header(&response.handler_service_id);
         let mut packet_state = mctp_ctx
@@ -84,37 +99,47 @@ impl<R: RelayHandler> Service<R> {
 
         while let Some(packet_result) = packet_state.next() {
             let packet = packet_result.map_err(Error::Mctp)?;
-            // Last byte is PEC, ignore for now
-            let packet = packet.get(..packet.len() - 1).ok_or(Error::IndexSlice)?;
 
-            // Then actually send the response packet (which includes 4-byte SMBUS header containing payload size)
+            // Then actually send the response packet (medium framing already applied)
             uart.write_all(packet).await.map_err(|_| Error::Uart)?;
         }
 
         Ok(())
     }
 
-    async fn wait_for_request<T: UartRead>(&self, uart: &mut T) -> Result<(), Error> {
+    async fn wait_for_request<T: UartRead>(&self, uart: &mut T) -> Result<(), Error<M>> {
+        // Incremental read loop: read bytes, ask the medium whether the
+        // assembled prefix is a complete frame, repeat until it is.
+        let mut buf = [0u8; BUF_SIZE];
+        let mut filled = 0usize;
+        let packet_len = loop {
+            let dst = buf.get_mut(filled..).ok_or(Error::Serialize("buffer overrun"))?;
+            if dst.is_empty() {
+                return Err(Error::Serialize("frame exceeds BUF_SIZE"));
+            }
+            let n = uart.read(dst).await.map_err(|_| Error::Uart)?;
+            if n == 0 {
+                return Err(Error::Comms);
+            }
+            filled += n;
+            match self
+                .medium
+                .frame_complete(buf.get(..filled).ok_or(Error::Serialize("buffer overrun"))?)
+                .map_err(Error::Mctp)?
+            {
+                Some(len) => break len,
+                None => continue,
+            }
+        };
+
         let mut assembly_buf = [0u8; BUF_SIZE];
-        let mut mctp_ctx = mctp_rs::MctpPacketContext::<SmbusEspiMedium>::new(SmbusEspiMedium, &mut assembly_buf);
-
-        // First wait for SMBUS header, which tells us how big the incoming packet is
-        let mut buf = [0; BUF_SIZE];
-        uart.read_exact(buf.get_mut(..SMBUS_HEADER_SIZE).ok_or(Error::IndexSlice)?)
-            .await
-            .map_err(|_| Error::Uart)?;
-
-        // Then wait until we've received the full payload
-        let len = *buf.get(SMBUS_LEN_IDX).ok_or(Error::IndexSlice)? as usize;
-        uart.read_exact(
-            buf.get_mut(SMBUS_HEADER_SIZE..SMBUS_HEADER_SIZE + len)
-                .ok_or(Error::IndexSlice)?,
-        )
-        .await
-        .map_err(|_| Error::Uart)?;
+        let mut mctp_ctx = mctp_rs::MctpPacketContext::<M>::new(self.medium, &mut assembly_buf);
 
         let message = mctp_ctx
-            .deserialize_packet(&buf)
+            .deserialize_packet(
+                buf.get(..packet_len)
+                    .ok_or(Error::Serialize("frame exceeds BUF_SIZE"))?,
+            )
             .map_err(Error::Mctp)?
             .ok_or(Error::Serialize("Partial message not supported"))?;
 
@@ -134,5 +159,32 @@ impl<R: RelayHandler> Service<R> {
 
     async fn wait_for_response(&self) -> HostResultMessage<R> {
         self.host_tx_queue.receive().await
+    }
+}
+
+/// Backwards-compatible alias for SmbusEspi-medium services.
+pub type DefaultService<R> = Service<R, SmbusEspiMedium>;
+
+impl<R: RelayHandler> DefaultService<R> {
+    /// Constructor for SmbusEspi-medium services. Hardcodes the
+    /// reply-context addressing used by the existing SmbusEspi
+    /// consumers (destination_slave_address: 1, source_slave_address: 0).
+    /// The `destination_endpoint_id` is overridden per-response inside
+    /// `process_response`, so the value passed here is a placeholder.
+    pub fn default_smbusespi(relay_handler: R) -> Result<Self, Error<SmbusEspiMedium>> {
+        Self::new(
+            relay_handler,
+            SmbusEspiMedium,
+            mctp_rs::MctpReplyContext {
+                source_endpoint_id: mctp_rs::EndpointId::Id(0x80),
+                destination_endpoint_id: mctp_rs::EndpointId::Id(0),
+                packet_sequence_number: mctp_rs::MctpSequenceNumber::new(0),
+                message_tag: mctp_rs::MctpMessageTag::try_from(3).map_err(Error::Serialize)?,
+                medium_context: SmbusEspiReplyContext {
+                    destination_slave_address: 1,
+                    source_slave_address: 0,
+                },
+            },
+        )
     }
 }

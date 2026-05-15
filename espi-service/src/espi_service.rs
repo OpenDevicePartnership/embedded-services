@@ -163,13 +163,6 @@ impl<'hw, RelayHandler: embedded_services::relay::mctp::RelayHandler> ServiceInn
                     let src_slice =
                         unsafe { slice::from_raw_parts(port_event.base_addr as *const u8, port_event.length) };
 
-                    // TODO: This is a workaround because mctp_rs expects a PEC byte, so we hardcode a 0 at the end.
-                    // We should add functionality to mctp_rs to disable PEC.
-                    let mut with_pec = [0u8; 100];
-                    with_pec[..src_slice.len()].copy_from_slice(src_slice);
-                    with_pec[src_slice.len()] = 0;
-                    let with_pec = &with_pec[..=src_slice.len()];
-
                     #[cfg(feature = "defmt")] // Required because without defmt, there is no implementation of UpperHex for [u8]
                     embedded_services::debug!("OOB message: {:02X}", &src_slice[0..]);
 
@@ -179,7 +172,7 @@ impl<'hw, RelayHandler: embedded_services::relay::mctp::RelayHandler> ServiceInn
                         assembly_buf.as_mut_slice(),
                     );
 
-                    match mctp_ctx.deserialize_packet(with_pec) {
+                    match mctp_ctx.deserialize_packet(src_slice) {
                         Ok(Some(message)) => {
                             trace!("MCTP packet successfully deserialized");
                             match message.parse_as::<RelayHandler::RequestEnumType>() {
@@ -302,8 +295,6 @@ impl<'hw, RelayHandler: embedded_services::relay::mctp::RelayHandler> ServiceInn
                 error!("serialize_packet_from_subsystem: {:?}", e);
                 Error::Serialize
             })?;
-            // Last byte is PEC, ignore for now
-            let packet = &packet[..packet.len() - 1];
             trace!("Sending MCTP response: {:?}", packet);
 
             self.write_to_hw(espi, packet).map_err(|e| {

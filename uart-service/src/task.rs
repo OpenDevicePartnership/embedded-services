@@ -1,13 +1,14 @@
-use crate::{Error, Service};
+use crate::{DefaultService, Error};
 use embedded_io_async::Read as UartRead;
 use embedded_io_async::Write as UartWrite;
 use embedded_services::error;
 use embedded_services::relay::mctp::RelayHandler;
+use mctp_rs::smbus_espi::SmbusEspiMedium;
 
 pub async fn uart_service<R: RelayHandler, T: UartRead + UartWrite>(
-    uart_service: &Service<R>,
+    uart_service: &DefaultService<R>,
     mut uart: T,
-) -> Result<embedded_services::Never, Error> {
+) -> Result<embedded_services::Never, Error<SmbusEspiMedium>> {
     // Note: eSPI service uses `select!` to seemingly allow asyncrhonous `responses` from services,
     // but there are concerns around async cancellation here at least for UART service.
     //
