@@ -211,6 +211,22 @@ pub struct MctpMessageBuffer<'buffer> {
     rest: &'buffer [u8],
 }
 
+impl<'buffer> MctpMessageBuffer<'buffer> {
+    /// The raw message body bytes (after the message-type byte).
+    ///
+    /// Use when the caller wants to parse the body without going through
+    /// `MctpMessage::parse_as` (e.g., when the body is a small fixed-layout
+    /// payload and a typed `MctpMessageTrait` impl would be overkill).
+    pub fn body(&self) -> &'buffer [u8] {
+        self.rest
+    }
+
+    /// The MCTP message-type byte (e.g., `0x7E` for VendorDefinedPci).
+    pub fn message_type(&self) -> u8 {
+        self.message_type
+    }
+}
+
 impl<'buffer, M: MctpMedium> MctpMessage<'buffer, M> {
     pub fn can_parse_as<P: MctpMessageTrait<'buffer>>(&self) -> bool {
         self.message_buffer.message_type == P::MESSAGE_TYPE
