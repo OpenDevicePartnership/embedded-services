@@ -36,12 +36,14 @@ impl Test for TestBasicConsumerFlow {
         {
             // Set up the mock to report a sink connection and allow enabling the sink path
             let mut mock0 = port0.mock.lock().await;
-            mock0.next_result_get_port_status = Some(Ok(PortStatus {
+
+            mock0.next_result_get_port_status.push_back(Ok(PortStatus {
                 available_sink_contract: Some(POWER_CAPABILITY_5V_1A5),
                 connection_state: Some(ConnectionState::Attached),
                 power_role: PowerRole::Sink,
                 ..Default::default()
             }));
+            mock0.next_result_enable_sink_path.push_back(Ok(()));
         }
 
         // Simulate a plug event and a new consumer contract
@@ -85,7 +87,8 @@ impl Test for TestBasicConsumerFlow {
         {
             // Set up the mock to report an unplug
             let mut mock0 = port0.mock.lock().await;
-            mock0.next_result_get_port_status = None;
+            let port_status = Ok(Default::default());
+            mock0.next_result_get_port_status.push_back(port_status);
         }
 
         // Simulate an unplug event

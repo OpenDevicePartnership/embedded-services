@@ -15,6 +15,7 @@ impl UcsiLpm for Mock {
         self.fn_calls
             .push_back(ControllerFnCall::Ucsi(FnCall::ExecuteLpm(command)));
         self.next_result_execute_lpm_command
+            .pop_front()
             .expect("next_result_execute_lpm_command not set")
     }
 }

@@ -12,7 +12,7 @@ pub struct DpPinConfig {
 }
 
 /// DisplayPort status data
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct DpStatus {
     /// DP alt-mode entered

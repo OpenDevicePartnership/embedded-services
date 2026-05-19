@@ -261,7 +261,6 @@ pub async fn run_test(
 
     // Initialize logging, ignore the error if the logger was already initialized by another test.
     let _ = env_logger::builder().filter_level(log::LevelFilter::Info).try_init();
-    embedded_services::init().await;
 
     define_port!(port0, "mock0", "port0", port_config[0], LocalPortId(0));
     let PortComponents {
