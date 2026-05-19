@@ -77,13 +77,17 @@ impl<'a, Reg: Registration<'a>> Service<'a, Reg> {
             PowerPolicyEventData::ConsumerDisconnected => {
                 self.ucsi.psu_connected = false;
                 // Notify OPM because this can affect battery charging capability status
-                self.pend_ucsi_connected_ports().await;
+                if self.ucsi.notifications_enabled.battery_charge_change() {
+                    self.pend_ucsi_connected_ports().await;
+                }
                 Ok(())
             }
             PowerPolicyEventData::ConsumerConnected(_) => {
                 self.ucsi.psu_connected = true;
                 // Notify OPM because this can affect battery charging capability status
-                self.pend_ucsi_connected_ports().await;
+                if self.ucsi.notifications_enabled.battery_charge_change() {
+                    self.pend_ucsi_connected_ports().await;
+                }
                 Ok(())
             }
             _ => Ok(()), // Other events don't require any action from the service

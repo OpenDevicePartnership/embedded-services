@@ -31,18 +31,18 @@ pub struct UcsiResponse {
 #[derive(Default)]
 pub(super) struct State {
     /// PPM state machine
-    ppm_state_machine: StateMachine,
+    pub ppm_state_machine: StateMachine,
     /// Currently enabled notifications
-    notifications_enabled: NotificationEnable,
+    pub notifications_enabled: NotificationEnable,
     /// Queued pending port notifications
-    pending_ports: heapless::Deque<GlobalPortId, MAX_SUPPORTED_PORTS>,
+    pub pending_ports: heapless::Deque<GlobalPortId, MAX_SUPPORTED_PORTS>,
     /// Ports that have a valid battery charging status capability
     ///
     /// We provide a battery charging status only after the port has negotiated power.
     /// This prevents the port from temporarily reporting slow or no charging before the contract has finalized.
-    valid_battery_charging_capability: heapless::index_set::FnvIndexSet<GlobalPortId, MAX_SUPPORTED_PORTS>,
+    pub valid_battery_charging_capability: heapless::index_set::FnvIndexSet<GlobalPortId, MAX_SUPPORTED_PORTS>,
     /// PSU connected
-    pub(super) psu_connected: bool,
+    pub psu_connected: bool,
 }
 
 impl<'port, Reg: Registration<'port>> Service<'port, Reg> {
