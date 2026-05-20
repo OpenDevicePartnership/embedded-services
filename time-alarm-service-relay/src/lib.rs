@@ -20,6 +20,9 @@ impl<T: TimeAlarmService> TimeAlarmServiceRelayHandler<T> {
 impl<T: TimeAlarmService> embedded_services::relay::mctp::RelayServiceHandlerTypes for TimeAlarmServiceRelayHandler<T> {
     type RequestType = AcpiTimeAlarmRequest;
     type ResultType = AcpiTimeAlarmResult;
+
+    // Temporary until figure out what events want to send
+    type EventType = ();
 }
 
 impl<T: TimeAlarmService> embedded_services::relay::mctp::RelayServiceHandler for TimeAlarmServiceRelayHandler<T> {

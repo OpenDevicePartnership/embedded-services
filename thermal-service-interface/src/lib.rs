@@ -3,6 +3,17 @@
 pub mod fan;
 pub mod sensor;
 
+/// Thermal service event.
+#[derive(Debug, PartialEq, Clone, Copy)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[non_exhaustive]
+pub enum Event {
+    /// A sensor event occurred.
+    Sensor(u8, sensor::Event),
+    /// A fan event occurred.
+    Fan(u8, fan::Event),
+}
+
 /// Thermal service interface trait.
 pub trait ThermalService {
     /// Associated type for registered sensor services.
