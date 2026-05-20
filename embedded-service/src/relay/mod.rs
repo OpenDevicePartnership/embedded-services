@@ -116,6 +116,12 @@ pub mod mctp {
 
         /// The result type that this service handler processes
         type ResultType: super::SerializableResult;
+
+        /// The event type that this service emits.
+        type EventType;
+
+        /// The receiver type used to receive events from this service.
+        type EventReceiver: crate::event::Receiver<Self::EventType>;
     }
 
     /// Trait for a service that can be relayed over an external bus (e.g. battery service, thermal service, time-alarm service)
@@ -448,6 +454,13 @@ pub mod mctp {
                     }
 
 
+                    /// A common event type wrapper for all relayable service events.
+                    pub enum ServiceEvent {
+                        $(
+                            $service_name(<$service_handler_type as $crate::relay::mctp::RelayServiceHandlerTypes>::EventType),
+                        )+
+                    }
+
                     pub struct $relay_type_name {
                         $(
                             [<$service_name:snake _handler>]: $service_handler_type,
@@ -465,6 +478,23 @@ pub mod mctp {
                                     [<$service_name:snake _handler>],
                                 )+
                             }
+                        }
+
+                        /// Build an event multiplexer from the provided relayable services.
+                        ///
+                        /// This will be constructed similar to the relay handler,
+                        /// except we pass in the event receivers for each service.
+                        ///
+                        /// My idea is this can then be passed into a relay service (again, like the relay handler),
+                        /// but this poses a problem: the relay service doesn't know what the macro'd
+                        /// `ServiceEvent` actually looks like...
+                        pub fn event_mux(
+                            $(
+                                [<$service_name:snake _event_rx>]: <$service_handler_type as $crate::relay::mctp::RelayServiceHandlerTypes>::EventReceiver,
+                            )+
+                        ) -> impl $crate::event::Receiver<ServiceEvent> {
+                            $crate::event::MuxReceiver::new()
+                                $(.with([<$service_name:snake _event_rx>], ServiceEvent::$service_name))+
                         }
                     }
 
@@ -494,6 +524,7 @@ pub mod mctp {
 
                 // Allows this generated relay type to be publicly re-exported
                 pub use [< _odp_impl_ $relay_type_name:snake >]::$relay_type_name;
+                pub use [< _odp_impl_ $relay_type_name:snake >]::ServiceEvent;
 
             } // end paste!
         }; // end macro arm

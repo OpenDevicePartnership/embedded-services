@@ -53,6 +53,9 @@ async fn main(spawner: embassy_executor::Spawner) {
 
     let _relay_handler = EspiRelayHandler::new(TimeAlarmServiceRelayHandlerType::new(time_service));
 
+    // Temporary example of constructing the event mux
+    let mut _event_mux = EspiRelayHandler::event_mux(embedded_services::event::NeverReceiver::new());
+
     // Here, you'd normally pass _relay_handler to your relay service (e.g. eSPI service).
     // In this example, we're not leveraging a relay service, so we'll just demonstrate some direct calls.
     //

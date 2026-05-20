@@ -194,6 +194,10 @@ impl<T: ThermalService> ThermalServiceRelayHandler<T> {
 impl<T: ThermalService> embedded_services::relay::mctp::RelayServiceHandlerTypes for ThermalServiceRelayHandler<T> {
     type RequestType = ThermalRequest;
     type ResultType = ThermalResult;
+
+    /// Temporary until figure out what events want to send.
+    type EventType = core::convert::Infallible;
+    type EventReceiver = embedded_services::event::NeverReceiver<core::convert::Infallible>;
 }
 
 impl<T: ThermalService> embedded_services::relay::mctp::RelayServiceHandler for ThermalServiceRelayHandler<T> {

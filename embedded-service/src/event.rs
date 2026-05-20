@@ -143,3 +143,116 @@ impl<I, O, S: Sender<O>, F: FnMut(I) -> O> Sender<I> for MapSender<I, O, S, F> {
         self.sender.send((self.map_fn)(event))
     }
 }
+
+/// Applies a function on events received from the wrapped receiver
+pub struct MapReceiver<I, O, R: Receiver<I>, F: FnMut(I) -> O> {
+    receiver: R,
+    map_fn: F,
+    _phantom: PhantomData<(I, O)>,
+}
+
+impl<I, O, R: Receiver<I>, F: FnMut(I) -> O> MapReceiver<I, O, R, F> {
+    /// Create a new MapReceiver
+    pub fn new(receiver: R, map_fn: F) -> Self {
+        Self {
+            receiver,
+            map_fn,
+            _phantom: PhantomData,
+        }
+    }
+}
+
+impl<I, O, R: Receiver<I>, F: FnMut(I) -> O> Receiver<O> for MapReceiver<I, O, R, F> {
+    fn try_next(&mut self) -> Option<O> {
+        self.receiver.try_next().map(&mut self.map_fn)
+    }
+
+    async fn wait_next(&mut self) -> O {
+        (self.map_fn)(self.receiver.wait_next().await)
+    }
+}
+
+/// A receiver that never produces events.
+///
+/// This is mainly used to make it easier to construct a `MuxReceiver`
+/// via macro since we don't need to handle the special start case
+/// when chaining `with` calls.
+pub struct NeverReceiver<E>(PhantomData<E>);
+
+impl<E> NeverReceiver<E> {
+    /// Create a new NeverReceiver
+    pub fn new() -> Self {
+        Self(PhantomData)
+    }
+}
+
+impl<E> Default for NeverReceiver<E> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<E> Receiver<E> for NeverReceiver<E> {
+    fn try_next(&mut self) -> Option<E> {
+        None
+    }
+
+    async fn wait_next(&mut self) -> E {
+        core::future::pending().await
+    }
+}
+
+/// Combines multiple receivers into one by racing them and returning
+/// the first event that becomes available mapped to a common event type.
+pub struct MuxReceiver<E, L: Receiver<E>, R: Receiver<E>> {
+    left: L,
+    right: R,
+    _phantom: PhantomData<E>,
+}
+
+impl<E> MuxReceiver<E, NeverReceiver<E>, NeverReceiver<E>> {
+    /// Create an empty MuxReceiver.
+    ///
+    /// Use `.with()` to add receivers.
+    pub fn new() -> Self {
+        Self {
+            left: NeverReceiver::new(),
+            right: NeverReceiver::new(),
+            _phantom: PhantomData,
+        }
+    }
+}
+
+impl<E> Default for MuxReceiver<E, NeverReceiver<E>, NeverReceiver<E>> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<E, L: Receiver<E>, R1: Receiver<E>> MuxReceiver<E, L, R1> {
+    /// Add another receiver to multiplex with this one.
+    pub fn with<I, R2: Receiver<I>, F: FnMut(I) -> E>(
+        self,
+        receiver: R2,
+        map_fn: F,
+    ) -> MuxReceiver<E, Self, MapReceiver<I, E, R2, F>> {
+        MuxReceiver {
+            left: self,
+            right: MapReceiver::new(receiver, map_fn),
+            _phantom: PhantomData,
+        }
+    }
+}
+
+impl<E, L: Receiver<E>, R: Receiver<E>> Receiver<E> for MuxReceiver<E, L, R> {
+    fn try_next(&mut self) -> Option<E> {
+        self.left.try_next().or_else(|| self.right.try_next())
+    }
+
+    async fn wait_next(&mut self) -> E {
+        match embassy_futures::select::select(self.left.wait_next(), self.right.wait_next()).await {
+            embassy_futures::select::Either::First(e) => e,
+            embassy_futures::select::Either::Second(e) => e,
+        }
+    }
+}
