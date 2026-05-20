@@ -3,6 +3,7 @@
 mod serialization;
 
 pub use serialization::{ThermalError, ThermalRequest, ThermalResponse, ThermalResult};
+use thermal_service_interface::Event as ThermalEvent;
 use thermal_service_interface::ThermalService;
 use thermal_service_interface::fan::{self, FanService};
 use thermal_service_interface::sensor::{self, SensorService};
@@ -194,6 +195,7 @@ impl<T: ThermalService> ThermalServiceRelayHandler<T> {
 impl<T: ThermalService> embedded_services::relay::mctp::RelayServiceHandlerTypes for ThermalServiceRelayHandler<T> {
     type RequestType = ThermalRequest;
     type ResultType = ThermalResult;
+    type EventType = ThermalEvent;
 }
 
 impl<T: ThermalService> embedded_services::relay::mctp::RelayServiceHandler for ThermalServiceRelayHandler<T> {

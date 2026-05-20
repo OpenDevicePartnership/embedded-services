@@ -37,6 +37,9 @@ impl Service {
 impl embedded_services::relay::mctp::RelayServiceHandlerTypes for Service {
     type RequestType = DebugRequest;
     type ResultType = DebugResult;
+
+    // Temporary until figure out what events want to send
+    type EventType = ();
 }
 
 impl embedded_services::relay::mctp::RelayServiceHandler for Service {
