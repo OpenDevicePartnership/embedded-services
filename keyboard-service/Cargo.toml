@@ -21,7 +21,7 @@ embedded-hal.workspace = true
 static_cell.workspace = true
 bitflags.workspace = true
 hid-service = { path = "../hid-service" }
-keyberon = { git = "https://github.com/TeXitoi/keyberon" }
+keyberon = { git = "https://github.com/TeXitoi/keyberon", rev = "362c209f729d05505abb1984a0ddb321ec9ebf53" }
 
 [features]
 default = []

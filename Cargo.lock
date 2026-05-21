@@ -152,7 +152,7 @@ dependencies = [
 [[package]]
 name = "bit-register"
 version = "0.1.0"
-source = "git+https://github.com/OpenDevicePartnership/odp-utilities#583015c08ad9855f310bdb25d5cf9abff77b5e08"
+source = "git+https://github.com/OpenDevicePartnership/odp-utilities?tag=v0.1.0#583015c08ad9855f310bdb25d5cf9abff77b5e08"
 dependencies = [
  "num-traits",
 ]
@@ -490,7 +490,7 @@ dependencies = [
 [[package]]
 name = "embassy-imxrt"
 version = "0.1.0"
-source = "git+https://github.com/OpenDevicePartnership/embassy-imxrt#d95ffe560071e942d917b422bbdea7e73f6c4602"
+source = "git+https://github.com/OpenDevicePartnership/embassy-imxrt?tag=v0.1.0#6524cbabcc12016f1aea4c0ffa2f1354c3f8c6d1"
 dependencies = [
  "cfg-if",
  "cortex-m",
@@ -510,7 +510,9 @@ dependencies = [
  "embedded-hal-async",
  "embedded-hal-nb",
  "embedded-io 0.6.1",
+ "embedded-io 0.7.1",
  "embedded-io-async 0.6.1",
+ "embedded-io-async 0.7.0",
  "embedded-mcu-hal",
  "embedded-storage",
  "fixed",
@@ -606,7 +608,7 @@ dependencies = [
 [[package]]
 name = "embedded-cfu-protocol"
 version = "0.2.0"
-source = "git+https://github.com/OpenDevicePartnership/embedded-cfu#a4cc8707842b878048447abbf2af4efa79fed368"
+source = "git+https://github.com/OpenDevicePartnership/embedded-cfu?tag=v0.1.0#523a83919c3535e8ccead031d80b715d77395f81"
 dependencies = [
  "defmt 0.3.100",
  "embedded-io-async 0.6.1",
@@ -783,7 +785,7 @@ dependencies = [
 [[package]]
 name = "embedded-usb-pd"
 version = "0.1.0"
-source = "git+https://github.com/OpenDevicePartnership/embedded-usb-pd#21d0e228d21ddc6ccaeffc01d98ef9a5b87941ef"
+source = "git+https://github.com/OpenDevicePartnership/embedded-usb-pd?tag=v0.1.0#0061a1e94a25c8db33ac1e8a0bb5a6b638fe2cd7"
 dependencies = [
  "aquamarine",
  "bincode",
@@ -801,7 +803,7 @@ checksum = "877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f"
 [[package]]
 name = "espi-device"
 version = "0.1.0"
-source = "git+https://github.com/OpenDevicePartnership/haf-ec-service#9805f13c044b0e314d415410c57a8a59a40eabeb"
+source = "git+https://github.com/OpenDevicePartnership/odp-secure-services?tag=v0.1.0#290aa80a4c281857f3bed94581200b330119286c"
 dependencies = [
  "bit-register",
  "bitflags 2.9.4",
@@ -1016,7 +1018,7 @@ dependencies = [
 [[package]]
 name = "keyberon"
 version = "0.2.0"
-source = "git+https://github.com/TeXitoi/keyberon#362c209f729d05505abb1984a0ddb321ec9ebf53"
+source = "git+https://github.com/TeXitoi/keyberon?rev=362c209f729d05505abb1984a0ddb321ec9ebf53#362c209f729d05505abb1984a0ddb321ec9ebf53"
 dependencies = [
  "arraydeque",
  "either",
@@ -1029,7 +1031,7 @@ dependencies = [
 [[package]]
 name = "keyberon-macros"
 version = "0.1.0"
-source = "git+https://github.com/TeXitoi/keyberon#362c209f729d05505abb1984a0ddb321ec9ebf53"
+source = "git+https://github.com/TeXitoi/keyberon?rev=362c209f729d05505abb1984a0ddb321ec9ebf53#362c209f729d05505abb1984a0ddb321ec9ebf53"
 dependencies = [
  "proc-macro-error",
  "proc-macro2",
@@ -1117,7 +1119,7 @@ dependencies = [
 [[package]]
 name = "mctp-rs"
 version = "0.1.0"
-source = "git+https://github.com/dymk/mctp-rs#3d941ba5205ca7781bf37e3dc7c5dfdc99a082d6"
+source = "git+https://github.com/OpenDevicePartnership/mctp-rs?tag=v0.1.0#986d6640570a52d6020529926f3914b44872e54a"
 dependencies = [
  "bit-register",
  "defmt 0.3.100",
@@ -1675,7 +1677,7 @@ dependencies = [
 [[package]]
 name = "storage_bus"
 version = "0.1.0"
-source = "git+https://github.com/OpenDevicePartnership/embedded-mcu#528045934782abc704531aa423169c75016e7727"
+source = "git+https://github.com/OpenDevicePartnership/embedded-mcu?tag=storage_bus_v0.1.0#8580385bf4a035299cacddef8796c17694655a17"
 
 [[package]]
 name = "subenum"
@@ -1826,7 +1828,7 @@ dependencies = [
 [[package]]
 name = "tps6699x"
 version = "0.1.0"
-source = "git+https://github.com/OpenDevicePartnership/tps6699x#ba1b3b17ebf048fc007eb2107a4d2ab8cb545adf"
+source = "git+https://github.com/OpenDevicePartnership/tps6699x?tag=v0.1.0#0c2f495621faf48f4042012e0fb5c1cfc9b29320"
 dependencies = [
  "bincode",
  "bitfield 0.19.2",

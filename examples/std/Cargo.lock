@@ -495,7 +495,7 @@ dependencies = [
 [[package]]
 name = "embedded-cfu-protocol"
 version = "0.2.0"
-source = "git+https://github.com/OpenDevicePartnership/embedded-cfu#a4cc8707842b878048447abbf2af4efa79fed368"
+source = "git+https://github.com/OpenDevicePartnership/embedded-cfu?tag=v0.1.0#523a83919c3535e8ccead031d80b715d77395f81"
 dependencies = [
  "embedded-io-async 0.6.1",
  "log",
@@ -653,7 +653,7 @@ dependencies = [
 [[package]]
 name = "embedded-usb-pd"
 version = "0.1.0"
-source = "git+https://github.com/OpenDevicePartnership/embedded-usb-pd#21d0e228d21ddc6ccaeffc01d98ef9a5b87941ef"
+source = "git+https://github.com/OpenDevicePartnership/embedded-usb-pd?tag=v0.1.0#0061a1e94a25c8db33ac1e8a0bb5a6b638fe2cd7"
 dependencies = [
  "aquamarine",
  "bincode",
@@ -1401,7 +1401,7 @@ dependencies = [
 [[package]]
 name = "tps6699x"
 version = "0.1.0"
-source = "git+https://github.com/OpenDevicePartnership/tps6699x#ba1b3b17ebf048fc007eb2107a4d2ab8cb545adf"
+source = "git+https://github.com/OpenDevicePartnership/tps6699x?tag=v0.1.0#0c2f495621faf48f4042012e0fb5c1cfc9b29320"
 dependencies = [
  "bincode",
  "bitfield 0.19.2",

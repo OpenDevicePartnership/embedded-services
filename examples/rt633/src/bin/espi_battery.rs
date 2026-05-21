@@ -307,6 +307,7 @@ async fn main(spawner: Spawner) {
     let config = embassy_imxrt::i2c::master::Config {
         speed: embassy_imxrt::i2c::master::Speed::Standard,
         duty_cycle: embassy_imxrt::i2c::master::DutyCycle::new(50).unwrap(),
+        strict_mode: true,
     };
 
     let i2c_fg = embassy_imxrt::i2c::master::I2cMaster::new_async(
