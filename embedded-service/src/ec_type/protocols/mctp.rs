@@ -1201,7 +1201,10 @@ mod tests {
 
     #[allow(dead_code)]
     mod test_util {
-        use mctp_rs::{MctpMedium, MctpMediumFrame, MctpPacketError, EncodingDecoder, EncodingEncoder, PassthroughEncoding, error::MctpPacketResult};
+        use mctp_rs::{
+            EncodingDecoder, EncodingEncoder, MctpMedium, MctpMediumFrame, MctpPacketError, PassthroughEncoding,
+            error::MctpPacketResult,
+        };
 
         #[derive(Debug, PartialEq, Eq, Copy, Clone)]
         pub struct TestMedium {
@@ -1237,7 +1240,10 @@ mod tests {
             type ReplyContext = ();
             type Encoding = PassthroughEncoding;
 
-            fn deserialize<'buf>(&self, packet: &'buf [u8]) -> MctpPacketResult<(Self::Frame, EncodingDecoder<'buf, Self::Encoding>), Self> {
+            fn deserialize<'buf>(
+                &self,
+                packet: &'buf [u8],
+            ) -> MctpPacketResult<(Self::Frame, EncodingDecoder<'buf, Self::Encoding>), Self> {
                 let packet_len = packet.len();
 
                 // check that header / trailer is present and correct
