@@ -460,7 +460,9 @@ dependencies = [
  "embedded-hal-async",
  "embedded-hal-nb",
  "embedded-io 0.6.1",
+ "embedded-io 0.7.1",
  "embedded-io-async 0.6.1",
+ "embedded-io-async 0.7.0",
  "embedded-mcu-hal",
  "embedded-storage",
  "fixed",
@@ -676,7 +678,7 @@ dependencies = [
 [[package]]
 name = "embedded-usb-pd"
 version = "0.1.0"
-source = "git+https://github.com/OpenDevicePartnership/embedded-usb-pd#21d0e228d21ddc6ccaeffc01d98ef9a5b87941ef"
+source = "git+https://github.com/OpenDevicePartnership/embedded-usb-pd?tag=v0.1.0#0061a1e94a25c8db33ac1e8a0bb5a6b638fe2cd7"
 dependencies = [
  "aquamarine",
  "bincode",
@@ -1433,6 +1435,7 @@ dependencies = [
  "bitfield 0.19.4",
  "defmt 0.3.100",
  "device-driver",
+ "embassy-sync",
  "embassy-sync",
  "embassy-time",
  "embedded-hal 1.0.0",

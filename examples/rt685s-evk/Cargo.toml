@@ -25,7 +25,7 @@ crc = "3.2.1"
 defmt = "0.3.6"
 defmt-rtt = "0.4.0"
 panic-probe = { version = "0.3.1", features = ["print-defmt"] }
-embassy-imxrt = { git = "https://github.com/OpenDevicePartnership/embassy-imxrt", features = [
+embassy-imxrt = { git = "https://github.com/OpenDevicePartnership/embassy-imxrt", tag = "v0.1.0", features = [
     "defmt",
     "time-driver-os-timer",
     "time",
@@ -48,7 +48,7 @@ embassy-time = { version = "0.5.1", features = [
 ] }
 mimxrt600-fcb = "0.1.0"
 
-embedded-cfu-protocol = { git = "https://github.com/OpenDevicePartnership/embedded-cfu" }
+embedded-cfu-protocol = { git = "https://github.com/OpenDevicePartnership/embedded-cfu", tag = "v0.1.0" }
 embedded-services = { path = "../../embedded-service", features = ["defmt"] }
 odp-service-common = { path = "../../odp-service-common" }
 power-button-service = { path = "../../power-button-service", features = [
@@ -64,7 +64,7 @@ tps6699x = { git = "https://github.com/OpenDevicePartnership/tps6699x", branch =
     "defmt",
     "embassy",
 ] }
-embedded-usb-pd = { git = "https://github.com/OpenDevicePartnership/embedded-usb-pd", default-features = false, features = [
+embedded-usb-pd = { git = "https://github.com/OpenDevicePartnership/embedded-usb-pd", tag = "v0.1.0", default-features = false, features = [
     "defmt",
 ] }
 type-c-service = { path = "../../type-c-service", features = ["defmt"] }

@@ -81,12 +81,12 @@ embedded-hal-nb = "1.0"
 embedded-io-async = "0.7.0"
 embedded-mcu-hal = "0.2.0"
 embassy-futures = "0.1.2"
-embassy-imxrt = { git = "https://github.com/OpenDevicePartnership/embassy-imxrt" }
+embassy-imxrt = { git = "https://github.com/OpenDevicePartnership/embassy-imxrt", tag = "v0.1.0" }
 embassy-sync = "0.8"
 embassy-time = "0.5.1"
 embassy-time-driver = "0.2.2"
 embedded-batteries-async = "0.3"
-embedded-cfu-protocol = { git = "https://github.com/OpenDevicePartnership/embedded-cfu" }
+embedded-cfu-protocol = { git = "https://github.com/OpenDevicePartnership/embedded-cfu", tag = "v0.1.0" }
 embedded-hal = "1.0"
 embedded-hal-async = "1.0"
 embedded-services = { path = "./embedded-service" }

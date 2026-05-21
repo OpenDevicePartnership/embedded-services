@@ -906,6 +906,7 @@ name = "mctp-rs"
 version = "0.1.0"
 dependencies = [
  "bit-register",
+ "bit-register",
  "espi-device",
  "num_enum",
  "smbus-pec",
