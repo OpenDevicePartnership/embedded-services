@@ -37,6 +37,10 @@ impl Service {
 impl embedded_services::relay::mctp::RelayServiceHandlerTypes for Service {
     type RequestType = DebugRequest;
     type ResultType = DebugResult;
+
+    /// Temporary until figure out what events want to send.
+    type EventType = core::convert::Infallible;
+    type EventReceiver = embedded_services::event::NeverReceiver<core::convert::Infallible>;
 }
 
 impl embedded_services::relay::mctp::RelayServiceHandler for Service {

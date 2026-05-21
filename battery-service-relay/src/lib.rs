@@ -23,6 +23,10 @@ impl<S: battery_service_interface::BatteryService> embedded_services::relay::mct
 {
     type RequestType = serialization::AcpiBatteryRequest;
     type ResultType = serialization::AcpiBatteryResult;
+
+    /// Temporary until figure out what events want to send.
+    type EventType = core::convert::Infallible;
+    type EventReceiver = embedded_services::event::NeverReceiver<core::convert::Infallible>;
 }
 
 impl<S: battery_service_interface::BatteryService> embedded_services::relay::mctp::RelayServiceHandler
