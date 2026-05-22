@@ -52,6 +52,17 @@ pub struct Mock {
     pub next_result_set_usb_control: VecDeque<Result<(), PdError>>,
     /// Next results to return for [`type_c_interface::ucsi::Lpm::execute_lpm_command`]
     pub next_result_execute_lpm_command: VecDeque<Result<Option<embedded_usb_pd::ucsi::lpm::ResponseData>, PdError>>,
+    /// Next results to return for [`type_c_interface::controller::pd::Pd::hard_reset`]
+    pub next_result_hard_reset: VecDeque<Result<(), PdError>>,
+    /// Next results to return for [`type_c_interface::controller::pd::Pd::get_discovered_svids`]
+    pub next_result_get_discovered_svids: VecDeque<Result<type_c_interface::control::svid::DiscoveredSvids, PdError>>,
+    /// Next results to return for [`type_c_interface::controller::pd::Pd::get_discover_identity_sop_response`]
+    pub next_result_get_discover_identity_sop_response:
+        VecDeque<Result<embedded_usb_pd::vdm::structured::command::discover_identity::sop::ResponseVdos, PdError>>,
+    /// Next results to return for [`type_c_interface::controller::pd::Pd::get_discover_identity_sop_prime_response`]
+    pub next_result_get_discover_identity_sop_prime_response: VecDeque<
+        Result<embedded_usb_pd::vdm::structured::command::discover_identity::sop_prime::ResponseVdos, PdError>,
+    >,
 }
 
 impl Mock {
@@ -74,6 +85,10 @@ impl Mock {
             next_result_set_tbt_config: VecDeque::new(),
             next_result_set_usb_control: VecDeque::new(),
             next_result_execute_lpm_command: VecDeque::new(),
+            next_result_hard_reset: VecDeque::new(),
+            next_result_get_discovered_svids: VecDeque::new(),
+            next_result_get_discover_identity_sop_response: VecDeque::new(),
+            next_result_get_discover_identity_sop_prime_response: VecDeque::new(),
         }
     }
 }

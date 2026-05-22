@@ -31,6 +31,10 @@ pub enum FnCall {
     SetDpConfig(LocalPortId, DpConfig),
     SetTbtConfig(LocalPortId, TbtConfig),
     SetUsbControl(LocalPortId, UsbControlConfig),
+    HardReset(LocalPortId),
+    GetDiscoveredSvids(LocalPortId),
+    GetDiscoverIdentitySopResponse(LocalPortId),
+    GetDiscoverIdentitySopPrimeResponse(LocalPortId),
 }
 
 impl Pd for Mock {
@@ -131,5 +135,45 @@ impl Pd for Mock {
         self.next_result_set_usb_control
             .pop_front()
             .expect("next_result_set_usb_control not set")
+    }
+
+    async fn hard_reset(&mut self, port: LocalPortId) -> Result<(), PdError> {
+        self.fn_calls.push_back(ControllerFnCall::Pd(FnCall::HardReset(port)));
+        self.next_result_hard_reset
+            .pop_front()
+            .expect("next_result_hard_reset not set")
+    }
+
+    async fn get_discovered_svids(
+        &mut self,
+        port: LocalPortId,
+    ) -> Result<type_c_interface::control::svid::DiscoveredSvids, PdError> {
+        self.fn_calls
+            .push_back(ControllerFnCall::Pd(FnCall::GetDiscoveredSvids(port)));
+        self.next_result_get_discovered_svids
+            .pop_front()
+            .expect("next_result_get_discovered_svids not set")
+    }
+
+    async fn get_discover_identity_sop_response(
+        &mut self,
+        port: LocalPortId,
+    ) -> Result<embedded_usb_pd::vdm::structured::command::discover_identity::sop::ResponseVdos, PdError> {
+        self.fn_calls
+            .push_back(ControllerFnCall::Pd(FnCall::GetDiscoverIdentitySopResponse(port)));
+        self.next_result_get_discover_identity_sop_response
+            .pop_front()
+            .expect("next_result_get_discover_identity_sop_response not set")
+    }
+
+    async fn get_discover_identity_sop_prime_response(
+        &mut self,
+        port: LocalPortId,
+    ) -> Result<embedded_usb_pd::vdm::structured::command::discover_identity::sop_prime::ResponseVdos, PdError> {
+        self.fn_calls
+            .push_back(ControllerFnCall::Pd(FnCall::GetDiscoverIdentitySopPrimeResponse(port)));
+        self.next_result_get_discover_identity_sop_prime_response
+            .pop_front()
+            .expect("next_result_get_discover_identity_sop_prime_response not set")
     }
 }

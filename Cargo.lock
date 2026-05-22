@@ -2193,11 +2193,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "type-c-interface-mocks"
+version = "0.1.0"
+dependencies = [
+ "embedded-services",
+ "embedded-usb-pd",
+ "type-c-interface",
+]
+
+[[package]]
 name = "type-c-service"
 version = "0.1.0"
 dependencies = [
  "bitfield 0.17.0",
  "bitflags 2.11.1",
+ "critical-section",
  "defmt 0.3.100",
  "embassy-futures",
  "embassy-sync",
@@ -2205,13 +2215,17 @@ dependencies = [
  "embedded-hal-async",
  "embedded-services",
  "embedded-usb-pd",
+ "env_logger",
  "fw-update-interface",
  "heapless 0.9.3",
  "log",
+ "paste",
  "power-policy-interface",
+ "power-policy-service",
  "tokio",
  "tps6699x",
  "type-c-interface",
+ "type-c-interface-mocks",
 ]
 
 [[package]]
