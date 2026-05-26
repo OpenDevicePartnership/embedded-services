@@ -3,6 +3,7 @@ use core::array;
 use core::future::pending;
 use embassy_futures::select::{Either, select};
 use embassy_time::Timer;
+use embedded_services::error;
 use embedded_services::event::{Receiver, Sender};
 use embedded_services::sync::Lockable;
 
@@ -32,8 +33,8 @@ impl<const N: usize, S: Sender<PortEventBitfield>> PortEventSplitter<N, S> {
     /// Wait for the next interrupt event and forward it to the corresponding port receiver.
     pub async fn process_interrupts(&mut self, interrupts: [PortEventBitfield; N]) {
         for (interrupt, sender) in interrupts.into_iter().zip(self.sender.iter_mut()) {
-            if interrupt != PortEventBitfield::none() {
-                sender.send(interrupt).await;
+            if interrupt != PortEventBitfield::none() && sender.try_send(interrupt).is_none() {
+                error!("Failed to send port event");
             }
         }
     }

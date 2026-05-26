@@ -212,9 +212,11 @@ pub struct Runner<'hw, T: sensor::Driver, E: Sender<sensor::Event>, const SAMPLE
 }
 
 impl<'hw, T: sensor::Driver, E: Sender<sensor::Event>, const SAMPLE_BUF_LEN: usize> Runner<'hw, T, E, SAMPLE_BUF_LEN> {
-    async fn broadcast_event(&mut self, event: sensor::Event) {
+    fn broadcast_event(&mut self, event: sensor::Event) {
         for sender in self.event_senders.iter_mut() {
-            sender.send(event).await;
+            if sender.try_send(event).is_none() {
+                error!("Failed to send sensor event");
+            }
         }
     }
 
@@ -223,42 +225,34 @@ impl<'hw, T: sensor::Driver, E: Sender<sensor::Event>, const SAMPLE_BUF_LEN: usi
 
         if temp >= config.warn_high_threshold && !self.state.is_warn_high {
             self.state.is_warn_high = true;
-            self.broadcast_event(sensor::Event::ThresholdExceeded(sensor::Threshold::WarnHigh))
-                .await;
+            self.broadcast_event(sensor::Event::ThresholdExceeded(sensor::Threshold::WarnHigh));
         } else if temp < (config.warn_high_threshold - config.hysteresis) && self.state.is_warn_high {
             self.state.is_warn_high = false;
-            self.broadcast_event(sensor::Event::ThresholdCleared(sensor::Threshold::WarnHigh))
-                .await;
+            self.broadcast_event(sensor::Event::ThresholdCleared(sensor::Threshold::WarnHigh));
         }
 
         if temp <= config.warn_low_threshold && !self.state.is_warn_low {
             self.state.is_warn_low = true;
-            self.broadcast_event(sensor::Event::ThresholdExceeded(sensor::Threshold::WarnLow))
-                .await;
+            self.broadcast_event(sensor::Event::ThresholdExceeded(sensor::Threshold::WarnLow));
         } else if temp > (config.warn_low_threshold + config.hysteresis) && self.state.is_warn_low {
             self.state.is_warn_low = false;
-            self.broadcast_event(sensor::Event::ThresholdCleared(sensor::Threshold::WarnLow))
-                .await;
+            self.broadcast_event(sensor::Event::ThresholdCleared(sensor::Threshold::WarnLow));
         }
 
         if temp >= config.prochot_threshold && !self.state.is_prochot {
             self.state.is_prochot = true;
-            self.broadcast_event(sensor::Event::ThresholdExceeded(sensor::Threshold::Prochot))
-                .await;
+            self.broadcast_event(sensor::Event::ThresholdExceeded(sensor::Threshold::Prochot));
         } else if temp < (config.prochot_threshold - config.hysteresis) && self.state.is_prochot {
             self.state.is_prochot = false;
-            self.broadcast_event(sensor::Event::ThresholdCleared(sensor::Threshold::Prochot))
-                .await;
+            self.broadcast_event(sensor::Event::ThresholdCleared(sensor::Threshold::Prochot));
         }
 
         if temp >= config.critical_threshold && !self.state.is_critical {
             self.state.is_critical = true;
-            self.broadcast_event(sensor::Event::ThresholdExceeded(sensor::Threshold::Critical))
-                .await;
+            self.broadcast_event(sensor::Event::ThresholdExceeded(sensor::Threshold::Critical));
         } else if temp < (config.critical_threshold - config.hysteresis) && self.state.is_critical {
             self.state.is_critical = false;
-            self.broadcast_event(sensor::Event::ThresholdCleared(sensor::Threshold::Critical))
-                .await;
+            self.broadcast_event(sensor::Event::ThresholdCleared(sensor::Threshold::Critical));
         }
     }
 }
@@ -276,7 +270,7 @@ impl<'hw, T: sensor::Driver, E: Sender<sensor::Event>, const SAMPLE_BUF_LEN: usi
                     Ok(temp) => temp,
                     Err(e) => {
                         self.service.config.lock().await.sampling_enabled = false;
-                        self.broadcast_event(sensor::Event::Failure(e)).await;
+                        self.broadcast_event(sensor::Event::Failure(e));
                         error!("Error sampling sensor, disabling sampling");
                         continue;
                     }

@@ -47,21 +47,21 @@ impl<'a, S: Sender<EventData>> Mock<'a, S> {
 
     pub async fn simulate_consumer_connection(&mut self, capability: ConsumerPowerCapability) {
         self.state.attach().unwrap();
-        self.sender.send(EventData::Attached).await;
+        self.sender.try_send(EventData::Attached).unwrap();
         self.state.update_consumer_power_capability(Some(capability)).unwrap();
         self.sender
-            .send(EventData::UpdatedConsumerCapability(Some(capability)))
-            .await;
+            .try_send(EventData::UpdatedConsumerCapability(Some(capability)))
+            .unwrap();
     }
 
     pub async fn simulate_detach(&mut self) {
         self.state.detach();
-        self.sender.send(EventData::Detached).await;
+        self.sender.try_send(EventData::Detached).unwrap();
     }
 
     pub async fn simulate_provider_connection(&mut self, capability: PowerCapability) {
         self.state.attach().unwrap();
-        self.sender.send(EventData::Attached).await;
+        self.sender.try_send(EventData::Attached).unwrap();
 
         let capability = Some(ProviderPowerCapability {
             capability,
@@ -71,13 +71,13 @@ impl<'a, S: Sender<EventData>> Mock<'a, S> {
             .update_requested_provider_power_capability(capability)
             .unwrap();
         self.sender
-            .send(EventData::RequestedProviderCapability(capability))
-            .await;
+            .try_send(EventData::RequestedProviderCapability(capability))
+            .unwrap();
     }
 
     pub async fn simulate_disconnect(&mut self) {
         self.state.disconnect(true).unwrap();
-        self.sender.send(EventData::Disconnected).await;
+        self.sender.try_send(EventData::Disconnected).unwrap();
     }
 
     pub async fn simulate_update_requested_provider_power_capability(
@@ -88,8 +88,8 @@ impl<'a, S: Sender<EventData>> Mock<'a, S> {
             .update_requested_provider_power_capability(capability)
             .unwrap();
         self.sender
-            .send(power_policy_interface::psu::event::EventData::RequestedProviderCapability(capability))
-            .await
+            .try_send(power_policy_interface::psu::event::EventData::RequestedProviderCapability(capability))
+            .unwrap();
     }
 }
 
@@ -146,7 +146,9 @@ impl<'a> ExampleCharger<'a> {
     }
 
     pub async fn simulate_psu_state_change(&self, psu_state: charger::PsuState) {
-        self.sender.send(charger::EventData::PsuStateChange(psu_state)).await;
+        self.sender
+            .try_send(charger::EventData::PsuStateChange(psu_state))
+            .unwrap();
     }
 }
 

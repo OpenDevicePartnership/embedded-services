@@ -117,8 +117,7 @@ impl<'device, Reg: Registration<'device>> Service<'device, Reg> {
         if unconstrained_new != self.state.unconstrained {
             info!("Unconstrained state changed: {:?}", unconstrained_new);
             self.state.unconstrained = unconstrained_new;
-            self.broadcast_event(ServiceEvent::Unconstrained(self.state.unconstrained))
-                .await;
+            self.broadcast_event(ServiceEvent::Unconstrained(self.state.unconstrained));
         }
         Ok(())
     }
@@ -157,8 +156,7 @@ impl<'device, Reg: Registration<'device>> Service<'device, Reg> {
         self.broadcast_event(ServiceEvent::ConsumerConnected(
             connected_consumer.psu,
             connected_consumer.consumer_power_capability,
-        ))
-        .await;
+        ));
 
         Ok(())
     }
@@ -205,8 +203,7 @@ impl<'device, Reg: Registration<'device>> Service<'device, Reg> {
             // so just continue execution.
             self.disconnect_chargers().await?;
 
-            self.broadcast_event(ServiceEvent::ConsumerDisconnected(current_consumer.psu))
-                .await;
+            self.broadcast_event(ServiceEvent::ConsumerDisconnected(current_consumer.psu));
 
             // Don't update the unconstrained here because this is a transitional state
         }
@@ -249,8 +246,7 @@ impl<'device, Reg: Registration<'device>> Service<'device, Reg> {
             // Notify disconnect if recently detached consumer was previously attached.
             if let Some(current_consumer) = self.state.current_consumer_state {
                 self.disconnect_chargers().await?;
-                self.broadcast_event(ServiceEvent::ConsumerDisconnected(current_consumer.psu))
-                    .await;
+                self.broadcast_event(ServiceEvent::ConsumerDisconnected(current_consumer.psu));
             }
             // No new consumer available
             self.state.current_consumer_state = None;

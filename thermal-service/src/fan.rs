@@ -256,9 +256,11 @@ pub struct Runner<'hw, T: fan::Driver, S: sensor::SensorService, E: Sender<fan::
 impl<'hw, T: fan::Driver, S: sensor::SensorService, E: Sender<fan::Event>, const SAMPLE_BUF_LEN: usize>
     Runner<'hw, T, S, E, SAMPLE_BUF_LEN>
 {
-    async fn broadcast_event(&mut self, event: fan::Event) {
+    fn broadcast_event(&mut self, event: fan::Event) {
         for sender in self.event_senders.iter_mut() {
-            sender.send(event).await;
+            if sender.try_send(event).is_none() {
+                error!("Failed to send fan event");
+            }
         }
     }
 
@@ -350,7 +352,7 @@ impl<'hw, T: fan::Driver, S: sensor::SensorService, E: Sender<fan::Event>, const
                 if let Err(e) = self.handle_fan_state(temp).await {
                     error!("Error handling fan state transition, disabling auto control: {:?}", e);
                     self.service.config.lock().await.auto_control = false;
-                    self.broadcast_event(fan::Event::Failure(e)).await;
+                    self.broadcast_event(fan::Event::Failure(e));
                 }
 
                 let sleep_duration = self.service.config.lock().await.update_period;

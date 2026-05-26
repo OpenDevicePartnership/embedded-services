@@ -43,9 +43,13 @@ impl<
             error!("Failed to update consumer power capability: {:?}", e);
             return Err(PdError::Failed);
         }
-        self.power_policy_sender
-            .send(power_policy_interface::psu::event::EventData::UpdatedConsumerCapability(available_sink_contract))
-            .await;
+        if self
+            .power_policy_sender
+            .try_send(power_policy_interface::psu::event::EventData::UpdatedConsumerCapability(available_sink_contract))
+            .is_none()
+        {
+            error!("Failed to send updated consumer capability event");
+        }
         Ok(())
     }
 
@@ -61,9 +65,13 @@ impl<
             error!("Failed to update requested provider power capability: {:?}", e);
             return Err(PdError::Failed);
         }
-        self.power_policy_sender
-            .send(power_policy_interface::psu::event::EventData::RequestedProviderCapability(capability))
-            .await;
+        if self
+            .power_policy_sender
+            .try_send(power_policy_interface::psu::event::EventData::RequestedProviderCapability(capability))
+            .is_none()
+        {
+            error!("Failed to send requested provider capability event");
+        }
         Ok(())
     }
 

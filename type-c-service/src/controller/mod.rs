@@ -149,7 +149,9 @@ impl<
             current_status: new_status,
         });
         self.status = new_status;
-        self.type_c_sender.send(event).await;
+        if self.type_c_sender.try_send(event).is_none() {
+            error!("Failed to send port status type-C event");
+        }
         Ok(event)
     }
 
@@ -169,15 +171,23 @@ impl<
                 return Err(PdError::Failed);
             }
 
-            self.power_policy_sender
-                .send(power_policy_interface::psu::event::EventData::Attached)
-                .await;
+            if self
+                .power_policy_sender
+                .try_send(power_policy_interface::psu::event::EventData::Attached)
+                .is_none()
+            {
+                error!("Failed to send power policy event");
+            }
         } else {
             info!("Plug removed");
             self.psu_state.detach();
-            self.power_policy_sender
-                .send(power_policy_interface::psu::event::EventData::Detached)
-                .await;
+            if self
+                .power_policy_sender
+                .try_send(power_policy_interface::psu::event::EventData::Detached)
+                .is_none()
+            {
+                error!("Failed to send power policy event");
+            }
         }
 
         Ok(())
@@ -207,8 +217,8 @@ impl<
             event.status.set_new_power_contract_as_provider(true);
         }
 
-        if event != PortEventBitfield::none() {
-            self.loopback_sender.send(Loopback::PortEvent(event)).await;
+        if event != PortEventBitfield::none() && self.loopback_sender.try_send(Loopback::PortEvent(event)).is_none() {
+            error!("Failed to send loopback event");
         }
         Ok(())
     }

@@ -48,7 +48,9 @@ impl<
         };
 
         let event = ServicePortEventData::Vdm(vdm_data);
-        self.type_c_sender.send(event).await;
+        if self.type_c_sender.try_send(event).is_none() {
+            error!("Failed to send VDM type-C event");
+        }
         Ok(Some(event))
     }
 
@@ -57,7 +59,9 @@ impl<
         debug!("({}): Processing DP status update event", self.name);
         let status = self.controller.lock().await.get_dp_status(self.port).await?;
         let event = ServicePortEventData::DpStatusUpdate(status);
-        self.type_c_sender.send(event).await;
+        if self.type_c_sender.try_send(event).is_none() {
+            error!("Failed to send DP status update type-C event");
+        }
         Ok(event)
     }
 
@@ -66,7 +70,9 @@ impl<
         debug!("({}): PD alert: {:#?}", self.name, ado);
         if let Some(ado) = ado {
             let event = ServicePortEventData::Alert(ado);
-            self.type_c_sender.send(event).await;
+            if self.type_c_sender.try_send(event).is_none() {
+                error!("Failed to send PD alert type-C event");
+            }
             Ok(Some(event))
         } else {
             // For some reason we didn't read an alert, nothing to do

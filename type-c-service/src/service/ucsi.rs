@@ -187,8 +187,7 @@ impl<'port, Reg: Registration<'port>> Service<'port, Reg> {
                 // False here because the OPM gets notified by the CCI, don't need a separate notification
                 notify_opm: false,
             }),
-        })
-        .await;
+        });
 
         self.set_cci_connector_change(cci);
     }
@@ -388,8 +387,7 @@ impl<'port, Reg: Registration<'port>> Service<'port, Reg> {
                     port: port_id,
                     notify_opm,
                 }),
-            })
-            .await;
+            });
         } else {
             // This shouldn't happen because we have a single slot per port
             // Would likely indicate that an invalid port ID got in somehow
