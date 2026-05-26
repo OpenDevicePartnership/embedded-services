@@ -1,6 +1,7 @@
 /// Configuration for Type-C controller wrapper
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[non_exhaustive]
 pub struct Config {
     /// Unconstrained behavior for sink role
     pub unconstrained_sink: UnconstrainedSink,
@@ -9,6 +10,7 @@ pub struct Config {
 /// Unconstrained behavior for sink role
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[non_exhaustive]
 pub enum UnconstrainedSink {
     /// Automatically signal unconstrained power based on unconstrained bit in PDO
     #[default]

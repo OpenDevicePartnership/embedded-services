@@ -26,6 +26,7 @@ pub struct StatusChangedData {
 /// Enum to contain all port event variants
 #[derive(Copy, Clone, Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[non_exhaustive]
 pub enum PortEventData {
     /// Port status change events
     StatusChanged(StatusChangedData),
@@ -70,6 +71,7 @@ pub struct UsciChangeIndicatorData {
 /// Top-level comms message
 #[derive(Copy, Clone, Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[non_exhaustive]
 pub enum EventData {
     DebugAccessory(DebugAccessoryData),
     UsciChangeIndicator(UsciChangeIndicatorData),

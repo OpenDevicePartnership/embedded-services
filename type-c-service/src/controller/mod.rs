@@ -104,7 +104,7 @@ impl<
                 self.process_port_status_changed(status_event).await.map(Some)
             }
             InterfacePortEvent::Alert => self.process_pd_alert().await,
-            InterfacePortEvent::Vdm(vdm_event) => self.process_vdm_event(vdm_event).await.map(Some),
+            InterfacePortEvent::Vdm(vdm_event) => self.process_vdm_event(vdm_event).await,
             InterfacePortEvent::DpStatusUpdate => self.process_dp_status_update().await.map(Some),
             rest => {
                 // Nothing currently implemented for these

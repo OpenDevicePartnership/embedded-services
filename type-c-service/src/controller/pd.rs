@@ -28,7 +28,10 @@ impl<
 > Port<'device, C, Shared, TypeCSender, PowerSender, LoopbackSender>
 {
     /// Process a VDM event by retrieving the relevant VDM data from the `controller` for the appropriate `port`.
-    pub(super) async fn process_vdm_event(&mut self, event: VdmNotification) -> Result<ServicePortEventData, PdError> {
+    pub(super) async fn process_vdm_event(
+        &mut self,
+        event: VdmNotification,
+    ) -> Result<Option<ServicePortEventData>, PdError> {
         debug!("({}): Processing VDM event: {:?}", self.name, event);
         let vdm_data = {
             let mut controller = self.controller.lock().await;
@@ -37,12 +40,16 @@ impl<
                 VdmNotification::Exited => VdmData::Exited(controller.get_other_vdm(self.port).await?),
                 VdmNotification::OtherReceived => VdmData::ReceivedOther(controller.get_other_vdm(self.port).await?),
                 VdmNotification::AttentionReceived => VdmData::ReceivedAttn(controller.get_attn_vdm(self.port).await?),
+                _ => {
+                    info!("({}): Received unknown VDM event: {:?}", self.name, event);
+                    return Ok(None);
+                }
             }
         };
 
         let event = ServicePortEventData::Vdm(vdm_data);
         self.type_c_sender.send(event).await;
-        Ok(event)
+        Ok(Some(event))
     }
 
     /// Process a DisplayPort status update by retrieving the current DP status from the `controller` for the appropriate `port`.

@@ -272,6 +272,7 @@ impl PortNotificationEventBitfield {
 /// Individual VDM notifications
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[non_exhaustive]
 pub enum VdmNotification {
     /// Custom mode entered
     Entered,
@@ -286,6 +287,7 @@ pub enum VdmNotification {
 /// VDM event data
 #[derive(Copy, Clone, Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[non_exhaustive]
 pub enum VdmData {
     /// Entered custom mode
     Entered(OtherVdm),
@@ -300,6 +302,7 @@ pub enum VdmData {
 /// Enum to contain all port event variants
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[non_exhaustive]
 pub enum PortEvent {
     /// Port status change events
     StatusChanged(PortStatusEventBitfield),

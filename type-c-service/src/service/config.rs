@@ -11,6 +11,7 @@ use embedded_usb_pd::ucsi::{self, lpm::get_connector_status::BatteryChargingCapa
 /// The [`Default`][`Self::default`] implementation creates a configuration where the status of all power levels is
 /// considered [`Nominal`][BatteryChargingCapabilityStatus::Nominal].
 #[derive(Debug, Clone, Copy, Default)]
+#[non_exhaustive]
 pub struct UcsiBatteryChargingThresholdConfig {
     /// Power threshold (in milliwatts) to be considered not charging.
     ///
