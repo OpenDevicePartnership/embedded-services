@@ -13,6 +13,7 @@ use crate::{
 /// and allows for receivers that don't need to be generic over the device type.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[non_exhaustive]
 pub enum EventData {
     /// Consumer disconnected
     ConsumerDisconnected,
@@ -44,6 +45,7 @@ where
 /// Events broadcast from the service.
 #[derive(Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[non_exhaustive]
 pub enum Event<'device, PSU: Lockable>
 where
     PSU::Inner: Psu,

@@ -9,6 +9,7 @@ use crate::{
 /// Data for an event broadcast from a PSU.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[non_exhaustive]
 pub enum EventData {
     /// Notify that a device has attached
     Attached,

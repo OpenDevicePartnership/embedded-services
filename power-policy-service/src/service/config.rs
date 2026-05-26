@@ -3,6 +3,7 @@
 use power_policy_interface::capability::PowerCapability;
 
 #[derive(Clone, Copy)]
+#[non_exhaustive]
 pub struct Config {
     /// Above this threshold, the system is in limited power mode
     pub limited_power_threshold_mw: u32,

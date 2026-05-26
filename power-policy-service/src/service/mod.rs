@@ -159,6 +159,14 @@ impl<'device, Reg: Registration<'device>> Service<'device, Reg> {
                     .await
             }
             PsuEventData::Disconnected => self.process_notify_disconnect(device).await,
+            _ => {
+                info!(
+                    "Received unknown PSU event from ({}): {:?}",
+                    device.lock().await.name(),
+                    event.event
+                );
+                Ok(())
+            }
         }
     }
 

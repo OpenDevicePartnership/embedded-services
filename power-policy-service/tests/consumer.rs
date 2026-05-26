@@ -687,15 +687,10 @@ async fn run_test_disconnect_other_provider() {
 
 #[tokio::test]
 async fn run_test_min_consumer_power() {
-    run_test(
-        DEFAULT_TIMEOUT,
-        TestMinConsumerPower,
-        Config {
-            min_consumer_threshold_mw: Some(MIN_CONSUMER_THRESHOLD_MW),
-            ..Default::default()
-        },
-    )
-    .await;
+    let mut config = Config::default();
+    config.min_consumer_threshold_mw = Some(MIN_CONSUMER_THRESHOLD_MW);
+
+    run_test(DEFAULT_TIMEOUT, TestMinConsumerPower, config).await;
 }
 
 #[tokio::test]
