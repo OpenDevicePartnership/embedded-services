@@ -1,5 +1,5 @@
 //! Struct that manages per-port state, interfacing with a controller object that exposes multiple ports.
-use embedded_services::{debug, error, event::Sender, info, named::Named, sync::Lockable};
+use embedded_services::{debug, error, event::NonBlockingSender, info, named::Named, sync::Lockable};
 use embedded_usb_pd::{LocalPortId, PdError};
 use power_policy_interface::psu::PsuState;
 use type_c_interface::control::pd::PortStatus;
@@ -28,9 +28,9 @@ pub struct Port<
     'device,
     C: Lockable<Inner: Pd>,
     Shared: Lockable<Inner = SharedState>,
-    TypeCSender: Sender<type_c_interface::service::event::PortEventData>,
-    PowerSender: Sender<power_policy_interface::psu::event::EventData>,
-    LoopbackSender: Sender<event::Loopback>,
+    TypeCSender: NonBlockingSender<type_c_interface::service::event::PortEventData>,
+    PowerSender: NonBlockingSender<power_policy_interface::psu::event::EventData>,
+    LoopbackSender: NonBlockingSender<event::Loopback>,
 > {
     /// Local port
     port: LocalPortId,
@@ -58,9 +58,9 @@ impl<
     'device,
     C: Lockable<Inner: Pd>,
     Shared: Lockable<Inner = SharedState>,
-    TypeCSender: Sender<type_c_interface::service::event::PortEventData>,
-    PowerSender: Sender<power_policy_interface::psu::event::EventData>,
-    LoopbackSender: Sender<event::Loopback>,
+    TypeCSender: NonBlockingSender<type_c_interface::service::event::PortEventData>,
+    PowerSender: NonBlockingSender<power_policy_interface::psu::event::EventData>,
+    LoopbackSender: NonBlockingSender<event::Loopback>,
 > Port<'device, C, Shared, TypeCSender, PowerSender, LoopbackSender>
 {
     /// Create new Port instance
@@ -228,9 +228,9 @@ impl<
     'device,
     C: Lockable<Inner: Pd>,
     Shared: Lockable<Inner = SharedState>,
-    TypeCSender: Sender<type_c_interface::service::event::PortEventData>,
-    PowerSender: Sender<power_policy_interface::psu::event::EventData>,
-    LoopbackSender: Sender<event::Loopback>,
+    TypeCSender: NonBlockingSender<type_c_interface::service::event::PortEventData>,
+    PowerSender: NonBlockingSender<power_policy_interface::psu::event::EventData>,
+    LoopbackSender: NonBlockingSender<event::Loopback>,
 > Named for Port<'device, C, Shared, TypeCSender, PowerSender, LoopbackSender>
 {
     fn name(&self) -> &'static str {

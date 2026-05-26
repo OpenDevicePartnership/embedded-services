@@ -1,5 +1,5 @@
 //! PD functionality unrelated to power contracts and general port status
-use embedded_services::{event::Sender, sync::Lockable};
+use embedded_services::{event::NonBlockingSender, sync::Lockable};
 use embedded_usb_pd::PdError;
 use embedded_usb_pd::ado::Ado;
 use embedded_usb_pd::vdm::structured::command::discover_identity::{sop, sop_prime};
@@ -22,9 +22,9 @@ impl<
     'device,
     C: Lockable<Inner: Pd>,
     Shared: Lockable<Inner = SharedState>,
-    TypeCSender: Sender<type_c_interface::service::event::PortEventData>,
-    PowerSender: Sender<power_policy_interface::psu::event::EventData>,
-    LoopbackSender: Sender<event::Loopback>,
+    TypeCSender: NonBlockingSender<type_c_interface::service::event::PortEventData>,
+    PowerSender: NonBlockingSender<power_policy_interface::psu::event::EventData>,
+    LoopbackSender: NonBlockingSender<event::Loopback>,
 > Port<'device, C, Shared, TypeCSender, PowerSender, LoopbackSender>
 {
     /// Process a VDM event by retrieving the relevant VDM data from the `controller` for the appropriate `port`.
@@ -85,9 +85,9 @@ impl<
     'device,
     C: Lockable<Inner: Pd>,
     Shared: Lockable<Inner = SharedState>,
-    TypeCSender: Sender<type_c_interface::service::event::PortEventData>,
-    PowerSender: Sender<power_policy_interface::psu::event::EventData>,
-    LoopbackSender: Sender<event::Loopback>,
+    TypeCSender: NonBlockingSender<type_c_interface::service::event::PortEventData>,
+    PowerSender: NonBlockingSender<power_policy_interface::psu::event::EventData>,
+    LoopbackSender: NonBlockingSender<event::Loopback>,
 > type_c_interface::port::pd::Pd for Port<'device, C, Shared, TypeCSender, PowerSender, LoopbackSender>
 {
     async fn get_port_status(&mut self) -> Result<PortStatus, PdError> {
@@ -175,9 +175,9 @@ impl<
     'device,
     C: Lockable<Inner: Pd + StateMachine>,
     Shared: Lockable<Inner = SharedState>,
-    TypeCSender: Sender<type_c_interface::service::event::PortEventData>,
-    PowerSender: Sender<power_policy_interface::psu::event::EventData>,
-    LoopbackSender: Sender<event::Loopback>,
+    TypeCSender: NonBlockingSender<type_c_interface::service::event::PortEventData>,
+    PowerSender: NonBlockingSender<power_policy_interface::psu::event::EventData>,
+    LoopbackSender: NonBlockingSender<event::Loopback>,
 > type_c_interface::port::pd::StateMachine for Port<'device, C, Shared, TypeCSender, PowerSender, LoopbackSender>
 {
     async fn set_pd_state_machine_config(&mut self, config: PdStateMachineConfig) -> Result<(), PdError> {

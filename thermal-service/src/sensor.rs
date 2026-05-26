@@ -3,7 +3,7 @@ use core::marker::PhantomData;
 use embassy_sync::{mutex::Mutex, signal::Signal};
 use embassy_time::{Duration, Timer, with_timeout};
 use embedded_sensors_hal_async::temperature::DegreesCelsius;
-use embedded_services::event::Sender;
+use embedded_services::event::NonBlockingSender;
 use embedded_services::{GlobalRawMutex, error};
 use thermal_service_interface::sensor;
 
@@ -102,14 +102,14 @@ impl<T: sensor::Driver, const SAMPLE_BUF_LEN: usize> ServiceInner<T, SAMPLE_BUF_
 }
 
 /// Sensor service control handle.
-pub struct Service<'hw, T: sensor::Driver, E: Sender<sensor::Event>, const SAMPLE_BUF_LEN: usize> {
+pub struct Service<'hw, T: sensor::Driver, E: NonBlockingSender<sensor::Event>, const SAMPLE_BUF_LEN: usize> {
     inner: &'hw ServiceInner<T, SAMPLE_BUF_LEN>,
     _phantom: PhantomData<E>,
 }
 
 // Note: We can't derive these traits because the compiler thinks our generics then need to be Copy + Clone,
 // but we only hold a reference and don't actually need to be that strict
-impl<T: sensor::Driver, E: Sender<sensor::Event>, const SAMPLE_BUF_LEN: usize> Clone
+impl<T: sensor::Driver, E: NonBlockingSender<sensor::Event>, const SAMPLE_BUF_LEN: usize> Clone
     for Service<'_, T, E, SAMPLE_BUF_LEN>
 {
     fn clone(&self) -> Self {
@@ -117,12 +117,12 @@ impl<T: sensor::Driver, E: Sender<sensor::Event>, const SAMPLE_BUF_LEN: usize> C
     }
 }
 
-impl<T: sensor::Driver, E: Sender<sensor::Event>, const SAMPLE_BUF_LEN: usize> Copy
+impl<T: sensor::Driver, E: NonBlockingSender<sensor::Event>, const SAMPLE_BUF_LEN: usize> Copy
     for Service<'_, T, E, SAMPLE_BUF_LEN>
 {
 }
 
-impl<'hw, T: sensor::Driver, E: Sender<sensor::Event>, const SAMPLE_BUF_LEN: usize> sensor::SensorService
+impl<'hw, T: sensor::Driver, E: NonBlockingSender<sensor::Event>, const SAMPLE_BUF_LEN: usize> sensor::SensorService
     for Service<'hw, T, E, SAMPLE_BUF_LEN>
 {
     async fn temperature(&self) -> DegreesCelsius {
@@ -172,7 +172,7 @@ impl<'hw, T: sensor::Driver, E: Sender<sensor::Event>, const SAMPLE_BUF_LEN: usi
 }
 
 /// Parameters required to initialize a sensor service.
-pub struct InitParams<'hw, T: sensor::Driver, E: Sender<sensor::Event>> {
+pub struct InitParams<'hw, T: sensor::Driver, E: NonBlockingSender<sensor::Event>> {
     /// The underlying sensor driver this service will control.
     pub driver: T,
     /// Initial configuration for the sensor service.
@@ -205,13 +205,15 @@ struct State {
 }
 
 /// A task runner for a sensor. Users must run this in an embassy task or similar async execution context.
-pub struct Runner<'hw, T: sensor::Driver, E: Sender<sensor::Event>, const SAMPLE_BUF_LEN: usize> {
+pub struct Runner<'hw, T: sensor::Driver, E: NonBlockingSender<sensor::Event>, const SAMPLE_BUF_LEN: usize> {
     service: &'hw ServiceInner<T, SAMPLE_BUF_LEN>,
     event_senders: &'hw mut [E],
     state: State,
 }
 
-impl<'hw, T: sensor::Driver, E: Sender<sensor::Event>, const SAMPLE_BUF_LEN: usize> Runner<'hw, T, E, SAMPLE_BUF_LEN> {
+impl<'hw, T: sensor::Driver, E: NonBlockingSender<sensor::Event>, const SAMPLE_BUF_LEN: usize>
+    Runner<'hw, T, E, SAMPLE_BUF_LEN>
+{
     fn broadcast_event(&mut self, event: sensor::Event) {
         for sender in self.event_senders.iter_mut() {
             if sender.try_send(event).is_none() {
@@ -257,7 +259,7 @@ impl<'hw, T: sensor::Driver, E: Sender<sensor::Event>, const SAMPLE_BUF_LEN: usi
     }
 }
 
-impl<'hw, T: sensor::Driver, E: Sender<sensor::Event>, const SAMPLE_BUF_LEN: usize>
+impl<'hw, T: sensor::Driver, E: NonBlockingSender<sensor::Event>, const SAMPLE_BUF_LEN: usize>
     odp_service_common::runnable_service::ServiceRunner<'hw> for Runner<'hw, T, E, SAMPLE_BUF_LEN>
 {
     async fn run(mut self) -> embedded_services::Never {
@@ -303,7 +305,7 @@ impl<'hw, T: sensor::Driver, E: Sender<sensor::Event>, const SAMPLE_BUF_LEN: usi
     }
 }
 
-impl<'hw, T: sensor::Driver, E: Sender<sensor::Event> + 'hw, const SAMPLE_BUF_LEN: usize>
+impl<'hw, T: sensor::Driver, E: NonBlockingSender<sensor::Event> + 'hw, const SAMPLE_BUF_LEN: usize>
     odp_service_common::runnable_service::Service<'hw> for Service<'hw, T, E, SAMPLE_BUF_LEN>
 {
     type Runner = Runner<'hw, T, E, SAMPLE_BUF_LEN>;

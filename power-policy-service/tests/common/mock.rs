@@ -2,7 +2,7 @@
 #![allow(dead_code)]
 use embassy_sync::{channel, mutex::Mutex, signal::Signal};
 use embedded_batteries_async::charger::{MilliAmps, MilliVolts};
-use embedded_services::{GlobalRawMutex, event::Sender, info, named::Named};
+use embedded_services::{GlobalRawMutex, event::NonBlockingSender, info, named::Named};
 use power_policy_interface::{
     capability::{ConsumerPowerCapability, PowerCapability, ProviderFlags, ProviderPowerCapability},
     charger,
@@ -18,7 +18,7 @@ pub enum FnCall {
     Reset,
 }
 
-pub struct Mock<'a, S: Sender<EventData>> {
+pub struct Mock<'a, S: NonBlockingSender<EventData>> {
     sender: S,
     fn_call: &'a Signal<GlobalRawMutex, (usize, FnCall)>,
     // Internal state
@@ -26,7 +26,7 @@ pub struct Mock<'a, S: Sender<EventData>> {
     name: &'static str,
 }
 
-impl<'a, S: Sender<EventData>> Mock<'a, S> {
+impl<'a, S: NonBlockingSender<EventData>> Mock<'a, S> {
     pub fn new(name: &'static str, sender: S, fn_call: &'a Signal<GlobalRawMutex, (usize, FnCall)>) -> Self {
         Self {
             name,
@@ -93,7 +93,7 @@ impl<'a, S: Sender<EventData>> Mock<'a, S> {
     }
 }
 
-impl<'a, S: Sender<EventData>> Psu for Mock<'a, S> {
+impl<'a, S: NonBlockingSender<EventData>> Psu for Mock<'a, S> {
     async fn connect_consumer(&mut self, capability: ConsumerPowerCapability) -> Result<(), Error> {
         info!("Connect consumer {:#?}", capability);
         self.record_fn_call(FnCall::ConnectConsumer(capability));
@@ -121,7 +121,7 @@ impl<'a, S: Sender<EventData>> Psu for Mock<'a, S> {
     }
 }
 
-impl<'a, S: Sender<EventData>> Named for Mock<'a, S> {
+impl<'a, S: NonBlockingSender<EventData>> Named for Mock<'a, S> {
     fn name(&self) -> &'static str {
         self.name
     }

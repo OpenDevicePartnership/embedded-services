@@ -1,7 +1,7 @@
 use core::marker::PhantomData;
 use core::ptr;
 
-use embedded_services::event::Sender as _;
+use embedded_services::event::NonBlockingSender as _;
 use embedded_services::named::Named as _;
 use embedded_services::sync::Lockable;
 use embedded_services::{debug, error, info, trace};

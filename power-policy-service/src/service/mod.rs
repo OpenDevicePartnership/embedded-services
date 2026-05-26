@@ -9,7 +9,7 @@ pub mod task;
 
 use embedded_services::error;
 use embedded_services::named::Named;
-use embedded_services::{event::Sender, info, sync::Lockable, trace};
+use embedded_services::{event::NonBlockingSender, info, sync::Lockable, trace};
 
 use power_policy_interface::charger::{Charger, PsuState};
 use power_policy_interface::{
