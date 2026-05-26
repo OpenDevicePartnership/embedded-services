@@ -77,7 +77,11 @@ impl PowerPolicy {
         Ok(())
     }
 
-    async fn process_notify_disconnect(&self, device: &device::Device) -> Result<(), Error> {
+    async fn process_notify_disconnect(
+        &self,
+        device: &device::Device,
+        flags: flags::ConsumerDisconnect,
+    ) -> Result<(), Error> {
         self.context.send_response(Ok(policy::ResponseData::Complete)).await;
 
         self.remove_connected_provider(device.id()).await;
@@ -93,7 +97,7 @@ impl PowerPolicy {
             self.disconnect_chargers().await?;
 
             self.comms_notify(CommsMessage {
-                data: CommsData::ConsumerDisconnected(consumer.device_id),
+                data: CommsData::ConsumerDisconnected(consumer.device_id, flags),
             })
             .await;
 
@@ -175,9 +179,9 @@ impl PowerPolicy {
                 );
                 self.process_request_provider_power_capabilities(device.id()).await
             }
-            policy::RequestData::NotifyDisconnect => {
+            policy::RequestData::NotifyDisconnect(flags) => {
                 info!("Received notify disconnect from device {}", device.id().0);
-                self.process_notify_disconnect(device).await
+                self.process_notify_disconnect(device, flags).await
             }
         }
     }

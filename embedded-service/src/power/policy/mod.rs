@@ -142,7 +142,7 @@ impl UnconstrainedState {
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum CommsData {
     /// Consumer disconnected
-    ConsumerDisconnected(DeviceId),
+    ConsumerDisconnected(DeviceId, flags::ConsumerDisconnect),
     /// Consumer connected
     ConsumerConnected(DeviceId, ConsumerPowerCapability),
     /// Provider disconnected

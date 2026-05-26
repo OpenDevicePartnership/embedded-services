@@ -16,7 +16,7 @@ impl<'a> Service<'a> {
                     power_policy::CommsData::Unconstrained(state) => {
                         return Event::PowerPolicy(PowerPolicyEvent::Unconstrained(state));
                     }
-                    power_policy::CommsData::ConsumerDisconnected(_) => {
+                    power_policy::CommsData::ConsumerDisconnected(..) => {
                         return Event::PowerPolicy(PowerPolicyEvent::ConsumerDisconnected);
                     }
                     power_policy::CommsData::ConsumerConnected(_, _) => {
