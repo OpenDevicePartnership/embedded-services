@@ -127,6 +127,72 @@ impl Provider {
     }
 }
 
+bitfield! {
+    /// Flags for disconnect events
+    #[derive(Copy, Clone, PartialEq, Eq)]
+    #[cfg_attr(feature = "defmt", derive(defmt::Format))]
+    struct ConsumerDisconnectRaw(u32);
+    impl Debug;
+    /// Renegotiation
+    ///
+    /// When set this flag indicates that the current consumer is attempting to negotiate a new power capability.
+    pub bool, renegotiation, set_renegotiation: 0;
+    /// Switching
+    ///
+    /// When set this flag indicates that the service is switching to a different PSU.
+    pub bool, switching, set_switching: 1;
+}
+
+/// Type safe wrapper for consumer disconnect flags
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct ConsumerDisconnect(ConsumerDisconnectRaw);
+
+impl ConsumerDisconnect {
+    /// Create new consumer disconnect flags with no flags set
+    pub const fn none() -> Self {
+        Self(ConsumerDisconnectRaw(0))
+    }
+
+    /// Builder method to set the renegotiation flag
+    pub fn with_renegotiation(mut self, value: bool) -> Self {
+        self.set_renegotiation(value);
+        self
+    }
+
+    /// Set the value of the renegotiation flag
+    pub fn set_renegotiation(&mut self, value: bool) {
+        self.0.set_renegotiation(value);
+    }
+
+    /// Get the value of the renegotiation flag
+    pub fn renegotiation(&self) -> bool {
+        self.0.renegotiation()
+    }
+
+    /// Builder method to set the switching flag
+    pub fn with_switching(mut self, value: bool) -> Self {
+        self.set_switching(value);
+        self
+    }
+
+    /// Set the value of the switching flag
+    pub fn set_switching(&mut self, value: bool) {
+        self.0.set_switching(value);
+    }
+
+    /// Get the value of the switching flag
+    pub fn switching(&self) -> bool {
+        self.0.switching()
+    }
+}
+
+impl Default for ConsumerDisconnect {
+    fn default() -> Self {
+        Self::none()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -179,5 +245,21 @@ mod tests {
         assert_eq!(provider.0.0, 0x100);
         provider.set_psu_type(PsuType::Unknown);
         assert_eq!(provider.0.0, 0x0);
+    }
+
+    #[test]
+    fn test_consumer_disconnect_renegotiation() {
+        let mut disconnect = ConsumerDisconnect::none().with_renegotiation(true);
+        assert_eq!(disconnect.0.0, 0x1);
+        disconnect.set_renegotiation(false);
+        assert_eq!(disconnect.0.0, 0x0);
+    }
+
+    #[test]
+    fn test_consumer_disconnect_switching() {
+        let mut disconnect = ConsumerDisconnect::none().with_switching(true);
+        assert_eq!(disconnect.0.0, 0x2);
+        disconnect.set_switching(false);
+        assert_eq!(disconnect.0.0, 0x0);
     }
 }
