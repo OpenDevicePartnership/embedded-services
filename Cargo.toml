@@ -92,7 +92,7 @@ embedded-hal = "1.0"
 embedded-hal-async = "1.0"
 embedded-services = { path = "./embedded-service" }
 embedded-storage-async = "0.4.1"
-embedded-usb-pd = { git = "https://github.com/OpenDevicePartnership/embedded-usb-pd", default-features = false }
+embedded-usb-pd = { git = "https://github.com/OpenDevicePartnership/embedded-usb-pd", tag = "v0.1.0", default-features = false }
 fw-update-interface = { path = "./fw-update-interface" }
 fw-update-interface-mocks = { path = "./fw-update-interface-mocks" }
 mctp-rs = { path = "./mctp-rs" }
@@ -117,7 +117,7 @@ time-alarm-service-relay = { path = "./time-alarm-service-relay" }
 type-c-interface = { path = "./type-c-interface" }
 type-c-interface-mocks = { path = "./type-c-interface-mocks" }
 syn = "2.0"
-tps6699x = { git = "https://github.com/OpenDevicePartnership/tps6699x", branch = "v0.2.0" }
+tps6699x = { git = "https://github.com/OpenDevicePartnership/tps6699x"}
 tokio = { version = "1.42.0" }
 uuid = { version = "=1.17.0", default-features = false }
 zerocopy = "0.8"

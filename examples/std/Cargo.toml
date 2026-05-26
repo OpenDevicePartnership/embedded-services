@@ -25,7 +25,7 @@ embassy-executor = { version = "0.10.0", features = [
 
 defmt = "0.3"
 
-embedded-usb-pd = { git = "https://github.com/OpenDevicePartnership/embedded-usb-pd"}
+embedded-usb-pd = { git = "https://github.com/OpenDevicePartnership/embedded-usb-pd", tag = "v0.1.0" }
 embedded-services = { path = "../../embedded-service", features = ["log"] }
 odp-service-common = { path = "../../odp-service-common" }
 power-policy-service = { path = "../../power-policy-service", features = [

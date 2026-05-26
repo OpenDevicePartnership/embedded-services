@@ -60,11 +60,11 @@ power-policy-interface = { path = "../../power-policy-interface", features = [
 power-policy-service = { path = "../../power-policy-service", features = [
     "defmt",
 ] }
-tps6699x = { git = "https://github.com/OpenDevicePartnership/tps6699x", branch = "v0.2.0", features = [
+tps6699x = { git = "https://github.com/OpenDevicePartnership/tps6699x", features = [
     "defmt",
     "embassy",
 ] }
-embedded-usb-pd = { git = "https://github.com/OpenDevicePartnership/embedded-usb-pd", default-features = false, features = [
+embedded-usb-pd = { git = "https://github.com/OpenDevicePartnership/embedded-usb-pd", tag = "v0.1.0", default-features = false, features = [
     "defmt",
 ] }
 type-c-service = { path = "../../type-c-service", features = ["defmt"] }

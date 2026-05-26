@@ -686,7 +686,7 @@ dependencies = [
 [[package]]
 name = "embedded-usb-pd"
 version = "0.1.0"
-source = "git+https://github.com/OpenDevicePartnership/embedded-usb-pd#0061a1e94a25c8db33ac1e8a0bb5a6b638fe2cd7"
+source = "git+https://github.com/OpenDevicePartnership/embedded-usb-pd?tag=v0.1.0#0061a1e94a25c8db33ac1e8a0bb5a6b638fe2cd7"
 dependencies = [
  "aquamarine",
  "bincode",
@@ -1437,7 +1437,7 @@ dependencies = [
 [[package]]
 name = "tps6699x"
 version = "0.1.0"
-source = "git+https://github.com/OpenDevicePartnership/tps6699x?branch=v0.2.0#abe5568183bfe5fb2ea81806dded6cb60f3f9b58"
+source = "git+https://github.com/OpenDevicePartnership/tps6699x#159ae3bd52592eaa40e72b318cf1385dd1670e71"
 dependencies = [
  "bincode",
  "bitfield 0.19.4",
