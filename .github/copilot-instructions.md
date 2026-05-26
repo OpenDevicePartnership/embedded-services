@@ -1,3 +1,8 @@
+> **Note:** See [`AGENTS.md`](../AGENTS.md) at the repository root for the
+> canonical, agent-agnostic briefing (workspace layout, commands,
+> conventions, and contribution rules). This file mirrors and extends it
+> with Copilot-specific guidance; keep the two in sync when updating either.
+
 # Copilot Instructions for embedded-services
 
 ## Overview
