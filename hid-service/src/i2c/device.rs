@@ -198,8 +198,8 @@ impl<A: AddressMode + Copy, B: I2c<A>> Device<A, B> {
         let opcode: Opcode = cmd.into();
 
         if opcode.has_response() {
-            // cmds that require a response like GetReport, GetIdle, and GetProtocol
-            // has an upper limit of 7 bytes for the command
+            // Commands that require a response (GetReport, GetIdle, GetProtocol)
+            // have an upper limit of 7 bytes for the command
             let mut temp_w_buf = [0u8; 7];
 
             let len = cmd
@@ -212,7 +212,7 @@ impl<A: AddressMode + Copy, B: I2c<A>> Device<A, B> {
             let mut bus = self.bus.lock().await;
 
             with_timeout(
-                self.timeout_config.data_read_timeout,
+                self.timeout_config.device_response_timeout,
                 bus.write_read(
                     self.address,
                     temp_w_buf
@@ -226,11 +226,11 @@ impl<A: AddressMode + Copy, B: I2c<A>> Device<A, B> {
             )
             .await
             .map_err(|_| {
-                error!("Read host data timeout");
+                error!("Command write_read timeout");
                 Error::Hid(hid::Error::Timeout)
             })?
             .map_err(|e| {
-                error!("Failed to read host data");
+                error!("Failed to execute command write_read");
                 Error::Bus(e)
             })?;
 
