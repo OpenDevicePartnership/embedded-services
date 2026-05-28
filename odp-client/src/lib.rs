@@ -1,22 +1,24 @@
 #![no_std]
-//! Sync ODP client + transport abstraction.
+//! Transport-blind sync ODP client and server-side service-handler macro.
 //!
-//! Consumers depend on this crate, NOT on `mctp-rs` directly. The wire format
-//! lives in `mctp_rs::odp` and is re-exported here for convenience.
+//! Callers issue ODP requests through an [`OdpClient`] (or any other
+//! [`Relay`]) without depending on a concrete transport. The transport is
+//! selected at construction time and hidden behind the [`OdpTransport`]
+//! trait, so swapping the underlying medium does not affect call sites.
 
 pub use client::{OdpClient, OdpResponse, Relay};
 pub use error::OdpError;
 pub use loopback::LoopbackTransport;
-pub use mctp_rs::odp::{ODP_MESSAGE_TYPE, OdpHeader, OdpMessage, OdpService};
-pub use mctp_serial::MctpSerialTransport;
+pub use mctp_rs::odp::{OdpHeader, OdpService};
+pub use serial::SerialTransport;
 pub use serializable::{MessageSerializationError, SerializableMessage, SerializableResult};
-pub use server::{MctpError, RelayHandler, RelayHeader, RelayResponse, RelayServiceHandler, RelayServiceHandlerTypes};
+pub use server::{RelayHandler, RelayHeader, RelayResponse, RelayServiceHandler, RelayServiceHandlerTypes};
 pub use transport::OdpTransport;
 
 mod client;
 mod error;
 mod loopback;
-mod mctp_serial;
+mod serial;
 pub mod serializable;
 pub mod server;
 mod transport;

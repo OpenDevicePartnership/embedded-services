@@ -1,5 +1,6 @@
-use crate::{ODP_MESSAGE_TYPE, OdpError, OdpTransport};
+use crate::{OdpError, OdpTransport};
 use embedded_io::{Read, ReadExactError, Write};
+use mctp_rs::odp::ODP_MESSAGE_TYPE;
 use mctp_rs::{
     EndpointId, MctpMedium, MctpMessageHeaderTrait, MctpMessageTag, MctpMessageTrait, MctpPacketContext,
     MctpPacketError, MctpPacketResult, MctpReplyContext, MctpSequenceNumber, MctpSerialMedium,
@@ -8,8 +9,6 @@ use mctp_rs::{
 /// MCTP serial framing END flag (DSP0253 0x7E).
 const SERIAL_END_FLAG: u8 = 0x7E;
 
-/// Inner buffer sizes — match the legacy `ec_relay.rs` which has been
-/// proven to fit single-packet ODP messages.
 const ASSEMBLY_BUF_LEN: usize = 128;
 const RX_FRAME_BUF_LEN: usize = 128;
 
@@ -64,23 +63,18 @@ fn reply_context(src: EndpointId, dst: EndpointId) -> MctpReplyContext<MctpSeria
     }
 }
 
-/// MCTP-over-serial implementation of [`OdpTransport`].
+/// ODP-over-serial transport.
 ///
-/// Owns the UART and an internal MCTP packet-assembly buffer. The MCTP
-/// framing (per DSP0253: revision byte, byte_count, body, FCS-16, end
-/// flag 0x7E) is encapsulated entirely inside this type — callers hand
-/// in raw ODP wire bytes (4-byte header + body) and receive raw ODP
-/// wire bytes back.
+/// Owns the UART and internal framing buffers. Framing is handled
+/// internally; callers hand in raw ODP wire bytes (4-byte header + body)
+/// and receive raw ODP wire bytes back.
 ///
 /// # Endpoint IDs
 ///
-/// The transport is configured at construction time with `src_eid` and
-/// `dst_eid` used in the MCTP header of outbound frames. Inbound frames
-/// are MCTP-decoded but the EIDs are not validated against expectation
-/// (the serial medium has no addressing of its own; the loopback in
-/// tests and production callers tolerate whichever EID pair the peer
-/// returns).
-pub struct MctpSerialTransport<U: Read + Write> {
+/// `src_eid` / `dst_eid` populate the framing header of outbound frames.
+/// Inbound frames are decoded but the EIDs are not validated against
+/// expectation — the serial medium has no addressing of its own.
+pub struct SerialTransport<U: Read + Write> {
     uart: U,
     src_eid: EndpointId,
     dst_eid: EndpointId,
@@ -88,11 +82,9 @@ pub struct MctpSerialTransport<U: Read + Write> {
     assembly_buf: [u8; ASSEMBLY_BUF_LEN],
 }
 
-impl<U: Read + Write> MctpSerialTransport<U> {
-    /// Create a new transport wrapping `uart`, using `src_eid` / `dst_eid`
-    /// in the MCTP header of every outbound frame. All MCTP framing
-    /// (DSP0253 serial encapsulation) is handled internally; callers only
-    /// see raw ODP wire bytes.
+impl<U: Read + Write> SerialTransport<U> {
+    /// Construct a transport over `uart`. `src_eid` / `dst_eid` are the
+    /// endpoint IDs stamped into every outbound frame.
     pub fn new(uart: U, src_eid: EndpointId, dst_eid: EndpointId) -> Self {
         Self {
             uart,
@@ -104,7 +96,7 @@ impl<U: Read + Write> MctpSerialTransport<U> {
     }
 }
 
-impl<U: Read + Write> OdpTransport for MctpSerialTransport<U> {
+impl<U: Read + Write> OdpTransport for SerialTransport<U> {
     fn send_message(&mut self, payload: &[u8]) -> Result<(), OdpError> {
         if payload.len() < 4 {
             return Err(OdpError::BufferTooSmall);
@@ -147,14 +139,14 @@ impl<U: Read + Write> OdpTransport for MctpSerialTransport<U> {
             }
         }
 
-        // 2. MCTP-strip via a fresh PacketContext borrowing assembly_buf.
+        // 2. Strip framing via a fresh PacketContext borrowing assembly_buf.
         let mut rx_ctx = MctpPacketContext::<MctpSerialMedium>::new(MctpSerialMedium, &mut self.assembly_buf);
         let message = rx_ctx
             .deserialize_packet(&self.rx_frame_buf[..filled])
             .map_err(|_| OdpError::Decode)?
             .ok_or(OdpError::Decode)?;
 
-        // 3. Copy out the MCTP body (= ODP header+body wire bytes).
+        // 3. Copy out the message body (= ODP header+body wire bytes).
         let body = message.message_buffer.body();
         if buf.len() < body.len() {
             return Err(OdpError::BufferTooSmall);

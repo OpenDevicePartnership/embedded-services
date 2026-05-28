@@ -1,31 +1,21 @@
 //! Server-side relay traits and the [`impl_odp_relay_handler`] macro.
 //!
-//! Contains helper traits for services that relay comms messages over MCTP,
-//! plus the macro that aggregates a collection of `RelayServiceHandler`
-//! implementations into a single `RelayHandler` suitable for use by a relay
-//! service (e.g. the eSPI service).
+//! Provides traits that individual service handlers implement, plus the
+//! macro that aggregates them into a single [`RelayHandler`] suitable for
+//! plugging into a relay service (e.g. the eSPI service).
 
-/// Error type for MCTP relay operations
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub enum MctpError {
-    /// The endpoint ID does not correspond to a known service
-    UnknownEndpointId,
-}
-
-/// Trait for types that are used by a relay service to relay messages from your service over the wire.
-/// If you are implementing this trait, you should also implement RelayServiceHandler.
-///
+/// Companion-types trait for [`RelayServiceHandler`]: declares the
+/// request and result types for a single service.
 pub trait RelayServiceHandlerTypes {
-    /// The request type that this service handler processes
+    /// The request type this service handler processes.
     type RequestType: crate::serializable::SerializableMessage;
 
-    /// The result type that this service handler processes
+    /// The result type this service handler produces.
     type ResultType: crate::serializable::SerializableResult;
 }
 
-/// Trait for a service that can be relayed over an external bus (e.g. battery service, thermal service, time-alarm service)
-///
+/// Trait for a service that can be relayed over an external bus (e.g.
+/// battery service, thermal service, time-alarm service).
 pub trait RelayServiceHandler: RelayServiceHandlerTypes {
     /// Process the provided request and yield a result.
     fn process_request<'a>(
@@ -34,39 +24,40 @@ pub trait RelayServiceHandler: RelayServiceHandlerTypes {
     ) -> impl core::future::Future<Output = Self::ResultType> + 'a;
 }
 
-// Traits below this point are intended for consumption by relay services (e.g. the eSPI service), not individual services that want their messages relayed.
-// In general, you should not implement these yourself; rather, you should leverage the `impl_odp_relay_handler` macro to do that for you.
+// Traits below this point are intended for consumption by relay services (e.g. the eSPI service),
+// not individual services that want their messages relayed. Implement these via the
+// `impl_odp_relay_handler` macro rather than by hand.
 
-/// Contains additional methods that must be implemented on the relay header type.
-/// Do not implement this yourself - rather, rely on the `impl_odp_relay_handler` macro to implement this.
+/// Additional methods required on the relay header type. Implemented by
+/// the [`impl_odp_relay_handler`] macro; do not implement directly.
 #[doc(hidden)]
 pub trait RelayHeader<ServiceIdType> {
-    /// Return the ID of the service associated with the request
+    /// Return the ID of the service associated with the request.
     fn get_service_id(&self) -> ServiceIdType;
 }
 
-/// Contains additional methods that must be implemented on the relay response type.
-/// Do not implement this yourself - rather, rely on the `impl_odp_relay_handler` macro to implement this.
+/// Additional methods required on the relay response type. Implemented
+/// by the [`impl_odp_relay_handler`] macro; do not implement directly.
 #[doc(hidden)]
 pub trait RelayResponse<ServiceIdType, HeaderType> {
-    /// Construct an MCTP header suitable for representing the result based on the provided service handler ID and result
+    /// Construct a header for this result given its service ID.
     fn create_header(&self, service_id: &ServiceIdType) -> HeaderType;
 }
 
-/// Trait for aggregating collections of services that can be relayed over an external bus.
-/// Do not implement this yourself - rather, rely on the `impl_odp_relay_handler` macro to implement this.
-///
+/// Aggregates a collection of services into a single relay surface.
+/// Implemented by the [`impl_odp_relay_handler`] macro; do not implement
+/// directly.
 pub trait RelayHandler {
-    /// The type that uniquely identifies individual services. Generally expected to be a C-style enum.
+    /// The type that uniquely identifies individual services. Generally a C-style enum.
     type ServiceIdType: Into<u8> + TryFrom<u8> + Copy;
 
-    /// The header type used by request and result enums
+    /// The header type used by request and result enums.
     type HeaderType: mctp_rs::MctpMessageHeaderTrait + RelayHeader<Self::ServiceIdType>;
 
-    /// An enum over all possible request types
+    /// An enum over all possible request types.
     type RequestEnumType: for<'buf> mctp_rs::MctpMessageTrait<'buf, Header = Self::HeaderType>;
 
-    /// An enum over all possible result types
+    /// An enum over all possible result types.
     type ResultEnumType: for<'buf> mctp_rs::MctpMessageTrait<'buf, Header = Self::HeaderType>
         + RelayResponse<Self::ServiceIdType, Self::HeaderType>;
 
@@ -77,41 +68,33 @@ pub trait RelayHandler {
     ) -> impl core::future::Future<Output = Self::ResultEnumType> + 'a;
 }
 
-/// This macro generates a relay type over a collection of message types, which can be used by a relay service to
-/// receive messages over the wire and translate them into calls to a particular service on the EC.
+/// Generates a relay type that aggregates multiple service handlers into a
+/// single [`RelayHandler`] suitable for use by a relay service (e.g. the
+/// eSPI service). This is the recommended way to obtain a `RelayHandler`
+/// — do not implement that trait by hand.
 ///
-/// This is the recommended way to implement a relay handler - you should not implement the RelayHandler trait yourself.
+/// Inputs:
+///   - `relay_type_name`: identifier for the generated struct
+///   - For each service:
+///     - `service_name`: identifier used to name fields and variants
+///     - `service_id`: unique `u8` addressing the service on the EC
+///     - `service_handler_type`: a type implementing [`RelayServiceHandler`]
 ///
-/// This macro will emit a type with the name you specify that is generic over a lifetime for the hardware (probably 'static in production code),
-/// implements the `RelayHandler` trait, and has a single constructor method `new` that takes as arguments references to the service handler
-/// types that you specify that have the 'hardware lifetime'.
+/// The generated type exposes a `new` constructor taking one
+/// `service_handler_type` argument per registered service.
 ///
-/// The macro takes the following inputs once:
-///   relay_type_name: The name of the relay type to generate. This is arbitrary. The macro will emit a type with this name.
-///
-/// Followed by a list of any number of service entries, which are specified by the following inputs:
-///   service_name:         A name to assign to generated identifiers associated with the service, e.g. "Battery".
-///                         This can be arbitrary.
-///   service_id:           A unique u8 that addresses that service on the EC.
-///   service_handler_type: A type that implements the RelayServiceHandler trait, which will be used to process messages
-///                         for this service.
-///
-/// Example usage:
+/// # Example
 ///
 /// ```ignore
+/// impl_odp_relay_handler!(
+///     MyRelayHandlerType;
+///     Battery,   0x9, battery_service_relay::RelayHandler<battery_service::Service<'static>>;
+///     TimeAlarm, 0xB, time_alarm_service_relay::RelayHandler<time_alarm_service::Service<'static>>;
+/// );
 ///
-///     impl_odp_relay_handler!(
-///         MyRelayHandlerType;
-///         Battery,   0x9, battery_service_relay::RelayHandler<battery_service::Service<'static>>;
-///         TimeAlarm, 0xB, time_alarm_service_relay::RelayHandler<time_alarm_service::Service<'static>>;
-///     );
-///
-///     let relay_handler = MyRelayHandlerType::new(battery_service_instance, time_alarm_service_instance);
-///
-///     // Then, pass relay_handler to your relay service (e.g. eSPI service), which should be generic over an `impl RelayHandler`.
-///
+/// let relay_handler = MyRelayHandlerType::new(battery_handler, time_alarm_handler);
+/// // Pass relay_handler to a relay service that is generic over `impl RelayHandler`.
 /// ```
-///
 #[macro_export]
 macro_rules! impl_odp_relay_handler {
     (
@@ -189,7 +172,7 @@ macro_rules! impl_odp_relay_handler {
                 }
 
                 bitfield! {
-                    /// Wire format for ODP MCTP headers. Not user-facing - use OdpHeader instead.
+                    /// Wire format for ODP headers. Not user-facing — use OdpHeader instead.
                     #[derive(Copy, Clone, PartialEq, Eq)]
                     struct OdpHeaderWireFormat(u32);
                     impl Debug;

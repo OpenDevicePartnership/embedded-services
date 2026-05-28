@@ -1,45 +1,32 @@
 use crate::{OdpError, OdpHeader, OdpTransport};
 
-/// Decoded ODP response handed to the parse closure inside [`Relay::invoke`].
+/// Decoded ODP response returned by [`Relay::invoke`].
 ///
-/// The body slice borrows from the client's internal assembly buffer; only
-/// owned values can escape the closure.
+/// The body slice borrows from the relay's internal assembly buffer; the
+/// caller must finish reading the response before calling `invoke` again or
+/// dropping the relay.
+#[derive(Debug)]
 pub struct OdpResponse<'a> {
     pub header: OdpHeader,
     pub body: &'a [u8],
 }
 
-/// Transport-blind abstraction over "issue a request to the EC and parse the
-/// response". Per-service code depends on `R: Relay`, never on a concrete
-/// `OdpClient<T>`.
+/// Transport-blind abstraction over "issue a request and receive a
+/// decoded response". Per-service code depends on `R: Relay` (or
+/// `&mut dyn Relay`) rather than a concrete [`OdpClient<T>`].
 ///
-/// The closure pattern is required because the response body slice borrows
-/// from the client's internal buffer; parsing inside the closure guarantees
-/// only owned types escape.
-///
-/// # Object safety
-///
-/// `invoke` is generic over `R` (return type) and `F` (closure type), so
-/// `Relay` is **not** object-safe. Use it as a bound (`impl Relay` /
-/// `R: Relay`), not as `dyn Relay`.
+/// The returned [`OdpResponse`] borrows from the relay's internal
+/// buffer, so the borrow checker prevents calling `invoke` again or
+/// dropping the relay until the response is consumed — no copy is required.
 pub trait Relay {
-    /// Encode `header` + `body` as an ODP wire frame, hand them to the
-    /// underlying transport, receive the response, validate the
-    /// `message_id` round-trip, and pass an [`OdpResponse`] to `parse`.
-    ///
-    /// The parse closure runs inside `invoke` so that the borrow of the
-    /// client's internal buffer is confined to the closure scope; any
-    /// owned value returned from the closure escapes cleanly.
-    fn invoke<R, F>(&mut self, header: OdpHeader, body: &[u8], parse: F) -> Result<R, OdpError>
-    where
-        F: FnOnce(OdpResponse<'_>) -> Result<R, OdpError>;
+    /// Encode `header` + `body`, send via the underlying transport,
+    /// receive the response, validate the `message_id` round-trip, and
+    /// return the decoded [`OdpResponse`].
+    fn invoke<'a>(&'a mut self, header: OdpHeader, body: &[u8]) -> Result<OdpResponse<'a>, OdpError>;
 }
 
-/// Sync ODP-over-transport client.
-///
-/// Owns the transport and a 256-byte assembly buffer used for both request
-/// encoding and response decoding (sequentially — the phases never overlap
-/// because send completes before recv begins).
+/// Sync ODP client. Owns the transport and a 256-byte buffer used
+/// sequentially for request encoding and response decoding.
 pub struct OdpClient<T: OdpTransport> {
     transport: T,
     buf: [u8; 256],
@@ -56,10 +43,7 @@ impl<T: OdpTransport> OdpClient<T> {
 }
 
 impl<T: OdpTransport> Relay for OdpClient<T> {
-    fn invoke<R, F>(&mut self, header: OdpHeader, body: &[u8], parse: F) -> Result<R, OdpError>
-    where
-        F: FnOnce(OdpResponse<'_>) -> Result<R, OdpError>,
-    {
+    fn invoke<'a>(&'a mut self, header: OdpHeader, body: &[u8]) -> Result<OdpResponse<'a>, OdpError> {
         let need = 4 + body.len();
         if need > self.buf.len() {
             return Err(OdpError::BufferTooSmall);
@@ -86,7 +70,7 @@ impl<T: OdpTransport> Relay for OdpClient<T> {
             });
         }
 
-        parse(OdpResponse {
+        Ok(OdpResponse {
             header: resp_header,
             body: &self.buf[4..n],
         })

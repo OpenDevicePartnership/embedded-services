@@ -1,7 +1,7 @@
-use odp_client::{LoopbackTransport, OdpClient, OdpError, OdpHeader, OdpResponse, OdpService, Relay};
+use odp_client::{LoopbackTransport, OdpClient, OdpError, OdpHeader, OdpService, Relay};
 
 #[test]
-fn invoke_round_trips_request_and_parses_response() {
+fn invoke_round_trips_request_and_returns_response() {
     // LoopbackTransport echoes the request bytes back as the response.
     let transport = LoopbackTransport::new();
     let mut client = OdpClient::new(transport);
@@ -13,14 +13,10 @@ fn invoke_round_trips_request_and_parses_response() {
         message_id: 0x11,
     };
 
-    let parsed: u8 = client
-        .invoke(req_header, &[0xAA, 0xBB], |resp: OdpResponse<'_>| {
-            assert_eq!(resp.header.service, OdpService::Battery);
-            assert_eq!(resp.header.message_id, 0x11);
-            Ok(resp.body[0])
-        })
-        .unwrap();
-    assert_eq!(parsed, 0xAA);
+    let resp = client.invoke(req_header, &[0xAA, 0xBB]).unwrap();
+    assert_eq!(resp.header.service, OdpService::Battery);
+    assert_eq!(resp.header.message_id, 0x11);
+    assert_eq!(resp.body, &[0xAA, 0xBB]);
 }
 
 #[test]
@@ -34,9 +30,7 @@ fn invoke_with_oversized_body_returns_buffer_too_small() {
         message_id: 1,
     };
     let huge = [0u8; 253];
-    let err = client
-        .invoke(req_header, &huge, |_| Ok::<(), OdpError>(()))
-        .unwrap_err();
+    let err = client.invoke(req_header, &huge).unwrap_err();
     assert_eq!(err, OdpError::BufferTooSmall);
 }
 
@@ -88,7 +82,7 @@ fn invoke_with_mismatched_response_message_id_returns_unexpected() {
         is_error: false,
         message_id: 0x11,
     };
-    let err = client.invoke(req_header, &[], |_| Ok::<(), OdpError>(())).unwrap_err();
+    let err = client.invoke(req_header, &[]).unwrap_err();
     assert_eq!(
         err,
         OdpError::UnexpectedMessageId {
@@ -96,4 +90,23 @@ fn invoke_with_mismatched_response_message_id_returns_unexpected() {
             got: 0x99
         }
     );
+}
+
+#[test]
+fn relay_is_object_safe_via_dyn() {
+    // Proves the trait is object-safe: dynamic dispatch through &mut dyn Relay.
+    let mut client = OdpClient::new(LoopbackTransport::new());
+    let relay: &mut dyn Relay = &mut client;
+
+    let req_header = OdpHeader {
+        is_request: true,
+        service: OdpService::Thermal,
+        is_error: false,
+        message_id: 0x42,
+    };
+
+    let resp = relay.invoke(req_header, &[0xDE, 0xAD]).unwrap();
+    assert_eq!(resp.header.service, OdpService::Thermal);
+    assert_eq!(resp.header.message_id, 0x42);
+    assert_eq!(resp.body, &[0xDE, 0xAD]);
 }

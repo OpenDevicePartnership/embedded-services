@@ -2,11 +2,8 @@ use crate::{OdpError, OdpTransport};
 use heapless::Vec;
 
 /// In-memory test double for [`OdpTransport`]. Echoes what was sent on
-/// the next [`OdpTransport::recv_message`] call.
-///
-/// Useful for unit testing per-service client logic without standing
-/// up a real UART. Capacity is fixed at 256 bytes — large enough for
-/// any single ODP message we expect to round-trip in tests.
+/// the next [`OdpTransport::recv_message`] call. Capacity is fixed at
+/// 256 bytes.
 ///
 /// # Lifecycle
 ///

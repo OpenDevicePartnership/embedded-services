@@ -3,7 +3,7 @@ name = "odp-client"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Sync ODP MCTP client + async server macro. Hides mctp-rs from consumers."
+description = "Transport-blind sync ODP client and server-side service-handler macro."
 
 [features]
 default = []

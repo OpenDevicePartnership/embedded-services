@@ -1,21 +1,17 @@
 use crate::OdpError;
 
-/// Carries a single fully-framed ODP message over the wire.
+/// Carries fully-framed ODP messages over an arbitrary medium.
 ///
-/// Implementations encapsulate any MCTP framing internally. The public
-/// surface is bytes only — callers do not need to know whether the
-/// underlying transport is MCTP-over-serial, MCTP-over-eSPI, or anything
-/// else. This is the seam that lets us swap transports without rewriting
-/// callers.
+/// Implementations own the underlying medium and any framing. Callers
+/// hand in raw ODP wire bytes (header + body) and receive raw ODP wire
+/// bytes back — they do not need to know what is underneath. This is the
+/// seam that lets transports be swapped without rewriting callers.
 pub trait OdpTransport {
     /// Send one fully-framed ODP message (header + body, wire bytes).
-    ///
-    /// Returns once the message has been handed to the transport.
     fn send_message(&mut self, payload: &[u8]) -> Result<(), OdpError>;
 
-    /// Receive one fully-framed ODP message into `buf`.
-    ///
-    /// Returns the number of bytes written. Returns
-    /// `OdpError::BufferTooSmall` if `buf` cannot hold the entire message.
+    /// Receive one fully-framed ODP message into `buf`. Returns the number
+    /// of bytes written, or [`OdpError::BufferTooSmall`] if `buf` cannot
+    /// hold the entire message.
     fn recv_message(&mut self, buf: &mut [u8]) -> Result<usize, OdpError>;
 }

@@ -1,5 +1,5 @@
 use mctp_rs::{EC_EID, SP_EID};
-use odp_client::{MctpSerialTransport, OdpTransport};
+use odp_client::{OdpTransport, SerialTransport};
 
 struct LoopbackUart {
     buf: Vec<u8>,
@@ -43,18 +43,17 @@ impl embedded_io::Write for LoopbackUart {
 }
 
 #[test]
-fn mctp_serial_transport_round_trips_one_message() {
-    // The transport encapsulates MCTP framing. We hand in ODP wire
-    // bytes (4-byte header + body), the transport MCTP-frames them
-    // before writing to the UART. On read, the transport reads the
-    // serial frame, MCTP-strips, and returns the original ODP bytes.
+fn serial_transport_round_trips_one_message() {
+    // Hand in ODP wire bytes (4-byte header + body); the transport
+    // frames them before writing to the UART and strips the framing
+    // on read, returning the original ODP bytes.
     let uart = LoopbackUart::new();
-    let mut t = MctpSerialTransport::new(uart, SP_EID, EC_EID);
+    let mut t = SerialTransport::new(uart, SP_EID, EC_EID);
 
     // Arbitrary 6 bytes: first 4 are the OdpHeader byte pattern, last 2
-    // are the body. The transport does NOT semantically validate the
-    // header — it just blits bytes — so we can use a service-id (0x55)
-    // that isn't a real OdpService variant.
+    // are the body. The transport does not semantically validate the
+    // header — it just blits bytes — so a service-id (0x55) that is not a
+    // real OdpService variant works here.
     let payload = [0x01u8, 0x55, 0x00, 0x00, 0xDE, 0xAD];
     t.send_message(&payload).unwrap();
 
@@ -64,14 +63,11 @@ fn mctp_serial_transport_round_trips_one_message() {
 }
 
 #[test]
-fn mctp_serial_transport_send_with_too_short_payload_errors() {
-    // Header is 4 bytes; payload < 4 has no valid header bytes to
-    // wrap. The transport should reject it.
+fn serial_transport_send_with_too_short_payload_errors() {
+    // Header is 4 bytes; a payload shorter than that has no valid
+    // header bytes to wrap and must be rejected.
     let uart = LoopbackUart::new();
-    let mut t = MctpSerialTransport::new(uart, SP_EID, EC_EID);
+    let mut t = SerialTransport::new(uart, SP_EID, EC_EID);
     let err = t.send_message(&[0x01, 0x02]).unwrap_err();
-    // Any OdpError variant — we just want to prove it doesn't panic
-    // and doesn't silently produce malformed framing. We use BufferTooSmall
-    // semantically (the input doesn't carry a full header).
     assert_eq!(err, odp_client::OdpError::BufferTooSmall);
 }

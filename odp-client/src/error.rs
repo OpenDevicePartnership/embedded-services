@@ -1,11 +1,10 @@
 /// Errors surfaced by the `odp-client` API.
 ///
-/// The transport layer maps lower-level MCTP / framing errors into these
-/// variants so that callers see one consistent error surface and don't have
-/// to depend on `mctp-rs` directly.
+/// Transport implementations map their own lower-level errors into these
+/// variants so callers see one consistent surface.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum OdpError {
-    /// Underlying transport (serial / MCTP framing) reported a failure.
+    /// Underlying transport reported a failure.
     Transport,
     /// Timed out waiting for a response from the peer.
     Timeout,
