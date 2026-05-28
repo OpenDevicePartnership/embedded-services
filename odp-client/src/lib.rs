@@ -6,6 +6,7 @@
 
 pub use mctp_rs::odp::{ODP_MESSAGE_TYPE, OdpHeader, OdpMessage, OdpService};
 pub use error::OdpError;
+pub use transport::OdpTransport;
 
 mod client;
 mod error;
