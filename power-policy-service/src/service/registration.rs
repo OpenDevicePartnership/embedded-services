@@ -1,12 +1,12 @@
 //! Code related to registration with the power policy service.
 
-use embedded_services::{event::Sender, sync::Lockable};
+use embedded_services::{event::NonBlockingSender, sync::Lockable};
 use power_policy_interface::{charger, psu, service::event::Event as ServiceEvent};
 
 /// Registration trait that abstracts over various registration details.
 pub trait Registration<'device> {
     type Psu: Lockable<Inner: psu::Psu> + 'device;
-    type ServiceSender: Sender<ServiceEvent<'device, Self::Psu>>;
+    type ServiceSender: NonBlockingSender<ServiceEvent<'device, Self::Psu>>;
     type Charger: Lockable<Inner: charger::Charger> + 'device;
 
     /// Returns a slice to access PSU devices
@@ -22,7 +22,7 @@ pub struct ArrayRegistration<
     'device,
     Psu: Lockable<Inner: psu::Psu> + 'device,
     const PSU_COUNT: usize,
-    ServiceSender: Sender<ServiceEvent<'device, Psu>>,
+    ServiceSender: NonBlockingSender<ServiceEvent<'device, Psu>>,
     const SERVICE_SENDER_COUNT: usize,
     Charger: Lockable<Inner: charger::Charger> + 'device,
     const CHARGER_COUNT: usize,
@@ -39,7 +39,7 @@ impl<
     'device,
     Psu: Lockable<Inner: psu::Psu> + 'device,
     const PSU_COUNT: usize,
-    ServiceSender: Sender<ServiceEvent<'device, Psu>>,
+    ServiceSender: NonBlockingSender<ServiceEvent<'device, Psu>>,
     const SERVICE_SENDER_COUNT: usize,
     Charger: Lockable<Inner: charger::Charger> + 'device,
     const CHARGER_COUNT: usize,

@@ -7,8 +7,9 @@ pub mod provider;
 pub mod registration;
 pub mod task;
 
+use embedded_services::error;
 use embedded_services::named::Named;
-use embedded_services::{event::Sender, info, sync::Lockable, trace};
+use embedded_services::{event::NonBlockingSender, info, sync::Lockable, trace};
 
 use power_policy_interface::charger::{Charger, PsuState};
 use power_policy_interface::{
@@ -137,9 +138,11 @@ impl<'device, Reg: Registration<'device>> Service<'device, Reg> {
     }
 
     /// Send an event to all registered listeners
-    async fn broadcast_event(&mut self, event: ServiceEvent<'device, Reg::Psu>) {
+    fn broadcast_event(&mut self, event: ServiceEvent<'device, Reg::Psu>) {
         for sender in self.registration.event_senders() {
-            sender.send(event).await;
+            if sender.try_send(event).is_none() {
+                error!("Failed to send event to listener");
+            }
         }
     }
 

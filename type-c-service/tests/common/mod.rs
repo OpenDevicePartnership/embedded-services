@@ -1,7 +1,7 @@
 use std::mem::ManuallyDrop;
 
 use embassy_futures::{
-    join::{join, join3},
+    join::join3,
     select::{Either, select},
 };
 use embassy_sync::{
@@ -11,7 +11,7 @@ use embassy_sync::{
     watch,
 };
 use embassy_time::{Duration, with_timeout};
-use embedded_services::{GlobalRawMutex, event::Sender};
+use embedded_services::{GlobalRawMutex, event::NonBlockingSender};
 use embedded_usb_pd::LocalPortId;
 use paste::paste;
 use power_policy_interface::charger::mock::NoopCharger;
@@ -198,7 +198,7 @@ pub struct PowerPolicyServiceEventRouter<'port, 'ch> {
     type_c_sender: DynamicSender<'ch, power_policy_interface::service::event::EventData>,
 }
 
-impl<'port, 'ch> Sender<power_policy_interface::service::event::Event<'port, PortMutexType<'port, 'ch>>>
+impl<'port, 'ch> NonBlockingSender<power_policy_interface::service::event::Event<'port, PortMutexType<'port, 'ch>>>
     for PowerPolicyServiceEventRouter<'port, 'ch>
 {
     fn try_send(
@@ -207,10 +207,6 @@ impl<'port, 'ch> Sender<power_policy_interface::service::event::Event<'port, Por
     ) -> Option<()> {
         self.test_sender.try_send(event).ok()?;
         self.type_c_sender.try_send(event.into()).ok()
-    }
-
-    async fn send(&mut self, event: power_policy_interface::service::event::Event<'port, PortMutexType<'port, 'ch>>) {
-        join(self.test_sender.send(event), self.type_c_sender.send(event.into())).await;
     }
 }
 

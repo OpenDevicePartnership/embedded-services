@@ -3,7 +3,8 @@ use core::array;
 use core::future::pending;
 use embassy_futures::select::{Either, select};
 use embassy_time::Timer;
-use embedded_services::event::{Receiver, Sender};
+use embedded_services::error;
+use embedded_services::event::{NonBlockingSender, Receiver};
 use embedded_services::sync::Lockable;
 
 use crate::PortEventStreamer;
@@ -18,12 +19,12 @@ pub trait InterruptReceiver<const N: usize> {
 }
 
 /// Struct to send received interrupts to their corresponding port receivers
-pub struct PortEventSplitter<const N: usize, S: Sender<PortEventBitfield>> {
+pub struct PortEventSplitter<const N: usize, S: NonBlockingSender<PortEventBitfield>> {
     /// Senders to forward port events to their corresponding port receivers
     sender: [S; N],
 }
 
-impl<const N: usize, S: Sender<PortEventBitfield>> PortEventSplitter<N, S> {
+impl<const N: usize, S: NonBlockingSender<PortEventBitfield>> PortEventSplitter<N, S> {
     /// Create a new instance
     pub fn new(sender: [S; N]) -> Self {
         Self { sender }
@@ -32,8 +33,8 @@ impl<const N: usize, S: Sender<PortEventBitfield>> PortEventSplitter<N, S> {
     /// Wait for the next interrupt event and forward it to the corresponding port receiver.
     pub async fn process_interrupts(&mut self, interrupts: [PortEventBitfield; N]) {
         for (interrupt, sender) in interrupts.into_iter().zip(self.sender.iter_mut()) {
-            if interrupt != PortEventBitfield::none() {
-                sender.send(interrupt).await;
+            if interrupt != PortEventBitfield::none() && sender.try_send(interrupt).is_none() {
+                error!("Failed to send port event");
             }
         }
     }

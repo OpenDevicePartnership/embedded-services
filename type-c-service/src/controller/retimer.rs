@@ -1,5 +1,5 @@
 //! Retimer port trait implementation
-use embedded_services::{event::Sender, sync::Lockable};
+use embedded_services::{event::NonBlockingSender, sync::Lockable};
 use embedded_usb_pd::PdError;
 use type_c_interface::control::retimer::RetimerFwUpdateState;
 use type_c_interface::controller::retimer::Retimer;
@@ -11,9 +11,9 @@ impl<
     'device,
     C: Lockable<Inner: Pd + Retimer>,
     Shared: Lockable<Inner = SharedState>,
-    TypeCSender: Sender<type_c_interface::service::event::PortEventData>,
-    PowerSender: Sender<power_policy_interface::psu::event::EventData>,
-    LoopbackSender: Sender<event::Loopback>,
+    TypeCSender: NonBlockingSender<type_c_interface::service::event::PortEventData>,
+    PowerSender: NonBlockingSender<power_policy_interface::psu::event::EventData>,
+    LoopbackSender: NonBlockingSender<event::Loopback>,
 > type_c_interface::port::retimer::Retimer for Port<'device, C, Shared, TypeCSender, PowerSender, LoopbackSender>
 {
     async fn get_rt_fw_update_status(&mut self) -> Result<RetimerFwUpdateState, PdError> {

@@ -1,21 +1,27 @@
 //! Common traits for event senders and receivers
-use core::{future::ready, marker::PhantomData};
+use core::marker::PhantomData;
 
 use crate::error;
 
 use embassy_sync::{
     blocking_mutex::raw::RawMutex,
     channel::{DynamicReceiver, DynamicSender, Receiver as ChannelReceiver, Sender as ChannelSender},
-    pubsub::{DynImmediatePublisher, DynSubscriber, WaitResult},
+    pubsub::{DynImmediatePublisher, DynPublisher, DynSubscriber, WaitResult},
 };
 
 /// Common event sender trait
-pub trait Sender<E> {
+pub trait NonBlockingSender<E> {
     /// Attempt to send an event
     ///
-    /// Return none if the event cannot currently be sent
+    /// Return none if sending the event would block.
     fn try_send(&mut self, event: E) -> Option<()>;
+}
+
+/// A sender that can block
+pub trait Sender<E>: NonBlockingSender<E> {
     /// Send an event
+    ///
+    /// This blocks if the event cannot be sent immediately.
     fn send(&mut self, event: E) -> impl Future<Output = ()>;
 }
 
@@ -29,11 +35,22 @@ pub trait Receiver<E> {
     fn wait_next(&mut self) -> impl Future<Output = E>;
 }
 
-impl<E> Sender<E> for DynamicSender<'_, E> {
+/// Enum for receivers that can receive immediate events
+#[derive(Clone)]
+pub enum ImmediateEvent<E> {
+    /// Event
+    Event(E),
+    /// Lagged events
+    Lagged(u64),
+}
+
+impl<E> NonBlockingSender<E> for DynamicSender<'_, E> {
     fn try_send(&mut self, event: E) -> Option<()> {
         DynamicSender::try_send(self, event).ok()
     }
+}
 
+impl<E> Sender<E> for DynamicSender<'_, E> {
     fn send(&mut self, event: E) -> impl Future<Output = ()> {
         DynamicSender::send(self, event)
     }
@@ -49,14 +66,22 @@ impl<E> Receiver<E> for DynamicReceiver<'_, E> {
     }
 }
 
-impl<E: Clone> Sender<E> for DynImmediatePublisher<'_, E> {
+impl<E: Clone> NonBlockingSender<E> for DynImmediatePublisher<'_, E> {
+    fn try_send(&mut self, event: E) -> Option<()> {
+        self.publish_immediate(event);
+        Some(())
+    }
+}
+
+impl<E: Clone> NonBlockingSender<E> for DynPublisher<'_, E> {
     fn try_send(&mut self, event: E) -> Option<()> {
         self.try_publish(event).ok()
     }
+}
 
+impl<E: Clone> Sender<E> for DynPublisher<'_, E> {
     fn send(&mut self, event: E) -> impl Future<Output = ()> {
-        self.publish_immediate(event);
-        ready(())
+        self.publish(event)
     }
 }
 
@@ -85,11 +110,30 @@ impl<E: Clone> Receiver<E> for DynSubscriber<'_, E> {
     }
 }
 
-impl<M: RawMutex, E, const N: usize> Sender<E> for ChannelSender<'_, M, E, N> {
+impl<E: Clone> Receiver<ImmediateEvent<E>> for DynSubscriber<'_, E> {
+    fn try_next(&mut self) -> Option<ImmediateEvent<E>> {
+        match self.try_next_message() {
+            Some(WaitResult::Message(e)) => Some(ImmediateEvent::Event(e)),
+            Some(WaitResult::Lagged(e)) => Some(ImmediateEvent::Lagged(e)),
+            _ => None,
+        }
+    }
+
+    async fn wait_next(&mut self) -> ImmediateEvent<E> {
+        match self.next_message().await {
+            WaitResult::Message(e) => ImmediateEvent::Event(e),
+            WaitResult::Lagged(e) => ImmediateEvent::Lagged(e),
+        }
+    }
+}
+
+impl<M: RawMutex, E, const N: usize> NonBlockingSender<E> for ChannelSender<'_, M, E, N> {
     fn try_send(&mut self, event: E) -> Option<()> {
         ChannelSender::try_send(self, event).ok()
     }
+}
 
+impl<M: RawMutex, E, const N: usize> Sender<E> for ChannelSender<'_, M, E, N> {
     fn send(&mut self, event: E) -> impl Future<Output = ()> {
         ChannelSender::send(self, event)
     }
@@ -108,22 +152,24 @@ impl<M: RawMutex, E, const N: usize> Receiver<E> for ChannelReceiver<'_, M, E, N
 /// A sender that discards all events sent to it.
 pub struct NoopSender;
 
-impl<E> Sender<E> for NoopSender {
+impl<E> NonBlockingSender<E> for NoopSender {
     fn try_send(&mut self, _event: E) -> Option<()> {
         Some(())
     }
+}
 
+impl<E> Sender<E> for NoopSender {
     async fn send(&mut self, _event: E) {}
 }
 
 /// Applies a function on events before passing them to the wrapped sender
-pub struct MapSender<I, O, S: Sender<O>, F: FnMut(I) -> O> {
+pub struct MapSender<I, O, S: NonBlockingSender<O>, F: FnMut(I) -> O> {
     sender: S,
     map_fn: F,
     _phantom: PhantomData<(I, O)>,
 }
 
-impl<I, O, S: Sender<O>, F: FnMut(I) -> O> MapSender<I, O, S, F> {
+impl<I, O, S: NonBlockingSender<O>, F: FnMut(I) -> O> MapSender<I, O, S, F> {
     /// Create a new self
     pub fn new(sender: S, map_fn: F) -> Self {
         Self {
@@ -134,11 +180,13 @@ impl<I, O, S: Sender<O>, F: FnMut(I) -> O> MapSender<I, O, S, F> {
     }
 }
 
-impl<I, O, S: Sender<O>, F: FnMut(I) -> O> Sender<I> for MapSender<I, O, S, F> {
+impl<I, O, S: NonBlockingSender<O>, F: FnMut(I) -> O> NonBlockingSender<I> for MapSender<I, O, S, F> {
     fn try_send(&mut self, event: I) -> Option<()> {
         self.sender.try_send((self.map_fn)(event))
     }
+}
 
+impl<I, O, S: Sender<O>, F: FnMut(I) -> O> Sender<I> for MapSender<I, O, S, F> {
     fn send(&mut self, event: I) -> impl Future<Output = ()> {
         self.sender.send((self.map_fn)(event))
     }

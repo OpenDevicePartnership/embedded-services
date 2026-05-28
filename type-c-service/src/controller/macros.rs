@@ -1,5 +1,5 @@
 use embedded_services::{
-    event::{Receiver, Sender},
+    event::{NonBlockingSender, Receiver},
     sync::Lockable,
 };
 use type_c_interface::port::event::PortEventBitfield;
@@ -20,7 +20,7 @@ pub struct PortComponents<
     PowerPolicyReceveiver: Receiver<power_policy_interface::psu::event::EventData>,
     LoopbackReceiver: Receiver<crate::controller::event::Loopback>,
     InterruptReceiver: Receiver<PortEventBitfield>,
-    InterruptSender: Sender<PortEventBitfield>,
+    InterruptSender: NonBlockingSender<PortEventBitfield>,
 > {
     /// Port instance
     pub port: &'a Port,

@@ -1,6 +1,6 @@
 //! Code related to registration with the type-C service
 
-use embedded_services::{event::Sender, sync::Lockable};
+use embedded_services::{event::NonBlockingSender, sync::Lockable};
 use embedded_usb_pd::{GlobalPortId, LocalPortId};
 use type_c_interface::port::pd::Pd;
 use type_c_interface::service::event::Event as ServiceEvent;
@@ -9,7 +9,7 @@ use type_c_interface::ucsi::Lpm as UcsiLpm;
 /// Registration trait that abstracts over various registration details.
 pub trait Registration<'port> {
     type Port: Lockable<Inner: Pd + UcsiLpm> + 'port;
-    type ServiceSender: Sender<ServiceEvent<'port, Self::Port>>;
+    type ServiceSender: NonBlockingSender<ServiceEvent<'port, Self::Port>>;
 
     /// Returns a slice to access ports
     fn ports(&self) -> &[&'port Self::Port];
@@ -29,7 +29,7 @@ pub struct ArrayRegistration<
     'port,
     Port: Lockable<Inner: Pd + UcsiLpm> + 'port,
     const PORT_COUNT: usize,
-    ServiceSender: Sender<ServiceEvent<'port, Port>>,
+    ServiceSender: NonBlockingSender<ServiceEvent<'port, Port>>,
     const SERVICE_SENDER_COUNT: usize,
 > {
     /// Array of registered ports
@@ -44,7 +44,7 @@ impl<
     'port,
     Port: Lockable<Inner: Pd + UcsiLpm> + 'port,
     const PORT_COUNT: usize,
-    ServiceSender: Sender<ServiceEvent<'port, Port>>,
+    ServiceSender: NonBlockingSender<ServiceEvent<'port, Port>>,
     const SERVICE_SENDER_COUNT: usize,
 > Registration<'port> for ArrayRegistration<'port, Port, PORT_COUNT, ServiceSender, SERVICE_SENDER_COUNT>
 {

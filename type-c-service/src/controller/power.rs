@@ -1,6 +1,6 @@
 //! Module for power policy related functionality
 use embassy_time::{Duration, Instant};
-use embedded_services::{debug, error, event::Sender, info, sync::Lockable};
+use embedded_services::{debug, error, event::NonBlockingSender, info, sync::Lockable};
 use embedded_usb_pd::{
     PdError,
     constants::{T_PS_TRANSITION_EPR_MS, T_PS_TRANSITION_SPR_MS},
@@ -19,9 +19,9 @@ impl<
     'device,
     C: Lockable<Inner: Pd>,
     Shared: Lockable<Inner = SharedState>,
-    TypeCSender: Sender<type_c_interface::service::event::PortEventData>,
-    PowerSender: Sender<power_policy_interface::psu::event::EventData>,
-    LoopbackSender: Sender<event::Loopback>,
+    TypeCSender: NonBlockingSender<type_c_interface::service::event::PortEventData>,
+    PowerSender: NonBlockingSender<power_policy_interface::psu::event::EventData>,
+    LoopbackSender: NonBlockingSender<event::Loopback>,
 > Port<'device, C, Shared, TypeCSender, PowerSender, LoopbackSender>
 {
     /// Handle a new contract as consumer
@@ -43,9 +43,13 @@ impl<
             error!("Failed to update consumer power capability: {:?}", e);
             return Err(PdError::Failed);
         }
-        self.power_policy_sender
-            .send(power_policy_interface::psu::event::EventData::UpdatedConsumerCapability(available_sink_contract))
-            .await;
+        if self
+            .power_policy_sender
+            .try_send(power_policy_interface::psu::event::EventData::UpdatedConsumerCapability(available_sink_contract))
+            .is_none()
+        {
+            error!("Failed to send updated consumer capability event");
+        }
         Ok(())
     }
 
@@ -61,9 +65,13 @@ impl<
             error!("Failed to update requested provider power capability: {:?}", e);
             return Err(PdError::Failed);
         }
-        self.power_policy_sender
-            .send(power_policy_interface::psu::event::EventData::RequestedProviderCapability(capability))
-            .await;
+        if self
+            .power_policy_sender
+            .try_send(power_policy_interface::psu::event::EventData::RequestedProviderCapability(capability))
+            .is_none()
+        {
+            error!("Failed to send requested provider capability event");
+        }
         Ok(())
     }
 
@@ -115,9 +123,9 @@ impl<
     'device,
     C: Lockable<Inner: Pd>,
     Shared: Lockable<Inner = SharedState>,
-    TypeCSender: Sender<type_c_interface::service::event::PortEventData>,
-    PowerSender: Sender<power_policy_interface::psu::event::EventData>,
-    LoopbackSender: Sender<event::Loopback>,
+    TypeCSender: NonBlockingSender<type_c_interface::service::event::PortEventData>,
+    PowerSender: NonBlockingSender<power_policy_interface::psu::event::EventData>,
+    LoopbackSender: NonBlockingSender<event::Loopback>,
 > Psu for Port<'device, C, Shared, TypeCSender, PowerSender, LoopbackSender>
 {
     async fn disconnect(&mut self) -> Result<(), PsuError> {
@@ -171,9 +179,9 @@ impl<
     'device,
     C: Lockable<Inner: Pd + SystemPowerStateStatus>,
     Shared: Lockable<Inner = SharedState>,
-    TypeCSender: Sender<type_c_interface::service::event::PortEventData>,
-    PowerSender: Sender<power_policy_interface::psu::event::EventData>,
-    LoopbackSender: Sender<event::Loopback>,
+    TypeCSender: NonBlockingSender<type_c_interface::service::event::PortEventData>,
+    PowerSender: NonBlockingSender<power_policy_interface::psu::event::EventData>,
+    LoopbackSender: NonBlockingSender<event::Loopback>,
 > type_c_interface::port::power::SystemPowerStateStatus
     for Port<'device, C, Shared, TypeCSender, PowerSender, LoopbackSender>
 {

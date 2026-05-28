@@ -1,7 +1,7 @@
 use core::marker::PhantomData;
 use core::ptr;
 
-use embedded_services::event::Sender as _;
+use embedded_services::event::NonBlockingSender as _;
 use embedded_services::named::Named as _;
 use embedded_services::sync::Lockable;
 use embedded_services::{debug, error, info, trace};
@@ -75,9 +75,11 @@ impl<'port, Reg: Registration<'port>> Service<'port, Reg> {
     }
 
     /// Send an event to all registered listeners
-    async fn broadcast_event(&mut self, event: ServiceEvent<'port, Reg::Port>) {
+    fn broadcast_event(&mut self, event: ServiceEvent<'port, Reg::Port>) {
         for sender in self.registration.event_senders() {
-            sender.send(event.clone()).await;
+            if sender.try_send(event.clone()).is_none() {
+                error!("Failed to send event to listener");
+            }
         }
     }
 
@@ -109,8 +111,7 @@ impl<'port, Reg: Registration<'port>> Service<'port, Reg> {
                 event: EventData::DebugAccessory(DebugAccessoryData {
                     connected: new_status.is_connected(),
                 }),
-            })
-            .await;
+            });
         }
 
         self.handle_ucsi_port_event(port, GlobalPortId(self.get_port_index(port)? as u8), event, &new_status)

@@ -2,7 +2,7 @@
 #![allow(dead_code)]
 use embassy_sync::{channel, mutex::Mutex, signal::Signal};
 use embedded_batteries_async::charger::{MilliAmps, MilliVolts};
-use embedded_services::{GlobalRawMutex, event::Sender, info, named::Named};
+use embedded_services::{GlobalRawMutex, event::NonBlockingSender, info, named::Named};
 use power_policy_interface::{
     capability::{ConsumerPowerCapability, PowerCapability, ProviderFlags, ProviderPowerCapability},
     charger,
@@ -18,7 +18,7 @@ pub enum FnCall {
     Reset,
 }
 
-pub struct Mock<'a, S: Sender<EventData>> {
+pub struct Mock<'a, S: NonBlockingSender<EventData>> {
     sender: S,
     fn_call: &'a Signal<GlobalRawMutex, (usize, FnCall)>,
     // Internal state
@@ -26,7 +26,7 @@ pub struct Mock<'a, S: Sender<EventData>> {
     name: &'static str,
 }
 
-impl<'a, S: Sender<EventData>> Mock<'a, S> {
+impl<'a, S: NonBlockingSender<EventData>> Mock<'a, S> {
     pub fn new(name: &'static str, sender: S, fn_call: &'a Signal<GlobalRawMutex, (usize, FnCall)>) -> Self {
         Self {
             name,
@@ -47,21 +47,21 @@ impl<'a, S: Sender<EventData>> Mock<'a, S> {
 
     pub async fn simulate_consumer_connection(&mut self, capability: ConsumerPowerCapability) {
         self.state.attach().unwrap();
-        self.sender.send(EventData::Attached).await;
+        self.sender.try_send(EventData::Attached).unwrap();
         self.state.update_consumer_power_capability(Some(capability)).unwrap();
         self.sender
-            .send(EventData::UpdatedConsumerCapability(Some(capability)))
-            .await;
+            .try_send(EventData::UpdatedConsumerCapability(Some(capability)))
+            .unwrap();
     }
 
     pub async fn simulate_detach(&mut self) {
         self.state.detach();
-        self.sender.send(EventData::Detached).await;
+        self.sender.try_send(EventData::Detached).unwrap();
     }
 
     pub async fn simulate_provider_connection(&mut self, capability: PowerCapability) {
         self.state.attach().unwrap();
-        self.sender.send(EventData::Attached).await;
+        self.sender.try_send(EventData::Attached).unwrap();
 
         let capability = Some(ProviderPowerCapability {
             capability,
@@ -71,13 +71,13 @@ impl<'a, S: Sender<EventData>> Mock<'a, S> {
             .update_requested_provider_power_capability(capability)
             .unwrap();
         self.sender
-            .send(EventData::RequestedProviderCapability(capability))
-            .await;
+            .try_send(EventData::RequestedProviderCapability(capability))
+            .unwrap();
     }
 
     pub async fn simulate_disconnect(&mut self) {
         self.state.disconnect(true).unwrap();
-        self.sender.send(EventData::Disconnected).await;
+        self.sender.try_send(EventData::Disconnected).unwrap();
     }
 
     pub async fn simulate_update_requested_provider_power_capability(
@@ -88,12 +88,12 @@ impl<'a, S: Sender<EventData>> Mock<'a, S> {
             .update_requested_provider_power_capability(capability)
             .unwrap();
         self.sender
-            .send(power_policy_interface::psu::event::EventData::RequestedProviderCapability(capability))
-            .await
+            .try_send(power_policy_interface::psu::event::EventData::RequestedProviderCapability(capability))
+            .unwrap();
     }
 }
 
-impl<'a, S: Sender<EventData>> Psu for Mock<'a, S> {
+impl<'a, S: NonBlockingSender<EventData>> Psu for Mock<'a, S> {
     async fn connect_consumer(&mut self, capability: ConsumerPowerCapability) -> Result<(), Error> {
         info!("Connect consumer {:#?}", capability);
         self.record_fn_call(FnCall::ConnectConsumer(capability));
@@ -121,7 +121,7 @@ impl<'a, S: Sender<EventData>> Psu for Mock<'a, S> {
     }
 }
 
-impl<'a, S: Sender<EventData>> Named for Mock<'a, S> {
+impl<'a, S: NonBlockingSender<EventData>> Named for Mock<'a, S> {
     fn name(&self) -> &'static str {
         self.name
     }
@@ -146,7 +146,9 @@ impl<'a> ExampleCharger<'a> {
     }
 
     pub async fn simulate_psu_state_change(&self, psu_state: charger::PsuState) {
-        self.sender.send(charger::EventData::PsuStateChange(psu_state)).await;
+        self.sender
+            .try_send(charger::EventData::PsuStateChange(psu_state))
+            .unwrap();
     }
 }
 

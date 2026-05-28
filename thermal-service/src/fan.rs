@@ -5,7 +5,7 @@ use embassy_sync::signal::Signal;
 use embassy_time::{Duration, Timer};
 use embedded_fans_async::Error as _;
 use embedded_sensors_hal_async::temperature::DegreesCelsius;
-use embedded_services::event::Sender;
+use embedded_services::event::NonBlockingSender;
 use embedded_services::{GlobalRawMutex, error, trace};
 use thermal_service_interface::{fan, sensor};
 
@@ -102,14 +102,20 @@ impl<T: fan::Driver, const SAMPLE_BUF_LEN: usize> ServiceInner<T, SAMPLE_BUF_LEN
 }
 
 /// Fan service control handle.
-pub struct Service<'hw, T: fan::Driver, S: sensor::SensorService, E: Sender<fan::Event>, const SAMPLE_BUF_LEN: usize> {
+pub struct Service<
+    'hw,
+    T: fan::Driver,
+    S: sensor::SensorService,
+    E: NonBlockingSender<fan::Event>,
+    const SAMPLE_BUF_LEN: usize,
+> {
     inner: &'hw ServiceInner<T, SAMPLE_BUF_LEN>,
     _phantom: PhantomData<(S, E)>,
 }
 
 // Note: We can't derive these traits because the compiler thinks our generics then need to be Copy + Clone,
 // but we only hold a reference and don't actually need to be that strict
-impl<T: fan::Driver, S: sensor::SensorService, E: Sender<fan::Event>, const SAMPLE_BUF_LEN: usize> Clone
+impl<T: fan::Driver, S: sensor::SensorService, E: NonBlockingSender<fan::Event>, const SAMPLE_BUF_LEN: usize> Clone
     for Service<'_, T, S, E, SAMPLE_BUF_LEN>
 {
     fn clone(&self) -> Self {
@@ -117,13 +123,13 @@ impl<T: fan::Driver, S: sensor::SensorService, E: Sender<fan::Event>, const SAMP
     }
 }
 
-impl<T: fan::Driver, S: sensor::SensorService, E: Sender<fan::Event>, const SAMPLE_BUF_LEN: usize> Copy
+impl<T: fan::Driver, S: sensor::SensorService, E: NonBlockingSender<fan::Event>, const SAMPLE_BUF_LEN: usize> Copy
     for Service<'_, T, S, E, SAMPLE_BUF_LEN>
 {
 }
 
-impl<'hw, T: fan::Driver, S: sensor::SensorService, E: Sender<fan::Event>, const SAMPLE_BUF_LEN: usize> fan::FanService
-    for Service<'hw, T, S, E, SAMPLE_BUF_LEN>
+impl<'hw, T: fan::Driver, S: sensor::SensorService, E: NonBlockingSender<fan::Event>, const SAMPLE_BUF_LEN: usize>
+    fan::FanService for Service<'hw, T, S, E, SAMPLE_BUF_LEN>
 {
     async fn enable_auto_control(&self) -> Result<(), fan::Error> {
         self.inner.change_state(fan::State::Off).await?;
@@ -222,7 +228,7 @@ impl<'hw, T: fan::Driver, S: sensor::SensorService, E: Sender<fan::Event>, const
 }
 
 /// Parameters required to initialize a fan service.
-pub struct InitParams<'hw, T: fan::Driver, S: sensor::SensorService, E: Sender<fan::Event>> {
+pub struct InitParams<'hw, T: fan::Driver, S: sensor::SensorService, E: NonBlockingSender<fan::Event>> {
     /// The underlying fan driver this service will control.
     pub driver: T,
     /// Initial configuration for the fan service.
@@ -247,18 +253,26 @@ impl<T: fan::Driver, const SAMPLE_BUF_LEN: usize> Default for Resources<T, SAMPL
 }
 
 /// A task runner for a fan. Users must run this in an embassy task or similar async execution context.
-pub struct Runner<'hw, T: fan::Driver, S: sensor::SensorService, E: Sender<fan::Event>, const SAMPLE_BUF_LEN: usize> {
+pub struct Runner<
+    'hw,
+    T: fan::Driver,
+    S: sensor::SensorService,
+    E: NonBlockingSender<fan::Event>,
+    const SAMPLE_BUF_LEN: usize,
+> {
     service: &'hw ServiceInner<T, SAMPLE_BUF_LEN>,
     sensor: S,
     event_senders: &'hw mut [E],
 }
 
-impl<'hw, T: fan::Driver, S: sensor::SensorService, E: Sender<fan::Event>, const SAMPLE_BUF_LEN: usize>
+impl<'hw, T: fan::Driver, S: sensor::SensorService, E: NonBlockingSender<fan::Event>, const SAMPLE_BUF_LEN: usize>
     Runner<'hw, T, S, E, SAMPLE_BUF_LEN>
 {
-    async fn broadcast_event(&mut self, event: fan::Event) {
+    fn broadcast_event(&mut self, event: fan::Event) {
         for sender in self.event_senders.iter_mut() {
-            sender.send(event).await;
+            if sender.try_send(event).is_none() {
+                error!("Failed to send fan event");
+            }
         }
     }
 
@@ -350,7 +364,7 @@ impl<'hw, T: fan::Driver, S: sensor::SensorService, E: Sender<fan::Event>, const
                 if let Err(e) = self.handle_fan_state(temp).await {
                     error!("Error handling fan state transition, disabling auto control: {:?}", e);
                     self.service.config.lock().await.auto_control = false;
-                    self.broadcast_event(fan::Event::Failure(e)).await;
+                    self.broadcast_event(fan::Event::Failure(e));
                 }
 
                 let sleep_duration = self.service.config.lock().await.update_period;
@@ -364,8 +378,13 @@ impl<'hw, T: fan::Driver, S: sensor::SensorService, E: Sender<fan::Event>, const
     }
 }
 
-impl<'hw, T: fan::Driver, S: sensor::SensorService + 'hw, E: Sender<fan::Event> + 'hw, const SAMPLE_BUF_LEN: usize>
-    odp_service_common::runnable_service::ServiceRunner<'hw> for Runner<'hw, T, S, E, SAMPLE_BUF_LEN>
+impl<
+    'hw,
+    T: fan::Driver,
+    S: sensor::SensorService + 'hw,
+    E: NonBlockingSender<fan::Event> + 'hw,
+    const SAMPLE_BUF_LEN: usize,
+> odp_service_common::runnable_service::ServiceRunner<'hw> for Runner<'hw, T, S, E, SAMPLE_BUF_LEN>
 {
     async fn run(mut self) -> embedded_services::Never {
         let service = self.service;
@@ -375,8 +394,13 @@ impl<'hw, T: fan::Driver, S: sensor::SensorService + 'hw, E: Sender<fan::Event> 
     }
 }
 
-impl<'hw, T: fan::Driver, S: sensor::SensorService + 'hw, E: Sender<fan::Event> + 'hw, const SAMPLE_BUF_LEN: usize>
-    odp_service_common::runnable_service::Service<'hw> for Service<'hw, T, S, E, SAMPLE_BUF_LEN>
+impl<
+    'hw,
+    T: fan::Driver,
+    S: sensor::SensorService + 'hw,
+    E: NonBlockingSender<fan::Event> + 'hw,
+    const SAMPLE_BUF_LEN: usize,
+> odp_service_common::runnable_service::Service<'hw> for Service<'hw, T, S, E, SAMPLE_BUF_LEN>
 {
     type Runner = Runner<'hw, T, S, E, SAMPLE_BUF_LEN>;
     type Resources = Resources<T, SAMPLE_BUF_LEN>;
