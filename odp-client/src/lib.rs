@@ -9,6 +9,7 @@ pub use error::OdpError;
 pub use transport::OdpTransport;
 pub use mctp_serial::MctpSerialTransport;
 pub use loopback::LoopbackTransport;
+pub use client::{OdpClient, OdpResponse, Relay};
 
 mod client;
 mod error;
