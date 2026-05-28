@@ -6,6 +6,7 @@
 #![cfg(feature = "odp")]
 
 use bit_register::bit_register;
+use crate::{MctpMedium, MctpMessageHeaderTrait, MctpPacketError, error::MctpPacketResult};
 
 /// MCTP message type byte assigned to ODP traffic.
 pub const ODP_MESSAGE_TYPE: u8 = 0x7D;
@@ -86,6 +87,31 @@ impl OdpHeader {
     }
 }
 
+impl MctpMessageHeaderTrait for OdpHeader {
+    fn serialize<M: MctpMedium>(self, buffer: &mut [u8]) -> MctpPacketResult<usize, M> {
+        if buffer.len() < Self::HEADER_LEN {
+            return Err(MctpPacketError::SerializeError(
+                "buffer too small for ODP header",
+            ));
+        }
+        buffer[..Self::HEADER_LEN].copy_from_slice(&self.to_be_bytes());
+        Ok(Self::HEADER_LEN)
+    }
+
+    fn deserialize<M: MctpMedium>(buffer: &[u8]) -> MctpPacketResult<(Self, &[u8]), M> {
+        if buffer.len() < Self::HEADER_LEN {
+            return Err(MctpPacketError::HeaderParseError(
+                "buffer too small for ODP header",
+            ));
+        }
+        let mut b = [0u8; 4];
+        b.copy_from_slice(&buffer[..Self::HEADER_LEN]);
+        let header = Self::from_be_bytes(b)
+            .map_err(|_| MctpPacketError::HeaderParseError("unknown ODP service id"))?;
+        Ok((header, &buffer[Self::HEADER_LEN..]))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -161,5 +187,24 @@ mod tests {
             OdpHeader::from_be_bytes(bytes),
             Err(UnknownService(0xFF))
         ));
+    }
+
+    #[test]
+    fn odp_header_implements_mctp_message_header_trait() {
+        use crate::test_util::TestMedium;
+        use crate::MctpMessageHeaderTrait;
+
+        let h = OdpHeader {
+            is_request: true,
+            service: OdpService::Battery,
+            is_error: false,
+            message_id: 0x42,
+        };
+        let mut buf = [0u8; 4];
+        let written = h.serialize::<TestMedium>(&mut buf).unwrap();
+        assert_eq!(written, 4);
+        let (parsed, rest) = OdpHeader::deserialize::<TestMedium>(&buf).unwrap();
+        assert_eq!(rest.len(), 0);
+        assert_eq!(parsed, h);
     }
 }
