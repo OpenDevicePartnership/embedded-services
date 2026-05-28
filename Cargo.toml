@@ -99,6 +99,7 @@ fw-update-interface = { path = "./fw-update-interface" }
 fw-update-interface-mocks = { path = "./fw-update-interface-mocks" }
 mctp-rs = { path = "./mctp-rs" }
 num_enum = { version = "0.7.5", default-features = false }
+odp-client = { path = "./odp-client" }
 portable-atomic = { version = "1.11", default-features = false }
 power-policy-interface = { path = "./power-policy-interface" }
 paste = "1.0.15"

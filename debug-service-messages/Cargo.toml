@@ -9,9 +9,10 @@ repository.workspace = true
 defmt = { workspace = true, optional = true }
 embedded-services.workspace = true
 num_enum.workspace = true
+odp-client.workspace = true
 
 [lints]
 workspace = true
 
 [features]
-defmt = ["dep:defmt"]
+defmt = ["dep:defmt", "odp-client/defmt"]

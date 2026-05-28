@@ -17,12 +17,12 @@ impl<T: TimeAlarmService> TimeAlarmServiceRelayHandler<T> {
     }
 }
 
-impl<T: TimeAlarmService> embedded_services::relay::mctp::RelayServiceHandlerTypes for TimeAlarmServiceRelayHandler<T> {
+impl<T: TimeAlarmService> odp_client::server::RelayServiceHandlerTypes for TimeAlarmServiceRelayHandler<T> {
     type RequestType = AcpiTimeAlarmRequest;
     type ResultType = AcpiTimeAlarmResult;
 }
 
-impl<T: TimeAlarmService> embedded_services::relay::mctp::RelayServiceHandler for TimeAlarmServiceRelayHandler<T> {
+impl<T: TimeAlarmService> odp_client::server::RelayServiceHandler for TimeAlarmServiceRelayHandler<T> {
     async fn process_request(&self, request: Self::RequestType) -> Self::ResultType {
         match request {
             AcpiTimeAlarmRequest::GetCapabilities => {

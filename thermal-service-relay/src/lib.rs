@@ -191,12 +191,12 @@ impl<T: ThermalService> ThermalServiceRelayHandler<T> {
     }
 }
 
-impl<T: ThermalService> embedded_services::relay::mctp::RelayServiceHandlerTypes for ThermalServiceRelayHandler<T> {
+impl<T: ThermalService> odp_client::server::RelayServiceHandlerTypes for ThermalServiceRelayHandler<T> {
     type RequestType = ThermalRequest;
     type ResultType = ThermalResult;
 }
 
-impl<T: ThermalService> embedded_services::relay::mctp::RelayServiceHandler for ThermalServiceRelayHandler<T> {
+impl<T: ThermalService> odp_client::server::RelayServiceHandler for ThermalServiceRelayHandler<T> {
     async fn process_request(&self, request: Self::RequestType) -> Self::ResultType {
         match request {
             ThermalRequest::ThermalGetTmpRequest { instance_id } => self.sensor_get_tmp(instance_id).await,

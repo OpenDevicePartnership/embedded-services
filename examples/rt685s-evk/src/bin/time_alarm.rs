@@ -45,8 +45,8 @@ async fn main(spawner: embassy_executor::Spawner) {
     )
     .expect("Failed to spawn time alarm service");
 
-    use embedded_services::relay::mctp::impl_odp_mctp_relay_handler;
-    impl_odp_mctp_relay_handler!(
+    use odp_client::impl_odp_relay_handler;
+    impl_odp_relay_handler!(
         EspiRelayHandler;
         TimeAlarm, 0x0B, crate::TimeAlarmServiceRelayHandlerType;
     );

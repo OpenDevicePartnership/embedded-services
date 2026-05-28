@@ -28,7 +28,12 @@ impl defmt::Format for OdpError {
             OdpError::BufferTooSmall => defmt::write!(f, "OdpError::BufferTooSmall"),
             OdpError::UnexpectedResponseKind => defmt::write!(f, "OdpError::UnexpectedResponseKind"),
             OdpError::UnexpectedMessageId { expected, got } => {
-                defmt::write!(f, "OdpError::UnexpectedMessageId {{ expected: {}, got: {} }}", expected, got)
+                defmt::write!(
+                    f,
+                    "OdpError::UnexpectedMessageId {{ expected: {}, got: {} }}",
+                    expected,
+                    got
+                )
             }
             OdpError::Decode => defmt::write!(f, "OdpError::Decode"),
         }

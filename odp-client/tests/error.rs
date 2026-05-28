@@ -15,7 +15,10 @@ fn odp_error_is_copy_eq_and_debug() {
 
 #[test]
 fn odp_error_unexpected_message_id_carries_expected_and_got() {
-    let e = OdpError::UnexpectedMessageId { expected: 0x1234, got: 0x5678 };
+    let e = OdpError::UnexpectedMessageId {
+        expected: 0x1234,
+        got: 0x5678,
+    };
     match e {
         OdpError::UnexpectedMessageId { expected, got } => {
             assert_eq!(expected, 0x1234);

@@ -22,17 +22,7 @@ pub mod init;
 pub mod ipc;
 pub mod keyboard;
 pub mod named;
-pub mod relay;
 pub mod sync;
-
-/// Hidden re-exports used by macros defined in this crate.
-/// Not part of the public API — do not depend on these directly.
-#[doc(hidden)]
-pub mod _macro_internal {
-    pub use bitfield;
-    pub use mctp_rs;
-    pub use paste;
-}
 
 /// Global Mutex type, ThreadModeRawMutex is used in a microcontroller context, whereas CriticalSectionRawMutex is used
 /// in a standard context for unit testing.

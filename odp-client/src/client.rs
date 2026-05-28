@@ -30,12 +30,7 @@ pub trait Relay {
     /// The parse closure runs inside `invoke` so that the borrow of the
     /// client's internal buffer is confined to the closure scope; any
     /// owned value returned from the closure escapes cleanly.
-    fn invoke<R, F>(
-        &mut self,
-        header: OdpHeader,
-        body: &[u8],
-        parse: F,
-    ) -> Result<R, OdpError>
+    fn invoke<R, F>(&mut self, header: OdpHeader, body: &[u8], parse: F) -> Result<R, OdpError>
     where
         F: FnOnce(OdpResponse<'_>) -> Result<R, OdpError>;
 }
@@ -53,17 +48,15 @@ pub struct OdpClient<T: OdpTransport> {
 impl<T: OdpTransport> OdpClient<T> {
     /// Create a new client, consuming `transport` by value.
     pub fn new(transport: T) -> Self {
-        Self { transport, buf: [0u8; 256] }
+        Self {
+            transport,
+            buf: [0u8; 256],
+        }
     }
 }
 
 impl<T: OdpTransport> Relay for OdpClient<T> {
-    fn invoke<R, F>(
-        &mut self,
-        header: OdpHeader,
-        body: &[u8],
-        parse: F,
-    ) -> Result<R, OdpError>
+    fn invoke<R, F>(&mut self, header: OdpHeader, body: &[u8], parse: F) -> Result<R, OdpError>
     where
         F: FnOnce(OdpResponse<'_>) -> Result<R, OdpError>,
     {
@@ -93,6 +86,9 @@ impl<T: OdpTransport> Relay for OdpClient<T> {
             });
         }
 
-        parse(OdpResponse { header: resp_header, body: &self.buf[4..n] })
+        parse(OdpResponse {
+            header: resp_header,
+            body: &self.buf[4..n],
+        })
     }
 }

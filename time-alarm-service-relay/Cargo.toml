@@ -14,6 +14,7 @@ log = { workspace = true, optional = true }
 embedded-services.workspace = true
 embedded-mcu-hal.workspace = true
 num_enum.workspace = true
+odp-client.workspace = true
 time-alarm-service-interface.workspace = true
 
 [features]
@@ -21,6 +22,7 @@ defmt = [
     "dep:defmt",
     "embedded-mcu-hal/defmt",
     "time-alarm-service-interface/defmt",
+    "odp-client/defmt",
 ]
 log = ["dep:log", "embedded-services/log"]
 

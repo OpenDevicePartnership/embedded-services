@@ -1,9 +1,8 @@
-use crate::{OdpError, OdpTransport, ODP_MESSAGE_TYPE};
+use crate::{ODP_MESSAGE_TYPE, OdpError, OdpTransport};
 use embedded_io::{Read, ReadExactError, Write};
 use mctp_rs::{
-    EndpointId, MctpMedium, MctpMessageHeaderTrait, MctpMessageTag, MctpMessageTrait,
-    MctpPacketContext, MctpPacketError, MctpPacketResult, MctpReplyContext, MctpSequenceNumber,
-    MctpSerialMedium,
+    EndpointId, MctpMedium, MctpMessageHeaderTrait, MctpMessageTag, MctpMessageTrait, MctpPacketContext,
+    MctpPacketError, MctpPacketResult, MctpReplyContext, MctpSequenceNumber, MctpSerialMedium,
 };
 
 /// MCTP serial framing END flag (DSP0253 0x7E).
@@ -149,8 +148,7 @@ impl<U: Read + Write> OdpTransport for MctpSerialTransport<U> {
         }
 
         // 2. MCTP-strip via a fresh PacketContext borrowing assembly_buf.
-        let mut rx_ctx =
-            MctpPacketContext::<MctpSerialMedium>::new(MctpSerialMedium, &mut self.assembly_buf);
+        let mut rx_ctx = MctpPacketContext::<MctpSerialMedium>::new(MctpSerialMedium, &mut self.assembly_buf);
         let message = rx_ctx
             .deserialize_packet(&self.rx_frame_buf[..filled])
             .map_err(|_| OdpError::Decode)?

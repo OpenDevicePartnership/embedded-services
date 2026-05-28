@@ -12,6 +12,7 @@ ignored = ["log"]
 defmt = { workspace = true, optional = true }
 log = { workspace = true, optional = true }
 embedded-services.workspace = true
+odp-client.workspace = true
 num_enum.workspace = true
 
 battery-service-interface.workspace = true
@@ -21,6 +22,7 @@ defmt = [
     "dep:defmt",
     "embedded-services/defmt",
     "battery-service-interface/defmt",
+    "odp-client/defmt",
 ]
 log = ["dep:log", "embedded-services/log", "battery-service-interface/log"]
 
