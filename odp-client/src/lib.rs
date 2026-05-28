@@ -5,6 +5,7 @@
 //! lives in `mctp_rs::odp` and is re-exported here for convenience.
 
 pub use mctp_rs::odp::{ODP_MESSAGE_TYPE, OdpHeader, OdpMessage, OdpService};
+pub use error::OdpError;
 
 mod client;
 mod error;
