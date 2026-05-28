@@ -26,6 +26,7 @@ members = [
     "debug-service-messages",
     "keyboard-service",
     "power-policy-interface",
+    "odp-client",
     "odp-service-common",
     "type-c-interface",
     "fw-update-interface",

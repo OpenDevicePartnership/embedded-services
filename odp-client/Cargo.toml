@@ -1,0 +1,14 @@
+[package]
+name = "odp-client"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Sync ODP MCTP client + async server macro. Hides mctp-rs from consumers."
+
+[features]
+default = []
+defmt = ["mctp-rs/defmt", "dep:defmt"]
+
+[dependencies]
+mctp-rs = { workspace = true, features = ["odp"] }
+defmt = { workspace = true, optional = true }
