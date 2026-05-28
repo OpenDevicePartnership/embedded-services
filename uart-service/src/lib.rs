@@ -15,10 +15,10 @@ use embassy_sync::channel::Channel;
 use embedded_io_async::Read as UartRead;
 use embedded_io_async::Write as UartWrite;
 use embedded_services::GlobalRawMutex;
-use embedded_services::relay::mctp::{RelayHandler, RelayHeader, RelayResponse};
 use embedded_services::trace;
 use mctp_rs::MctpMedium;
 use mctp_rs::smbus_espi::{SmbusEspiMedium, SmbusEspiReplyContext};
+use odp_client::server::{RelayHandler, RelayHeader, RelayResponse};
 
 // Should be as large as the largest possible MCTP packet and its metadata.
 const BUF_SIZE: usize = 256;

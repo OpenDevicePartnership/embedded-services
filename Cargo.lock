@@ -160,6 +160,7 @@ dependencies = [
  "embedded-services",
  "log",
  "num_enum",
+ "odp-client",
 ]
 
 [[package]]
@@ -419,6 +420,7 @@ dependencies = [
  "embassy-sync",
  "embedded-services",
  "log",
+ "odp-client",
  "rtt-target",
 ]
 
@@ -427,8 +429,8 @@ name = "debug-service-messages"
 version = "0.1.0"
 dependencies = [
  "defmt 0.3.100",
- "embedded-services",
  "num_enum",
+ "odp-client",
 ]
 
 [[package]]
@@ -811,15 +813,12 @@ dependencies = [
 name = "embedded-services"
 version = "0.1.0"
 dependencies = [
- "bitfield 0.17.0",
  "cortex-m",
  "critical-section",
  "defmt 0.3.100",
  "embassy-futures",
  "embassy-sync",
  "log",
- "mctp-rs",
- "paste",
  "portable-atomic",
  "serde",
  "static_cell",
@@ -908,6 +907,7 @@ dependencies = [
  "embedded-services",
  "log",
  "mctp-rs",
+ "odp-client",
  "odp-service-common",
 ]
 
@@ -1398,10 +1398,12 @@ dependencies = [
 name = "odp-client"
 version = "0.1.0"
 dependencies = [
+ "bitfield 0.17.0",
  "defmt 0.3.100",
  "embedded-io 0.7.1",
  "heapless 0.9.3",
  "mctp-rs",
+ "paste",
 ]
 
 [[package]]
@@ -1944,8 +1946,8 @@ name = "thermal-service-relay"
 version = "0.1.0"
 dependencies = [
  "defmt 0.3.100",
- "embedded-services",
  "num_enum",
+ "odp-client",
  "thermal-service-interface",
  "uuid",
 ]
@@ -2016,9 +2018,9 @@ version = "0.1.0"
 dependencies = [
  "defmt 0.3.100",
  "embedded-mcu-hal",
- "embedded-services",
  "log",
  "num_enum",
+ "odp-client",
  "time-alarm-service-interface",
 ]
 
@@ -2254,6 +2256,7 @@ dependencies = [
  "embedded-services",
  "log",
  "mctp-rs",
+ "odp-client",
 ]
 
 [[package]]

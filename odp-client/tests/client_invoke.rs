@@ -51,7 +51,10 @@ impl StubTransport {
     fn with_recv(bytes: &[u8]) -> Self {
         let mut buf = [0u8; 64];
         buf[..bytes.len()].copy_from_slice(bytes);
-        Self { recv_bytes: buf, recv_len: bytes.len() }
+        Self {
+            recv_bytes: buf,
+            recv_len: bytes.len(),
+        }
     }
 }
 
@@ -85,11 +88,12 @@ fn invoke_with_mismatched_response_message_id_returns_unexpected() {
         is_error: false,
         message_id: 0x11,
     };
-    let err = client
-        .invoke(req_header, &[], |_| Ok::<(), OdpError>(()))
-        .unwrap_err();
+    let err = client.invoke(req_header, &[], |_| Ok::<(), OdpError>(())).unwrap_err();
     assert_eq!(
         err,
-        OdpError::UnexpectedMessageId { expected: 0x11, got: 0x99 }
+        OdpError::UnexpectedMessageId {
+            expected: 0x11,
+            got: 0x99
+        }
     );
 }

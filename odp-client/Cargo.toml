@@ -10,7 +10,9 @@ default = []
 defmt = ["mctp-rs/defmt", "dep:defmt"]
 
 [dependencies]
+bitfield = { workspace = true }
 defmt = { workspace = true, optional = true }
 embedded-io = { workspace = true }
 heapless = { workspace = true }
-mctp-rs = { workspace = true, features = ["odp", "serial"] }
+mctp-rs = { workspace = true, features = ["odp", "serial", "espi"] }
+paste = { workspace = true }

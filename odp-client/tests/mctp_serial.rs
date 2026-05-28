@@ -8,7 +8,10 @@ struct LoopbackUart {
 
 impl LoopbackUart {
     fn new() -> Self {
-        Self { buf: Vec::new(), cursor: 0 }
+        Self {
+            buf: Vec::new(),
+            cursor: 0,
+        }
     }
 }
 

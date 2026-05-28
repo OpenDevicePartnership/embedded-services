@@ -16,10 +16,11 @@ debug-service-messages.workspace = true
 embassy-sync.workspace = true
 embedded-services.workspace = true
 log.workspace = true
+odp-client.workspace = true
 rtt-target = "0.6.1"
 
 [features]
-defmt = ["debug-service-messages/defmt"]
+defmt = ["debug-service-messages/defmt", "odp-client/defmt"]
 
 [lints]
 workspace = true

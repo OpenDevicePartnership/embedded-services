@@ -1,5 +1,5 @@
 #![no_std]
-use embedded_services::relay::{MessageSerializationError, SerializableMessage};
+use odp_client::{MessageSerializationError, SerializableMessage};
 
 /// Standard Debug Service Log Buffer Size
 pub const STD_DEBUG_BUF_SIZE: usize = 128;
