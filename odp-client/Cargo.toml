@@ -10,5 +10,6 @@ default = []
 defmt = ["mctp-rs/defmt", "dep:defmt"]
 
 [dependencies]
-mctp-rs = { workspace = true, features = ["odp"] }
+mctp-rs = { workspace = true, features = ["odp", "serial"] }
 defmt = { workspace = true, optional = true }
+embedded-io = { workspace = true }
