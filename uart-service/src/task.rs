@@ -49,7 +49,7 @@ pub async fn uart_service<R: RelayHandler, M: MctpMedium + Copy, T: UartRead + U
                 //     warn!("uart-service sent notification for event {}", event);
                 // }
                 //
-                // Where we TX some starter byte(s) to tell host its about to receive a notification,
+                // Where we TX some starter byte(s) to tell host it's about to receive a notification,
                 // then the notification ID itself.
                 //
                 // This is TODO until the whole stack is ready to receive notifications

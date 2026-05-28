@@ -291,7 +291,7 @@ impl<E> Receiver<E> for NeverReceiver<E> {
     }
 }
 
-/// Combines multiple receivers into one by racing them and returning
+/// Combines multiple receivers into one by racing them (with left-bias) and returning
 /// the first event that becomes available mapped to a common event type.
 pub struct MuxReceiver<E, L: Receiver<E>, R: Receiver<E>> {
     left: L,
