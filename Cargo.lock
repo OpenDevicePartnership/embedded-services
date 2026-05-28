@@ -1395,6 +1395,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "odp-client"
+version = "0.1.0"
+dependencies = [
+ "defmt 0.3.100",
+ "embedded-io 0.7.1",
+ "heapless 0.9.3",
+ "mctp-rs",
+]
+
+[[package]]
 name = "odp-service-common"
 version = "0.1.0"
 dependencies = [
