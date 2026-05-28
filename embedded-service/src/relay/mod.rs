@@ -116,6 +116,9 @@ pub mod mctp {
 
         /// The result type that this service handler processes
         type ResultType: super::SerializableResult;
+
+        /// The event type that this service emits.
+        type EventType;
     }
 
     /// Trait for a service that can be relayed over an external bus (e.g. battery service, thermal service, time-alarm service)
@@ -448,6 +451,14 @@ pub mod mctp {
                     }
 
 
+                    /// A common event type wrapper for all relayable service events.
+                    #[derive(Debug)]
+                    pub enum ServiceEvent {
+                        $(
+                            $service_name(<$service_handler_type as $crate::relay::mctp::RelayServiceHandlerTypes>::EventType),
+                        )+
+                    }
+
                     pub struct $relay_type_name {
                         $(
                             [<$service_name:snake _handler>]: $service_handler_type,
@@ -465,6 +476,33 @@ pub mod mctp {
                                     [<$service_name:snake _handler>],
                                 )+
                             }
+                        }
+
+                        /// Build an event multiplexer from the provided relayable services.
+                        ///
+                        /// This is generic over the receiver type used for each service, so callers
+                        /// can decide at the call site which concrete `Receiver<EventType>` impl to
+                        /// supply for each relayed service (e.g. `NeverReceiver`, an embassy channel
+                        /// `Receiver`, a `DynamicReceiver`, or a custom impl).
+                        ///
+                        /// The caller will then need to further filter this event mux to whatever
+                        /// events they consider worth notifying the host about.
+                        ///
+                        /// Lastly, the caller will then need to map the events into a format the
+                        /// relay service understands (e.g. a single u8 for uart-service).
+                        pub fn event_mux<
+                            $(
+                                [<$service_name Rx>]: $crate::event::Receiver<
+                                    <$service_handler_type as $crate::relay::mctp::RelayServiceHandlerTypes>::EventType
+                                >,
+                            )+
+                        >(
+                            $(
+                                [<$service_name:snake _event_rx>]: [<$service_name Rx>],
+                            )+
+                        ) -> impl $crate::event::Receiver<ServiceEvent> {
+                            $crate::event::MuxReceiver::new()
+                                $(.with([<$service_name:snake _event_rx>], ServiceEvent::$service_name))+
                         }
                     }
 
@@ -494,6 +532,7 @@ pub mod mctp {
 
                 // Allows this generated relay type to be publicly re-exported
                 pub use [< _odp_impl_ $relay_type_name:snake >]::$relay_type_name;
+                pub use [< _odp_impl_ $relay_type_name:snake >]::ServiceEvent;
 
             } // end paste!
         }; // end macro arm

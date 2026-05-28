@@ -4,9 +4,6 @@
 //! Use [`DefaultService`] for the SmbusEspi-medium baseline; use
 //! [`Service::new`] directly with another medium (e.g. DSP0253 serial)
 //! for non-SmbusEspi callers.
-//!
-//! Revisit: Will also need to consider how to handle notifications (likely need to have user
-//! provide GPIO pin we can use).
 #![no_std]
 
 pub mod task;
@@ -23,6 +20,27 @@ use mctp_rs::smbus_espi::{SmbusEspiMedium, SmbusEspiReplyContext};
 // Should be as large as the largest possible MCTP packet and its metadata.
 const BUF_SIZE: usize = 256;
 const HOST_TX_QUEUE_SIZE: usize = 5;
+
+// Persistent state for UART request reading
+//
+// Necessary to make sure the request reading process is cancel-safe
+struct ReadState {
+    buf: [u8; BUF_SIZE],
+    filled: usize,
+}
+
+impl ReadState {
+    fn new() -> Self {
+        Self {
+            buf: [0u8; BUF_SIZE],
+            filled: 0,
+        }
+    }
+
+    fn reset(&mut self) {
+        self.filled = 0;
+    }
+}
 
 #[derive(Clone)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
@@ -107,13 +125,18 @@ impl<R: RelayHandler, M: MctpMedium + Copy> Service<R, M> {
         Ok(())
     }
 
-    async fn wait_for_request<T: UartRead>(&self, uart: &mut T) -> Result<(), Error<M>> {
-        // Incremental read loop: read bytes, ask the medium whether the
-        // assembled prefix is a complete frame, repeat until it is.
-        let mut buf = [0u8; BUF_SIZE];
-        let mut filled = 0usize;
-        let packet_len = loop {
-            let dst = buf.get_mut(filled..).ok_or(Error::Serialize("buffer overrun"))?;
+    // Read bytes from UART until a complete request is assembled.
+    //
+    // # Cancel Safety
+    //
+    // This method is cancel-safe because partial read progress is stored in `state`
+    // and will be resumed on the next call.
+    async fn wait_for_request<T: UartRead>(&self, uart: &mut T, state: &mut ReadState) -> Result<usize, Error<M>> {
+        loop {
+            let dst = state
+                .buf
+                .get_mut(state.filled..)
+                .ok_or(Error::Serialize("buffer overrun"))?;
             if dst.is_empty() {
                 return Err(Error::Serialize("frame exceeds BUF_SIZE"));
             }
@@ -121,23 +144,33 @@ impl<R: RelayHandler, M: MctpMedium + Copy> Service<R, M> {
             if n == 0 {
                 return Err(Error::Comms);
             }
-            filled += n;
+            state.filled += n;
             match self
                 .medium
-                .frame_complete(buf.get(..filled).ok_or(Error::Serialize("buffer overrun"))?)
+                .frame_complete(
+                    state
+                        .buf
+                        .get(..state.filled)
+                        .ok_or(Error::Serialize("buffer overrun"))?,
+                )
                 .map_err(Error::Mctp)?
             {
-                Some(len) => break len,
+                Some(len) => return Ok(len),
                 None => continue,
             }
-        };
+        }
+    }
 
+    // Deserialize the request and forward it to correct service for processing
+    async fn process_request(&self, state: &ReadState, packet_len: usize) -> Result<(), Error<M>> {
         let mut assembly_buf = [0u8; BUF_SIZE];
         let mut mctp_ctx = mctp_rs::MctpPacketContext::<M>::new(self.medium, &mut assembly_buf);
 
         let message = mctp_ctx
             .deserialize_packet(
-                buf.get(..packet_len)
+                state
+                    .buf
+                    .get(..packet_len)
                     .ok_or(Error::Serialize("frame exceeds BUF_SIZE"))?,
             )
             .map_err(Error::Mctp)?
