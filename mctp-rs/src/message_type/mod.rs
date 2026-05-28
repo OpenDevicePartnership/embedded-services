@@ -1,4 +1,6 @@
 mod mctp_control;
+#[cfg(feature = "odp")]
+pub mod odp;
 mod vendor_defined_pci;
 
 pub use mctp_control::*;

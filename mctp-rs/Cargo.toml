@@ -10,8 +10,9 @@ ignored = ["embedded-batteries", "espi-device", "uuid", "crc"]
 
 [features]
 default = []
-espi = ["dep:espi-device"]
 defmt = ["dep:defmt", "embedded-batteries/defmt"]
+espi = ["dep:espi-device"]
+odp = []
 serial = ["dep:crc"]
 
 [dependencies]
