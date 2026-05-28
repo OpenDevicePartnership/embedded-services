@@ -288,4 +288,59 @@ mod tests {
         assert_eq!(rest.len(), 0);
         assert_eq!(parsed, h);
     }
+
+    #[test]
+    fn wire_snapshot_matches_legacy_impls_battery_get_bst() {
+        // Source of truth: odp-platform-common/ec/test-lib/src/serial.rs:505-510
+        //   build_odp_header(is_request=true, service=Battery=0x08, msg_id=2)
+        //   produces [0x02, 0x08, 0x00, 0x02].
+        let h = OdpHeader {
+            is_request: true,
+            service: OdpService::Battery,
+            is_error: false,
+            message_id: 2,
+        };
+        assert_eq!(h.to_be_bytes(), [0x02, 0x08, 0x00, 0x02]);
+    }
+
+    #[test]
+    fn wire_snapshot_matches_legacy_impls_thermal_request() {
+        // Source: serial.rs:513-516.
+        let h = OdpHeader {
+            is_request: true,
+            service: OdpService::Thermal,
+            is_error: false,
+            message_id: 1,
+        };
+        assert_eq!(h.to_be_bytes(), [0x02, 0x09, 0x00, 0x01]);
+    }
+
+    #[test]
+    fn wire_snapshot_matches_legacy_impls_time_alarm_15bit_id() {
+        // Source: serial.rs:520-526. service_id=0x0B, msg_id=0x1234.
+        let h = OdpHeader {
+            is_request: true,
+            service: OdpService::TimeAlarm,
+            is_error: false,
+            message_id: 0x1234,
+        };
+        let bytes = h.to_be_bytes();
+        let parsed = OdpHeader::from_be_bytes(bytes).expect("known service");
+        assert_eq!(parsed, h);
+        // raw_u32 = (1<<25) | (0x0B<<16) | 0x1234 = 0x020B1234 → [0x02, 0x0B, 0x12, 0x34]
+        assert_eq!(bytes, [0x02, 0x0B, 0x12, 0x34]);
+    }
+
+    #[test]
+    fn wire_snapshot_battery_response() {
+        // Source: serial.rs:530-538. is_request=false, service=Battery, msg_id=2.
+        let h = OdpHeader {
+            is_request: false,
+            service: OdpService::Battery,
+            is_error: false,
+            message_id: 2,
+        };
+        // raw_u32 = (0<<25) | (0x08<<16) | 2 = 0x00080002 → [0x00, 0x08, 0x00, 0x02]
+        assert_eq!(h.to_be_bytes(), [0x00, 0x08, 0x00, 0x02]);
+    }
 }
