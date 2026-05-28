@@ -196,60 +196,85 @@ impl<A: AddressMode + Copy, B: I2c<A>> Device<A, B> {
         let buffer_len = buf.len();
 
         let opcode: Opcode = cmd.into();
-        let len = cmd
-            .encode_into_slice(
-                buf,
-                Some(command_reg),
-                if opcode.has_response() || opcode.requires_host_data() {
-                    Some(data_reg)
-                } else {
-                    None
-                },
-            )
-            .map_err(|_| {
-                error!("Failed to serialize command");
-                Error::Hid(hid::Error::Serialize)
-            })?;
-
-        let mut bus = self.bus.lock().await;
-        with_timeout(
-            self.timeout_config.device_response_timeout,
-            bus.write(
-                self.address,
-                buf.get(..len)
-                    .ok_or(Error::Hid(hid::Error::InvalidSize(InvalidSizeError {
-                        expected: len,
-                        actual: buffer_len,
-                    })))?,
-            ),
-        )
-        .await
-        .map_err(|_| {
-            error!("Write command timeout");
-            Error::Hid(hid::Error::Timeout)
-        })?
-        .map_err(|e| {
-            error!("Failed to write command");
-            Error::Bus(e)
-        })?;
 
         if opcode.has_response() {
-            trace!("Reading host data");
-            with_timeout(self.timeout_config.data_read_timeout, bus.read(self.address, buf))
-                .await
+            // Commands that require a response (GetReport, GetIdle, GetProtocol)
+            // have an upper limit of 7 bytes for the command
+            let mut temp_w_buf = [0u8; 7];
+
+            let len = cmd
+                .encode_into_slice(&mut temp_w_buf, Some(command_reg), Some(data_reg))
                 .map_err(|_| {
-                    error!("Read host data timeout");
-                    Error::Hid(hid::Error::Timeout)
-                })?
-                .map_err(|e| {
-                    error!("Failed to read host data");
-                    Error::Bus(e)
+                    error!("Failed to serialize command");
+                    Error::Hid(hid::Error::Serialize)
                 })?;
 
-            return Ok(Some(Response::FeatureReport(self.buffer.reference())));
-        }
+            let mut bus = self.bus.lock().await;
 
-        Ok(None)
+            with_timeout(
+                self.timeout_config.device_response_timeout,
+                bus.write_read(
+                    self.address,
+                    temp_w_buf
+                        .get(..len)
+                        .ok_or(Error::Hid(hid::Error::InvalidSize(InvalidSizeError {
+                            expected: len,
+                            actual: temp_w_buf.len(),
+                        })))?,
+                    buf,
+                ),
+            )
+            .await
+            .map_err(|_| {
+                error!("Command write_read timeout");
+                Error::Hid(hid::Error::Timeout)
+            })?
+            .map_err(|e| {
+                error!("Failed to execute command write_read");
+                Error::Bus(e)
+            })?;
+
+            Ok(Some(Response::FeatureReport(self.buffer.reference())))
+        } else {
+            let len = cmd
+                .encode_into_slice(
+                    buf,
+                    Some(command_reg),
+                    if opcode.requires_host_data() {
+                        Some(data_reg)
+                    } else {
+                        None
+                    },
+                )
+                .map_err(|_| {
+                    error!("Failed to serialize command");
+                    Error::Hid(hid::Error::Serialize)
+                })?;
+
+            let mut bus = self.bus.lock().await;
+            with_timeout(
+                self.timeout_config.device_response_timeout,
+                bus.write(
+                    self.address,
+                    buf.get(..len)
+                        .ok_or(Error::Hid(hid::Error::InvalidSize(InvalidSizeError {
+                            expected: len,
+                            actual: buffer_len,
+                        })))?,
+                ),
+            )
+            .await
+            .map_err(|_| {
+                error!("Write command timeout");
+                Error::Hid(hid::Error::Timeout)
+            })?
+            .map_err(|e| {
+                error!("Failed to write command");
+                Error::Bus(e)
+            })?;
+
+            Ok(None)
+        }
     }
 
     pub async fn process_request(&self) -> Result<(), Error<B::Error>> {
