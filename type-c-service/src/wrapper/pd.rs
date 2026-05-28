@@ -144,20 +144,31 @@ where
         debug!("Port{}: Current state: {:#?}", local_port.0, state);
         if let Ok(connected_consumer) = power_device.try_device_action::<action::ConnectedConsumer>().await {
             debug!("Port{}: Set max sink voltage, connected consumer found", local_port.0);
-            if voltage_mv.is_some()
-                && voltage_mv
-                    < power_device
+
+            // If the new max voltage is None (remove max voltage limit) or different from the current consumer capability then
+            // we need to disconnect because a change in max voltage requires renegotiation
+            if voltage_mv.is_none()
+                || voltage_mv
+                    != power_device
                         .consumer_capability()
                         .await
                         .map(|c| c.capability.voltage_mv)
             {
-                // New max voltage is lower than current consumer capability which will trigger a renegociation
-                // So disconnect first
                 debug!(
                     "Port{}: Disconnecting consumer before setting max sink voltage",
                     local_port.0
                 );
-                let _ = connected_consumer.disconnect().await;
+
+                match controller.enable_sink_path(local_port, false).await {
+                    Ok(()) => Ok(controller::PortResponseData::Complete),
+                    Err(e) => match e {
+                        Error::Bus(_) => Err(PdError::Failed),
+                        Error::Pd(e) => Err(e),
+                    },
+                }?;
+                let _ = connected_consumer
+                    .disconnect(flags::ConsumerDisconnect::default().with_renegotiation(true))
+                    .await;
             }
         }
 

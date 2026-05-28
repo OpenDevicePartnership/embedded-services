@@ -527,7 +527,7 @@ impl Context {
         let psu_state = guard.deref_mut();
 
         match power_info {
-            embedded_services::power::policy::CommsData::ConsumerDisconnected(_) => {
+            embedded_services::power::policy::CommsData::ConsumerDisconnected(..) => {
                 *psu_state = PsuState {
                     psu_connected: false,
                     power_capability: None,

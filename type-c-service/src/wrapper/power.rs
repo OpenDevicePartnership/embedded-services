@@ -77,7 +77,7 @@ where
         } else if let Ok(state) = power.try_device_action::<action::ConnectedProvider>().await {
             // Transition from provider to consumer.
             // This handles role swaps from source to sink.
-            let Ok(state) = state.disconnect().await else {
+            let Ok(state) = state.disconnect(flags::ConsumerDisconnect::default()).await else {
                 error!("Error disconnecting as provider");
                 return PdError::Failed.into();
             };
@@ -151,7 +151,7 @@ where
                 }
             } else {
                 // No longer need to source, so disconnect
-                if let Err(e) = state.disconnect().await {
+                if let Err(e) = state.disconnect(flags::ConsumerDisconnect::default()).await {
                     error!("Error disconnecting as provider: {:?}", e);
                     return PdError::Failed.into();
                 }
@@ -159,7 +159,7 @@ where
         } else if let Ok(state) = power.try_device_action::<action::ConnectedConsumer>().await {
             // Transition from consumer to provider.
             // This handles role swaps from sink to source.
-            let Ok(state) = state.disconnect().await else {
+            let Ok(state) = state.disconnect(flags::ConsumerDisconnect::default()).await else {
                 error!("Error disconnecting as consumer");
                 return PdError::Failed.into();
             };

@@ -3,7 +3,7 @@ use core::sync::atomic::{AtomicBool, Ordering};
 
 use crate::GlobalRawMutex;
 use crate::broadcaster::immediate as broadcaster;
-use crate::power::policy::{CommsMessage, ConsumerPowerCapability, ProviderPowerCapability};
+use crate::power::policy::{CommsMessage, ConsumerPowerCapability, ProviderPowerCapability, flags};
 use embassy_sync::channel::Channel;
 
 use super::charger::ChargerResponse;
@@ -26,7 +26,7 @@ pub enum RequestData {
     /// Request the given amount of power to provider
     RequestProviderCapability(ProviderPowerCapability),
     /// Notify that a device cannot consume or provide power anymore
-    NotifyDisconnect,
+    NotifyDisconnect(flags::ConsumerDisconnect),
     /// Notify that a device has detached
     NotifyDetached,
 }
