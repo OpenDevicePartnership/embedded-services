@@ -120,10 +120,19 @@ pub struct OdpMessage<'a> {
 }
 
 impl<'a> OdpMessage<'a> {
-    /// Serialize the full message (header then body) into `out`.
+    /// Serialize the full ODP wire packet (header + body) into `out`.
     ///
-    /// Returns the number of bytes written (`OdpHeader::HEADER_LEN + body.len()`).
-    pub fn serialize<M: MctpMedium>(&self, out: &mut [u8]) -> MctpPacketResult<usize, M> {
+    /// Returns the total number of bytes written (`OdpHeader::HEADER_LEN +
+    /// self.body.len()`) on success, or `MctpPacketError::SerializeError` if
+    /// the output buffer is too small.
+    ///
+    /// This is the convenience entry point for callers that hold a complete
+    /// `OdpMessage` and want a single call to produce on-wire bytes. The
+    /// framework-level trait method, `<OdpMessage as MctpMessageTrait>::serialize`,
+    /// is body-only — the header is serialized separately by the packet framing
+    /// layer when using the MCTP trait infrastructure. See `MctpMessageTrait`
+    /// in `mctp-rs/src/message_type/mod.rs` for the framework pattern.
+    pub fn serialize_with_header<M: MctpMedium>(&self, out: &mut [u8]) -> MctpPacketResult<usize, M> {
         let needed = OdpHeader::HEADER_LEN + self.body.len();
         if out.len() < needed {
             return Err(MctpPacketError::SerializeError(
@@ -136,11 +145,14 @@ impl<'a> OdpMessage<'a> {
     }
 }
 
+/// Body-only serialization per the `MctpMessageTrait` framework contract.
+/// The header is serialized separately at the packet framing layer.
+/// Use [`OdpMessage::serialize_with_header`] for a single-call full-packet
+/// serialization.
 impl<'buf> MctpMessageTrait<'buf> for OdpMessage<'buf> {
     type Header = OdpHeader;
     const MESSAGE_TYPE: u8 = ODP_MESSAGE_TYPE;
 
-    /// Serialize only the body portion (the header is handled separately by the packet context).
     fn serialize<M: MctpMedium>(self, buffer: &mut [u8]) -> MctpPacketResult<usize, M> {
         if buffer.len() < self.body.len() {
             return Err(MctpPacketError::SerializeError(
@@ -152,12 +164,11 @@ impl<'buf> MctpMessageTrait<'buf> for OdpMessage<'buf> {
     }
 
     fn deserialize<M: MctpMedium>(
-        _header: &Self::Header,
+        header: &Self::Header,
         buffer: &'buf [u8],
     ) -> MctpPacketResult<Self, M> {
-        // header is already parsed; wrap the remaining bytes as the body
         Ok(OdpMessage {
-            header: *_header,
+            header: *header,
             body: buffer,
         })
     }
@@ -253,9 +264,7 @@ mod tests {
             body: &[0xDE, 0xAD, 0xBE, 0xEF],
         };
         let mut out = [0u8; 32];
-        // Use `&msg` explicitly so the inherent (header+body) serialize is chosen
-        // over the MctpMessageTrait (body-only) serialize.
-        let n = (&msg).serialize::<TestMedium>(&mut out).unwrap();
+        let n = msg.serialize_with_header::<TestMedium>(&mut out).unwrap();
         assert_eq!(n, OdpHeader::HEADER_LEN + 4);
         assert_eq!(&out[..OdpHeader::HEADER_LEN], &msg.header.to_be_bytes());
         assert_eq!(&out[OdpHeader::HEADER_LEN..OdpHeader::HEADER_LEN + 4], &[0xDE, 0xAD, 0xBE, 0xEF]);
