@@ -3,10 +3,8 @@
 //! Wire format defined by the ODP project. Message type byte `0x7D`.
 //! Header layout: 32-bit bitfield, big-endian on the wire.
 
-#![cfg(feature = "odp")]
-
-use bit_register::bit_register;
 use crate::{MctpMedium, MctpMessageHeaderTrait, MctpMessageTrait, MctpPacketError, error::MctpPacketResult};
+use bit_register::bit_register;
 
 /// MCTP message type byte assigned to ODP traffic.
 pub const ODP_MESSAGE_TYPE: u8 = 0x7D;
@@ -14,8 +12,8 @@ pub const ODP_MESSAGE_TYPE: u8 = 0x7D;
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 #[repr(u8)]
 pub enum OdpService {
-    Battery   = 0x08,
-    Thermal   = 0x09,
+    Battery = 0x08,
+    Thermal = 0x09,
     TimeAlarm = 0x0B,
 }
 
@@ -90,9 +88,7 @@ impl OdpHeader {
 impl MctpMessageHeaderTrait for OdpHeader {
     fn serialize<M: MctpMedium>(self, buffer: &mut [u8]) -> MctpPacketResult<usize, M> {
         if buffer.len() < Self::HEADER_LEN {
-            return Err(MctpPacketError::SerializeError(
-                "buffer too small for ODP header",
-            ));
+            return Err(MctpPacketError::SerializeError("buffer too small for ODP header"));
         }
         buffer[..Self::HEADER_LEN].copy_from_slice(&self.to_be_bytes());
         Ok(Self::HEADER_LEN)
@@ -100,14 +96,11 @@ impl MctpMessageHeaderTrait for OdpHeader {
 
     fn deserialize<M: MctpMedium>(buffer: &[u8]) -> MctpPacketResult<(Self, &[u8]), M> {
         if buffer.len() < Self::HEADER_LEN {
-            return Err(MctpPacketError::HeaderParseError(
-                "buffer too small for ODP header",
-            ));
+            return Err(MctpPacketError::HeaderParseError("buffer too small for ODP header"));
         }
         let mut b = [0u8; 4];
         b.copy_from_slice(&buffer[..Self::HEADER_LEN]);
-        let header = Self::from_be_bytes(b)
-            .map_err(|_| MctpPacketError::HeaderParseError("unknown ODP service id"))?;
+        let header = Self::from_be_bytes(b).map_err(|_| MctpPacketError::HeaderParseError("unknown ODP service id"))?;
         Ok((header, &buffer[Self::HEADER_LEN..]))
     }
 }
@@ -135,9 +128,7 @@ impl<'a> OdpMessage<'a> {
     pub fn serialize_with_header<M: MctpMedium>(&self, out: &mut [u8]) -> MctpPacketResult<usize, M> {
         let needed = OdpHeader::HEADER_LEN + self.body.len();
         if out.len() < needed {
-            return Err(MctpPacketError::SerializeError(
-                "buffer too small for ODP message",
-            ));
+            return Err(MctpPacketError::SerializeError("buffer too small for ODP message"));
         }
         out[..OdpHeader::HEADER_LEN].copy_from_slice(&self.header.to_be_bytes());
         out[OdpHeader::HEADER_LEN..needed].copy_from_slice(self.body);
@@ -155,18 +146,13 @@ impl<'buf> MctpMessageTrait<'buf> for OdpMessage<'buf> {
 
     fn serialize<M: MctpMedium>(self, buffer: &mut [u8]) -> MctpPacketResult<usize, M> {
         if buffer.len() < self.body.len() {
-            return Err(MctpPacketError::SerializeError(
-                "buffer too small for ODP message body",
-            ));
+            return Err(MctpPacketError::SerializeError("buffer too small for ODP message body"));
         }
         buffer[..self.body.len()].copy_from_slice(self.body);
         Ok(self.body.len())
     }
 
-    fn deserialize<M: MctpMedium>(
-        header: &Self::Header,
-        buffer: &'buf [u8],
-    ) -> MctpPacketResult<Self, M> {
+    fn deserialize<M: MctpMedium>(header: &Self::Header, buffer: &'buf [u8]) -> MctpPacketResult<Self, M> {
         Ok(OdpMessage {
             header: *header,
             body: buffer,
@@ -245,10 +231,7 @@ mod tests {
         // service_id 0xFF is not in the known set.
         let raw_u32: u32 = (1 << 25) | (0xFF << 16) | 1;
         let bytes = raw_u32.to_be_bytes();
-        assert!(matches!(
-            OdpHeader::from_be_bytes(bytes),
-            Err(UnknownService(0xFF))
-        ));
+        assert!(matches!(OdpHeader::from_be_bytes(bytes), Err(UnknownService(0xFF))));
     }
 
     #[test]
@@ -267,13 +250,16 @@ mod tests {
         let n = msg.serialize_with_header::<TestMedium>(&mut out).unwrap();
         assert_eq!(n, OdpHeader::HEADER_LEN + 4);
         assert_eq!(&out[..OdpHeader::HEADER_LEN], &msg.header.to_be_bytes());
-        assert_eq!(&out[OdpHeader::HEADER_LEN..OdpHeader::HEADER_LEN + 4], &[0xDE, 0xAD, 0xBE, 0xEF]);
+        assert_eq!(
+            &out[OdpHeader::HEADER_LEN..OdpHeader::HEADER_LEN + 4],
+            &[0xDE, 0xAD, 0xBE, 0xEF]
+        );
     }
 
     #[test]
     fn odp_header_implements_mctp_message_header_trait() {
-        use crate::test_util::TestMedium;
         use crate::MctpMessageHeaderTrait;
+        use crate::test_util::TestMedium;
 
         let h = OdpHeader {
             is_request: true,
