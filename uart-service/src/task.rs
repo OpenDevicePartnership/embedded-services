@@ -2,8 +2,8 @@ use crate::{Error, Service};
 use embedded_io_async::Read as UartRead;
 use embedded_io_async::Write as UartWrite;
 use embedded_services::error;
-use embedded_services::relay::mctp::RelayHandler;
 use mctp_rs::MctpMedium;
+use odp_client::server::RelayHandler;
 
 pub async fn uart_service<R: RelayHandler, M: MctpMedium + Copy, T: UartRead + UartWrite>(
     uart_service: &Service<R, M>,

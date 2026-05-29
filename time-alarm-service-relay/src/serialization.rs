@@ -1,5 +1,5 @@
 use core::array::TryFromSliceError;
-use embedded_services::relay::{MessageSerializationError, SerializableMessage};
+use odp_client::{MessageSerializationError, SerializableMessage};
 use time_alarm_service_interface::{
     AcpiDaylightSavingsTimeStatus, AcpiTimerId, AcpiTimestamp, AlarmExpiredWakePolicy, AlarmTimerSeconds,
     TimeAlarmDeviceCapabilities, TimerStatus,

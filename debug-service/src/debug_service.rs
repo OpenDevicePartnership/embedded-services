@@ -34,12 +34,12 @@ impl Service {
     }
 }
 
-impl embedded_services::relay::mctp::RelayServiceHandlerTypes for Service {
+impl odp_client::server::RelayServiceHandlerTypes for Service {
     type RequestType = DebugRequest;
     type ResultType = DebugResult;
 }
 
-impl embedded_services::relay::mctp::RelayServiceHandler for Service {
+impl odp_client::server::RelayServiceHandler for Service {
     async fn process_request(&self, _request: Self::RequestType) -> Self::ResultType {
         // Host sent an ACPI/MCTP request (e.g. GetDebugBuffer). Treat this as the
         // trigger to send the staged debug buffer back to the host.

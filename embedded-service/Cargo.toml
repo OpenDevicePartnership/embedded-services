@@ -11,17 +11,11 @@ rust-version.workspace = true
 workspace = true
 
 [dependencies]
-bitfield.workspace = true
 critical-section.workspace = true
 defmt = { workspace = true, optional = true }
 embassy-sync.workspace = true
 embassy-futures.workspace = true
 log = { workspace = true, optional = true }
-paste.workspace = true
-
-[dependencies.mctp-rs]
-workspace = true
-features = ["espi"]
 
 [dependencies.serde]
 workspace = true
@@ -41,5 +35,5 @@ tokio = { workspace = true, features = ["rt", "macros", "time"] }
 
 [features]
 default = []
-defmt = ["dep:defmt", "embassy-sync/defmt", "mctp-rs/defmt"]
+defmt = ["dep:defmt", "embassy-sync/defmt"]
 log = ["dep:log", "embassy-sync/log"]

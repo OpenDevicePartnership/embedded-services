@@ -26,6 +26,7 @@ members = [
     "debug-service-messages",
     "keyboard-service",
     "power-policy-interface",
+    "odp-client",
     "odp-service-common",
     "type-c-interface",
     "fw-update-interface",
@@ -79,6 +80,7 @@ debug-service-messages = { path = "./debug-service-messages" }
 embassy-executor = "0.10.0"
 cfu-service = { path = "./cfu-service" }
 embedded-hal-nb = "1.0"
+embedded-io = "0.7"
 embedded-io-async = "0.7.0"
 embedded-mcu-hal = "0.2.0"
 embassy-futures = "0.1.2"
@@ -97,6 +99,7 @@ fw-update-interface = { path = "./fw-update-interface" }
 fw-update-interface-mocks = { path = "./fw-update-interface-mocks" }
 mctp-rs = { path = "./mctp-rs" }
 num_enum = { version = "0.7.5", default-features = false }
+odp-client = { path = "./odp-client" }
 portable-atomic = { version = "1.11", default-features = false }
 power-policy-interface = { path = "./power-policy-interface" }
 paste = "1.0.15"
