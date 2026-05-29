@@ -65,13 +65,13 @@ impl<'hw, RelayHandler: embedded_services::relay::mctp::RelayHandler> odp_servic
 {
     type Resources = Resources<'hw, RelayHandler>;
     type Runner = Runner<'hw, RelayHandler>;
-    type ErrorType = core::convert::Infallible;
-    type InitParams = InitParams<'hw, RelayHandler>;
+}
 
-    async fn new(
-        resources: &'hw mut Self::Resources,
+impl<'hw, RelayHandler: embedded_services::relay::mctp::RelayHandler> Service<'hw, RelayHandler> {
+    pub async fn new(
+        resources: &'hw mut Resources<'hw, RelayHandler>,
         params: InitParams<'hw, RelayHandler>,
-    ) -> Result<(Self, Self::Runner), core::convert::Infallible> {
+    ) -> Result<(Self, Runner<'hw, RelayHandler>), core::convert::Infallible> {
         let inner = resources.inner.insert(ServiceInner::new(params).await);
         Ok((Self { _inner: inner }, Runner { inner }))
     }

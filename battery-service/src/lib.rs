@@ -250,18 +250,18 @@ pub enum InitError {
     CommsRegistrationFailed,
 }
 
-impl<'hw, const N: usize> odp_service_common::runnable_service::Service<'hw> for Service<'hw, N>
+impl<'hw, const N: usize> odp_service_common::runnable_service::Service<'hw> for Service<'hw, N> {
+    type Runner = Runner<'hw, N>;
+    type Resources = Resources<N>;
+}
+
+impl<'hw, const N: usize> Service<'hw, N>
 where
     'hw: 'static, // TODO relax this 'static requirement when we drop usages of IntrusiveList (including comms)
 {
-    type Runner = Runner<'hw, N>;
-    type ErrorType = InitError;
-    type InitParams = InitParams<'hw, N>;
-    type Resources = Resources<N>;
-
-    async fn new(
+    pub async fn new(
         service_storage: &'hw mut Resources<N>,
-        init_params: Self::InitParams,
+        init_params: InitParams<'hw, N>,
     ) -> Result<(Self, Runner<'hw, N>), InitError> {
         let service = service_storage.inner.insert(ServiceInner::new(init_params.config));
 

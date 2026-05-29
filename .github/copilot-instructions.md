@@ -65,9 +65,8 @@ cd examples/std && cargo clippy --locked
 Services implement the `odp_service_common::runnable_service::Service<'hw>` trait, which enforces a consistent structure:
 
 1. **`Resources`** — caller-allocated state (stored in a `StaticCell`), not an internal `OnceLock` singleton
-2. **`new(resources, params) -> (Self, Runner)`** — constructor returns a control handle and a `Runner`
-3. **`Runner`** — implements `ServiceRunner` with a single `run(self) -> !` method that drives the service's async event loop
-4. **`spawn_service!`** macro — handles boilerplate: allocates `Resources` in a `StaticCell`, calls `new()`, spawns the `Runner` on an Embassy executor
+2. **`Runner`** — implements `ServiceRunner` with a single `run(self) -> !` method that drives the service's async event loop
+3. **`spawn_service!`** macro — handles boilerplate: allocates `Resources` in a `StaticCell`, invokes a caller-provided initialization closure, spawns the `Runner` on an Embassy executor
 
 ```rust
 // Typical service using the Service trait
@@ -82,13 +81,13 @@ pub struct Runner<'hw> { /* holds refs into Resources */ }
 impl<'hw> Service<'hw> for MyService<'hw> {
     type Resources = Resources<'hw>;
     type Runner = Runner<'hw>;
-    type InitParams = MyInitParams<'hw>;
-    type ErrorType = MyError;
+}
 
-    async fn new(
-        resources: &'hw mut Self::Resources,
-        params: Self::InitParams,
-    ) -> Result<(Self, Self::Runner), Self::ErrorType> {
+impl<'hw> MyService<'hw> {
+    pub async fn new(
+        resources: &'hw mut Resources<'hw>,
+        params: MyInitParams<'hw>,
+    ) -> Result<(Self, Runner<'hw>), MyError> {
         // ...
     }
 }
@@ -115,7 +114,11 @@ Services use a variety of async IPC mechanisms from `embassy-sync` and `embedded
 At the top level, an EC is composed by spawning service tasks on an Embassy executor, using the `spawn_service!` macro:
 
 ```rust
-let my_service = spawn_service!(spawner, MyService, my_init_params)?;
+let my_service = spawn_service!(
+    spawner,
+    MyService,
+    |resources| MyService::new(resources, my_other_params),
+)?;
 ```
 
 ### Core Utilities (embedded-service crate)
