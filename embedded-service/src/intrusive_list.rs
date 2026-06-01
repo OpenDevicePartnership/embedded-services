@@ -16,20 +16,17 @@ pub enum Error {
 pub type Result<T> = core::result::Result<T, Error>;
 
 /// Embedded node that "intrudes" on a structure
-//
-// TODO: `address_of_data` is `&dyn Any` (without `Send + Sync`). Combined
-// with the unbounded `Sync` impl on `CriticalSectionCell` / `ThreadModeCell`,
-// this allows a `!Send` `T` inserted via a custom `NodeContainer` to be
-// shared across threads. Under the single Cortex-M / single Embassy executor
-// model documented in `lib.rs`, this cannot be exploited today, but the type
-// system does not enforce that guarantee. Tightening this requires updating
-// embassy-sync `PubSubBehavior` trait-object types in
-// `broadcaster::immediate::Receiver` and is deferred to the broader
-// broadcaster redesign.
+///
+/// `address_of_data` carries `Send + Sync` bounds so that an
+/// `IntrusiveNode` (and any `IntrusiveList` holding it) is itself `Send`
+/// and `Sync` without an `unsafe impl`. This mirrors the
+/// `NodeContainer: Send + Sync` requirement below and keeps the type
+/// system aligned with the `CriticalSectionCell<T>: Sync where T: Send`
+/// constraint that backs node storage.
 #[derive(Copy, Clone, Debug)]
 pub struct IntrusiveNode {
     /// offset from &self to struct data. Typically := sizeof(IntrusiveNode)
-    address_of_data: &'static dyn Any,
+    address_of_data: &'static (dyn Any + Send + Sync),
 
     /// unsafe iterator type
     next: Option<&'static IntrusiveNode>,
@@ -64,7 +61,60 @@ impl Node {
 }
 
 /// implementing this trait is required for IntrusiveList construction over type T
-pub trait NodeContainer: Any {
+///
+/// # Compatibility
+///
+/// The supertraits `Any + Send + Sync` are required because every node is
+/// type-erased to a `&'static (dyn Any + Send + Sync)` inside
+/// `IntrusiveNode::address_of_data`. Downstream implementors whose container
+/// type is auto-`Send + Sync` need no extra work. Implementors whose
+/// container holds a `!Send` or `!Sync` field (typically a trait object
+/// without `Send + Sync` supertraits, or an interior-mutability primitive
+/// like `Cell`) must either:
+///
+///   1. add the missing supertrait bounds to the held trait object so that
+///      auto-derive succeeds, or
+///   2. add a documented manual `unsafe impl Send + Sync` for the container,
+///      justifying the impl against the actual sharing model of the
+///      consumer (e.g. the single-executor model used throughout
+///      `embedded-service` itself).
+///
+/// The `Send + Sync` bounds align with `IntrusiveNode::address_of_data`,
+/// which erases `T` to `&'static (dyn Any + Send + Sync)`. Every concrete
+/// `NodeContainer` impl in this workspace either composes only `Send + Sync`
+/// fields, or carries a documented manual `unsafe impl` justified by the
+/// single Cortex-M / single Embassy executor model.
+///
+/// A container with a `!Send` field must not satisfy `NodeContainer` via
+/// auto-derive. The following example must fail to compile (because
+/// `*const u8` is `!Send`, the auto-derive of `Send` for `BadContainer`
+/// fails, and therefore the `NodeContainer` bound `Send + Sync` fails):
+///
+/// ```compile_fail
+/// use embedded_services::intrusive_list::{Node, NodeContainer};
+/// struct BadContainer {
+///     node: Node,
+///     raw: *const u8,
+/// }
+/// impl NodeContainer for BadContainer {
+///     fn get_node(&self) -> &Node { &self.node }
+/// }
+/// ```
+///
+/// A container with a `core::cell::Cell<u8>` field is `Send` but
+/// `!Sync`, so it must also fail to satisfy `NodeContainer`:
+///
+/// ```compile_fail
+/// use embedded_services::intrusive_list::{Node, NodeContainer};
+/// struct CellContainer {
+///     node: Node,
+///     c: core::cell::Cell<u8>,
+/// }
+/// impl NodeContainer for CellContainer {
+///     fn get_node(&self) -> &Node { &self.node }
+/// }
+/// ```
+pub trait NodeContainer: Any + Send + Sync {
     /// return the upper level node type reference attached to self
     fn get_node(&self) -> &Node;
 }
@@ -247,14 +297,14 @@ impl<'a, T: NodeContainer> Iterator for OnlyT<'a, T> {
 mod test {
     use super::*;
 
-    trait OpA {
+    trait OpA: Send + Sync {
         #[inline]
         fn a(&self) -> bool {
             true
         }
     }
 
-    trait OpB {
+    trait OpB: Send + Sync {
         #[inline]
         fn b(&self) -> bool {
             true

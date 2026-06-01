@@ -371,6 +371,17 @@ pub async fn send_request(tp: &Endpoint, to: DeviceId, request: Request<'static>
 mod test {
     use super::*;
 
+    fn assert_send_sync<T: Send + Sync>() {}
+
+    /// HID `Device` is `NodeContainer` and therefore must be `Send + Sync`.
+    /// It composes only `Send + Sync` fields (`Node`, `Endpoint` via its
+    /// manual `unsafe impl`, `Channel`, plain ids and registers), so the
+    /// auto-derive should hold.
+    #[test]
+    fn hid_device_is_send_sync() {
+        assert_send_sync::<Device>();
+    }
+
     #[test]
     fn descriptor_serialize_deserialize() {
         // No particular significance to these values

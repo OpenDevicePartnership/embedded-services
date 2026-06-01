@@ -84,6 +84,24 @@ impl NodeContainer for Subscriber {
     }
 }
 
+// SAFETY: The invariant: `Subscriber`'s sole non-`Send + Sync` state is
+// the trait object stored inside `instance: SyncCell<Option<&'static dyn
+// ActivitySubscriber>>`. `ActivitySubscriber` is a public trait that does
+// not require `Send + Sync` (changing it would break the public API), so
+// the auto-derive of these markers fails purely on trait-object bound
+// erasure — not on any actual sharing hazard in the storage.
+// `&'static dyn Trait` is a fat pointer; sharing or sending the pointer
+// itself is sound, and the `SyncCell` serializes all read/write of the
+// slot under a critical section. Combined with the single Cortex-M /
+// single Embassy executor model documented in `lib.rs`, no `Subscriber`
+// is ever concurrently accessed by anything but the cooperatively-
+// scheduled executor, so the manual impls restore the `Send + Sync`
+// markers required by `NodeContainer: Send + Sync` in
+// `intrusive_list.rs` without introducing any new sharing path.
+unsafe impl Send for Subscriber {}
+// SAFETY: same invariant as the `Send` impl above.
+unsafe impl Sync for Subscriber {}
+
 /// Publisher handle for registered publishers
 #[derive(Copy, Clone, Debug)]
 pub struct Publisher {
@@ -146,6 +164,30 @@ mod test {
     use super::*;
     use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
     use embassy_sync::once_lock::OnceLock as TestOnceLock;
+
+    fn assert_send_sync<T: Send + Sync>() {}
+
+    /// `Subscriber` carries a manual `unsafe impl Send + Sync`. Guard against
+    /// silent regression of either impl.
+    #[test]
+    fn subscriber_is_send_sync() {
+        assert_send_sync::<Subscriber>();
+    }
+
+    /// Move a `Subscriber` to a tokio worker thread. Fails to compile if
+    /// `Subscriber: Send` regresses.
+    #[tokio::test]
+    async fn subscriber_crosses_thread_boundary() {
+        let sub = Subscriber::uninit();
+        let handle = tokio::spawn(async move {
+            // Touch the inner cell across the thread boundary.
+            sub.update(&Notification {
+                state: State::Inactive,
+                class: Class::Keyboard,
+            });
+        });
+        handle.await.unwrap();
+    }
 
     /// A no-op `NodeContainer` that is intentionally NOT a `Subscriber`.
     ///

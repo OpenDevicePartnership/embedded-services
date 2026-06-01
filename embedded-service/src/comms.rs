@@ -207,6 +207,24 @@ impl NodeContainer for Endpoint {
     }
 }
 
+// SAFETY: The invariant: `Endpoint`'s sole non-`Send + Sync` state is the
+// trait object stored inside `delegator: SyncCell<Option<&'static dyn
+// MailboxDelegate>>`. `MailboxDelegate` is a public trait that does not
+// require `Send + Sync` (changing it would break the public API), so the
+// auto-derive of these markers fails purely on trait-object bound erasure
+// — not on any actual sharing hazard in the storage. `&'static dyn Trait`
+// is a fat pointer; sharing or sending the pointer itself is sound, and
+// the `SyncCell` serializes all read/write of the slot under a critical
+// section. Combined with the single Cortex-M / single Embassy executor
+// model documented in `lib.rs`, no `Endpoint` is ever concurrently
+// accessed by anything but the cooperatively-scheduled executor, so the
+// manual impls restore the `Send + Sync` markers required by
+// `NodeContainer: Send + Sync` in `intrusive_list.rs` without introducing
+// any new sharing path.
+unsafe impl Send for Endpoint {}
+// SAFETY: same invariant as the `Send` impl above.
+unsafe impl Sync for Endpoint {}
+
 impl Endpoint {
     /// Get endpoint ID
     pub fn get_id(&self) -> EndpointID {
@@ -397,6 +415,29 @@ mod test {
     use super::*;
     use core::sync::atomic::{AtomicU32, Ordering};
     use embassy_sync::once_lock::OnceLock;
+
+    fn assert_send_sync<T: Send + Sync>() {}
+
+    /// `Endpoint` carries a manual `unsafe impl Send + Sync`. This compile-time
+    /// assertion guards against accidental removal of either impl.
+    #[test]
+    fn endpoint_is_send_sync() {
+        assert_send_sync::<Endpoint>();
+    }
+
+    /// Move an `Endpoint` across a tokio worker thread boundary. This will
+    /// fail to compile if `Endpoint: Send` regresses; at runtime it confirms
+    /// the manual impl is not actively unsound on the host.
+    #[tokio::test]
+    async fn endpoint_crosses_thread_boundary() {
+        let ep = Endpoint::uninit(EndpointID::Internal(Internal::PlatformInfo));
+        let handle = tokio::spawn(async move {
+            // Just read the id from the other thread.
+            ep.get_id()
+        });
+        let id = handle.await.unwrap();
+        assert!(matches!(id, EndpointID::Internal(Internal::PlatformInfo)));
+    }
 
     /// A `MailboxDelegate` that counts received messages, so a test can prove
     /// which delegate handled a routed message.

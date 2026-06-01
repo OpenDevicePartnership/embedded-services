@@ -119,6 +119,15 @@ impl intrusive_list::NodeContainer for CfuDevice {
     }
 }
 
+// Compile-time guard: `CfuDevice` must remain `Send + Sync` because
+// `NodeContainer: Send + Sync`. All fields (`Node`, `ComponentId`,
+// `Mutex<GlobalRawMutex, _>`, `Channel<GlobalRawMutex, _, _>`) are
+// `Send + Sync`, so this is satisfied via auto-derive.
+const _: fn() = || {
+    fn assert_send_sync<T: Send + Sync>() {}
+    assert_send_sync::<CfuDevice>();
+};
+
 /// Trait for any container that holds a device
 pub trait CfuDeviceContainer {
     /// Get the underlying device struct

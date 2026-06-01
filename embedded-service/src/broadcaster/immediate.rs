@@ -8,20 +8,27 @@ use embassy_sync::{mutex::Mutex, pubsub::DynImmediatePublisher};
 use crate::{GlobalRawMutex, intrusive_list};
 
 /// Receiver
-//
-// TODO: the outer `Mutex<GlobalRawMutex, DynImmediatePublisher>` is suspected
-// to be redundant. `DynImmediatePublisher::publish_immediate` takes `&self`
-// and the underlying `PubSubChannel` already has its own internal
-// `RawMutex`, so the outer Mutex appears to be providing interior mutability
-// rather than synchronization. Removing it cascades into the `Sync`-ness of
-// `Receiver<'static, T>`: the embassy-sync trait object
-// `dyn PubSubBehavior<T>` does not carry `Send + Sync` bounds, so `Receiver`
-// cannot trivially become `Sync` without an `unsafe impl` justified by the
-// single-executor model. Deferred to the broader broadcaster redesign.
 pub struct Receiver<'a, T: Clone> {
     node: intrusive_list::Node,
     publisher: Mutex<GlobalRawMutex, DynImmediatePublisher<'a, T>>,
 }
+
+// SAFETY: `DynImmediatePublisher<'a, T>` wraps `&dyn PubSubBehavior<T>`,
+// a trait object that upstream embassy-sync does not bound with
+// `Send + Sync`. The underlying `PubSubChannel` is itself internally
+// synchronized via its own `RawMutex`, so the trait-object erasure is the
+// only thing hiding `Send + Sync` from the type system. Under the single
+// Cortex-M / single Embassy executor model documented in `lib.rs`, no
+// receiver is ever actually moved or shared across an OS thread boundary
+// in production; the manual impls below restore the bounds required by
+// the tightened `NodeContainer: Send + Sync` contract in
+// `intrusive_list.rs`.
+unsafe impl<T: Clone + Send> Send for Receiver<'static, T> {}
+// SAFETY: see the `Send` impl above. Internal synchronization is provided
+// by the wrapped `Mutex<GlobalRawMutex, _>` plus the channel's own
+// `RawMutex`; only the trait-object erasure of `PubSubBehavior<T>` hides
+// that fact from the auto-derive.
+unsafe impl<T: Clone + Send> Sync for Receiver<'static, T> {}
 
 impl<'a, T: Clone> Receiver<'a, T> {
     /// Create a new receiver
@@ -39,7 +46,7 @@ impl<'a, T: Clone> From<DynImmediatePublisher<'a, T>> for Receiver<'a, T> {
     }
 }
 
-impl<T: Clone> intrusive_list::NodeContainer for Receiver<'static, T> {
+impl<T: Clone + Send> intrusive_list::NodeContainer for Receiver<'static, T> {
     fn get_node(&self) -> &intrusive_list::Node {
         &self.node
     }
@@ -67,7 +74,7 @@ impl<T: Clone + 'static> Default for Immediate<T> {
     }
 }
 
-impl<T: Clone + 'static> Immediate<T> {
+impl<T: Clone + Send + 'static> Immediate<T> {
     /// Register a receiver
     pub fn register_receiver(&self, receiver: &'static Receiver<'_, T>) -> intrusive_list::Result<()> {
         self.receivers.push(receiver)
@@ -100,12 +107,56 @@ impl<T: Clone + 'static> Immediate<T> {
     }
 }
 
+/// `Receiver<'static, T>` must implement `Send + Sync` when `T: Clone + Send`,
+/// per the manual `unsafe impl` blocks above. The asserts below would fail
+/// to compile if the impls were ever removed.
+///
+/// ```
+/// use embedded_services::broadcaster::immediate::Receiver;
+/// fn assert_send_sync<T: Send + Sync>() {}
+/// assert_send_sync::<Receiver<'static, u32>>();
+/// assert_send_sync::<Receiver<'static, core::cell::Cell<u8>>>();
+/// ```
+///
+/// A `!Send` payload (e.g. `*const u8`) must NOT yield a `Send + Sync`
+/// `Receiver`, because the manual impl is gated on `T: Send`:
+///
+/// ```compile_fail
+/// use embedded_services::broadcaster::immediate::Receiver;
+/// fn assert_send_sync<T: Send + Sync>() {}
+/// assert_send_sync::<Receiver<'static, *const u8>>();
+/// ```
+///
+/// And a `!Send` payload must also not satisfy `NodeContainer`:
+///
+/// ```compile_fail
+/// use embedded_services::broadcaster::immediate::Receiver;
+/// use embedded_services::intrusive_list::NodeContainer;
+/// fn assert_nc<T: NodeContainer>() {}
+/// assert_nc::<Receiver<'static, *const u8>>();
+/// ```
+#[allow(dead_code)]
+const _SEND_SYNC_DOCS: () = ();
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod test {
     use super::*;
     use embassy_sync::pubsub::{PubSubChannel, WaitResult};
     use static_cell::StaticCell;
+
+    fn assert_send_sync<T: Send + Sync>() {}
+
+    #[test]
+    fn receiver_is_send_sync_for_send_payload() {
+        // Compile-time assertion: the manual `unsafe impl Send/Sync` blocks
+        // must continue to apply for `T: Send` payloads.
+        assert_send_sync::<Receiver<'static, u32>>();
+        assert_send_sync::<Receiver<'static, [u8; 16]>>();
+        // `Cell<u8>: Send` (but `!Sync`), and our impl requires only `T: Send`,
+        // so this must hold.
+        assert_send_sync::<Receiver<'static, core::cell::Cell<u8>>>();
+    }
 
     /// Test normal functionality
     #[tokio::test]

@@ -2,6 +2,16 @@
 use core::cell::Cell;
 
 /// A critical section backed Cell for sync scenarios where you want Cell behaviors, but need it to be thread safe (such as used in statics). Backed by a critical section, use sparingly.
+///
+/// `CriticalSectionCell<T>` is `Sync` only when `T: Send` (mirroring
+/// `std::sync::Mutex`). The following example must fail to compile because
+/// `*const u8` is `!Send`:
+///
+/// ```compile_fail
+/// use embedded_services::critical_section_cell::CriticalSectionCell;
+/// fn require_sync<T: Sync>() {}
+/// require_sync::<CriticalSectionCell<*const u8>>();
+/// ```
 pub struct CriticalSectionCell<T: ?Sized> {
     inner: Cell<T>,
 }
@@ -64,18 +74,12 @@ impl<T: Default> CriticalSectionCell<T> {
     }
 }
 
-// SAFETY: Sync is implemented here for `CriticalSectionCell` as `T` is only accessed via nestable critical sections.
-//
-// TODO: the `Sync` impl is unbounded (no `T: Send`). Combined with
-// `take`/`swap`/`into_inner`, this allows a `!Send` `T` to cross threads
-// under nominal `&CriticalSectionCell<T>` access. Under the single Cortex-M
-// / single Embassy executor model documented in `lib.rs`, this is not
-// exploitable, but `std::sync::Mutex` rightly requires `T: Send` for `Sync`.
-// Tightening this exposes a cascade through `IntrusiveNode` (which contains
-// `&dyn Any`) and broadcaster `Receiver` (which wraps embassy-sync
-// `DynImmediatePublisher`, a trait object that does not carry
-// `Send + Sync`). The full fix is deferred to a focused soundness pass.
-unsafe impl<T> Sync for CriticalSectionCell<T> {}
+// SAFETY: `Sync` requires `T: Send` because `take`, `swap`, and `into_inner`
+// move `T` by value out of the cell across a shared `&CriticalSectionCell<T>`,
+// which is effectively a move across thread boundaries. This matches the
+// `std::sync::Mutex<T>: Sync where T: Send` pattern. Interior access itself
+// is serialized via a (nestable) critical section.
+unsafe impl<T: Send> Sync for CriticalSectionCell<T> {}
 
 // SAFETY: Can implement send here due to critical section without T being explicitly Send
 unsafe impl<T> Send for CriticalSectionCell<T> where T: Send {}

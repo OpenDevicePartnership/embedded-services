@@ -264,3 +264,10 @@ impl NodeContainer for Device {
         &self.node
     }
 }
+
+// Compile-time guard: `Device` must remain `Send + Sync` because
+// `NodeContainer: Send + Sync`. All fields auto-derive.
+const _: fn() = || {
+    fn assert_send_sync<T: Send + Sync>() {}
+    assert_send_sync::<Device>();
+};
