@@ -53,6 +53,15 @@ pub trait ActivitySubscriber {
 /// actual subscriber node instance for embedding within static or singleton type T
 pub struct Subscriber {
     node: Node,
+    // NOTE: `Option<&'static dyn ActivitySubscriber>` is `!Send` because the
+    // `ActivitySubscriber` trait has no `Sync` supertrait. We deliberately
+    // do NOT add a `const _: () = _assert_send::<...>();` guard here: that
+    // would assert a property that does not hold. Sharing is sound because
+    // (1) the surrounding `unsafe impl Send + Sync for Subscriber` below
+    // restores the markers under the documented single-Cortex-M / single
+    // Embassy executor model, and (2) the `SyncCell` serializes the slot
+    // mutation. If `SyncCell` is ever required to be `Sync` in a context
+    // without that outer manual impl, this site must be revisited.
     instance: SyncCell<Option<&'static dyn ActivitySubscriber>>,
 }
 

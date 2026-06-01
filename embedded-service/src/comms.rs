@@ -198,6 +198,12 @@ pub enum MailboxDelegateError {
 pub struct Endpoint {
     node: Node,
     id: EndpointID,
+    // NOTE: `Option<&'static dyn MailboxDelegate>` is `!Send` because the
+    // `MailboxDelegate` trait has no `Sync` supertrait. We deliberately do
+    // NOT add a `const _` `Send` guard here — see the parallel comment in
+    // `activity.rs`. Soundness rests on the `unsafe impl Send + Sync for
+    // Endpoint` below plus the single-executor model documented in
+    // `lib.rs`.
     delegator: SyncCell<Option<&'static dyn MailboxDelegate>>,
 }
 
@@ -260,6 +266,18 @@ impl Endpoint {
                 );
                 crate::metrics::comms::bump_delegator_errors();
             }
+        } else {
+            // The endpoint is registered (otherwise we would not be here) but
+            // its delegator slot is still `None`. Under the single-executor
+            // model this is impossible because `register_endpoint` runs
+            // `push` and `init` with no yield in between; reaching this arm
+            // therefore signals either a custom registration path that
+            // bypassed `register_endpoint`, or a multi-executor consumer
+            // that violates the documented model. Bumping the counter and
+            // warn-logging keeps the silent-drop out of the no-failure
+            // contract.
+            crate::warn!("comms: routed message reached endpoint with uninitialized delegator");
+            crate::metrics::comms::bump_delivered_to_uninit();
         }
     }
 }
@@ -619,6 +637,46 @@ mod test {
         assert!(
             after > before,
             "comms::routed_unknown must increase after a send to an unregistered id; before={} after={}",
+            before,
+            after,
+        );
+    }
+
+    /// `Endpoint::process` must bump the `delivered_to_uninit` counter and
+    /// warn-log when a routed message reaches an endpoint whose delegator
+    /// slot is still `None`. Under the single-executor model this is
+    /// impossible via `register_endpoint` (push and init run with no yield
+    /// between them), so we exercise the path by pushing an `Endpoint` to
+    /// its list directly without ever calling `init`.
+    #[tokio::test]
+    async fn test_endpoint_with_uninitialized_delegator_bumps_counter() {
+        init();
+
+        // An Endpoint that has never had `init` called on it - delegator
+        // slot remains None.
+        static UNINIT_ENDPOINT: OnceLock<Endpoint> = OnceLock::new();
+        let endpoint = UNINIT_ENDPOINT.get_or_init(|| {
+            Endpoint::uninit(EndpointID::External(External::Oem(93)))
+        });
+
+        // Push directly to the list, bypassing register_endpoint so init is
+        // never called.
+        get_list(endpoint.id).get().await.push(endpoint).unwrap();
+
+        let before = crate::metrics::comms::delivered_to_uninit();
+
+        let payload: u32 = 0xFEED;
+        let _ = send(
+            EndpointID::External(External::Host),
+            EndpointID::External(External::Oem(93)),
+            &payload,
+        )
+        .await;
+
+        let after = crate::metrics::comms::delivered_to_uninit();
+        assert!(
+            after > before,
+            "comms::delivered_to_uninit must increase when a message reaches an uninitialized delegator; before={} after={}",
             before,
             after,
         );

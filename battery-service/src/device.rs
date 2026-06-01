@@ -168,6 +168,15 @@ pub struct Device {
     timeout: SyncCell<Duration>,
 }
 
+// Compile-time guard: `SyncCell<Duration>: Sync` requires `Duration: Send`.
+// `embassy_time::Duration` is a thin wrapper around an integer and is `Send`
+// today. If that ever changes, this assertion fires at workspace build
+// time, ahead of the ARM-only `thread_mode_cell` `Sync` requirement.
+const _: () = {
+    const fn _assert_send<T: Send>() {}
+    _assert_send::<Duration>();
+};
+
 impl Device {
     pub fn new(id: DeviceId) -> Self {
         Self {

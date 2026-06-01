@@ -114,15 +114,30 @@ impl<T: Default> ThreadModeCell<T> {
     }
 }
 
-// SAFETY: Sync is implemented here for ThreadModeCell as T is only accessed in a single-core, thread mode context.
-//
-// TODO: the `Sync` impl is unbounded (no `T: Send`). `std::sync::Mutex`
-// requires `T: Send` for `Sync`, and the same constraint should apply here.
-// Tightening this requires concurrent updates to `IntrusiveNode` and
-// broadcaster `Receiver`, so it is deferred to a focused soundness pass.
-// The unbounded impl is sound under the single Cortex-M / single Embassy
+// SAFETY: `Sync` requires `T: Send` because `take`, `swap`, `replace`, and
+// `into_inner` move `T` by value through a shared `&ThreadModeCell<T>`,
+// effectively transferring ownership of `T` between threads of execution.
+// This mirrors `std::sync::Mutex<T>: Sync where T: Send`, and matches the
+// bound on the sibling `CriticalSectionCell<T>: Sync where T: Send` impl.
+// Exclusive access at the instant of mutation is provided by the thread-mode
+// assertion, which is sound under the single Cortex-M / single Embassy
 // executor model documented in `lib.rs`.
-unsafe impl<T> Sync for ThreadModeCell<T> {}
+unsafe impl<T: Send> Sync for ThreadModeCell<T> {}
+
+// Positive compile-time assertion: `ThreadModeCell<T>` is `Sync` whenever
+// `T: Send`. This documents the intended bound and trips if `Sync` is ever
+// removed entirely. Note: it does *not* detect a widening of the `Sync`
+// bound (e.g. dropping the `T: Send` clause), since that strictly enlarges
+// the set of `T` for which the assertion holds. The canonical regression
+// net for the `T: Send` clause itself is the `compile_fail` doctest on the
+// sibling `CriticalSectionCell`, which proves the same soundness argument
+// for the parallel cell type.
+const _: () = {
+    const fn _assert_sync<T: Sync>() {}
+    const fn _check<T: Send>() {
+        _assert_sync::<ThreadModeCell<T>>();
+    }
+};
 
 // Although ideally T shouldn't need to be Send since we are only operating in a single context,
 // the possibility exists that T could sent to interrupt context then dropped.

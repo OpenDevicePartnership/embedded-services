@@ -48,6 +48,16 @@ pub struct Buffer<'a, T> {
     _lifetime: PhantomData<&'a ()>,
 }
 
+// Compile-time guard: `SyncCell<Status>: Sync` requires `Status: Send`.
+// `Status` is a plain `Copy` enum of primitives, so this holds today. If a
+// future refactor adds a `!Send` field (e.g. a raw pointer or a non-`Send`
+// trait object), this assertion fails at workspace build time rather than
+// only on the ARM `thread_mode_cell` build.
+const _: () = {
+    const fn _assert_send<T: Send>() {}
+    _assert_send::<Status>();
+};
+
 impl<'a, T> Buffer<'a, T> {
     /// Create a new buffer from a reference
     /// # Safety

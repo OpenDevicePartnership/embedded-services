@@ -51,6 +51,7 @@ pub mod comms {
 
     static DELEGATOR_ERRORS: AtomicUsize = AtomicUsize::new(0);
     static ROUTED_UNKNOWN: AtomicUsize = AtomicUsize::new(0);
+    static DELIVERED_TO_UNINIT: AtomicUsize = AtomicUsize::new(0);
 
     /// Number of times a registered mailbox delegate returned an error from
     /// `receive` (i.e. dropped a message). The error kind is also `warn!`-
@@ -67,12 +68,28 @@ pub mod comms {
         ROUTED_UNKNOWN.load(Ordering::Relaxed)
     }
 
+    /// Number of times a routed message reached an `Endpoint` whose delegator
+    /// slot was still `None` (i.e. the endpoint had been pushed to its list
+    /// but its `init` had not yet completed). Under the single-executor model
+    /// this race is impossible because `register_endpoint` runs `push` and
+    /// `init` with no yield between them; a non-zero count therefore
+    /// indicates either a custom registration path that bypassed
+    /// `register_endpoint`, or a multi-executor consumer that violates the
+    /// documented model.
+    pub fn delivered_to_uninit() -> usize {
+        DELIVERED_TO_UNINIT.load(Ordering::Relaxed)
+    }
+
     pub(crate) fn bump_delegator_errors() {
         super::bump_by(&DELEGATOR_ERRORS, 1);
     }
 
     pub(crate) fn bump_routed_unknown() {
         super::bump_by(&ROUTED_UNKNOWN, 1);
+    }
+
+    pub(crate) fn bump_delivered_to_uninit() {
+        super::bump_by(&DELIVERED_TO_UNINIT, 1);
     }
 }
 

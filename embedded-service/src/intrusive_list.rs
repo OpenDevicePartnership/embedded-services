@@ -40,6 +40,19 @@ pub struct Node {
     inner: SyncCell<IntrusiveNode>,
 }
 
+// Compile-time guard for both `SyncCell<IntrusiveNode>` (in `Node`) and
+// `SyncCell<Option<&'static IntrusiveNode>>` (in `IntrusiveList::head`
+// below): both require `T: Send` to be `Sync`. `IntrusiveNode`'s erased
+// payload carries explicit `Send + Sync` bounds (see field comment above),
+// so both holds today. If a future change drops those bounds, this guard
+// fires at workspace build time, ahead of the ARM-only `thread_mode_cell`
+// surface where the same `Sync` requirement is checked.
+const _: () = {
+    const fn _assert_send<T: Send>() {}
+    _assert_send::<IntrusiveNode>();
+    _assert_send::<Option<&'static IntrusiveNode>>();
+};
+
 struct Invalid {}
 
 impl Node {
