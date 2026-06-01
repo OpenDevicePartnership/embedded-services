@@ -1,4 +1,7 @@
-//! Full flow test for the power policy service. This tests verfies multiple flows of the service with two separate devices.
+//! Full flow test for the power policy service. This tests verifies multiple flows of the service with two separate devices.
+#![allow(clippy::panic)]
+#![allow(clippy::unwrap_used)]
+#![allow(clippy::expect_used)]
 use embassy_sync::pubsub::DynSubscriber;
 use embassy_time::{self as _, Timer};
 use embedded_services::{
@@ -99,7 +102,7 @@ impl Test for TestFullFlow {
         .await;
 
         // Unplug device 0, device 1 should remain current consumer
-        info!("Unpluging device 0");
+        info!("Unplugging device 0");
         let device0 = device0.detach().await.unwrap();
         Timer::after(PER_CALL_TIMEOUT).await;
 

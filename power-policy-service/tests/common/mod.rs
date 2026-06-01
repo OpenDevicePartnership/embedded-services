@@ -1,4 +1,7 @@
 //! Common test framework code
+#![allow(clippy::panic)]
+#![allow(clippy::unwrap_used)]
+#![allow(clippy::expect_used)]
 use embassy_futures::{
     join::join4,
     select::{Either, select},
@@ -81,7 +84,7 @@ pub async fn run_test(
     test_timeout: Duration,
     power_policy_config: power_policy_service::config::Config,
 ) {
-    env_logger::builder().filter_level(log::LevelFilter::Trace).init();
+    let _ = env_logger::builder().filter_level(log::LevelFilter::Trace).try_init();
 
     static COMPLETION_SIGNAL: StaticCell<Watch<GlobalRawMutex, (), 3>> = StaticCell::new();
     let completion_signal = COMPLETION_SIGNAL.init(Watch::new());
@@ -134,7 +137,7 @@ pub async fn assert_consumer_disconnected(
     expected_device: policy::DeviceId,
 ) {
     let WaitResult::Message(policy::CommsMessage {
-        data: policy::CommsData::ConsumerDisconnected(device),
+        data: policy::CommsData::ConsumerDisconnected(device, _),
     }) = receiver.next_message().await
     else {
         panic!("Expected ConsumerDisconnected event");
