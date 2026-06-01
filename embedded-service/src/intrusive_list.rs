@@ -16,6 +16,16 @@ pub enum Error {
 pub type Result<T> = core::result::Result<T, Error>;
 
 /// Embedded node that "intrudes" on a structure
+//
+// TODO: `address_of_data` is `&dyn Any` (without `Send + Sync`). Combined
+// with the unbounded `Sync` impl on `CriticalSectionCell` / `ThreadModeCell`,
+// this allows a `!Send` `T` inserted via a custom `NodeContainer` to be
+// shared across threads. Under the single Cortex-M / single Embassy executor
+// model documented in `lib.rs`, this cannot be exploited today, but the type
+// system does not enforce that guarantee. Tightening this requires updating
+// embassy-sync `PubSubBehavior` trait-object types in
+// `broadcaster::immediate::Receiver` and is deferred to the broader
+// broadcaster redesign.
 #[derive(Copy, Clone, Debug)]
 pub struct IntrusiveNode {
     /// offset from &self to struct data. Typically := sizeof(IntrusiveNode)
@@ -100,8 +110,13 @@ impl IntrusiveList {
     }
 
     /// only allow pushing to the head of the list
+    ///
+    /// This helper is called from inside the single `critical_section::with`
+    /// of `push`, so the inner CS here is nested (a no-op on
+    /// `critical_section` v1, which supports nesting). The CS is retained for
+    /// callers (test-only) that might want to push a raw pre-validated node
+    /// without re-running the validity check.
     fn push_front(&self, node: &'static mut IntrusiveNode) {
-        // critical section in case of multi-threaded implementation:
         critical_section::with(|_cs| {
             if let Some(old_head) = self.head.get() {
                 node.next = Some(old_head);
@@ -112,24 +127,57 @@ impl IntrusiveList {
     }
 
     /// generic over T: NodeContainer for list.push() proper node construction
+    ///
+    /// The entire validity-check, node-write, and list-link sequence runs in
+    /// a single `critical_section::with`. Without this, in any multi-executor
+    /// or ISR-vs-thread scenario two concurrent `push(&same_obj)` callers
+    /// could each pass the `valid == false` check, both mutate the same
+    /// `SyncCell<IntrusiveNode>`, and the second `push_front` could
+    /// construct a self-cycle (head -> N -> N -> ...).
+    ///
+    /// Under the single Cortex-M / single Embassy executor model the race
+    /// cannot fire today, but `push_front` is itself CS-gated, so this
+    /// extends the same atomicity guarantee to the whole push sequence.
+    /// Loom-based concurrency verification is a separate follow-up.
     pub fn push<T: NodeContainer>(&self, object: &'static T) -> Result<()> {
-        // check if node is in the list already. Valid flag will only be set if
-        // the element has been constructed and inserted into a linked list, so
-        // this check covers both same list and other list conditions.
-        if object.get_node().inner.get().valid {
-            return Err(Error::NodeAlreadyInList);
-        }
+        // Single critical_section around the whole push sequence so that on
+        // any future multi-executor / ISR target the validity check and the
+        // head-link write are atomic.
+        critical_section::with(|_cs| {
+            // check if node is in the list already. Valid flag will only be set if
+            // the element has been constructed and inserted into a linked list, so
+            // this check covers both same list and other list conditions.
+            if object.get_node().inner.get().valid {
+                return Err(Error::NodeAlreadyInList);
+            }
 
-        // since this API is private to this module, this is the only place where
-        // a node can be marked as valid.
-        let node = IntrusiveNode::new(object);
-        object.get_node().inner.set(node);
+            // since this API is private to this module, this is the only place where
+            // a node can be marked as valid.
+            let node = IntrusiveNode::new(object);
+            object.get_node().inner.set(node);
 
-        self.push_front(
-            // SAFETY: known safe operation due to valid flag and static lifetime
-            unsafe { &mut *object.get_node().inner.as_ptr() },
-        );
-        Ok(())
+            self.push_front(
+                // SAFETY: we hold the only critical section in this path.
+                // Three invariants hold here:
+                //   1. We just set `valid = true` inside this CS, and the
+                //      pre-CS check above guaranteed `valid == false`. No
+                //      other CS-bound mutator can have observed the node
+                //      under our CS, so this `&mut IntrusiveNode` does not
+                //      alias any live `&IntrusiveNode` produced by `push` /
+                //      `push_front` (both are CS-gated).
+                //   2. The `IntrusiveIterator` reads `head` and `next`
+                //      outside any CS. The non-CS readers can only observe
+                //      a node AFTER `self.head.set(Some(node))` runs inside
+                //      `push_front` (line above), at which point we have
+                //      released the `&mut IntrusiveNode` because `push_front`
+                //      takes it by value.
+                //   3. `as_ptr` returns a valid pointer for the entire
+                //      `'static` lifetime of `object`, so dereferencing it
+                //      is well-defined.
+                unsafe { &mut *object.get_node().inner.as_ptr() },
+            );
+            Ok(())
+        })
     }
 
     /// Iterate over the list as if it were items of type `T`, skipping any nodes that are of a different type.
@@ -604,5 +652,42 @@ mod test {
     #[test]
     fn test_static_alloc() {
         static _LIST: IntrusiveList = IntrusiveList::new();
+    }
+
+    /// After a failed `push` (duplicate), the list state must be identical
+    /// to before the push attempt. With a non-atomic implementation, an
+    /// interleaved push could observe a partially constructed node; the
+    /// CS-wrapped sequence makes the whole thing atomic.
+    ///
+    /// We assert the observable behavior: after a duplicate push fails,
+    /// (a) the head of the list still points at the same node as before, and
+    /// (b) iterating the list yields the same elements in the same order.
+    /// Full multi-task race verification (loom) is a separate follow-up.
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn test_push_failure_leaves_list_state_unchanged() {
+        let list = IntrusiveList::new();
+        static EL1: OnceLock<RegistrationA> = OnceLock::new();
+        static EL2: OnceLock<RegistrationA> = OnceLock::new();
+        let a = EL1.get_or_init(RegistrationA::new);
+        let b = EL2.get_or_init(RegistrationA::new);
+
+        list.push(a).unwrap();
+        list.push(b).unwrap();
+
+        // Snapshot the pre-failure state.
+        let head_before = list.head.get().map(|n| n as *const _);
+        let count_before = list.into_iter().count();
+        assert_eq!(count_before, 2);
+
+        // Duplicate pushes must fail.
+        assert!(list.push(a).is_err());
+        assert!(list.push(b).is_err());
+
+        // Post-failure state must match.
+        let head_after = list.head.get().map(|n| n as *const _);
+        let count_after = list.into_iter().count();
+        assert_eq!(head_before, head_after, "head must not change on failed push");
+        assert_eq!(count_after, 2, "list length must not change on failed push");
     }
 }

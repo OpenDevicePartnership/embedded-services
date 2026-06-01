@@ -168,6 +168,8 @@ pub trait MailboxDelegate {
 }
 
 /// Message transmission Error
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum MailboxDelegateError {
     /// Buffer is full
     BufferFull,
@@ -231,19 +233,52 @@ impl Endpoint {
 
     fn process(&self, message: &Message) {
         if let Some(delegator) = self.delegator.get() {
-            // REVISIT: Continue to propagate error
-            let _res = delegator.receive(message);
+            // Back-pressure policy: drop + warn-log. Without the log a
+            // misbehaving / saturated delegate would silently lose messages.
+            if let Err(err) = delegator.receive(message) {
+                crate::warn!(
+                    "comms: delegator returned {} for endpoint",
+                    mailbox_delegate_error_str(err),
+                );
+            }
         }
     }
 }
 
+/// Stringify a [`MailboxDelegateError`] for backend-agnostic logging.
+///
+/// Both `defmt` and `log` accept `{}` against `&str`, so this is the lowest
+/// common denominator that works on every supported logging backend without
+/// requiring a `Display` impl on the error type.
+const fn mailbox_delegate_error_str(err: MailboxDelegateError) -> &'static str {
+    match err {
+        MailboxDelegateError::BufferFull => "BufferFull",
+        MailboxDelegateError::MessageNotFound => "MessageNotFound",
+        MailboxDelegateError::InvalidSource => "InvalidSource",
+        MailboxDelegateError::InvalidDestination => "InvalidDestination",
+        MailboxDelegateError::InvalidId => "InvalidId",
+        MailboxDelegateError::InvalidData => "InvalidData",
+        MailboxDelegateError::Other => "Other",
+    }
+}
+
 /// initialize receiver node for message handling
+///
+/// The list push happens BEFORE the delegator slot is written. If the same
+/// node is already in the list (duplicate registration), the push returns
+/// `Err(NodeAlreadyInList)` and the existing delegator is left intact —
+/// reversing the order would silently overwrite the delegator while the push
+/// rejected the duplicate. Under the single-executor assumption documented
+/// in `lib.rs`, there is no yield point between the successful `push` and
+/// the subsequent `init`, so the router cannot observe a
+/// registered-but-uninitialized endpoint.
 pub async fn register_endpoint(
     this: &'static impl MailboxDelegate,
     node: &'static Endpoint,
 ) -> Result<(), intrusive_list::Error> {
+    get_list(node.id).get().await.push(node)?;
     node.init(this);
-    get_list(node.id).get().await.push(node)
+    Ok(())
 }
 
 fn get_list(target: EndpointID) -> &'static OnceLock<IntrusiveList> {
@@ -343,4 +378,157 @@ pub(crate) fn init() {
     get_list(External::Debug.into()).get_or_init(IntrusiveList::new);
     get_list(External::Host.into()).get_or_init(IntrusiveList::new);
     get_list(External::Oem(0).into()).get_or_init(IntrusiveList::new);
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod test {
+    use super::*;
+    use core::sync::atomic::{AtomicU32, Ordering};
+    use embassy_sync::once_lock::OnceLock;
+
+    /// A `MailboxDelegate` that counts received messages, so a test can prove
+    /// which delegate handled a routed message.
+    struct CountingDelegate {
+        label: u32,
+        hits: AtomicU32,
+    }
+
+    impl MailboxDelegate for CountingDelegate {
+        fn receive(&self, _message: &Message) -> Result<(), MailboxDelegateError> {
+            self.hits.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }
+    }
+
+    /// A `MailboxDelegate` that ALWAYS rejects with `BufferFull` so we can
+    /// prove (a) the rejection is reported via warn-log and (b) one failing
+    /// delegate does not break delivery to others.
+    struct RejectingDelegate {
+        rejections: AtomicU32,
+    }
+
+    impl MailboxDelegate for RejectingDelegate {
+        fn receive(&self, _message: &Message) -> Result<(), MailboxDelegateError> {
+            self.rejections.fetch_add(1, Ordering::SeqCst);
+            Err(MailboxDelegateError::BufferFull)
+        }
+    }
+
+    /// `register_endpoint` must reject duplicate registration AND preserve
+    /// the first delegator. Reversing the push/init order would silently
+    /// overwrite the first delegator when the push rejected the duplicate.
+    #[tokio::test]
+    async fn test_register_endpoint_rejects_duplicate_and_preserves_first_delegator() {
+        // Use the OEM external bucket to keep this test isolated from any
+        // other internal/external endpoint state in the global lists.
+        init();
+
+        static FIRST: OnceLock<CountingDelegate> = OnceLock::new();
+        let first = FIRST.get_or_init(|| CountingDelegate {
+            label: 1,
+            hits: AtomicU32::new(0),
+        });
+        static SECOND: OnceLock<CountingDelegate> = OnceLock::new();
+        let second = SECOND.get_or_init(|| CountingDelegate {
+            label: 2,
+            hits: AtomicU32::new(0),
+        });
+
+        // One Endpoint, shared between two registration attempts.
+        static ENDPOINT: OnceLock<Endpoint> = OnceLock::new();
+        let endpoint = ENDPOINT.get_or_init(|| {
+            // Pick an OEM key unlikely to collide with other tests.
+            Endpoint::uninit(EndpointID::External(External::Oem(91)))
+        });
+
+        // First registration must succeed.
+        register_endpoint(first, endpoint).await.unwrap();
+
+        // Second registration with a different delegator must FAIL.
+        let duplicate = register_endpoint(second, endpoint).await;
+        assert!(
+            matches!(duplicate, Err(intrusive_list::Error::NodeAlreadyInList)),
+            "duplicate registration must return NodeAlreadyInList"
+        );
+
+        // Route a message; the original delegator (first) must handle it,
+        // proving its delegator slot was preserved across the rejected
+        // duplicate registration.
+        let payload: u32 = 0xC0FFEE;
+        let _ = endpoint
+            .send(EndpointID::External(External::Oem(91)), &payload)
+            .await;
+
+        assert_eq!(first.hits.load(Ordering::SeqCst), 1, "first delegator must receive");
+        assert_eq!(
+            second.hits.load(Ordering::SeqCst),
+            0,
+            "second delegator must NOT receive after rejected duplicate registration"
+        );
+
+        // Bonus: prove the labels (used purely for human debugging) are sane.
+        assert_eq!(first.label, 1);
+        assert_eq!(second.label, 2);
+    }
+
+    /// `Endpoint::process` must NOT swallow delegate errors silently. The
+    /// error is reported via the `warn!` macro and the route continues to
+    /// attempt delivery to other endpoints (one bad delegate must not break
+    /// the rest).
+    ///
+    /// This test cannot easily capture log output without extra infrastructure,
+    /// so it instead asserts behavior: with one rejecting + one accepting
+    /// endpoint, the accepting one must still receive, and the rejecting one
+    /// must record its rejection.
+    #[tokio::test]
+    async fn test_route_continues_past_rejecting_delegate() {
+        init();
+
+        static REJECTING: OnceLock<RejectingDelegate> = OnceLock::new();
+        let rejecting = REJECTING.get_or_init(|| RejectingDelegate {
+            rejections: AtomicU32::new(0),
+        });
+        static ACCEPTING: OnceLock<CountingDelegate> = OnceLock::new();
+        let accepting = ACCEPTING.get_or_init(|| CountingDelegate {
+            label: 99,
+            hits: AtomicU32::new(0),
+        });
+
+        static REJECTING_ENDPOINT: OnceLock<Endpoint> = OnceLock::new();
+        let rejecting_endpoint = REJECTING_ENDPOINT.get_or_init(|| {
+            Endpoint::uninit(EndpointID::External(External::Oem(92)))
+        });
+        static ACCEPTING_ENDPOINT: OnceLock<Endpoint> = OnceLock::new();
+        let accepting_endpoint = ACCEPTING_ENDPOINT.get_or_init(|| {
+            Endpoint::uninit(EndpointID::External(External::Oem(92)))
+        });
+
+        register_endpoint(rejecting, rejecting_endpoint).await.unwrap();
+        register_endpoint(accepting, accepting_endpoint).await.unwrap();
+
+        // Send to the shared OEM(92) endpoint id.
+        let payload: u32 = 0xDEADBEEF;
+        let _ = send(
+            EndpointID::External(External::Host),
+            EndpointID::External(External::Oem(92)),
+            &payload,
+        )
+        .await;
+
+        // The rejecting delegate must have seen the call (proving the message
+        // was actually dispatched, not just dropped at the router level).
+        assert_eq!(
+            rejecting.rejections.load(Ordering::SeqCst),
+            1,
+            "rejecting delegate must have been called"
+        );
+        // The accepting delegate must have received as well - proving the
+        // route loop did not short-circuit on the rejecting delegate's Err.
+        assert_eq!(
+            accepting.hits.load(Ordering::SeqCst),
+            1,
+            "accepting delegate must still receive after another endpoint rejected"
+        );
+    }
 }

@@ -199,7 +199,10 @@ impl<'a, T> SharedRef<'a, T> {
     ///
     /// Returns an error if the given slice is out-of-bounds
     pub fn new(buffer: &'a Buffer<'a, T>, slice: Range<usize>) -> Result<Self, Error> {
-        if slice.start >= buffer.len() || slice.end > buffer.len() {
+        // Allow empty trailing slices, e.g. `len..len`. A `start >= len`
+        // check would reject those even though they are valid in standard
+        // Rust slicing.
+        if slice.start > buffer.len() || slice.end > buffer.len() || slice.start > slice.end {
             Err(Error::InvalidRange)
         } else {
             Ok(Self { buffer, slice })
@@ -217,7 +220,8 @@ impl<'a, T> SharedRef<'a, T> {
     ///
     /// Returns an error if the given range is out-of-bounds
     pub fn slice(&self, range: Range<usize>) -> Result<SharedRef<'a, T>, Error> {
-        if range.start >= self.slice.len() || range.end > self.slice.len() {
+        // Allow empty trailing slices, e.g. `len..len`.
+        if range.start > self.slice.len() || range.end > self.slice.len() || range.start > range.end {
             Err(Error::InvalidRange)
         } else {
             let start = self.slice.start + range.start;
@@ -245,7 +249,8 @@ pub struct Access<'a, T> {
 
 impl<'a, T> Access<'a, T> {
     fn new(buffer: &'a Buffer<'a, T>, slice: Range<usize>) -> Result<Self, Error> {
-        if slice.start >= buffer.len() || slice.end > buffer.len() {
+        // Allow empty trailing slices, e.g. `len..len`.
+        if slice.start > buffer.len() || slice.end > buffer.len() || slice.start > slice.end {
             Err(Error::InvalidRange)
         } else {
             buffer.borrow(false)?;
@@ -410,7 +415,38 @@ mod test {
         define_static_buffer!(buffer, u8, [0, 1, 2, 3, 4, 5, 6, 7]);
         let buffer = buffer::get_mut().unwrap();
 
-        let _slice = buffer.reference().slice(8..8).unwrap();
+        // start=9 is past the buffer end (len=8). Must error.
+        let _slice = buffer.reference().slice(9..9).unwrap();
+    }
+
+    // Empty trailing slice at the buffer length must be valid.
+    // Standard Rust slicing allows `len..len`; the buffer API must accept it
+    // (a `start >= len` check would wrongly reject it).
+    #[test]
+    fn test_slice_empty_trailing_is_valid() {
+        define_static_buffer!(buffer, u8, [0, 1, 2, 3, 4, 5, 6, 7]);
+        let buffer = buffer::get_mut().unwrap();
+
+        // Empty slice at the end of an 8-byte buffer.
+        let slice = buffer.reference().slice(8..8).unwrap();
+        assert_eq!(slice.len(), 0);
+        assert!(slice.is_empty());
+
+        // Borrowing it produces an empty slice.
+        let access = slice.borrow().unwrap();
+        assert!(<Access<'_, u8> as Borrow<[u8]>>::borrow(&access).is_empty());
+    }
+
+    // `SharedRef::slice` on a trailing empty range must succeed.
+    #[test]
+    fn test_shared_ref_slice_empty_trailing_is_valid() {
+        define_static_buffer!(buffer, u8, [0, 1, 2, 3, 4, 5, 6, 7]);
+        let buffer = buffer::get_mut().unwrap();
+        let base = buffer.reference();
+
+        // 4..4 lands inside the slice range but is empty - must succeed.
+        let empty = base.slice(4..4).unwrap();
+        assert_eq!(empty.len(), 0);
     }
 
     // Test slice ending index out of bounds

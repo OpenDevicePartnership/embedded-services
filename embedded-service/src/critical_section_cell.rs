@@ -64,7 +64,17 @@ impl<T: Default> CriticalSectionCell<T> {
     }
 }
 
-// SAFETY: Sync is implemented here for `CriticalSectionCell` as `T` is only accessed via nestable critical sections
+// SAFETY: Sync is implemented here for `CriticalSectionCell` as `T` is only accessed via nestable critical sections.
+//
+// TODO: the `Sync` impl is unbounded (no `T: Send`). Combined with
+// `take`/`swap`/`into_inner`, this allows a `!Send` `T` to cross threads
+// under nominal `&CriticalSectionCell<T>` access. Under the single Cortex-M
+// / single Embassy executor model documented in `lib.rs`, this is not
+// exploitable, but `std::sync::Mutex` rightly requires `T: Send` for `Sync`.
+// Tightening this exposes a cascade through `IntrusiveNode` (which contains
+// `&dyn Any`) and broadcaster `Receiver` (which wraps embassy-sync
+// `DynImmediatePublisher`, a trait object that does not carry
+// `Send + Sync`). The full fix is deferred to a focused soundness pass.
 unsafe impl<T> Sync for CriticalSectionCell<T> {}
 
 // SAFETY: Can implement send here due to critical section without T being explicitly Send

@@ -8,6 +8,16 @@ use embassy_sync::{mutex::Mutex, pubsub::DynImmediatePublisher};
 use crate::{GlobalRawMutex, intrusive_list};
 
 /// Receiver
+//
+// TODO: the outer `Mutex<GlobalRawMutex, DynImmediatePublisher>` is suspected
+// to be redundant. `DynImmediatePublisher::publish_immediate` takes `&self`
+// and the underlying `PubSubChannel` already has its own internal
+// `RawMutex`, so the outer Mutex appears to be providing interior mutability
+// rather than synchronization. Removing it cascades into the `Sync`-ness of
+// `Receiver<'static, T>`: the embassy-sync trait object
+// `dyn PubSubBehavior<T>` does not carry `Send + Sync` bounds, so `Receiver`
+// cannot trivially become `Sync` without an `unsafe impl` justified by the
+// single-executor model. Deferred to the broader broadcaster redesign.
 pub struct Receiver<'a, T: Clone> {
     node: intrusive_list::Node,
     publisher: Mutex<GlobalRawMutex, DynImmediatePublisher<'a, T>>,
@@ -64,6 +74,23 @@ impl<T: Clone + 'static> Immediate<T> {
     }
 
     /// Broadcast a message to all receivers
+    ///
+    /// # Cancel safety
+    ///
+    /// This future is **NOT cancel-safe**. The implementation iterates
+    /// receivers and `.await`s a per-receiver mutex lock for each one. If the
+    /// returned future is dropped between two iterations (e.g. by a `select`
+    /// arm completing first, by `tokio::time::timeout`, or by task abort),
+    /// **partial delivery** occurs: receivers earlier in the list have
+    /// observed the message, those later in the list have not. There is no
+    /// re-try, no log, and no signal to the caller about which receivers
+    /// missed the message.
+    ///
+    /// In practice this is acceptable for the documented "messages may be
+    /// lost" contract on this module, but callers performing time-critical
+    /// broadcasts should avoid wrapping `broadcast` in cancellation
+    /// combinators. A `try_broadcast` returning per-receiver status is a
+    /// future broadcaster-redesign item.
     pub async fn broadcast(&self, message: T) {
         for node in &self.receivers {
             if let Some(receiver) = node.data::<Receiver<'_, T>>() {

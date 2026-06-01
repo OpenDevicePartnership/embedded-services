@@ -115,6 +115,13 @@ impl<T: Default> ThreadModeCell<T> {
 }
 
 // SAFETY: Sync is implemented here for ThreadModeCell as T is only accessed in a single-core, thread mode context.
+//
+// TODO: the `Sync` impl is unbounded (no `T: Send`). `std::sync::Mutex`
+// requires `T: Send` for `Sync`, and the same constraint should apply here.
+// Tightening this requires concurrent updates to `IntrusiveNode` and
+// broadcaster `Receiver`, so it is deferred to a focused soundness pass.
+// The unbounded impl is sound under the single Cortex-M / single Embassy
+// executor model documented in `lib.rs`.
 unsafe impl<T> Sync for ThreadModeCell<T> {}
 
 // Although ideally T shouldn't need to be Send since we are only operating in a single context,
