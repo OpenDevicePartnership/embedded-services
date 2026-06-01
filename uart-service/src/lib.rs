@@ -122,7 +122,8 @@ impl<R: RelayHandler, M: MctpMedium + Copy> Service<R, M> {
         trace!("Received host request");
 
         let response = self.relay_handler.process_request(body).await;
-        self.inner.host_tx_queue
+        self.inner
+            .host_tx_queue
             .try_send(HostResultMessage {
                 handler_service_id: header.get_service_id(),
                 message: response,
