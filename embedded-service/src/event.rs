@@ -248,7 +248,11 @@ mod test {
         // and must NOT bump the lag counter again.
         let lag_after_first = crate::metrics::broadcaster::lag();
         let actual: Option<u32> = <DynSubscriber<u32> as Receiver<u32>>::try_next(&mut subscriber);
-        assert_eq!(actual, Some(2), "after consuming lag, the next read returns the queued value");
+        assert_eq!(
+            actual,
+            Some(2),
+            "after consuming lag, the next read returns the queued value"
+        );
         let lag_after_second = crate::metrics::broadcaster::lag();
         assert_eq!(
             lag_after_second, lag_after_first,

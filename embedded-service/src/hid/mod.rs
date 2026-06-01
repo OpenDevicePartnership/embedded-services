@@ -514,35 +514,35 @@ mod test {
 
         // Drain whatever is buffered (use a timeout to avoid hanging if
         // the implementation regressed to single-slot behavior with both stored).
-        let first = tokio::time::timeout(
-            Duration::from_millis(100),
-            device.wait_request(),
-        )
-        .await
-        .unwrap();
+        let first = tokio::time::timeout(Duration::from_millis(100), device.wait_request())
+            .await
+            .unwrap();
 
         match second {
             Ok(()) => {
                 // Both requests must be retrievable - prove the second one is also there.
-                let second_drained = tokio::time::timeout(
-                    Duration::from_millis(100),
-                    device.wait_request(),
-                )
-                .await
-                .unwrap();
+                let second_drained = tokio::time::timeout(Duration::from_millis(100), device.wait_request())
+                    .await
+                    .unwrap();
 
                 // Discriminate the variants - the channel must preserve both, in order.
-                assert!(matches!(first, Request::Descriptor),
-                    "first delivered must be the first sent (Descriptor)");
-                assert!(matches!(second_drained, Request::ReportDescriptor),
-                    "second delivered must be the second sent (ReportDescriptor)");
+                assert!(
+                    matches!(first, Request::Descriptor),
+                    "first delivered must be the first sent (Descriptor)"
+                );
+                assert!(
+                    matches!(second_drained, Request::ReportDescriptor),
+                    "second delivered must be the second sent (ReportDescriptor)"
+                );
             }
             Err(_) => {
                 // Pre-fix path silently dropped on overflow returning Ok(()).
                 // If the implementation now returns BufferFull, that's also acceptable.
                 // First request must still be the original (Descriptor).
-                assert!(matches!(first, Request::Descriptor),
-                    "first request must be preserved even when second is rejected");
+                assert!(
+                    matches!(first, Request::Descriptor),
+                    "first request must be preserved even when second is rejected"
+                );
             }
         }
     }
@@ -560,7 +560,11 @@ mod test {
                 data: MessageData::Request(req),
             };
             // The Box keeps the Message alive for the borrow inside Data::new.
-            (msg, EndpointID::External(External::Host), EndpointID::Internal(Internal::Hid))
+            (
+                msg,
+                EndpointID::External(External::Host),
+                EndpointID::Internal(Internal::Hid),
+            )
         };
 
         // Fill the channel to capacity. Capacity is DEVICE_REQUEST_QUEUE_DEPTH

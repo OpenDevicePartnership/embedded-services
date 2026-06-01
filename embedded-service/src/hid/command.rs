@@ -591,7 +591,10 @@ mod test {
         let data = [0x12u8, 0x34];
 
         let (written, remaining) = Command::encode_data(&mut buf, &data).unwrap();
-        assert_eq!(written, 4, "encode_data should write 2-byte length + 2-byte data = 4 bytes");
+        assert_eq!(
+            written, 4,
+            "encode_data should write 2-byte length + 2-byte data = 4 bytes"
+        );
         assert_eq!(remaining.len(), 4, "remaining slice should cover the 4 trailing bytes");
 
         // Sentinel write into the remaining slice to prove it does not overlap the prefix/data.
@@ -602,7 +605,11 @@ mod test {
         // Bytes 2..4 must be the data we passed in, not the sentinel.
         assert_eq!(&buf[2..4], &data, "data bytes corrupted");
         // Bytes 4..8 must be the sentinel.
-        assert_eq!(&buf[4..8], &[0xDE, 0xAD, 0xBE, 0xEF], "remaining slice did not point past total_len");
+        assert_eq!(
+            &buf[4..8],
+            &[0xDE, 0xAD, 0xBE, 0xEF],
+            "remaining slice did not point past total_len"
+        );
     }
 
     #[test]

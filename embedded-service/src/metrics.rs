@@ -164,11 +164,7 @@ pub mod broadcaster {
     pub(crate) fn bump_lag(n: u64) {
         // u64 -> usize: clamp to usize range so 32-bit hosts saturate
         // cleanly rather than truncating large lag values to small ones.
-        let n_usize = if n > usize::MAX as u64 {
-            usize::MAX
-        } else {
-            n as usize
-        };
+        let n_usize = if n > usize::MAX as u64 { usize::MAX } else { n as usize };
         super::bump_by(&LAG, n_usize);
     }
 }

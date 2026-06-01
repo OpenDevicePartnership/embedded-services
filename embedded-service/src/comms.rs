@@ -526,9 +526,7 @@ mod test {
         // proving its delegator slot was preserved across the rejected
         // duplicate registration.
         let payload: u32 = 0xC0FFEE;
-        let _ = endpoint
-            .send(EndpointID::External(External::Oem(91)), &payload)
-            .await;
+        let _ = endpoint.send(EndpointID::External(External::Oem(91)), &payload).await;
 
         assert_eq!(first.hits.load(Ordering::SeqCst), 1, "first delegator must receive");
         assert_eq!(
@@ -566,13 +564,11 @@ mod test {
         });
 
         static REJECTING_ENDPOINT: OnceLock<Endpoint> = OnceLock::new();
-        let rejecting_endpoint = REJECTING_ENDPOINT.get_or_init(|| {
-            Endpoint::uninit(EndpointID::External(External::Oem(92)))
-        });
+        let rejecting_endpoint =
+            REJECTING_ENDPOINT.get_or_init(|| Endpoint::uninit(EndpointID::External(External::Oem(92))));
         static ACCEPTING_ENDPOINT: OnceLock<Endpoint> = OnceLock::new();
-        let accepting_endpoint = ACCEPTING_ENDPOINT.get_or_init(|| {
-            Endpoint::uninit(EndpointID::External(External::Oem(92)))
-        });
+        let accepting_endpoint =
+            ACCEPTING_ENDPOINT.get_or_init(|| Endpoint::uninit(EndpointID::External(External::Oem(92))));
 
         register_endpoint(rejecting, rejecting_endpoint).await.unwrap();
         register_endpoint(accepting, accepting_endpoint).await.unwrap();
@@ -655,9 +651,7 @@ mod test {
         // An Endpoint that has never had `init` called on it - delegator
         // slot remains None.
         static UNINIT_ENDPOINT: OnceLock<Endpoint> = OnceLock::new();
-        let endpoint = UNINIT_ENDPOINT.get_or_init(|| {
-            Endpoint::uninit(EndpointID::External(External::Oem(93)))
-        });
+        let endpoint = UNINIT_ENDPOINT.get_or_init(|| Endpoint::uninit(EndpointID::External(External::Oem(93))));
 
         // Push directly to the list, bypassing register_endpoint so init is
         // never called.
