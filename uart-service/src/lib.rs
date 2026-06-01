@@ -81,8 +81,12 @@ pub enum Error<M: MctpMedium> {
 ///
 /// [`MctpPacketContext`]: mctp_rs::MctpPacketContext
 pub struct Service<R: RelayHandler, M: MctpMedium + Copy> {
+    pub(crate) inner: ServiceInner<R, M>,
+    pub(crate) relay_handler: R,
+}
+
+pub(crate) struct ServiceInner<R: RelayHandler, M: MctpMedium + Copy> {
     host_tx_queue: Channel<GlobalRawMutex, HostResultMessage<R>, HOST_TX_QUEUE_SIZE>,
-    relay_handler: R,
     medium: M,
     reply_context: mctp_rs::MctpReplyContext<M>,
 }
@@ -90,13 +94,46 @@ pub struct Service<R: RelayHandler, M: MctpMedium + Copy> {
 impl<R: RelayHandler, M: MctpMedium + Copy> Service<R, M> {
     pub fn new(relay_handler: R, medium: M, reply_context: mctp_rs::MctpReplyContext<M>) -> Result<Self, Error<M>> {
         Ok(Self {
-            host_tx_queue: Channel::new(),
+            inner: ServiceInner {
+                host_tx_queue: Channel::new(),
+                medium,
+                reply_context,
+            },
             relay_handler,
-            medium,
-            reply_context,
         })
     }
 
+    // Deserialize the request and forward it to correct service for processing
+    async fn process_request(&self, state: &ReadState, packet_len: usize) -> Result<(), Error<M>> {
+        let mut assembly_buf = [0u8; BUF_SIZE];
+        let mut mctp_ctx = mctp_rs::MctpPacketContext::<M>::new(self.inner.medium, &mut assembly_buf);
+
+        let message = mctp_ctx
+            .deserialize_packet(
+                state
+                    .buf
+                    .get(..packet_len)
+                    .ok_or(Error::Serialize("frame exceeds BUF_SIZE"))?,
+            )
+            .map_err(Error::Mctp)?
+            .ok_or(Error::Serialize("Partial message not supported"))?;
+
+        let (header, body) = message.parse_as::<R::RequestEnumType>().map_err(Error::Mctp)?;
+        trace!("Received host request");
+
+        let response = self.relay_handler.process_request(body).await;
+        self.inner.host_tx_queue
+            .try_send(HostResultMessage {
+                handler_service_id: header.get_service_id(),
+                message: response,
+            })
+            .map_err(|_| Error::Comms)?;
+
+        Ok(())
+    }
+}
+
+impl<R: RelayHandler, M: MctpMedium + Copy> ServiceInner<R, M> {
     async fn process_response<T: UartWrite>(
         &self,
         uart: &mut T,
@@ -123,6 +160,10 @@ impl<R: RelayHandler, M: MctpMedium + Copy> Service<R, M> {
         }
 
         Ok(())
+    }
+
+    async fn wait_for_response(&self) -> HostResultMessage<R> {
+        self.host_tx_queue.receive().await
     }
 
     // Read bytes from UART until a complete request is assembled.
@@ -159,39 +200,6 @@ impl<R: RelayHandler, M: MctpMedium + Copy> Service<R, M> {
                 None => continue,
             }
         }
-    }
-
-    // Deserialize the request and forward it to correct service for processing
-    async fn process_request(&self, state: &ReadState, packet_len: usize) -> Result<(), Error<M>> {
-        let mut assembly_buf = [0u8; BUF_SIZE];
-        let mut mctp_ctx = mctp_rs::MctpPacketContext::<M>::new(self.medium, &mut assembly_buf);
-
-        let message = mctp_ctx
-            .deserialize_packet(
-                state
-                    .buf
-                    .get(..packet_len)
-                    .ok_or(Error::Serialize("frame exceeds BUF_SIZE"))?,
-            )
-            .map_err(Error::Mctp)?
-            .ok_or(Error::Serialize("Partial message not supported"))?;
-
-        let (header, body) = message.parse_as::<R::RequestEnumType>().map_err(Error::Mctp)?;
-        trace!("Received host request");
-
-        let response = self.relay_handler.process_request(body).await;
-        self.host_tx_queue
-            .try_send(HostResultMessage {
-                handler_service_id: header.get_service_id(),
-                message: response,
-            })
-            .map_err(|_| Error::Comms)?;
-
-        Ok(())
-    }
-
-    async fn wait_for_response(&self) -> HostResultMessage<R> {
-        self.host_tx_queue.receive().await
     }
 }
 

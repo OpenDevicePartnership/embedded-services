@@ -2,30 +2,30 @@ use crate::{Error, ReadState, Service};
 use embassy_futures::select::{Either, select};
 use embedded_io_async::Read as UartRead;
 use embedded_io_async::Write as UartWrite;
+use embedded_services::event::Receiver;
 use embedded_services::relay::mctp::RelayHandler;
 use embedded_services::{error, warn};
 use mctp_rs::MctpMedium;
 
 pub async fn uart_service<R: RelayHandler, M: MctpMedium + Copy, T: UartRead + UartWrite>(
-    uart_service: &Service<R, M>,
+    mut service: Service<R, M>,
     mut uart: T,
-    mut notifiable_events: impl embedded_services::event::Receiver<u8>,
 ) -> Result<embedded_services::Never, Error<M>> {
     let mut read_state = ReadState::new();
 
     loop {
         match select(
-            uart_service.wait_for_request(&mut uart, &mut read_state),
-            notifiable_events.wait_next(),
+            service.inner.wait_for_request(&mut uart, &mut read_state),
+            service.relay_handler.receiver().wait_next(),
         )
         .await
         {
             Either::First(Ok(packet_len)) => {
-                if let Err(e) = uart_service.process_request(&read_state, packet_len).await {
+                if let Err(e) = service.process_request(&read_state, packet_len).await {
                     log_error("request", &e);
                 } else {
-                    let host_msg = uart_service.wait_for_response().await;
-                    if let Err(e) = uart_service.process_response(&mut uart, host_msg).await {
+                    let host_msg = service.inner.wait_for_response().await;
+                    if let Err(e) = service.inner.process_response(&mut uart, host_msg).await {
                         log_error("response", &e);
                     }
                 }
