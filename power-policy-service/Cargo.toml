@@ -19,6 +19,18 @@ embedded-services.workspace = true
 log = { workspace = true, optional = true }
 heapless.workspace = true
 
+[dev-dependencies]
+embassy-time = { workspace = true, features = [
+    "log",
+    "std",
+    "generic-queue-8",
+] }
+critical-section = { workspace = true, features = ["std"] }
+tokio = { workspace = true, features = ["rt", "macros", "time"] }
+env_logger = "0.11.8"
+static_cell.workspace = true
+log.workspace = true
+
 [features]
 default = []
 defmt = [
