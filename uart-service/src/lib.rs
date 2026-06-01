@@ -171,8 +171,8 @@ impl<R: RelayHandler, M: MctpMedium + Copy> ServiceInner<R, M> {
     //
     // # Cancel Safety
     //
-    // This method is cancel-safe because partial read progress is stored in `state`
-    // and will be resumed on the next call.
+    // This method is cancel-safe (assuming the embedded-io-async `read` implementation is cancel-safe)
+    // because partial read progress is stored in `state` and will be resumed on the next call.
     async fn wait_for_request<T: UartRead>(&self, uart: &mut T, state: &mut ReadState) -> Result<usize, Error<M>> {
         loop {
             let dst = state

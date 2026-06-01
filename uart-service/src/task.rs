@@ -7,6 +7,11 @@ use embedded_services::relay::mctp::RelayHandler;
 use embedded_services::{error, warn};
 use mctp_rs::MctpMedium;
 
+/// Start the UART service task.
+///
+/// # Requirements
+///
+/// The `embedded-io-async` `Read` implementation used for the uart **MUST** be cancel-safe.
 pub async fn uart_service<R: RelayHandler, M: MctpMedium + Copy, T: UartRead + UartWrite>(
     mut service: Service<R, M>,
     mut uart: T,

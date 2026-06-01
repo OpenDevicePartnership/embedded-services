@@ -32,6 +32,11 @@ pub trait Receiver<E> {
     /// Return none if there are no pending events
     fn try_next(&mut self) -> Option<E>;
     /// Receive an event
+    ///
+    /// # Cancel Safety
+    ///
+    /// The implementation MUST be cancel-safe as the `wait_next` method
+    /// is typically called inside a `select!` and thus may be cancelled.
     fn wait_next(&mut self) -> impl Future<Output = E>;
 }
 
