@@ -91,6 +91,7 @@ impl<E: Clone> Receiver<E> for DynSubscriber<'_, E> {
             Some(WaitResult::Message(e)) => Some(e),
             Some(WaitResult::Lagged(e)) => {
                 error!("Subscriber lagged, skipping {} events", e);
+                crate::metrics::broadcaster::bump_lag(e);
                 None
             }
             _ => None,
@@ -103,6 +104,7 @@ impl<E: Clone> Receiver<E> for DynSubscriber<'_, E> {
                 WaitResult::Message(e) => return e,
                 WaitResult::Lagged(e) => {
                     error!("Subscriber lagged, skipping {} events", e);
+                    crate::metrics::broadcaster::bump_lag(e);
                     continue;
                 }
             }
@@ -114,7 +116,10 @@ impl<E: Clone> Receiver<ImmediateEvent<E>> for DynSubscriber<'_, E> {
     fn try_next(&mut self) -> Option<ImmediateEvent<E>> {
         match self.try_next_message() {
             Some(WaitResult::Message(e)) => Some(ImmediateEvent::Event(e)),
-            Some(WaitResult::Lagged(e)) => Some(ImmediateEvent::Lagged(e)),
+            Some(WaitResult::Lagged(e)) => {
+                crate::metrics::broadcaster::bump_lag(e);
+                Some(ImmediateEvent::Lagged(e))
+            }
             _ => None,
         }
     }
@@ -122,7 +127,10 @@ impl<E: Clone> Receiver<ImmediateEvent<E>> for DynSubscriber<'_, E> {
     async fn wait_next(&mut self) -> ImmediateEvent<E> {
         match self.next_message().await {
             WaitResult::Message(e) => ImmediateEvent::Event(e),
-            WaitResult::Lagged(e) => ImmediateEvent::Lagged(e),
+            WaitResult::Lagged(e) => {
+                crate::metrics::broadcaster::bump_lag(e);
+                ImmediateEvent::Lagged(e)
+            }
         }
     }
 }
@@ -189,5 +197,62 @@ impl<I, O, S: NonBlockingSender<O>, F: FnMut(I) -> O> NonBlockingSender<I> for M
 impl<I, O, S: Sender<O>, F: FnMut(I) -> O> Sender<I> for MapSender<I, O, S, F> {
     fn send(&mut self, event: I) -> impl Future<Output = ()> {
         self.sender.send((self.map_fn)(event))
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod test {
+    extern crate std;
+    use super::*;
+    use crate::GlobalRawMutex;
+    use embassy_sync::pubsub::{PubSubChannel, Publisher};
+    use static_cell::StaticCell;
+
+    /// `DynSubscriber`'s `Receiver<E>::try_next` impl must bump the
+    /// `metrics::broadcaster::lag` counter when it observes a
+    /// `WaitResult::Lagged(n)`. This is the wrapper path used by
+    /// consumers; the raw `next_message` API does not bump (it's
+    /// embassy-sync, outside our wrapper).
+    #[tokio::test]
+    async fn test_dyn_subscriber_lag_bumps_counter() {
+        static CHANNEL: StaticCell<PubSubChannel<GlobalRawMutex, u32, 1, 1, 1>> = StaticCell::new();
+        let channel = CHANNEL.init(PubSubChannel::new());
+
+        let publisher: Publisher<'_, GlobalRawMutex, u32, 1, 1, 1> = channel.publisher().unwrap();
+        let mut subscriber = channel.dyn_subscriber().unwrap();
+
+        // Lag the subscriber: push 2 messages into a 1-deep channel without
+        // ever reading. The second push displaces the first.
+        publisher.publish_immediate(1);
+        publisher.publish_immediate(2);
+
+        let before = crate::metrics::broadcaster::lag();
+
+        // First wrapper read observes the lag. Our event::Receiver impl
+        // returns None (try_next) or loops past (wait_next) after bumping.
+        // try_next is synchronous, so use that.
+        let result: Option<u32> = <DynSubscriber<u32> as Receiver<u32>>::try_next(&mut subscriber);
+        // The first call returned None because it consumed the Lagged event.
+        assert!(result.is_none(), "first try_next on lagged subscriber must return None");
+
+        let after = crate::metrics::broadcaster::lag();
+        assert!(
+            after > before,
+            "broadcaster::lag must increase after a lagged DynSubscriber read; before={} after={}",
+            before,
+            after,
+        );
+
+        // The next try_next should return the actual queued message (2),
+        // and must NOT bump the lag counter again.
+        let lag_after_first = crate::metrics::broadcaster::lag();
+        let actual: Option<u32> = <DynSubscriber<u32> as Receiver<u32>>::try_next(&mut subscriber);
+        assert_eq!(actual, Some(2), "after consuming lag, the next read returns the queued value");
+        let lag_after_second = crate::metrics::broadcaster::lag();
+        assert_eq!(
+            lag_after_second, lag_after_first,
+            "lag counter must not bump on a successful (non-lagged) read"
+        );
     }
 }

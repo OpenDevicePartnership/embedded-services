@@ -233,13 +233,14 @@ impl Endpoint {
 
     fn process(&self, message: &Message) {
         if let Some(delegator) = self.delegator.get() {
-            // Back-pressure policy: drop + warn-log. Without the log a
-            // misbehaving / saturated delegate would silently lose messages.
+            // Back-pressure policy: drop + warn-log + counter. Without these
+            // a misbehaving / saturated delegate would silently lose messages.
             if let Err(err) = delegator.receive(message) {
                 crate::warn!(
                     "comms: delegator returned {} for endpoint",
                     mailbox_delegate_error_str(err),
                 );
+                crate::metrics::comms::bump_delegator_errors();
             }
         }
     }
@@ -347,12 +348,22 @@ pub async fn send(from: EndpointID, to: EndpointID, data: &(impl Any + Send + Sy
 async fn route(message: Message<'_>) -> Result<(), Infallible> {
     let list = get_list(message.to).get().await;
 
+    let mut delivered = 0usize;
     for rxq in list {
         if let Some(endpoint) = rxq.data::<Endpoint>()
             && message.to == endpoint.id
         {
             endpoint.process(&message);
+            delivered = delivered.saturating_add(1);
         }
+    }
+
+    if delivered == 0 {
+        // No endpoint matched. Could indicate a service that has not
+        // registered yet, a routing-table init bug, or a typo in the
+        // destination id. Counter is observable via
+        // `metrics::comms::routed_unknown`.
+        crate::metrics::comms::bump_routed_unknown();
     }
 
     Ok(())
@@ -507,6 +518,10 @@ mod test {
         register_endpoint(rejecting, rejecting_endpoint).await.unwrap();
         register_endpoint(accepting, accepting_endpoint).await.unwrap();
 
+        // Snapshot the delegator-error counter so we can prove S2 wiring
+        // bumped it on the rejection path.
+        let errs_before = crate::metrics::comms::delegator_errors();
+
         // Send to the shared OEM(92) endpoint id.
         let payload: u32 = 0xDEADBEEF;
         let _ = send(
@@ -529,6 +544,42 @@ mod test {
             accepting.hits.load(Ordering::SeqCst),
             1,
             "accepting delegate must still receive after another endpoint rejected"
+        );
+
+        // The delegator-error counter must have been bumped at least once
+        // (the rejecting delegate returned BufferFull).
+        let errs_after = crate::metrics::comms::delegator_errors();
+        assert!(
+            errs_after > errs_before,
+            "comms::delegator_errors must increase after a rejecting delegate; before={} after={}",
+            errs_before,
+            errs_after,
+        );
+    }
+
+    /// `route` must bump the `routed_unknown` counter when a message is sent
+    /// to an `EndpointID` that has no registered receiver.
+    #[tokio::test]
+    async fn test_route_to_unknown_endpoint_bumps_counter() {
+        init();
+
+        // Pick an OEM key with no registered receiver. The internal lists
+        // are shared across OEM keys, so we use a fresh key here; the
+        // matching loop in `route` will check id-equality and fail to find
+        // a receiver.
+        let unknown = EndpointID::External(External::Oem(0xBEEF));
+
+        let before = crate::metrics::comms::routed_unknown();
+
+        let payload: u32 = 0xC0DE;
+        let _ = send(EndpointID::External(External::Host), unknown, &payload).await;
+
+        let after = crate::metrics::comms::routed_unknown();
+        assert!(
+            after > before,
+            "comms::routed_unknown must increase after a send to an unregistered id; before={} after={}",
+            before,
+            after,
         );
     }
 }

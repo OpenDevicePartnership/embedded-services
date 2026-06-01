@@ -25,7 +25,12 @@ struct CommandDropGuard<'a, M: RawMutex, C> {
 impl<M: RawMutex, C> Drop for CommandDropGuard<'_, M, C> {
     fn drop(&mut self) {
         // Idempotent: clears a pending unread command, or no-op if the
-        // responder already pulled.
+        // responder already pulled. The counter is bumped only when there
+        // was actually a pending command (i.e. cancellation lost a request
+        // that the responder had not yet observed).
+        if self.command_slot.signaled() {
+            crate::metrics::ipc_deferred::bump_dropped_commands();
+        }
         self.command_slot.reset();
     }
 }
@@ -113,6 +118,7 @@ impl<M: RawMutex, C, R> Channel<M, C, R> {
                 // but it indicates a previously-cancelled caller and should
                 // be visible at default log levels for operational diagnosis.
                 warn!("ipc::deferred: discarding stale response for request id {}", id.0);
+                crate::metrics::ipc_deferred::bump_id_mismatches();
             }
         }
     }
@@ -391,7 +397,8 @@ mod tests {
     /// `execute` logs at `warn!` (visible at default verbosity); we can't
     /// easily capture logs in a unit test without extra infra, so we assert
     /// behavior: a stale response in the response Signal must not corrupt
-    /// the next caller's result.
+    /// the next caller's result. Also asserts the `id_mismatches` counter
+    /// bumps on the stale-response path.
     #[tokio::test]
     async fn test_stale_response_does_not_corrupt_next_caller() {
         use std::sync::Arc;
@@ -413,6 +420,8 @@ mod tests {
             })
         };
 
+        let mismatches_before = crate::metrics::ipc_deferred::id_mismatches();
+
         // The next caller's execute() must drain the stale response, then
         // wait for the real one. Must NOT return 0xDEAD.
         let result = timeout(Duration::from_millis(500), channel.execute(0x42u32)).await;
@@ -422,6 +431,49 @@ mod tests {
         assert_eq!(
             value, 0xBEEF,
             "execute must return the real response, not the stale one"
+        );
+
+        let mismatches_after = crate::metrics::ipc_deferred::id_mismatches();
+        assert!(
+            mismatches_after > mismatches_before,
+            "ipc_deferred::id_mismatches must increase after a stale response; before={} after={}",
+            mismatches_before,
+            mismatches_after,
+        );
+    }
+
+    /// `CommandDropGuard::drop` must bump the `dropped_commands` counter
+    /// when the cancel happens before the responder picks up the command.
+    #[tokio::test]
+    async fn test_dropped_command_bumps_counter() {
+        use std::sync::Arc;
+        use tokio::time::sleep;
+
+        let channel: Arc<Channel<GlobalRawMutex, u32, u32>> = Arc::new(Channel::new());
+
+        let before = crate::metrics::ipc_deferred::dropped_commands();
+
+        // Spawn a caller that will be aborted before any responder picks up.
+        // No responder is running, so the command will sit in the slot until
+        // the drop guard wipes it.
+        let caller = {
+            let channel = channel.clone();
+            tokio::spawn(async move { channel.execute(0xCAFEu32).await })
+        };
+        // Let the caller enter execute() and signal.
+        tokio::task::yield_now().await;
+        caller.abort();
+        let _ = caller.await;
+
+        // Give the drop a moment to run.
+        sleep(Duration::from_millis(10)).await;
+
+        let after = crate::metrics::ipc_deferred::dropped_commands();
+        assert!(
+            after > before,
+            "ipc_deferred::dropped_commands must increase after cancel-before-pickup; before={} after={}",
+            before,
+            after,
         );
     }
 }

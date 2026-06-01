@@ -253,9 +253,10 @@ impl MailboxDelegate for Device {
             MessageData::Request(ref request) => {
                 // `try_send` returns `BufferFull` instead of silently
                 // overwriting a previously-queued request.
-                self.request
-                    .try_send(request.clone())
-                    .map_err(|_| comms::MailboxDelegateError::BufferFull)
+                self.request.try_send(request.clone()).map_err(|_| {
+                    crate::metrics::hid::bump_request_overflows();
+                    comms::MailboxDelegateError::BufferFull
+                })
             }
             _ => Err(comms::MailboxDelegateError::InvalidData),
         }
@@ -533,5 +534,63 @@ mod test {
                     "first request must be preserved even when second is rejected");
             }
         }
+    }
+
+    /// `Device::receive` must bump the `hid::request_overflows` counter
+    /// when the internal channel is full and a request is rejected with
+    /// `BufferFull`.
+    #[tokio::test]
+    async fn test_request_overflow_bumps_counter() {
+        let device = Device::new(DeviceId(9), RegisterFile::default());
+
+        let envelope = |req: Request<'static>| {
+            let msg = Message {
+                id: DeviceId(9),
+                data: MessageData::Request(req),
+            };
+            // The Box keeps the Message alive for the borrow inside Data::new.
+            (msg, EndpointID::External(External::Host), EndpointID::Internal(Internal::Hid))
+        };
+
+        // Fill the channel to capacity. Capacity is DEVICE_REQUEST_QUEUE_DEPTH
+        // which is 2 today, so two `try_send`s must succeed.
+        let m1 = envelope(Request::Descriptor);
+        let env1 = comms::Message {
+            from: m1.1,
+            to: m1.2,
+            data: comms::Data::new(&m1.0),
+        };
+        let m2 = envelope(Request::ReportDescriptor);
+        let env2 = comms::Message {
+            from: m2.1,
+            to: m2.2,
+            data: comms::Data::new(&m2.0),
+        };
+        let m3 = envelope(Request::InputReport);
+        let env3 = comms::Message {
+            from: m3.1,
+            to: m3.2,
+            data: comms::Data::new(&m3.0),
+        };
+
+        assert!(device.receive(&env1).is_ok());
+        assert!(device.receive(&env2).is_ok());
+
+        let before = crate::metrics::hid::request_overflows();
+
+        // Third request must overflow and bump the counter.
+        let third = device.receive(&env3);
+        assert!(
+            matches!(third, Err(comms::MailboxDelegateError::BufferFull)),
+            "third request must be rejected with BufferFull when channel is full"
+        );
+
+        let after = crate::metrics::hid::request_overflows();
+        assert!(
+            after > before,
+            "hid::request_overflows must increase on BufferFull; before={} after={}",
+            before,
+            after,
+        );
     }
 }
