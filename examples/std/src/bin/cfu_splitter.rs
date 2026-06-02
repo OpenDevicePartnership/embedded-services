@@ -180,7 +180,9 @@ async fn run(spawner: Spawner) {
     embedded_services::init().await;
 
     static CFU_CLIENT: OnceLock<CfuClient> = OnceLock::new();
-    let cfu_client = CfuClient::new(&CFU_CLIENT).await;
+    let cfu_client = CfuClient::new(&CFU_CLIENT)
+        .await
+        .expect("CfuClient::new failed to register comms endpoint");
 
     spawner.spawn(cfu_service_task(cfu_client).expect("Failed to create cfu service task"));
 
