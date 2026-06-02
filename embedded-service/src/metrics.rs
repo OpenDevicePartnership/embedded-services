@@ -131,6 +131,7 @@ pub mod hid {
     use crate::{AtomicUsize, Ordering};
 
     static REQUEST_OVERFLOWS: AtomicUsize = AtomicUsize::new(0);
+    static DEVICE_REGISTERED_WITHOUT_ENDPOINT: AtomicUsize = AtomicUsize::new(0);
 
     /// Number of host requests that could not be queued into a
     /// `hid::Device`'s internal channel because the channel was full. The
@@ -140,8 +141,22 @@ pub mod hid {
         REQUEST_OVERFLOWS.load(Ordering::Relaxed)
     }
 
+    /// Number of times a `hid::Device` was pushed into the global device
+    /// list but its inner `comms::Endpoint` failed to register or the
+    /// surrounding future was cancelled before the endpoint registration
+    /// completed. The device remains discoverable via `hid::get_device` but
+    /// cannot send responses; this counter surfaces the partial-state
+    /// hazard that the append-only registry forbids us from cleaning up.
+    pub fn device_registered_without_endpoint() -> usize {
+        DEVICE_REGISTERED_WITHOUT_ENDPOINT.load(Ordering::Relaxed)
+    }
+
     pub(crate) fn bump_request_overflows() {
         super::bump_by(&REQUEST_OVERFLOWS, 1);
+    }
+
+    pub(crate) fn bump_device_registered_without_endpoint() {
+        super::bump_by(&DEVICE_REGISTERED_WITHOUT_ENDPOINT, 1);
     }
 }
 

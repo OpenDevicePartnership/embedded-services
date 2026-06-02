@@ -335,11 +335,45 @@ impl Context {
 
 static CONTEXT: Context = Context::new();
 
-/// Register a device with the HID service
+/// Register a device with the HID service.
+///
+/// Rejects duplicate `DeviceId` registrations: the append-only registry
+/// makes it impossible to clean up a successful push, so two devices with
+/// the same id would otherwise both receive every routed HID message via
+/// `comms::route`, with the non-matching device bumping
+/// `comms::delegator_errors` forever. This mirrors the pre-check pattern
+/// used by `cfu-service::ClientContext::register_device` and
+/// `battery-service::Context::register_fuel_gauge`.
+///
+/// If the device is pushed into `CONTEXT.devices` but the subsequent
+/// `comms::register_endpoint` call fails (or the caller's future is
+/// cancelled mid-await), the device remains discoverable via `get_device`
+/// but cannot send responses. That partial-state hazard is surfaced by
+/// the `metrics::hid::device_registered_without_endpoint` counter; the
+/// error is propagated to the caller so it can choose how to react.
 pub async fn register_device(device: &'static impl DeviceContainer) -> Result<(), intrusive_list::Error> {
     let device = device.get_hid_device();
+
+    // Pre-check duplicate DeviceId. Catches the most common partial-state
+    // scenario at the cheapest place — before any list mutation.
+    if get_device(device.id).is_some() {
+        return Err(intrusive_list::Error::NodeAlreadyInList);
+    }
+
     CONTEXT.devices.push(device)?;
-    comms::register_endpoint(device, &device.tp).await
+
+    // The device is now in the list. If endpoint registration fails or the
+    // future is cancelled, we cannot remove it (append-only). Bump the
+    // partial-state counter so operators can detect the hazard, then
+    // propagate the error to the caller.
+    match comms::register_endpoint(device, &device.tp).await {
+        Ok(()) => Ok(()),
+        Err(err) => {
+            crate::metrics::hid::bump_device_registered_without_endpoint();
+            crate::warn!("hid: device registered without endpoint - inner registration failed");
+            Err(err)
+        }
+    }
 }
 
 /// Find a device by its ID
@@ -606,6 +640,50 @@ mod test {
             "hid::request_overflows must increase on BufferFull; before={} after={}",
             before,
             after,
+        );
+    }
+
+    /// `register_device` must reject a second registration that uses the
+    /// same `DeviceId`. The append-only registry makes it impossible to
+    /// undo a successful push, so the only way to avoid partial state is to
+    /// reject the duplicate up front. Mirrors the `cfu-service` and
+    /// `battery-service` pre-check pattern.
+    #[tokio::test]
+    async fn test_register_device_rejects_duplicate_device_id() {
+        use embassy_sync::once_lock::OnceLock;
+
+        crate::comms::init();
+
+        // Pick a DeviceId unlikely to collide with other tests that touch
+        // the shared CONTEXT.devices list.
+        const DUP_ID: DeviceId = DeviceId(0xA1);
+
+        static FIRST: OnceLock<Device> = OnceLock::new();
+        let first = FIRST.get_or_init(|| Device::new(DUP_ID, RegisterFile::default()));
+
+        static SECOND: OnceLock<Device> = OnceLock::new();
+        let second = SECOND.get_or_init(|| Device::new(DUP_ID, RegisterFile::default()));
+
+        // First registration must succeed.
+        register_device(first).await.unwrap();
+
+        // Second registration with the same DeviceId must FAIL before any
+        // state is mutated. Without the pre-check, the second `push` would
+        // succeed (different Node), the second endpoint would also register
+        // (different Endpoint), and every routed HID message would dispatch
+        // to both, with the non-matching device bumping
+        // `comms::delegator_errors` forever.
+        let duplicate = register_device(second).await;
+        assert!(
+            duplicate.is_err(),
+            "duplicate DeviceId registration must be rejected"
+        );
+
+        // The first device must still be discoverable.
+        let found = get_device(DUP_ID);
+        assert!(
+            found.is_some(),
+            "first device must remain in CONTEXT.devices after the rejected duplicate"
         );
     }
 }

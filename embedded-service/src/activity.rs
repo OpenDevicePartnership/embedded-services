@@ -118,12 +118,22 @@ pub struct Publisher {
 }
 
 /// register your subscriber to begin receiving updates
+///
+/// The list push happens BEFORE the delegate slot is written. If the same
+/// `Subscriber` is already in the list (duplicate registration), the push
+/// returns `Err(NodeAlreadyInList)` and the existing delegate is left
+/// intact — reversing the order would silently overwrite the delegate while
+/// the push rejected the duplicate. Under the single-executor assumption
+/// documented in `lib.rs`, there is no yield point between the successful
+/// `push` and the subsequent `init`, so the publish loop cannot observe a
+/// registered-but-uninitialized subscriber.
 pub async fn register_subscriber<T: ActivitySubscriber>(
     this: &'static T,
     subscriber: &'static Subscriber,
 ) -> Result<()> {
+    SUBSCRIBERS.get().await.push(subscriber)?;
     subscriber.init(this);
-    SUBSCRIBERS.get().await.push(subscriber)
+    Ok(())
 }
 
 /// register publisher class for future usage. None returned if class slot is already occupied
@@ -273,5 +283,79 @@ mod test {
         let after = real.hits.load(Ordering::SeqCst);
 
         assert!(after > before, "real subscriber must still be dispatched to");
+    }
+
+    /// A counting subscriber whose `activity_update` records a distinct tag,
+    /// so a test can prove which delegate handled the notification.
+    struct TaggedSubscriber {
+        tag: u32,
+        hits: AtomicU32,
+    }
+
+    impl ActivitySubscriber for TaggedSubscriber {
+        fn activity_update(&self, _notif: &Notification) {
+            self.hits.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    /// `register_subscriber` must reject a duplicate registration AND preserve
+    /// the first delegate. Reversing the push/init order would silently
+    /// overwrite the first delegate when the push rejected the duplicate.
+    ///
+    /// This is the exact mirror of `comms::register_endpoint`'s
+    /// `test_register_endpoint_rejects_duplicate_and_preserves_first_delegator`.
+    #[tokio::test]
+    async fn test_register_subscriber_rejects_duplicate_and_preserves_first_delegate() {
+        SUBSCRIBERS.get_or_init(IntrusiveList::new);
+
+        static FIRST: TestOnceLock<TaggedSubscriber> = TestOnceLock::new();
+        let first = FIRST.get_or_init(|| TaggedSubscriber {
+            tag: 1,
+            hits: AtomicU32::new(0),
+        });
+        static SECOND: TestOnceLock<TaggedSubscriber> = TestOnceLock::new();
+        let second = SECOND.get_or_init(|| TaggedSubscriber {
+            tag: 2,
+            hits: AtomicU32::new(0),
+        });
+
+        // A single Subscriber slot shared between two registration attempts.
+        static SLOT: TestOnceLock<Subscriber> = TestOnceLock::new();
+        let slot = SLOT.get_or_init(Subscriber::uninit);
+
+        // First registration must succeed.
+        register_subscriber(first, slot).await.unwrap();
+
+        // Second registration with a different delegate must FAIL.
+        let duplicate = register_subscriber(second, slot).await;
+        assert!(
+            duplicate.is_err(),
+            "duplicate registration must return NodeAlreadyInList"
+        );
+
+        // Publish a notification. The first delegate must receive it; the
+        // second must NOT, proving the second registration did not overwrite
+        // the slot.
+        let publisher = register_publisher(Class::Trackpad).unwrap();
+        let first_before = first.hits.load(Ordering::SeqCst);
+        let second_before = second.hits.load(Ordering::SeqCst);
+        publisher.publish(State::Active).await;
+        let first_after = first.hits.load(Ordering::SeqCst);
+        let second_after = second.hits.load(Ordering::SeqCst);
+
+        assert!(
+            first_after > first_before,
+            "first delegate must receive the notification; hits {} -> {}",
+            first_before,
+            first_after,
+        );
+        assert_eq!(
+            second_after, second_before,
+            "second delegate must NOT receive the notification after rejected duplicate registration"
+        );
+
+        // Sanity guard: tags are stable across the suite.
+        assert_eq!(first.tag, 1);
+        assert_eq!(second.tag, 2);
     }
 }
