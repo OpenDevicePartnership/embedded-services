@@ -83,7 +83,7 @@ impl<M: RawMutex, C, R> Channel<M, C, R> {
     /// after `command.signal(...)` but before the responder picks the command
     /// up, the dropped command would otherwise be silently overwritten by the
     /// next caller's signal — meaning the cancelled caller's side effects
-    /// would never execute. The [`CommandDropGuard`] reverts that: on cancel,
+    /// would never execute. The `CommandDropGuard` reverts that: on cancel,
     /// the command signal is reset so the next caller observes a clean slate.
     ///
     /// Note that cancel between `command.wait()` and `respond()` on the
