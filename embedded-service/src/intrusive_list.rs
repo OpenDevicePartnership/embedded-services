@@ -1,7 +1,6 @@
 //! A static lifetime'd intrusive linked list, construction only (never remove/delete)
 
-// Any type used for dynamic type coercion
-pub use core::any::Any;
+use core::any::Any;
 
 use crate::SyncCell;
 
@@ -12,7 +11,11 @@ pub enum Error {
     NodeAlreadyInList,
 }
 
-/// override Result type for shorthand `-> Result<T>`
+/// Result alias for fallible operations on this module's types.
+///
+/// This alias is intentionally NOT re-exported from the crate root. Use
+/// the fully-qualified path `intrusive_list::Result<T>` or alias it
+/// locally to avoid shadowing `core::result::Result`.
 pub type Result<T> = core::result::Result<T, Error>;
 
 /// Embedded node that "intrudes" on a structure
@@ -70,6 +73,20 @@ impl Node {
         Node {
             inner: SyncCell::new(Node::EMPTY),
         }
+    }
+
+    /// Reset this `Node` back to its uninitialized state.
+    ///
+    /// Test-only helper that simulates a watchdog reset / RAM clear of the
+    /// node's backing storage. After calling this, the node may be pushed
+    /// onto a list again (the `valid` flag is back to `false`). Outside of
+    /// tests, the only way to reach this state is via hardware reset (which
+    /// zero-inits `.bss`); exposing the operation as a regular API would
+    /// be a soundness hazard because it can dangle iterators that hold
+    /// `&'static IntrusiveNode` references into the prior list.
+    #[cfg(test)]
+    pub(crate) fn reset_for_test(&self) {
+        self.inner.set(Node::EMPTY);
     }
 }
 
@@ -189,7 +206,18 @@ impl IntrusiveList {
         });
     }
 
-    /// generic over T: NodeContainer for list.push() proper node construction
+    /// Push a `NodeContainer` onto the front of this list.
+    ///
+    /// Returns `Err(NodeAlreadyInList)` if the same node is already in
+    /// some `IntrusiveList` (including this one). Callers MUST handle the
+    /// error: ignoring it can leave a registration partially complete
+    /// (the canonical bug shape this crate has chased twice already). The
+    /// `#[must_use]` attribute makes accidental discard a warning.
+    ///
+    /// Generic over `T: NodeContainer` for the proper-node-construction
+    /// path.
+    ///
+    /// # Atomicity
     ///
     /// The entire validity-check, node-write, and list-link sequence runs in
     /// a single `critical_section::with`. Without this, in any multi-executor
@@ -202,11 +230,12 @@ impl IntrusiveList {
     /// cannot fire today, but `push_front` is itself CS-gated, so this
     /// extends the same atomicity guarantee to the whole push sequence.
     /// Loom-based concurrency verification is a separate follow-up.
+    #[must_use = "ignoring the Result from `push` can leave a registration partially complete"]
     pub fn push<T: NodeContainer>(&self, object: &'static T) -> Result<()> {
         // Single critical_section around the whole push sequence so that on
         // any future multi-executor / ISR target the validity check and the
         // head-link write are atomic.
-        critical_section::with(|_cs| {
+        let result = critical_section::with(|_cs| {
             // check if node is in the list already. Valid flag will only be set if
             // the element has been constructed and inserted into a linked list, so
             // this check covers both same list and other list conditions.
@@ -240,7 +269,14 @@ impl IntrusiveList {
                 unsafe { &mut *object.get_node().inner.as_ptr() },
             );
             Ok(())
-        })
+        });
+
+        // Bump the duplicate-push counter outside the CS so the atomic
+        // increment does not extend the critical-section window.
+        if matches!(result, Err(Error::NodeAlreadyInList)) {
+            crate::metrics::intrusive_list::bump_duplicate_pushes();
+        }
+        result
     }
 
     /// Iterate over the list as if it were items of type `T`, skipping any nodes that are of a different type.
@@ -249,7 +285,30 @@ impl IntrusiveList {
     }
 }
 
-/// iterator wrapper type for IntrusiveNode
+/// Iterator wrapper type for IntrusiveNode.
+///
+/// # Concurrency
+///
+/// `IntrusiveIterator::next` reads `self.current.next` directly, without
+/// re-entering a critical section. This is sound under the documented
+/// concurrency model (single Cortex-M / single Embassy executor, see
+/// `lib.rs`) for two reasons:
+///
+///   1. **Write-before-publish ordering in `push_front`.** A new node has
+///      its `next` field assigned BEFORE `self.head.set(Some(node))`
+///      publishes it. A non-CS reader that reaches the node through
+///      `head` therefore always observes a fully-linked `next`. The
+///      `head` read itself is CS-gated by `SyncCell::get`.
+///   2. **No yield points between push and publish.** Because consumers
+///      run on a single cooperatively-scheduled executor with no preemption,
+///      the `node.next = ...` write and the `head.set(...)` write are not
+///      separated by an `.await`. An interrupting task cannot land between
+///      them.
+///
+/// A future change that introduces an `.await` inside `push_front` or
+/// the iterator's filter closures (e.g. `OnlyT`'s `filter_map`) would
+/// silently break this story. Reviewers of changes to this file should
+/// keep that constraint in mind.
 pub struct IntrusiveIterator {
     current: Option<&'static IntrusiveNode>,
 }
@@ -281,6 +340,12 @@ impl Iterator for IntrusiveIterator {
 }
 
 /// Iterator wrapper type for [`IntrusiveList`] that returns only nodes of type `T`.
+///
+/// Nodes whose held value does not downcast to `T` are skipped silently
+/// (this is the legacy contract of `iter_only`). Each such skip bumps
+/// `metrics::intrusive_list::iter_only_misses`, so the silent-skip path
+/// is at least observable to operators even though it is not surfaced to
+/// the caller.
 pub struct OnlyT<'a, T> {
     iter: core::iter::FilterMap<IntrusiveIterator, fn(&'static IntrusiveNode) -> Option<&'a T>>,
     _marker: core::marker::PhantomData<&'a T>,
@@ -289,8 +354,23 @@ pub struct OnlyT<'a, T> {
 impl<T: NodeContainer> OnlyT<'_, T> {
     /// Create a new `OnlyTIter` from an `IntrusiveIterator`.
     pub fn new(iter: IntrusiveIterator) -> Self {
+        // Function-pointer-typed closure so the `FilterMap` `Fn` type
+        // remains nameable. The closure bumps the miss counter on every
+        // downcast failure so the silent-skip is at least observable in
+        // aggregate. (The metrics module is monomorphic, so this works
+        // from inside a `fn` pointer.)
+        fn filter_with_miss_counter<T: NodeContainer>(node: &'static IntrusiveNode) -> Option<&'static T> {
+            match node.data::<T>() {
+                Some(item) => Some(item),
+                None => {
+                    crate::metrics::intrusive_list::bump_iter_only_misses();
+                    None
+                }
+            }
+        }
+
         Self {
-            iter: iter.filter_map(|node| node.data::<T>()),
+            iter: iter.filter_map(filter_with_miss_counter::<T>),
             _marker: core::marker::PhantomData,
         }
     }
@@ -752,5 +832,104 @@ mod test {
         let count_after = list.into_iter().count();
         assert_eq!(head_before, head_after, "head must not change on failed push");
         assert_eq!(count_after, 2, "list length must not change on failed push");
+    }
+
+    /// `push` must bump `metrics::intrusive_list::duplicate_pushes` exactly
+    /// on the `Err(NodeAlreadyInList)` path. The successful path must not
+    /// bump.
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn test_duplicate_push_bumps_counter() {
+        let list = IntrusiveList::new();
+        static EL: OnceLock<RegistrationA> = OnceLock::new();
+        let el = EL.get_or_init(RegistrationA::new);
+
+        let before_success = crate::metrics::intrusive_list::duplicate_pushes();
+        list.push(el).unwrap();
+        let after_success = crate::metrics::intrusive_list::duplicate_pushes();
+        assert_eq!(
+            after_success, before_success,
+            "successful push must not bump duplicate_pushes"
+        );
+
+        // Second push of the same node returns Err and bumps.
+        let before_dup = crate::metrics::intrusive_list::duplicate_pushes();
+        let result = list.push(el);
+        let after_dup = crate::metrics::intrusive_list::duplicate_pushes();
+        assert!(result.is_err());
+        assert!(
+            after_dup > before_dup,
+            "duplicate push must bump duplicate_pushes; before={} after={}",
+            before_dup,
+            after_dup,
+        );
+    }
+
+    /// `iter_only::<T>()` must bump `metrics::intrusive_list::iter_only_misses`
+    /// once per node whose held type differs from `T`. Matching nodes must
+    /// not bump.
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn test_iter_only_miss_bumps_counter() {
+        let list = IntrusiveList::new();
+
+        // Two nodes of type RegistrationA, two of type RegistrationOnly
+        // (a distinct NodeContainer). Filtering for RegistrationA should
+        // bump the miss counter exactly twice (for the two RegistrationOnly
+        // nodes), not for the matching RegistrationA nodes.
+        static A1: OnceLock<RegistrationA> = OnceLock::new();
+        static A2: OnceLock<RegistrationA> = OnceLock::new();
+        static O1: OnceLock<RegistrationOnly> = OnceLock::new();
+        static O2: OnceLock<RegistrationOnly> = OnceLock::new();
+        let a1 = A1.get_or_init(RegistrationA::new);
+        let a2 = A2.get_or_init(RegistrationA::new);
+        let o1 = O1.get_or_init(|| RegistrationOnly { node: Node::uninit() });
+        let o2 = O2.get_or_init(|| RegistrationOnly { node: Node::uninit() });
+        list.push(a1).unwrap();
+        list.push(o1).unwrap();
+        list.push(a2).unwrap();
+        list.push(o2).unwrap();
+
+        let before = crate::metrics::intrusive_list::iter_only_misses();
+        let matches: usize = list.iter_only::<RegistrationA>().count();
+        let after = crate::metrics::intrusive_list::iter_only_misses();
+
+        assert_eq!(matches, 2, "iter_only::<RegistrationA> must yield both A nodes");
+        assert_eq!(
+            after - before,
+            2,
+            "iter_only_misses must bump exactly once per non-matching node; before={} after={}",
+            before,
+            after,
+        );
+    }
+
+    /// After a `Node` is reset via the test-only `reset_for_test()`
+    /// helper (which simulates a watchdog reset / RAM clear), it must be
+    /// pushable onto a list again. This documents the contract that the
+    /// production re-registration path after a hardware reset depends on.
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn test_node_can_be_repushed_after_reset() {
+        let list = IntrusiveList::new();
+        static EL: OnceLock<RegistrationA> = OnceLock::new();
+        let el = EL.get_or_init(RegistrationA::new);
+
+        // First registration succeeds.
+        list.push(el).unwrap();
+        assert!(list.push(el).is_err(), "second push without reset must fail");
+
+        // Simulate a hardware reset: zero the node's backing storage.
+        el.node.reset_for_test();
+
+        // After reset the node is once again pushable. (This is what a
+        // freshly-booted firmware's static initializer effectively does;
+        // the test asserts that the post-reset state behaves identically
+        // to the freshly-uninit state.)
+        let fresh_list = IntrusiveList::new();
+        assert!(
+            fresh_list.push(el).is_ok(),
+            "post-reset push onto a fresh list must succeed"
+        );
     }
 }

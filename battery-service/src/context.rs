@@ -412,7 +412,7 @@ impl Context {
     /// Register fuel gauge device with the context instance.
     pub fn register_fuel_gauge(&self, device: &'static Device) -> Result<(), intrusive_list::Error> {
         if self.get_fuel_gauge(device.id()).is_some() {
-            return Err(embedded_services::Error::NodeAlreadyInList);
+            return Err(intrusive_list::Error::NodeAlreadyInList);
         }
 
         self.fuel_gauges.push(device)

@@ -203,6 +203,47 @@ pub mod buffer {
     }
 }
 
+/// Counters for the `intrusive_list` registration primitive.
+///
+/// These counters are temporary: the long-term plan is to replace the
+/// type-erased `intrusive_list` with a typed `Registry<T>` primitive that
+/// makes some of these failure modes unrepresentable. Until that lands,
+/// the counters surface the silent-skip and silent-failure paths that the
+/// current type-erased design forces.
+pub mod intrusive_list {
+    use crate::{AtomicUsize, Ordering};
+
+    static DUPLICATE_PUSHES: AtomicUsize = AtomicUsize::new(0);
+    static ITER_ONLY_MISSES: AtomicUsize = AtomicUsize::new(0);
+
+    /// Number of times `IntrusiveList::push` was called with a node that
+    /// was already in some list (`Err(NodeAlreadyInList)` returned). A
+    /// non-zero count typically indicates a registration-ordering bug in
+    /// a consumer, or a repeated registration after a soft restart that
+    /// did not clear RAM.
+    pub fn duplicate_pushes() -> usize {
+        DUPLICATE_PUSHES.load(Ordering::Relaxed)
+    }
+
+    /// Number of nodes that `IntrusiveList::iter_only::<T>()` walked past
+    /// because `data::<T>()` returned `None` (i.e. the node held a value
+    /// whose runtime type differs from `T`). Today this happens when a
+    /// list contains multiple `NodeContainer` types and the consumer
+    /// filters for a specific one. A future typed `Registry<T>` design
+    /// eliminates this path entirely.
+    pub fn iter_only_misses() -> usize {
+        ITER_ONLY_MISSES.load(Ordering::Relaxed)
+    }
+
+    pub(crate) fn bump_duplicate_pushes() {
+        super::bump_by(&DUPLICATE_PUSHES, 1);
+    }
+
+    pub(crate) fn bump_iter_only_misses() {
+        super::bump_by(&ITER_ONLY_MISSES, 1);
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;

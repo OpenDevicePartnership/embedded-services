@@ -309,6 +309,17 @@ const fn mailbox_delegate_error_str(err: MailboxDelegateError) -> &'static str {
 /// in `lib.rs`, there is no yield point between the successful `push` and
 /// the subsequent `init`, so the router cannot observe a
 /// registered-but-uninitialized endpoint.
+///
+/// # Fan-out semantics
+///
+/// Registering N distinct `Endpoint`s under the same `EndpointID` is
+/// allowed and produces fan-out delivery: every routed message addressed
+/// to that id is dispatched to each registered delegate in turn (LIFO
+/// iteration order). This is load-bearing for the existing test suite
+/// and at least one in-tree consumer. Consumers that need
+/// single-delegate semantics for a given id must enforce that themselves
+/// (e.g. by checking via a sibling registry whether an endpoint already
+/// exists, as `hid::register_device` does for `DeviceId`).
 pub async fn register_endpoint(
     this: &'static impl MailboxDelegate,
     node: &'static Endpoint,
