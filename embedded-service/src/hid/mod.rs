@@ -674,10 +674,7 @@ mod test {
         // to both, with the non-matching device bumping
         // `comms::delegator_errors` forever.
         let duplicate = register_device(second).await;
-        assert!(
-            duplicate.is_err(),
-            "duplicate DeviceId registration must be rejected"
-        );
+        assert!(duplicate.is_err(), "duplicate DeviceId registration must be rejected");
 
         // The first device must still be discoverable.
         let found = get_device(DUP_ID);
