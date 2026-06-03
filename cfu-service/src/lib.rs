@@ -42,22 +42,31 @@ impl<T, C> CfuReceiveContent<T, C, ()> for CfuClient {
 }
 
 impl CfuClient {
-    /// Create a new Cfu Client
-    pub async fn new(service_storage: &'static embassy_sync::once_lock::OnceLock<CfuClient>) -> &'static Self {
+    /// Create a new Cfu Client.
+    ///
+    /// Returns `Err` if the inner endpoint registration fails (typically
+    /// because the endpoint is already registered or the comms service was
+    /// not initialized). Previously this swallowed the error with an
+    /// `error!` log and returned a half-initialized `CfuClient` whose
+    /// transport endpoint was never registered; that hid a real failure
+    /// mode behind a successful-looking return.
+    pub async fn new(
+        service_storage: &'static embassy_sync::once_lock::OnceLock<CfuClient>,
+    ) -> Result<&'static Self, intrusive_list::Error> {
         let service_storage = service_storage.get_or_init(|| Self {
             context: ClientContext::new(),
             tp: comms::Endpoint::uninit(comms::EndpointID::Internal(comms::Internal::Nonvol)),
         });
 
-        service_storage.init().await;
+        service_storage.init().await?;
 
-        service_storage
+        Ok(service_storage)
     }
 
-    async fn init(&'static self) {
-        if comms::register_endpoint(self, &self.tp).await.is_err() {
+    async fn init(&'static self) -> Result<(), intrusive_list::Error> {
+        comms::register_endpoint(self, &self.tp).await.inspect_err(|_| {
             error!("Failed to register cfu endpoint");
-        }
+        })
     }
 
     pub async fn process_request(&self) -> Result<(), CfuError> {

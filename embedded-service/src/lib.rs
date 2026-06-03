@@ -2,9 +2,17 @@
 
 #![no_std]
 #![warn(missing_docs)]
+// This crate is the foundational unsafe surface for the workspace, so every
+// `unsafe` block here MUST carry a SAFETY comment. The workspace baseline
+// for this lint is `warn`; we tighten to `deny` for `embedded-service` only.
+#![deny(clippy::undocumented_unsafe_blocks)]
 
 pub mod intrusive_list;
-pub use intrusive_list::*;
+// Explicit re-exports rather than `pub use intrusive_list::*` so that
+// `Result` (which would shadow `core::result::Result`) and other module-
+// local helpers stay scoped to their module path. Consumers reach the
+// `Result` alias via `intrusive_list::Result<T>`.
+pub use intrusive_list::{IntrusiveList, IntrusiveNode, Node, NodeContainer};
 
 pub mod critical_section_cell;
 #[cfg(all(not(test), target_os = "none", target_arch = "arm"))]
@@ -21,6 +29,7 @@ pub mod hid;
 pub mod init;
 pub mod ipc;
 pub mod keyboard;
+pub mod metrics;
 pub mod named;
 pub mod relay;
 pub mod sync;

@@ -2,7 +2,7 @@
 
 use embassy_sync::once_lock::OnceLock;
 
-use crate::{SyncCell, intrusive_list::*};
+use crate::{SyncCell, intrusive_list::*, trace};
 
 /// potential activity service states
 #[derive(Copy, Clone, Debug)]
@@ -53,6 +53,15 @@ pub trait ActivitySubscriber {
 /// actual subscriber node instance for embedding within static or singleton type T
 pub struct Subscriber {
     node: Node,
+    // NOTE: `Option<&'static dyn ActivitySubscriber>` is `!Send` because the
+    // `ActivitySubscriber` trait has no `Sync` supertrait. We deliberately
+    // do NOT add a `const _: () = _assert_send::<...>();` guard here: that
+    // would assert a property that does not hold. Sharing is sound because
+    // (1) the surrounding `unsafe impl Send + Sync for Subscriber` below
+    // restores the markers under the documented single-Cortex-M / single
+    // Embassy executor model, and (2) the `SyncCell` serializes the slot
+    // mutation. If `SyncCell` is ever required to be `Sync` in a context
+    // without that outer manual impl, this site must be revisited.
     instance: SyncCell<Option<&'static dyn ActivitySubscriber>>,
 }
 
@@ -84,6 +93,24 @@ impl NodeContainer for Subscriber {
     }
 }
 
+// SAFETY: The invariant: `Subscriber`'s sole non-`Send + Sync` state is
+// the trait object stored inside `instance: SyncCell<Option<&'static dyn
+// ActivitySubscriber>>`. `ActivitySubscriber` is a public trait that does
+// not require `Send + Sync` (changing it would break the public API), so
+// the auto-derive of these markers fails purely on trait-object bound
+// erasure — not on any actual sharing hazard in the storage.
+// `&'static dyn Trait` is a fat pointer; sharing or sending the pointer
+// itself is sound, and the `SyncCell` serializes all read/write of the
+// slot under a critical section. Combined with the single Cortex-M /
+// single Embassy executor model documented in `lib.rs`, no `Subscriber`
+// is ever concurrently accessed by anything but the cooperatively-
+// scheduled executor, so the manual impls restore the `Send + Sync`
+// markers required by `NodeContainer: Send + Sync` in
+// `intrusive_list.rs` without introducing any new sharing path.
+unsafe impl Send for Subscriber {}
+// SAFETY: same invariant as the `Send` impl above.
+unsafe impl Sync for Subscriber {}
+
 /// Publisher handle for registered publishers
 #[derive(Copy, Clone, Debug)]
 pub struct Publisher {
@@ -91,12 +118,22 @@ pub struct Publisher {
 }
 
 /// register your subscriber to begin receiving updates
+///
+/// The list push happens BEFORE the delegate slot is written. If the same
+/// `Subscriber` is already in the list (duplicate registration), the push
+/// returns `Err(NodeAlreadyInList)` and the existing delegate is left
+/// intact — reversing the order would silently overwrite the delegate while
+/// the push rejected the duplicate. Under the single-executor assumption
+/// documented in `lib.rs`, there is no yield point between the successful
+/// `push` and the subsequent `init`, so the publish loop cannot observe a
+/// registered-but-uninitialized subscriber.
 pub async fn register_subscriber<T: ActivitySubscriber>(
     this: &'static T,
     subscriber: &'static Subscriber,
 ) -> Result<()> {
+    SUBSCRIBERS.get().await.push(subscriber)?;
     subscriber.init(this);
-    SUBSCRIBERS.get().await.push(subscriber)
+    Ok(())
 }
 
 /// register publisher class for future usage. None returned if class slot is already occupied
@@ -120,14 +157,16 @@ impl Publisher {
         // single-executor that allows task level prioritization of futures.
 
         for listener_node in subs {
-            let instance = listener_node.data::<Subscriber>();
-            // as subscriber list is only accessible via these safe interfaces, can perform an "invariant assert" here
-            // to catch potential state or stack corruption later
-            assert!(instance.is_some());
-
-            if let Some(subscriber) = instance {
-                subscriber.update(&notif);
-            }
+            // Skip-with-trace if the list ever holds a non-`Subscriber`
+            // `NodeContainer`. The public registration API only accepts
+            // `Subscriber`, but any crate-local code that pushes another
+            // `NodeContainer` type to the same list would otherwise crash
+            // publication (an `assert!` here would panic).
+            let Some(subscriber) = listener_node.data::<Subscriber>() else {
+                trace!("activity: skipping non-Subscriber node in SUBSCRIBERS list");
+                continue;
+            };
+            subscriber.update(&notif);
         }
     }
 }
@@ -136,4 +175,187 @@ static SUBSCRIBERS: OnceLock<IntrusiveList> = OnceLock::new();
 
 pub(crate) fn init() {
     SUBSCRIBERS.get_or_init(IntrusiveList::new);
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod test {
+    use super::*;
+    use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+    use embassy_sync::once_lock::OnceLock as TestOnceLock;
+
+    fn assert_send_sync<T: Send + Sync>() {}
+
+    /// `Subscriber` carries a manual `unsafe impl Send + Sync`. Guard against
+    /// silent regression of either impl.
+    #[test]
+    fn subscriber_is_send_sync() {
+        assert_send_sync::<Subscriber>();
+    }
+
+    /// Move a `Subscriber` to a tokio worker thread. Fails to compile if
+    /// `Subscriber: Send` regresses.
+    #[tokio::test]
+    async fn subscriber_crosses_thread_boundary() {
+        let sub = Subscriber::uninit();
+        let handle = tokio::spawn(async move {
+            // Touch the inner cell across the thread boundary.
+            sub.update(&Notification {
+                state: State::Inactive,
+                class: Class::Keyboard,
+            });
+        });
+        handle.await.unwrap();
+    }
+
+    /// A no-op `NodeContainer` that is intentionally NOT a `Subscriber`.
+    ///
+    /// Used to construct the pathological case where `SUBSCRIBERS` contains a
+    /// `NodeContainer` whose downcast to `Subscriber` fails. A pre-fix
+    /// `assert!(instance.is_some())` in `Publisher::publish` panicked here.
+    struct ForeignContainer {
+        node: Node,
+    }
+
+    impl NodeContainer for ForeignContainer {
+        fn get_node(&self) -> &Node {
+            &self.node
+        }
+    }
+
+    /// A counting subscriber to confirm the publish loop still dispatches to
+    /// valid subscribers even when foreign containers are mixed in.
+    struct CountingSubscriber {
+        node: Subscriber,
+        hits: AtomicU32,
+    }
+
+    impl ActivitySubscriber for CountingSubscriber {
+        fn activity_update(&self, _notif: &Notification) {
+            self.hits.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    /// `Publisher::publish` must not panic when the global `SUBSCRIBERS` list
+    /// holds a `NodeContainer` whose `data::<Subscriber>()` downcast returns
+    /// `None`. A naive `assert!(instance.is_some())` here would be a hidden
+    /// runtime hazard (the workspace `panic = "deny"` lint does not catch
+    /// `assert!`).
+    ///
+    /// This test directly seeds `SUBSCRIBERS` with a non-`Subscriber`
+    /// `NodeContainer` (only possible from within the crate) plus one real
+    /// subscriber, then publishes. The publish must:
+    ///   - return without panicking,
+    ///   - still dispatch the notification to the real subscriber.
+    #[tokio::test]
+    async fn test_publish_skips_foreign_node_container_without_panicking() {
+        // Single global init guard so this test is independent of other tests
+        // touching SUBSCRIBERS.
+        static INIT_DONE: AtomicBool = AtomicBool::new(false);
+        SUBSCRIBERS.get_or_init(IntrusiveList::new);
+
+        // Push a foreign NodeContainer that is NOT a Subscriber. This is the
+        // pathological condition the old assert reacted to.
+        static FOREIGN: TestOnceLock<ForeignContainer> = TestOnceLock::new();
+        let foreign = FOREIGN.get_or_init(|| ForeignContainer { node: Node::uninit() });
+
+        // Push a real subscriber.
+        static REAL: TestOnceLock<CountingSubscriber> = TestOnceLock::new();
+        let real = REAL.get_or_init(|| CountingSubscriber {
+            node: Subscriber::uninit(),
+            hits: AtomicU32::new(0),
+        });
+
+        // First-time init: register both. Subsequent test runs are no-ops
+        // (the OnceLocks are global static; cargo runs each test once per process).
+        if !INIT_DONE.swap(true, Ordering::SeqCst) {
+            SUBSCRIBERS.get().await.push(foreign).unwrap();
+            real.node.init(real);
+            SUBSCRIBERS.get().await.push(&real.node).unwrap();
+        }
+
+        let publisher = register_publisher(Class::Keyboard).unwrap();
+
+        // Snapshot hits before/after to be robust against test ordering.
+        let before = real.hits.load(Ordering::SeqCst);
+        // The pre-fix code panics here when iterating into the foreign container.
+        publisher.publish(State::Active).await;
+        let after = real.hits.load(Ordering::SeqCst);
+
+        assert!(after > before, "real subscriber must still be dispatched to");
+    }
+
+    /// A counting subscriber whose `activity_update` records a distinct tag,
+    /// so a test can prove which delegate handled the notification.
+    struct TaggedSubscriber {
+        tag: u32,
+        hits: AtomicU32,
+    }
+
+    impl ActivitySubscriber for TaggedSubscriber {
+        fn activity_update(&self, _notif: &Notification) {
+            self.hits.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    /// `register_subscriber` must reject a duplicate registration AND preserve
+    /// the first delegate. Reversing the push/init order would silently
+    /// overwrite the first delegate when the push rejected the duplicate.
+    ///
+    /// This is the exact mirror of `comms::register_endpoint`'s
+    /// `test_register_endpoint_rejects_duplicate_and_preserves_first_delegator`.
+    #[tokio::test]
+    async fn test_register_subscriber_rejects_duplicate_and_preserves_first_delegate() {
+        SUBSCRIBERS.get_or_init(IntrusiveList::new);
+
+        static FIRST: TestOnceLock<TaggedSubscriber> = TestOnceLock::new();
+        let first = FIRST.get_or_init(|| TaggedSubscriber {
+            tag: 1,
+            hits: AtomicU32::new(0),
+        });
+        static SECOND: TestOnceLock<TaggedSubscriber> = TestOnceLock::new();
+        let second = SECOND.get_or_init(|| TaggedSubscriber {
+            tag: 2,
+            hits: AtomicU32::new(0),
+        });
+
+        // A single Subscriber slot shared between two registration attempts.
+        static SLOT: TestOnceLock<Subscriber> = TestOnceLock::new();
+        let slot = SLOT.get_or_init(Subscriber::uninit);
+
+        // First registration must succeed.
+        register_subscriber(first, slot).await.unwrap();
+
+        // Second registration with a different delegate must FAIL.
+        let duplicate = register_subscriber(second, slot).await;
+        assert!(
+            duplicate.is_err(),
+            "duplicate registration must return NodeAlreadyInList"
+        );
+
+        // Publish a notification. The first delegate must receive it; the
+        // second must NOT, proving the second registration did not overwrite
+        // the slot.
+        let publisher = register_publisher(Class::Trackpad).unwrap();
+        let first_before = first.hits.load(Ordering::SeqCst);
+        let second_before = second.hits.load(Ordering::SeqCst);
+        publisher.publish(State::Active).await;
+        let first_after = first.hits.load(Ordering::SeqCst);
+        let second_after = second.hits.load(Ordering::SeqCst);
+
+        assert!(
+            first_after > first_before,
+            "first delegate must receive the notification; hits {} -> {}",
+            first_before,
+            first_after,
+        );
+        assert_eq!(
+            second_after, second_before,
+            "second delegate must NOT receive the notification after rejected duplicate registration"
+        );
+
+        // Sanity guard: tags are stable across the suite.
+        assert_eq!(first.tag, 1);
+        assert_eq!(second.tag, 2);
+    }
 }

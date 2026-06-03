@@ -2,7 +2,7 @@
 //! See spec at <http://msdn.microsoft.com/en-us/library/windows/hardware/hh852380.aspx>
 use core::convert::Infallible;
 
-use embassy_sync::signal::Signal;
+use embassy_sync::channel::Channel;
 
 use crate::buffer::SharedRef;
 use crate::comms::{self, Endpoint, EndpointID, External, Internal, MailboxDelegate};
@@ -172,11 +172,18 @@ impl Default for RegisterFile {
     }
 }
 
+/// Maximum number of in-flight host requests buffered per HID device.
+///
+/// A depth of 2 allows a single pipelined host request without loss; anything
+/// beyond that returns `BufferFull` to the sender so the caller can react
+/// instead of losing data silently.
+const DEVICE_REQUEST_QUEUE_DEPTH: usize = 2;
+
 /// HID device that responds to HID requests
 pub struct Device {
     node: Node,
     tp: Endpoint,
-    request: Signal<GlobalRawMutex, Request<'static>>,
+    request: Channel<GlobalRawMutex, Request<'static>, DEVICE_REQUEST_QUEUE_DEPTH>,
     /// Device ID
     pub id: DeviceId,
     /// Registers
@@ -201,7 +208,7 @@ impl Device {
         Self {
             node: Node::uninit(),
             tp: Endpoint::uninit(EndpointID::Internal(Internal::Hid)),
-            request: Signal::new(),
+            request: Channel::new(),
             id,
             regs,
         }
@@ -209,7 +216,7 @@ impl Device {
 
     /// Wait for this device to receive a request
     pub async fn wait_request(&self) -> Request<'static> {
-        self.request.wait().await
+        self.request.receive().await
     }
 
     /// Send a response to the host from this device
@@ -235,12 +242,22 @@ impl MailboxDelegate for Device {
             .get::<Message>()
             .ok_or(comms::MailboxDelegateError::MessageNotFound)?;
 
+        // All variants must enforce id-matching consistently. Reject mismatched
+        // ids uniformly with `InvalidId` rather than silently signaling a
+        // request to the wrong device.
+        if message.id != self.id {
+            return Err(comms::MailboxDelegateError::InvalidId);
+        }
+
         match message.data {
             MessageData::Request(ref request) => {
-                self.request.signal(request.clone());
-                Ok(())
+                // `try_send` returns `BufferFull` instead of silently
+                // overwriting a previously-queued request.
+                self.request.try_send(request.clone()).map_err(|_| {
+                    crate::metrics::hid::bump_request_overflows();
+                    comms::MailboxDelegateError::BufferFull
+                })
             }
-            _ if message.id != self.id => Err(comms::MailboxDelegateError::InvalidId),
             _ => Err(comms::MailboxDelegateError::InvalidData),
         }
     }
@@ -318,11 +335,45 @@ impl Context {
 
 static CONTEXT: Context = Context::new();
 
-/// Register a device with the HID service
+/// Register a device with the HID service.
+///
+/// Rejects duplicate `DeviceId` registrations: the append-only registry
+/// makes it impossible to clean up a successful push, so two devices with
+/// the same id would otherwise both receive every routed HID message via
+/// `comms::route`, with the non-matching device bumping
+/// `comms::delegator_errors` forever. This mirrors the pre-check pattern
+/// used by `cfu-service::ClientContext::register_device` and
+/// `battery-service::Context::register_fuel_gauge`.
+///
+/// If the device is pushed into `CONTEXT.devices` but the subsequent
+/// `comms::register_endpoint` call fails (or the caller's future is
+/// cancelled mid-await), the device remains discoverable via `get_device`
+/// but cannot send responses. That partial-state hazard is surfaced by
+/// the `metrics::hid::device_registered_without_endpoint` counter; the
+/// error is propagated to the caller so it can choose how to react.
 pub async fn register_device(device: &'static impl DeviceContainer) -> Result<(), intrusive_list::Error> {
     let device = device.get_hid_device();
+
+    // Pre-check duplicate DeviceId. Catches the most common partial-state
+    // scenario at the cheapest place — before any list mutation.
+    if get_device(device.id).is_some() {
+        return Err(intrusive_list::Error::NodeAlreadyInList);
+    }
+
     CONTEXT.devices.push(device)?;
-    comms::register_endpoint(device, &device.tp).await
+
+    // The device is now in the list. If endpoint registration fails or the
+    // future is cancelled, we cannot remove it (append-only). Bump the
+    // partial-state counter so operators can detect the hazard, then
+    // propagate the error to the caller.
+    match comms::register_endpoint(device, &device.tp).await {
+        Ok(()) => Ok(()),
+        Err(err) => {
+            crate::metrics::hid::bump_device_registered_without_endpoint();
+            crate::warn!("hid: device registered without endpoint - inner registration failed");
+            Err(err)
+        }
+    }
 }
 
 /// Find a device by its ID
@@ -353,6 +404,17 @@ pub async fn send_request(tp: &Endpoint, to: DeviceId, request: Request<'static>
 #[allow(clippy::unwrap_used)]
 mod test {
     use super::*;
+
+    fn assert_send_sync<T: Send + Sync>() {}
+
+    /// HID `Device` is `NodeContainer` and therefore must be `Send + Sync`.
+    /// It composes only `Send + Sync` fields (`Node`, `Endpoint` via its
+    /// manual `unsafe impl`, `Channel`, plain ids and registers), so the
+    /// auto-derive should hold.
+    #[test]
+    fn hid_device_is_send_sync() {
+        assert_send_sync::<Device>();
+    }
 
     #[test]
     fn descriptor_serialize_deserialize() {
@@ -387,5 +449,238 @@ mod test {
         let decoded = Descriptor::decode_from_slice(&buf).unwrap();
 
         assert_eq!(decoded, descriptor);
+    }
+
+    /// `Device::receive` must gate every variant on `message.id == self.id`.
+    ///
+    /// A request whose `message.id` does not match `self.id` must be rejected
+    /// with `InvalidId`, matching the behavior of the other arms.
+    #[test]
+    fn test_device_receive_rejects_request_for_other_device_id() {
+        let device = Device::new(DeviceId(1), RegisterFile::default());
+
+        // Construct a request addressed to a different device id (2).
+        let request = Request::Descriptor;
+        let message = Message {
+            id: DeviceId(2),
+            data: MessageData::Request(request),
+        };
+        let envelope = comms::Message {
+            from: EndpointID::External(External::Host),
+            to: EndpointID::Internal(Internal::Hid),
+            data: comms::Data::new(&message),
+        };
+
+        let result = device.receive(&envelope);
+        assert!(
+            matches!(result, Err(comms::MailboxDelegateError::InvalidId)),
+            "Request for a different device id must be rejected with InvalidId"
+        );
+    }
+
+    /// Companion test: request matching the device id must be accepted.
+    #[test]
+    fn test_device_receive_accepts_request_for_matching_device_id() {
+        let device = Device::new(DeviceId(1), RegisterFile::default());
+
+        let request = Request::Descriptor;
+        let message = Message {
+            id: DeviceId(1),
+            data: MessageData::Request(request),
+        };
+        let envelope = comms::Message {
+            from: EndpointID::External(External::Host),
+            to: EndpointID::Internal(Internal::Hid),
+            data: comms::Data::new(&message),
+        };
+
+        let result = device.receive(&envelope);
+        assert!(
+            matches!(result, Ok(())),
+            "Request for matching device id must be accepted"
+        );
+    }
+
+    /// `Device::receive` must not silently drop back-to-back host requests.
+    ///
+    /// The device buffers at least one additional pending request without
+    /// dropping. The second `receive` must either succeed (buffered) or
+    /// return `BufferFull` — never silently overwrite the first.
+    #[tokio::test]
+    async fn test_device_receive_does_not_silently_drop_back_to_back_requests() {
+        use core::time::Duration;
+
+        let device = Device::new(DeviceId(7), RegisterFile::default());
+
+        // Distinct payloads so we can tell them apart on the receive side.
+        let req_a = MessageData::Request(Request::Descriptor);
+        let req_b = MessageData::Request(Request::ReportDescriptor);
+
+        let msg_a = Message {
+            id: DeviceId(7),
+            data: req_a,
+        };
+        let msg_b = Message {
+            id: DeviceId(7),
+            data: req_b,
+        };
+
+        let env_a = comms::Message {
+            from: EndpointID::External(External::Host),
+            to: EndpointID::Internal(Internal::Hid),
+            data: comms::Data::new(&msg_a),
+        };
+        let env_b = comms::Message {
+            from: EndpointID::External(External::Host),
+            to: EndpointID::Internal(Internal::Hid),
+            data: comms::Data::new(&msg_b),
+        };
+
+        // Send first request - must succeed.
+        assert!(device.receive(&env_a).is_ok(), "first request must be accepted");
+
+        // Send second request before draining - must NOT silently overwrite.
+        // Acceptable outcomes:
+        //   - Ok(()): channel buffered both
+        //   - Err(BufferFull): explicit signal to caller
+        // Pre-fix outcome: Ok(()) but the first request was silently lost.
+        let second = device.receive(&env_b);
+
+        // Drain whatever is buffered (use a timeout to avoid hanging if
+        // the implementation regressed to single-slot behavior with both stored).
+        let first = tokio::time::timeout(Duration::from_millis(100), device.wait_request())
+            .await
+            .unwrap();
+
+        match second {
+            Ok(()) => {
+                // Both requests must be retrievable - prove the second one is also there.
+                let second_drained = tokio::time::timeout(Duration::from_millis(100), device.wait_request())
+                    .await
+                    .unwrap();
+
+                // Discriminate the variants - the channel must preserve both, in order.
+                assert!(
+                    matches!(first, Request::Descriptor),
+                    "first delivered must be the first sent (Descriptor)"
+                );
+                assert!(
+                    matches!(second_drained, Request::ReportDescriptor),
+                    "second delivered must be the second sent (ReportDescriptor)"
+                );
+            }
+            Err(_) => {
+                // Pre-fix path silently dropped on overflow returning Ok(()).
+                // If the implementation now returns BufferFull, that's also acceptable.
+                // First request must still be the original (Descriptor).
+                assert!(
+                    matches!(first, Request::Descriptor),
+                    "first request must be preserved even when second is rejected"
+                );
+            }
+        }
+    }
+
+    /// `Device::receive` must bump the `hid::request_overflows` counter
+    /// when the internal channel is full and a request is rejected with
+    /// `BufferFull`.
+    #[tokio::test]
+    async fn test_request_overflow_bumps_counter() {
+        let device = Device::new(DeviceId(9), RegisterFile::default());
+
+        let envelope = |req: Request<'static>| {
+            let msg = Message {
+                id: DeviceId(9),
+                data: MessageData::Request(req),
+            };
+            // The Box keeps the Message alive for the borrow inside Data::new.
+            (
+                msg,
+                EndpointID::External(External::Host),
+                EndpointID::Internal(Internal::Hid),
+            )
+        };
+
+        // Fill the channel to capacity. Capacity is DEVICE_REQUEST_QUEUE_DEPTH
+        // which is 2 today, so two `try_send`s must succeed.
+        let m1 = envelope(Request::Descriptor);
+        let env1 = comms::Message {
+            from: m1.1,
+            to: m1.2,
+            data: comms::Data::new(&m1.0),
+        };
+        let m2 = envelope(Request::ReportDescriptor);
+        let env2 = comms::Message {
+            from: m2.1,
+            to: m2.2,
+            data: comms::Data::new(&m2.0),
+        };
+        let m3 = envelope(Request::InputReport);
+        let env3 = comms::Message {
+            from: m3.1,
+            to: m3.2,
+            data: comms::Data::new(&m3.0),
+        };
+
+        assert!(device.receive(&env1).is_ok());
+        assert!(device.receive(&env2).is_ok());
+
+        let before = crate::metrics::hid::request_overflows();
+
+        // Third request must overflow and bump the counter.
+        let third = device.receive(&env3);
+        assert!(
+            matches!(third, Err(comms::MailboxDelegateError::BufferFull)),
+            "third request must be rejected with BufferFull when channel is full"
+        );
+
+        let after = crate::metrics::hid::request_overflows();
+        assert!(
+            after > before,
+            "hid::request_overflows must increase on BufferFull; before={} after={}",
+            before,
+            after,
+        );
+    }
+
+    /// `register_device` must reject a second registration that uses the
+    /// same `DeviceId`. The append-only registry makes it impossible to
+    /// undo a successful push, so the only way to avoid partial state is to
+    /// reject the duplicate up front. Mirrors the `cfu-service` and
+    /// `battery-service` pre-check pattern.
+    #[tokio::test]
+    async fn test_register_device_rejects_duplicate_device_id() {
+        use embassy_sync::once_lock::OnceLock;
+
+        crate::comms::init();
+
+        // Pick a DeviceId unlikely to collide with other tests that touch
+        // the shared CONTEXT.devices list.
+        const DUP_ID: DeviceId = DeviceId(0xA1);
+
+        static FIRST: OnceLock<Device> = OnceLock::new();
+        let first = FIRST.get_or_init(|| Device::new(DUP_ID, RegisterFile::default()));
+
+        static SECOND: OnceLock<Device> = OnceLock::new();
+        let second = SECOND.get_or_init(|| Device::new(DUP_ID, RegisterFile::default()));
+
+        // First registration must succeed.
+        register_device(first).await.unwrap();
+
+        // Second registration with the same DeviceId must FAIL before any
+        // state is mutated. Without the pre-check, the second `push` would
+        // succeed (different Node), the second endpoint would also register
+        // (different Endpoint), and every routed HID message would dispatch
+        // to both, with the non-matching device bumping
+        // `comms::delegator_errors` forever.
+        let duplicate = register_device(second).await;
+        assert!(duplicate.is_err(), "duplicate DeviceId registration must be rejected");
+
+        // The first device must still be discoverable.
+        let found = get_device(DUP_ID);
+        assert!(
+            found.is_some(),
+            "first device must remain in CONTEXT.devices after the rejected duplicate"
+        );
     }
 }

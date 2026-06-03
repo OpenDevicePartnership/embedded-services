@@ -453,7 +453,7 @@ impl<'a> Command<'a> {
 
         buf[0..VALUE_LEN].copy_from_slice(&(total_len as u16).to_le_bytes());
         buf[VALUE_LEN..data.len() + VALUE_LEN].copy_from_slice(data);
-        Ok((total_len, &mut buf[data.len()..]))
+        Ok((total_len, &mut buf[total_len..]))
     }
 
     /// Encode the command into a slice, returns number of bytes written
@@ -572,6 +572,45 @@ mod test {
     const DATA_REG: u16 = 0x0006;
     const REPORT_ID: ReportId = ReportId(8);
     const EXT_REPORT_ID: ReportId = ReportId(EXTENDED_REPORT_ID);
+
+    /// `encode_data` must return a slice that points to *after* the
+    /// just-written length-prefixed data, not just past the data bytes.
+    ///
+    /// `encode_data` writes `2 + data.len()` bytes total (a 2-byte length
+    /// prefix followed by the data). The returned remainder must skip the
+    /// full `total_len`; if it only skipped `data.len()`, a caller chaining
+    /// encoders would overwrite the length prefix bytes.
+    ///
+    /// No current caller consumes the returned slice (Command::SetReport
+    /// uses `let (data_len, _) = ...`), but this test exercises the slice
+    /// directly to guard against a future caller hitting the bug.
+    #[test]
+    fn test_encode_data_returns_remaining_slice_past_total_len() {
+        // We need a buffer large enough for [length(2) + data(2) + trailing(4)] = 8 bytes.
+        let mut buf = [0xAAu8; 8];
+        let data = [0x12u8, 0x34];
+
+        let (written, remaining) = Command::encode_data(&mut buf, &data).unwrap();
+        assert_eq!(
+            written, 4,
+            "encode_data should write 2-byte length + 2-byte data = 4 bytes"
+        );
+        assert_eq!(remaining.len(), 4, "remaining slice should cover the 4 trailing bytes");
+
+        // Sentinel write into the remaining slice to prove it does not overlap the prefix/data.
+        remaining.copy_from_slice(&[0xDE, 0xAD, 0xBE, 0xEF]);
+
+        // Bytes 0..2 must be the LE length (total_len = 4), not 0xDE/0xAD or the data.
+        assert_eq!(&buf[0..2], &4u16.to_le_bytes(), "length prefix corrupted");
+        // Bytes 2..4 must be the data we passed in, not the sentinel.
+        assert_eq!(&buf[2..4], &data, "data bytes corrupted");
+        // Bytes 4..8 must be the sentinel.
+        assert_eq!(
+            &buf[4..8],
+            &[0xDE, 0xAD, 0xBE, 0xEF],
+            "remaining slice did not point past total_len"
+        );
+    }
 
     #[test]
     fn test_serialize_reset() {

@@ -48,6 +48,16 @@ pub struct Buffer<'a, T> {
     _lifetime: PhantomData<&'a ()>,
 }
 
+// Compile-time guard: `SyncCell<Status>: Sync` requires `Status: Send`.
+// `Status` is a plain `Copy` enum of primitives, so this holds today. If a
+// future refactor adds a `!Send` field (e.g. a raw pointer or a non-`Send`
+// trait object), this assertion fails at workspace build time rather than
+// only on the ARM `thread_mode_cell` build.
+const _: () = {
+    const fn _assert_send<T: Send>() {}
+    _assert_send::<Status>();
+};
+
 impl<'a, T> Buffer<'a, T> {
     /// Create a new buffer from a reference
     /// # Safety
@@ -97,7 +107,8 @@ impl<'a, T> Buffer<'a, T> {
     // but don't want to panic either.
     // Instead, mark this buffer `Poisoned` to signify it's now in a bad/unexpected state.
     fn drop_borrow(&self) {
-        let status = match self.status.get() {
+        let prev = self.status.get();
+        let status = match prev {
             // Unborrowed buffer dropped
             Status::None => Status::Poisoned,
             Status::Mutable => Status::None,
@@ -108,6 +119,12 @@ impl<'a, T> Buffer<'a, T> {
             // Buffer already poisoned
             Status::Poisoned => Status::Poisoned,
         };
+        if status == Status::Poisoned && prev != Status::Poisoned {
+            // Newly entering the terminal Poisoned state. Bump the counter
+            // exactly once per transition so callers can detect refcount
+            // underflow / drop-of-unborrowed bugs.
+            crate::metrics::buffer::bump_poisons();
+        }
         self.status.set(status);
     }
 }
@@ -156,16 +173,22 @@ impl<'a, T> AccessMut<'a, T> {
     }
 }
 
-// SAFETY: Access to the buffer is dynamically checked
 impl<T> Borrow<[T]> for AccessMut<'_, T> {
     fn borrow(&self) -> &[T] {
+        // SAFETY: Access to the buffer is dynamically checked: we hold an
+        // AccessMut guard, which means the Buffer is in Status::Mutable and
+        // no other guards exist. The pointer is non-null and valid for `len`
+        // elements per the `Buffer::new` safety contract.
         unsafe { core::slice::from_raw_parts(self.0.buffer.load(core::sync::atomic::Ordering::Acquire), self.0.len) }
     }
 }
 
-// SAFETY: Access to the buffer is dynamically checked
 impl<T> BorrowMut<[T]> for AccessMut<'_, T> {
     fn borrow_mut(&mut self) -> &mut [T] {
+        // SAFETY: Access to the buffer is dynamically checked: we hold an
+        // AccessMut guard via `&mut self`, which means the Buffer is in
+        // Status::Mutable and no other guards exist. The pointer is non-null
+        // and valid for `len` elements per the `Buffer::new` safety contract.
         unsafe {
             core::slice::from_raw_parts_mut(self.0.buffer.load(core::sync::atomic::Ordering::Acquire), self.0.len)
         }
@@ -199,7 +222,10 @@ impl<'a, T> SharedRef<'a, T> {
     ///
     /// Returns an error if the given slice is out-of-bounds
     pub fn new(buffer: &'a Buffer<'a, T>, slice: Range<usize>) -> Result<Self, Error> {
-        if slice.start >= buffer.len() || slice.end > buffer.len() {
+        // Allow empty trailing slices, e.g. `len..len`. A `start >= len`
+        // check would reject those even though they are valid in standard
+        // Rust slicing.
+        if slice.start > buffer.len() || slice.end > buffer.len() || slice.start > slice.end {
             Err(Error::InvalidRange)
         } else {
             Ok(Self { buffer, slice })
@@ -217,7 +243,8 @@ impl<'a, T> SharedRef<'a, T> {
     ///
     /// Returns an error if the given range is out-of-bounds
     pub fn slice(&self, range: Range<usize>) -> Result<SharedRef<'a, T>, Error> {
-        if range.start >= self.slice.len() || range.end > self.slice.len() {
+        // Allow empty trailing slices, e.g. `len..len`.
+        if range.start > self.slice.len() || range.end > self.slice.len() || range.start > range.end {
             Err(Error::InvalidRange)
         } else {
             let start = self.slice.start + range.start;
@@ -245,7 +272,8 @@ pub struct Access<'a, T> {
 
 impl<'a, T> Access<'a, T> {
     fn new(buffer: &'a Buffer<'a, T>, slice: Range<usize>) -> Result<Self, Error> {
-        if slice.start >= buffer.len() || slice.end > buffer.len() {
+        // Allow empty trailing slices, e.g. `len..len`.
+        if slice.start > buffer.len() || slice.end > buffer.len() || slice.start > slice.end {
             Err(Error::InvalidRange)
         } else {
             buffer.borrow(false)?;
@@ -254,9 +282,12 @@ impl<'a, T> Access<'a, T> {
     }
 }
 
-// SAFETY: Access to the buffer is dynamically checked
 impl<T> Borrow<[T]> for Access<'_, T> {
     fn borrow(&self) -> &[T] {
+        // SAFETY: Access to the buffer is dynamically checked: we hold an
+        // Access guard, which means the Buffer is in Status::Immutable(n)
+        // with n >= 1 and no AccessMut exists. The pointer is non-null and
+        // valid for `len` elements per the `Buffer::new` safety contract.
         let buffer = unsafe {
             core::slice::from_raw_parts(
                 self.buffer.buffer.load(core::sync::atomic::Ordering::Acquire),
@@ -291,8 +322,15 @@ macro_rules! define_static_buffer {
                 ::embassy_sync::once_lock::OnceLock::new();
             static mut BUFFER_STORAGE: [$type; LEN] = $contents;
 
-            // SAFETY: The buffer is not externally visible and the constructor closure is only called once
             fn get_or_init() -> $crate::buffer::OwnedRef<'static, $type> {
+                // SAFETY: BUFFER_STORAGE is only ever exposed through the
+                // `Buffer` constructed by `Buffer::new` inside this
+                // `get_or_init` closure. The OnceLock guarantees the
+                // closure runs at most once, so the `&mut` from
+                // `addr_of_mut!(BUFFER_STORAGE)` cannot alias any other
+                // reference. `Buffer::as_owned` is similarly called once
+                // per OnceLock initialization, producing the unique
+                // `OwnedRef` for this static buffer.
                 unsafe {
                     BUFFER
                         .get_or_init(|| $crate::buffer::Buffer::new(&mut *::core::ptr::addr_of_mut!(BUFFER_STORAGE)))
@@ -410,7 +448,73 @@ mod test {
         define_static_buffer!(buffer, u8, [0, 1, 2, 3, 4, 5, 6, 7]);
         let buffer = buffer::get_mut().unwrap();
 
-        let _slice = buffer.reference().slice(8..8).unwrap();
+        // start=9 is past the buffer end (len=8). Must error.
+        let _slice = buffer.reference().slice(9..9).unwrap();
+    }
+
+    // Empty trailing slice at the buffer length must be valid.
+    // Standard Rust slicing allows `len..len`; the buffer API must accept it
+    // (a `start >= len` check would wrongly reject it).
+    #[test]
+    fn test_slice_empty_trailing_is_valid() {
+        define_static_buffer!(buffer, u8, [0, 1, 2, 3, 4, 5, 6, 7]);
+        let buffer = buffer::get_mut().unwrap();
+
+        // Empty slice at the end of an 8-byte buffer.
+        let slice = buffer.reference().slice(8..8).unwrap();
+        assert_eq!(slice.len(), 0);
+        assert!(slice.is_empty());
+
+        // Borrowing it produces an empty slice.
+        let access = slice.borrow().unwrap();
+        assert!(<Access<'_, u8> as Borrow<[u8]>>::borrow(&access).is_empty());
+    }
+
+    // `SharedRef::slice` on a trailing empty range must succeed.
+    #[test]
+    fn test_shared_ref_slice_empty_trailing_is_valid() {
+        define_static_buffer!(buffer, u8, [0, 1, 2, 3, 4, 5, 6, 7]);
+        let buffer = buffer::get_mut().unwrap();
+        let base = buffer.reference();
+
+        // 4..4 lands inside the slice range but is empty - must succeed.
+        let empty = base.slice(4..4).unwrap();
+        assert_eq!(empty.len(), 0);
+    }
+
+    /// Normal borrow / drop cycles must NOT poison the buffer and must NOT
+    /// bump the `metrics::buffer::poisons` counter. The poison transitions
+    /// (`Status::None` + drop, `Status::Immutable(0)` + drop) are
+    /// unreachable via the safe public API today — every `Access` /
+    /// `AccessMut` corresponds to an earlier `borrow` that incremented the
+    /// count. The poison path remains as defense-in-depth.
+    ///
+    /// The counter bump path itself is covered by the unit tests in
+    /// `crate::metrics`; here we just guard against an accidental future
+    /// change that would poison the buffer on a well-formed access pattern.
+    #[test]
+    fn test_normal_borrow_does_not_poison() {
+        define_static_buffer!(buffer, u8, [0; 8]);
+        let owned = buffer::get_mut().unwrap();
+
+        let before = crate::metrics::buffer::poisons();
+
+        {
+            let _b = owned.borrow().unwrap();
+            let _b2 = owned.borrow().unwrap();
+        }
+        {
+            let _m = owned.borrow_mut().unwrap();
+        }
+        {
+            let _b = owned.borrow().unwrap();
+        }
+
+        let after = crate::metrics::buffer::poisons();
+        assert_eq!(
+            after, before,
+            "well-formed borrow/drop cycles must not bump the poisons counter"
+        );
     }
 
     // Test slice ending index out of bounds

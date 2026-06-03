@@ -46,15 +46,25 @@ repository = "https://github.com/OpenDevicePartnership/embedded-services"
 warnings = "deny"
 
 [workspace.lints.clippy]
-correctness = "deny"
+correctness = { level = "deny", priority = -1 }
 expect_used = "deny"
 indexing_slicing = "deny"
 panic = "deny"
 panic_in_result_fn = "deny"
-perf = "deny"
-suspicious = "deny"
-style = "deny"
+perf = { level = "deny", priority = -1 }
+suspicious = { level = "deny", priority = -1 }
+style = { level = "deny", priority = -1 }
 todo = "deny"
+# Workspace default: `allow`. The workspace-wide `warnings = "deny"` would
+# otherwise upgrade `warn` to a hard error. Individual crates that want to
+# enforce this lint can opt in at their crate root, e.g.:
+#
+#     #![deny(clippy::undocumented_unsafe_blocks)]
+#
+# `embedded-service` does exactly that to lock down its foundational unsafe
+# surface. Other crates may stay opted-out while their own unsafe paths are
+# being documented.
+undocumented_unsafe_blocks = "allow"
 unimplemented = "deny"
 unreachable = "deny"
 unwrap_used = "deny"

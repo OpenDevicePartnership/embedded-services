@@ -328,7 +328,9 @@ async fn main(spawner: Spawner) {
 
     // Create CFU client
     static CFU_CLIENT: OnceLock<CfuClient> = OnceLock::new();
-    let cfu_client = CfuClient::new(&CFU_CLIENT).await;
+    let cfu_client = CfuClient::new(&CFU_CLIENT)
+        .await
+        .expect("CfuClient::new failed to register comms endpoint");
     cfu_client.register_device(cfu_device).unwrap();
 
     define_controller_port_static_cell_channel!(pub(self), port0, GlobalRawMutex, Tps6699xMutex<'static>);

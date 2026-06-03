@@ -20,6 +20,14 @@ impl NodeContainer for Blocker {
     }
 }
 
+// Compile-time guard: `Blocker` must remain `Send + Sync` because
+// `NodeContainer: Send + Sync`. `Signal<GlobalRawMutex, ()>` is
+// `Send + Sync`, so this is satisfied via auto-derive.
+const _: fn() = || {
+    fn assert_send_sync<T: Send + Sync>() {}
+    assert_send_sync::<Blocker>();
+};
+
 impl Blocker {
     /// allocate a Blocker, such that it could be used in a static
     pub const fn uninit() -> Self {
