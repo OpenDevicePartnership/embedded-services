@@ -210,6 +210,12 @@ criteria = "safe-to-deploy"
 version = "0.2.7"
 aggregated-from = "https://raw.githubusercontent.com/OpenDevicePartnership/mcxa-pac/refs/heads/main/supply-chain/audits.toml"
 
+[[audits.OpenDevicePartnership.audits.embedded-mcu-hal]]
+who = "Felipe Balbi <febalbi@microsoft.com>"
+criteria = "safe-to-deploy"
+delta = "0.2.0 -> 0.3.0"
+aggregated-from = "https://raw.githubusercontent.com/OpenDevicePartnership/embedded-mcu/refs/heads/main/supply-chain/audits.toml"
+
 [[audits.OpenDevicePartnership.audits.mimxrt600-fcb]]
 who = "Jerry Xie <jerryxie@microsoft.com>"
 criteria = "safe-to-deploy"

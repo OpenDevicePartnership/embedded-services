@@ -76,7 +76,7 @@ dependencies = [
 [[package]]
 name = "bit-register"
 version = "0.1.0"
-source = "git+https://github.com/OpenDevicePartnership/odp-utilities#583015c08ad9855f310bdb25d5cf9abff77b5e08"
+source = "git+https://github.com/OpenDevicePartnership/odp-utilities#ff4829bd16c6d9da609c59c98783b474ab9e3d23"
 dependencies = [
  "num-traits",
 ]
@@ -448,7 +448,7 @@ dependencies = [
 [[package]]
 name = "embassy-imxrt"
 version = "0.1.0"
-source = "git+https://github.com/OpenDevicePartnership/embassy-imxrt#6524cbabcc12016f1aea4c0ffa2f1354c3f8c6d1"
+source = "git+https://github.com/OpenDevicePartnership/embassy-imxrt#8b9a6f0e11d9b65f1616a9e487af2cf04aef3584"
 dependencies = [
  "cfg-if",
  "cortex-m",
@@ -589,6 +589,9 @@ name = "embedded-hal"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "361a90feb7004eca4019fb28352a9465666b24f840f5c3cddf0ff13920590b89"
+dependencies = [
+ "defmt 0.3.100",
+]
 
 [[package]]
 name = "embedded-hal-async"
@@ -596,6 +599,7 @@ version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0c4c685bbef7fe13c3c6dd4da26841ed3980ef33e841cddfa15ce8a8fb3f1884"
 dependencies = [
+ "defmt 0.3.100",
  "embedded-hal 1.0.0",
 ]
 
@@ -644,12 +648,15 @@ dependencies = [
 
 [[package]]
 name = "embedded-mcu-hal"
-version = "0.2.0"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f02b992c2b871b7fc616e4539258d92ea8b085e2f09cc0ad2862aa4d0e185ad1"
+checksum = "0563f27b8ea59eb57e2c5926db6ee311d0a24ab9912adf82b9f418cc9799b0ff"
 dependencies = [
  "defmt 1.1.0",
+ "embedded-hal 1.0.0",
+ "embedded-hal-async",
  "num_enum",
+ "smbus-pec",
 ]
 
 [[package]]
@@ -698,7 +705,7 @@ dependencies = [
 [[package]]
 name = "espi-device"
 version = "0.1.0"
-source = "git+https://github.com/OpenDevicePartnership/haf-ec-service#290aa80a4c281857f3bed94581200b330119286c"
+source = "git+https://github.com/OpenDevicePartnership/haf-ec-service#fe63c1fc0bb2463922d956003caf8ac9d6224231"
 dependencies = [
  "bit-register 0.1.0 (git+https://github.com/OpenDevicePartnership/odp-utilities?tag=v0.1.0)",
  "bitflags 2.11.1",

@@ -48,7 +48,7 @@ embassy-time = { version = "0.5.1", features = [
 ] }
 mimxrt600-fcb = "0.1.0"
 
-embedded-cfu-protocol = { git = "https://github.com/OpenDevicePartnership/embedded-cfu"}
+embedded-cfu-protocol = { git = "https://github.com/OpenDevicePartnership/embedded-cfu" }
 embedded-services = { path = "../../embedded-service", features = ["defmt"] }
 odp-service-common = { path = "../../odp-service-common" }
 power-button-service = { path = "../../power-button-service", features = [
@@ -83,7 +83,7 @@ platform-service = { path = "../../platform-service", features = [
     "defmt",
     "imxrt685",
 ] }
-embedded-mcu-hal = "0.2.0"
+embedded-mcu-hal = "0.3.0"
 
 cfu-service = { path = "../../cfu-service", features = ["defmt"] }
 

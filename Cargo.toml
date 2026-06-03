@@ -80,7 +80,7 @@ embassy-executor = "0.10.0"
 cfu-service = { path = "./cfu-service" }
 embedded-hal-nb = "1.0"
 embedded-io-async = "0.7.0"
-embedded-mcu-hal = "0.2.0"
+embedded-mcu-hal = "0.3.0"
 embassy-futures = "0.1.2"
 embassy-imxrt = { git = "https://github.com/OpenDevicePartnership/embassy-imxrt"}
 embassy-sync = "0.8"
