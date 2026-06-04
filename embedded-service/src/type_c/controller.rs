@@ -27,7 +27,7 @@ use crate::{GlobalRawMutex, IntrusiveNode, broadcaster::immediate as broadcaster
 pub const MAX_NUM_DATA_OBJECTS: usize = 7; // 7 VDOs of 4 bytes each
 
 /// Port status
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct PortStatus {
     /// Current available source contract
@@ -144,7 +144,7 @@ pub struct DpPinConfig {
 }
 
 /// DisplayPort status data
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct DpStatus {
     /// DP alt-mode entered
@@ -154,7 +154,7 @@ pub struct DpStatus {
 }
 
 /// DisplayPort configuration data
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct DpConfig {
     /// DP alt-mode enabled
@@ -214,7 +214,7 @@ impl Default for SendVdm {
 
 /// USB control configuration
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct UsbControlConfig {
     /// Enable USB2 data path
     pub usb2_enabled: bool,
@@ -236,7 +236,7 @@ impl Default for UsbControlConfig {
 
 /// Thunderbolt control configuration
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-#[derive(Debug, Clone, Default, Copy, PartialEq)]
+#[derive(Debug, Clone, Default, Copy, PartialEq, Eq)]
 pub struct TbtConfig {
     /// Enable Thunderbolt
     pub tbt_enabled: bool,
@@ -244,7 +244,7 @@ pub struct TbtConfig {
 
 /// PD state-machine configuration
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-#[derive(Debug, Clone, Default, Copy, PartialEq)]
+#[derive(Debug, Clone, Default, Copy, PartialEq, Eq)]
 pub struct PdStateMachineConfig {
     /// Enable or disable the PD state-machine
     pub enabled: bool,
@@ -523,7 +523,7 @@ pub enum Response<'a> {
 }
 
 /// Controller status
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct ControllerStatus<'a> {
     /// Current controller mode

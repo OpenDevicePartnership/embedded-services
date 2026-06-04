@@ -65,10 +65,11 @@ embedded-hal = "1.0"
 embedded-hal-async = "1.0"
 embedded-services = { path = "./embedded-service" }
 embedded-storage-async = "0.4.1"
-embedded-usb-pd = { git = "https://github.com/OpenDevicePartnership/embedded-usb-pd", tag = "v0.1.0" , default-features = false }
+embedded-usb-pd = { git = "https://github.com/OpenDevicePartnership/embedded-usb-pd", tag = "v0.1.0", default-features = false }
 mctp-rs = { git = "https://github.com/OpenDevicePartnership/mctp-rs", tag = "v0.1.0" }
 num_enum = { version = "0.7.5", default-features = false }
 portable-atomic = { version = "1.11", default-features = false }
+power-policy-service = { path = "./power-policy-service" }
 heapless = "0.9.2"
 log = "0.4"
 proc-macro2 = "1.0"

@@ -30,12 +30,18 @@ static_cell = { workspace = true }
 tps6699x = { workspace = true, features = ["embassy"] }
 
 [dev-dependencies]
-embassy-time = { workspace = true, features = ["std", "generic-queue-8"] }
-embassy-sync = { workspace = true, features = ["std"] }
+embassy-time = { workspace = true, features = [
+    "log",
+    "std",
+    "generic-queue-8",
+] }
 critical-section = { workspace = true, features = ["std"] }
-embassy-time-driver = { workspace = true }
-embassy-futures.workspace = true
 tokio = { workspace = true, features = ["rt", "macros", "time"] }
+env_logger = "0.11.8"
+paste = "1"
+static_cell.workspace = true
+log.workspace = true
+power-policy-service.workspace = true
 
 [features]
 default = []
