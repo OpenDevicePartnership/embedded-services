@@ -1,4 +1,7 @@
 #![allow(dead_code)]
+#![allow(clippy::panic)]
+#![allow(clippy::unwrap_used)]
+#![allow(clippy::expect_used)]
 use embassy_futures::{
     join::{join, join3},
     select::{Either, select},
@@ -44,7 +47,7 @@ const CFU2_ID: u8 = 0x02;
 /// Directly taking async closures is messy and requires an intermediate trait anyway
 pub trait Test {
     /// Run the test
-    fn run<'port, 'ch>(
+    fn run(
         &mut self,
         type_c_receiver: DynSubscriber<'static, type_c::comms::CommsMessage>,
         power_policy_event_receiver: DynSubscriber<'static, policy::CommsMessage>,
@@ -55,8 +58,6 @@ pub trait Test {
 }
 
 async fn controller_task(wrapper: &'static mock::Wrapper<'static>, mut completion_signal: DynReceiver<'static, ()>) {
-    wrapper.register().await.unwrap();
-
     while let Either::First(result) = select(wrapper.process_next_event(), completion_signal.get()).await {
         result.unwrap();
     }
@@ -126,7 +127,7 @@ macro_rules! define_controller {
                     [<$name _referenced>],
                     mock::Validator,
                 )
-                .expect(concat!("Failed to create wrapper "))
+                .expect("Failed to create wrapper")
             );
             #[allow(non_snake_case)]
             let $name = PortComponents {
@@ -198,18 +199,21 @@ pub async fn run_test(
         state: controller0_state,
         wrapper: controller0_wrapper,
     } = CONTROLLER0;
+    controller0_wrapper.register().await.unwrap();
 
     define_controller!(CONTROLLER1, CONTROLLER1_ID, PORT1_ID, POWER1_ID, CFU1_ID);
     let PortComponents {
         state: controller1_state,
         wrapper: controller1_wrapper,
     } = CONTROLLER1;
+    controller1_wrapper.register().await.unwrap();
 
     define_controller!(CONTROLLER2, CONTROLLER2_ID, PORT2_ID, POWER2_ID, CFU2_ID);
     let PortComponents {
         state: controller2_state,
         wrapper: controller2_wrapper,
     } = CONTROLLER2;
+    controller2_wrapper.register().await.unwrap();
 
     with_timeout(
         duration,

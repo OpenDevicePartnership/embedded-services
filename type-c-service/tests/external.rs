@@ -46,7 +46,7 @@ impl TestExternal {
         // get_controller_status
         info!("Testing get_controller_status");
         let expected_controller_status = ControllerStatus {
-            mode: "Test".into(),
+            mode: "Test",
             valid_fw_bank: true,
             fw_version0: 0xbadbeef,
             fw_version1: 0xbadcafe,
@@ -430,7 +430,7 @@ impl TestExternal {
 }
 
 impl Test for TestExternal {
-    async fn run<'port, 'ch>(
+    async fn run(
         &mut self,
         _type_c_receiver: DynSubscriber<'static, type_c::comms::CommsMessage>,
         _power_policy_event_receiver: DynSubscriber<'static, policy::CommsMessage>,

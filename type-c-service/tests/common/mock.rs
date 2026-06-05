@@ -1,4 +1,7 @@
 #![allow(dead_code)]
+#![allow(clippy::panic)]
+#![allow(clippy::unwrap_used)]
+#![allow(clippy::expect_used)]
 use core::num::NonZeroU8;
 use embassy_sync::{mutex::Mutex, signal::Signal};
 use embedded_cfu_protocol::protocol_definitions::{FwUpdateOfferResponse, HostToken};
