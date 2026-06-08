@@ -20,6 +20,7 @@ pub trait ServiceRunner<'hw> {
     fn run(self) -> impl core::future::Future<Output = embedded_services::Never> + 'hw;
 }
 
+#[allow(clippy::doc_overindented_list_items)]
 /// Initializes a service, creates an embassy task to run it, and spawns that task.
 ///
 /// This macro handles the boilerplate of:
