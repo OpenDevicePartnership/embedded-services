@@ -9,6 +9,8 @@ use embedded_services::{error, hid, info, trace};
 
 use crate::Error;
 
+const LENGTH_PREFIX_SIZE: usize = 2;
+
 /// Timeout configuration for I2C HID device operations.
 pub struct Config {
     /// Timeout for descriptor reads and commands.
@@ -209,6 +211,19 @@ impl<A: AddressMode + Copy, B: I2c<A>> Device<A, B> {
                     Error::Hid(hid::Error::Serialize)
                 })?;
 
+            let response_size = match cmd {
+                hid::Command::GetReport(_, _, Some(expected_payload_size)) => {
+                    *expected_payload_size as usize + LENGTH_PREFIX_SIZE
+                }
+                _ => buffer_len,
+            };
+            let read_buf =
+                buf.get_mut(0..response_size)
+                    .ok_or(Error::Hid(hid::Error::InvalidSize(InvalidSizeError {
+                        expected: response_size,
+                        actual: buffer_len,
+                    })))?;
+
             let mut bus = self.bus.lock().await;
 
             with_timeout(
@@ -221,7 +236,7 @@ impl<A: AddressMode + Copy, B: I2c<A>> Device<A, B> {
                             expected: len,
                             actual: temp_w_buf.len(),
                         })))?,
-                    buf,
+                    read_buf,
                 ),
             )
             .await
@@ -234,7 +249,9 @@ impl<A: AddressMode + Copy, B: I2c<A>> Device<A, B> {
                 Error::Bus(e)
             })?;
 
-            Ok(Some(Response::FeatureReport(self.buffer.reference())))
+            Ok(Some(Response::FeatureReport(
+                self.buffer.reference().slice(0..response_size).map_err(Error::Buffer)?,
+            )))
         } else {
             let len = cmd
                 .encode_into_slice(
