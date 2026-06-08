@@ -7,6 +7,7 @@ use core::num::NonZeroU8;
 use common::Test;
 use embassy_futures::join::join3;
 use embassy_sync::{mutex::Mutex, pubsub::DynSubscriber};
+use embassy_time::with_timeout;
 use embedded_services::{
     GlobalRawMutex, info,
     power::policy,
@@ -32,6 +33,8 @@ use embedded_usb_pd::{
 use common::DEFAULT_TEST_DURATION;
 use common::mock;
 
+use crate::common::DEFAULT_PER_CALL_TIMEOUT;
+
 struct TestExternal;
 
 impl TestExternal {
@@ -56,8 +59,8 @@ impl TestExternal {
             .next_result_get_controller_status
             .push_back(Ok(expected_controller_status));
         assert_eq!(
-            external::get_controller_status(controller_id).await,
-            Ok(expected_controller_status)
+            with_timeout(DEFAULT_PER_CALL_TIMEOUT, external::get_controller_status(controller_id)).await,
+            Ok(Ok(expected_controller_status))
         );
         assert_eq!(
             port.lock().await.fn_calls.pop_front(),
@@ -67,7 +70,10 @@ impl TestExternal {
         // reset_controller
         info!("Testing reset_controller");
         port.lock().await.next_result_reset_controller.push_back(Ok(()));
-        assert_eq!(external::reset_controller(controller_id).await, Ok(()));
+        assert_eq!(
+            with_timeout(DEFAULT_PER_CALL_TIMEOUT, external::reset_controller(controller_id)).await,
+            Ok(Ok(()))
+        );
         assert_eq!(
             port.lock().await.fn_calls.pop_front(),
             Some(mock::FnCall::ResetController)
@@ -80,7 +86,10 @@ impl TestExternal {
             .await
             .next_result_get_port_status
             .push_back(Ok(PortStatus::default()));
-        assert_eq!(external::sync_controller_state(controller_id).await, Ok(()));
+        assert_eq!(
+            with_timeout(DEFAULT_PER_CALL_TIMEOUT, external::sync_controller_state(controller_id)).await,
+            Ok(Ok(()))
+        );
         assert_eq!(
             port.lock().await.fn_calls.pop_front(),
             Some(mock::FnCall::GetPortStatus(local_port_id))
@@ -89,20 +98,35 @@ impl TestExternal {
         // get_controller_num_ports
         // Each test controller is registered with one port.
         info!("Testing get_controller_num_ports");
-        assert_eq!(external::get_controller_num_ports(controller_id).await, Ok(1));
+        assert_eq!(
+            with_timeout(
+                DEFAULT_PER_CALL_TIMEOUT,
+                external::get_controller_num_ports(controller_id)
+            )
+            .await,
+            Ok(Ok(1))
+        );
 
         // controller_port_to_global_id
         info!("Testing controller_port_to_global_id");
         assert_eq!(
-            external::controller_port_to_global_id(controller_id, local_port_id).await,
-            Ok(port_id),
+            with_timeout(
+                DEFAULT_PER_CALL_TIMEOUT,
+                external::controller_port_to_global_id(controller_id, local_port_id)
+            )
+            .await,
+            Ok(Ok(port_id)),
         );
 
         // global_port_to_controller_port
         info!("Testing global_port_to_controller_port");
         assert_eq!(
-            external::global_port_to_controller_port(port_id).await,
-            Ok((controller_id, local_port_id)),
+            with_timeout(
+                DEFAULT_PER_CALL_TIMEOUT,
+                external::global_port_to_controller_port(port_id)
+            )
+            .await,
+            Ok(Ok((controller_id, local_port_id))),
         );
 
         // get_num_ports
@@ -118,8 +142,12 @@ impl TestExternal {
             .next_result_get_port_status
             .push_back(Ok(expected_port_status));
         assert_eq!(
-            external::get_port_status(port_id, Cached(false)).await,
-            Ok(expected_port_status),
+            with_timeout(
+                DEFAULT_PER_CALL_TIMEOUT,
+                external::get_port_status(port_id, Cached(false))
+            )
+            .await,
+            Ok(Ok(expected_port_status)),
         );
         assert_eq!(
             port.lock().await.fn_calls.pop_front(),
@@ -133,8 +161,12 @@ impl TestExternal {
             .next_result_get_port_status
             .push_back(Ok(expected_port_status));
         assert_eq!(
-            external::get_controller_port_status(controller_id, local_port_id, Cached(false)).await,
-            Ok(expected_port_status),
+            with_timeout(
+                DEFAULT_PER_CALL_TIMEOUT,
+                external::get_controller_port_status(controller_id, local_port_id, Cached(false))
+            )
+            .await,
+            Ok(Ok(expected_port_status)),
         );
         assert_eq!(
             port.lock().await.fn_calls.pop_front(),
@@ -148,8 +180,12 @@ impl TestExternal {
             .next_result_get_rt_fw_update_status
             .push_back(Ok(RetimerFwUpdateState::Active));
         assert_eq!(
-            external::port_get_rt_fw_update_status(port_id).await,
-            Ok(RetimerFwUpdateState::Active),
+            with_timeout(
+                DEFAULT_PER_CALL_TIMEOUT,
+                external::port_get_rt_fw_update_status(port_id)
+            )
+            .await,
+            Ok(Ok(RetimerFwUpdateState::Active)),
         );
         assert_eq!(
             port.lock().await.fn_calls.pop_front(),
@@ -159,7 +195,10 @@ impl TestExternal {
         // port_set_rt_fw_update_state
         info!("Testing port_set_rt_fw_update_state");
         port.lock().await.next_result_set_rt_fw_update_state.push_back(Ok(()));
-        assert_eq!(external::port_set_rt_fw_update_state(port_id).await, Ok(()));
+        assert_eq!(
+            with_timeout(DEFAULT_PER_CALL_TIMEOUT, external::port_set_rt_fw_update_state(port_id)).await,
+            Ok(Ok(()))
+        );
         assert_eq!(
             port.lock().await.fn_calls.pop_front(),
             Some(mock::FnCall::SetRtFwUpdateState(local_port_id))
@@ -168,7 +207,14 @@ impl TestExternal {
         // port_clear_rt_fw_update_state
         info!("Testing port_clear_rt_fw_update_state");
         port.lock().await.next_result_clear_rt_fw_update_state.push_back(Ok(()));
-        assert_eq!(external::port_clear_rt_fw_update_state(port_id).await, Ok(()));
+        assert_eq!(
+            with_timeout(
+                DEFAULT_PER_CALL_TIMEOUT,
+                external::port_clear_rt_fw_update_state(port_id)
+            )
+            .await,
+            Ok(Ok(()))
+        );
         assert_eq!(
             port.lock().await.fn_calls.pop_front(),
             Some(mock::FnCall::ClearRtFwUpdateState(local_port_id))
@@ -177,7 +223,10 @@ impl TestExternal {
         // port_set_rt_compliance
         info!("Testing port_set_rt_compliance");
         port.lock().await.next_result_set_rt_compliance.push_back(Ok(()));
-        assert_eq!(external::port_set_rt_compliance(port_id).await, Ok(()));
+        assert_eq!(
+            with_timeout(DEFAULT_PER_CALL_TIMEOUT, external::port_set_rt_compliance(port_id)).await,
+            Ok(Ok(()))
+        );
         assert_eq!(
             port.lock().await.fn_calls.pop_front(),
             Some(mock::FnCall::SetRtCompliance(local_port_id))
@@ -186,7 +235,10 @@ impl TestExternal {
         // reconfigure_retimer
         info!("Testing reconfigure_retimer");
         port.lock().await.next_result_reconfigure_retimer.push_back(Ok(()));
-        assert_eq!(external::reconfigure_retimer(port_id).await, Ok(()));
+        assert_eq!(
+            with_timeout(DEFAULT_PER_CALL_TIMEOUT, external::reconfigure_retimer(port_id)).await,
+            Ok(Ok(()))
+        );
         assert_eq!(
             port.lock().await.fn_calls.pop_front(),
             Some(mock::FnCall::ReconfigureRetimer(local_port_id))
@@ -195,7 +247,14 @@ impl TestExternal {
         // set_max_sink_voltage
         info!("Testing set_max_sink_voltage");
         port.lock().await.next_result_set_max_sink_voltage.push_back(Ok(()));
-        assert_eq!(external::set_max_sink_voltage(port_id, Some(5000)).await, Ok(()));
+        assert_eq!(
+            with_timeout(
+                DEFAULT_PER_CALL_TIMEOUT,
+                external::set_max_sink_voltage(port_id, Some(5000))
+            )
+            .await,
+            Ok(Ok(()))
+        );
         assert_eq!(
             port.lock().await.fn_calls.pop_front(),
             Some(mock::FnCall::SetMaxSinkVoltage(local_port_id, Some(5000)))
@@ -204,7 +263,10 @@ impl TestExternal {
         // clear_dead_battery_flag
         info!("Testing clear_dead_battery_flag");
         port.lock().await.next_result_clear_dead_battery_flag.push_back(Ok(()));
-        assert_eq!(external::clear_dead_battery_flag(port_id).await, Ok(()));
+        assert_eq!(
+            with_timeout(DEFAULT_PER_CALL_TIMEOUT, external::clear_dead_battery_flag(port_id)).await,
+            Ok(Ok(()))
+        );
         assert_eq!(
             port.lock().await.fn_calls.pop_front(),
             Some(mock::FnCall::ClearDeadBatteryFlag(local_port_id))
@@ -213,7 +275,14 @@ impl TestExternal {
         // set_power_state
         info!("Testing set_power_state");
         port.lock().await.next_result_set_power_state.push_back(Ok(()));
-        assert_eq!(external::set_power_state(port_id, SystemPowerState::S0).await, Ok(()));
+        assert_eq!(
+            with_timeout(
+                DEFAULT_PER_CALL_TIMEOUT,
+                external::set_power_state(port_id, SystemPowerState::S0)
+            )
+            .await,
+            Ok(Ok(()))
+        );
         assert_eq!(
             port.lock().await.fn_calls.pop_front(),
             Some(mock::FnCall::SetPowerState(local_port_id, SystemPowerState::S0))
@@ -226,8 +295,12 @@ impl TestExternal {
             .next_result_execute_electrical_disconnect
             .push_back(Ok(()));
         assert_eq!(
-            external::execute_electrical_disconnect(port_id, NonZeroU8::new(5)).await,
-            Ok(()),
+            with_timeout(
+                DEFAULT_PER_CALL_TIMEOUT,
+                external::execute_electrical_disconnect(port_id, NonZeroU8::new(5))
+            )
+            .await,
+            Ok(Ok(())),
         );
         assert_eq!(
             port.lock().await.fn_calls.pop_front(),
@@ -240,7 +313,14 @@ impl TestExternal {
         // send_vdm
         info!("Testing send_vdm");
         port.lock().await.next_result_send_vdm.push_back(Ok(()));
-        assert_eq!(external::send_vdm(port_id, SendVdm::default()).await, Ok(()));
+        assert_eq!(
+            with_timeout(
+                DEFAULT_PER_CALL_TIMEOUT,
+                external::send_vdm(port_id, SendVdm::default())
+            )
+            .await,
+            Ok(Ok(()))
+        );
         assert_eq!(
             port.lock().await.fn_calls.pop_front(),
             Some(mock::FnCall::SendVdm(local_port_id, SendVdm::default()))
@@ -250,8 +330,12 @@ impl TestExternal {
         info!("Testing set_usb_control");
         port.lock().await.next_result_set_usb_control.push_back(Ok(()));
         assert_eq!(
-            external::set_usb_control(port_id, UsbControlConfig::default()).await,
-            Ok(())
+            with_timeout(
+                DEFAULT_PER_CALL_TIMEOUT,
+                external::set_usb_control(port_id, UsbControlConfig::default())
+            )
+            .await,
+            Ok(Ok(()))
         );
         assert_eq!(
             port.lock().await.fn_calls.pop_front(),
@@ -272,7 +356,10 @@ impl TestExternal {
             .await
             .next_result_get_dp_status
             .push_back(Ok(expected_dp_status));
-        assert_eq!(external::get_dp_status(port_id).await, Ok(expected_dp_status));
+        assert_eq!(
+            with_timeout(DEFAULT_PER_CALL_TIMEOUT, external::get_dp_status(port_id)).await,
+            Ok(Ok(expected_dp_status))
+        );
         assert_eq!(
             port.lock().await.fn_calls.pop_front(),
             Some(mock::FnCall::GetDpStatus(local_port_id))
@@ -285,7 +372,10 @@ impl TestExternal {
             dfp_d_pin_cfg: DpPinConfig::default(),
         };
         port.lock().await.next_result_set_dp_config.push_back(Ok(()));
-        assert_eq!(external::set_dp_config(port_id, dp_config).await, Ok(()));
+        assert_eq!(
+            with_timeout(DEFAULT_PER_CALL_TIMEOUT, external::set_dp_config(port_id, dp_config)).await,
+            Ok(Ok(()))
+        );
         assert_eq!(
             port.lock().await.fn_calls.pop_front(),
             Some(mock::FnCall::SetDpConfig(local_port_id, dp_config))
@@ -294,7 +384,10 @@ impl TestExternal {
         // execute_drst
         info!("Testing execute_drst");
         port.lock().await.next_result_execute_drst.push_back(Ok(()));
-        assert_eq!(external::execute_drst(port_id).await, Ok(()));
+        assert_eq!(
+            with_timeout(DEFAULT_PER_CALL_TIMEOUT, external::execute_drst(port_id)).await,
+            Ok(Ok(()))
+        );
         assert_eq!(
             port.lock().await.fn_calls.pop_front(),
             Some(mock::FnCall::ExecuteDrst(local_port_id))
@@ -304,7 +397,10 @@ impl TestExternal {
         info!("Testing set_tbt_config");
         let tbt_config = TbtConfig { tbt_enabled: true };
         port.lock().await.next_result_set_tbt_config.push_back(Ok(()));
-        assert_eq!(external::set_tbt_config(port_id, tbt_config).await, Ok(()));
+        assert_eq!(
+            with_timeout(DEFAULT_PER_CALL_TIMEOUT, external::set_tbt_config(port_id, tbt_config)).await,
+            Ok(Ok(()))
+        );
         assert_eq!(
             port.lock().await.fn_calls.pop_front(),
             Some(mock::FnCall::SetTbtConfig(local_port_id, tbt_config))
@@ -318,8 +414,12 @@ impl TestExternal {
             .next_result_set_pd_state_machine_config
             .push_back(Ok(()));
         assert_eq!(
-            external::set_pd_state_machine_config(port_id, pd_sm_config).await,
-            Ok(())
+            with_timeout(
+                DEFAULT_PER_CALL_TIMEOUT,
+                external::set_pd_state_machine_config(port_id, pd_sm_config)
+            )
+            .await,
+            Ok(Ok(()))
         );
         assert_eq!(
             port.lock().await.fn_calls.pop_front(),
@@ -333,8 +433,12 @@ impl TestExternal {
             .next_result_set_type_c_state_machine_config
             .push_back(Ok(()));
         assert_eq!(
-            external::set_type_c_state_machine_config(port_id, TypeCStateMachineState::Drp).await,
-            Ok(()),
+            with_timeout(
+                DEFAULT_PER_CALL_TIMEOUT,
+                external::set_type_c_state_machine_config(port_id, TypeCStateMachineState::Drp)
+            )
+            .await,
+            Ok(Ok(())),
         );
         assert_eq!(
             port.lock().await.fn_calls.pop_front(),
@@ -351,7 +455,10 @@ impl TestExternal {
             .await
             .next_result_get_discovered_svids
             .push_back(Ok(expected_svids));
-        assert_eq!(external::get_discovered_svids(port_id).await, Ok(expected_svids));
+        assert_eq!(
+            with_timeout(DEFAULT_PER_CALL_TIMEOUT, external::get_discovered_svids(port_id)).await,
+            Ok(Ok(expected_svids))
+        );
         assert_eq!(
             port.lock().await.fn_calls.pop_front(),
             Some(mock::FnCall::GetDiscoveredSvids(local_port_id))
@@ -360,7 +467,10 @@ impl TestExternal {
         // hard_reset
         info!("Testing hard_reset");
         port.lock().await.next_result_hard_reset.push_back(Ok(()));
-        assert_eq!(external::hard_reset(port_id).await, Ok(()));
+        assert_eq!(
+            with_timeout(DEFAULT_PER_CALL_TIMEOUT, external::hard_reset(port_id)).await,
+            Ok(Ok(()))
+        );
         assert_eq!(
             port.lock().await.fn_calls.pop_front(),
             Some(mock::FnCall::HardReset(local_port_id))
@@ -389,8 +499,12 @@ impl TestExternal {
             .next_result_get_discover_identity_sop_response
             .push_back(Ok(expected_sop_identity));
         assert_eq!(
-            external::get_discover_identity_sop_response(port_id).await,
-            Ok(expected_sop_identity),
+            with_timeout(
+                DEFAULT_PER_CALL_TIMEOUT,
+                external::get_discover_identity_sop_response(port_id)
+            )
+            .await,
+            Ok(Ok(expected_sop_identity)),
         );
         assert_eq!(
             port.lock().await.fn_calls.pop_front(),
@@ -419,8 +533,12 @@ impl TestExternal {
             .next_result_get_discover_identity_sop_prime_response
             .push_back(Ok(expected_sop_prime_identity));
         assert_eq!(
-            external::get_discover_identity_sop_prime_response(port_id).await,
-            Ok(expected_sop_prime_identity),
+            with_timeout(
+                DEFAULT_PER_CALL_TIMEOUT,
+                external::get_discover_identity_sop_prime_response(port_id)
+            )
+            .await,
+            Ok(Ok(expected_sop_prime_identity)),
         );
         assert_eq!(
             port.lock().await.fn_calls.pop_front(),
