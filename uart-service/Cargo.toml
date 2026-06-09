@@ -19,6 +19,7 @@ defmt = { workspace = true, optional = true }
 log = { workspace = true, optional = true }
 embassy-sync.workspace = true
 mctp-rs = { workspace = true }
+odp-client.workspace = true
 embedded-io-async.workspace = true
 
 [features]
@@ -28,6 +29,7 @@ defmt = [
     "embedded-services/defmt",
     "embassy-sync/defmt",
     "mctp-rs/defmt",
+    "odp-client/defmt",
 ]
 
 log = ["dep:log", "embedded-services/log"]

@@ -18,14 +18,14 @@ impl<S: battery_service_interface::BatteryService> BatteryServiceRelayHandler<S>
     }
 }
 
-impl<S: battery_service_interface::BatteryService> embedded_services::relay::mctp::RelayServiceHandlerTypes
+impl<S: battery_service_interface::BatteryService> odp_client::server::RelayServiceHandlerTypes
     for BatteryServiceRelayHandler<S>
 {
     type RequestType = serialization::AcpiBatteryRequest;
     type ResultType = serialization::AcpiBatteryResult;
 }
 
-impl<S: battery_service_interface::BatteryService> embedded_services::relay::mctp::RelayServiceHandler
+impl<S: battery_service_interface::BatteryService> odp_client::server::RelayServiceHandler
     for BatteryServiceRelayHandler<S>
 {
     async fn process_request(&self, request: Self::RequestType) -> Self::ResultType {

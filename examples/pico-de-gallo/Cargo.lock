@@ -77,12 +77,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
 
 [[package]]
-name = "autocfg"
-version = "1.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c08606f8c3cbf4ce6ec8e28fb0014a2c086708fe954eaa885384a6165172e7e8"
-
-[[package]]
 name = "bare-metal"
 version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -112,22 +106,6 @@ version = "0.1.0"
 dependencies = [
  "embedded-batteries-async",
  "log",
-]
-
-[[package]]
-name = "bit-register"
-version = "0.1.0"
-source = "git+https://github.com/OpenDevicePartnership/odp-utilities?tag=v0.1.0#583015c08ad9855f310bdb25d5cf9abff77b5e08"
-dependencies = [
- "num-traits",
-]
-
-[[package]]
-name = "bit-register"
-version = "0.1.0"
-source = "git+https://github.com/OpenDevicePartnership/odp-utilities#583015c08ad9855f310bdb25d5cf9abff77b5e08"
-dependencies = [
- "num-traits",
 ]
 
 [[package]]
@@ -437,14 +415,11 @@ dependencies = [
 name = "embedded-services"
 version = "0.1.0"
 dependencies = [
- "bitfield 0.17.0",
  "cortex-m",
  "critical-section",
  "embassy-futures",
  "embassy-sync",
  "log",
- "mctp-rs",
- "paste",
  "portable-atomic",
  "serde",
 ]
@@ -486,19 +461,6 @@ checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
  "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "espi-device"
-version = "0.1.0"
-source = "git+https://github.com/OpenDevicePartnership/haf-ec-service#290aa80a4c281857f3bed94581200b330119286c"
-dependencies = [
- "bit-register 0.1.0 (git+https://github.com/OpenDevicePartnership/odp-utilities?tag=v0.1.0)",
- "bitflags",
- "num-traits",
- "num_enum",
- "static_assertions",
- "subenum",
 ]
 
 [[package]]
@@ -575,12 +537,6 @@ dependencies = [
  "hash32 0.3.1",
  "stable_deref_trait",
 ]
-
-[[package]]
-name = "heck"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
 
 [[package]]
 name = "io-kit-sys"
@@ -708,17 +664,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "mctp-rs"
-version = "0.1.0"
-dependencies = [
- "bit-register 0.1.0 (git+https://github.com/OpenDevicePartnership/odp-utilities)",
- "espi-device",
- "num_enum",
- "smbus-pec",
- "thiserror",
-]
-
-[[package]]
 name = "memchr"
 version = "2.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -758,15 +703,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
  "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "num-traits"
-version = "0.2.19"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "071dfc062690e90b734c0b2273ce72ad0ffa95f0c74596bc250dcfd960262841"
-dependencies = [
- "autocfg",
 ]
 
 [[package]]
@@ -828,12 +764,6 @@ name = "once_cell_polyfill"
 version = "1.70.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
-
-[[package]]
-name = "paste"
-version = "1.0.15"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
 
 [[package]]
 name = "pico-de-gallo"
@@ -1206,30 +1136,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
 
 [[package]]
-name = "static_assertions"
-version = "1.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
-
-[[package]]
 name = "static_cell"
 version = "2.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0530892bb4fa575ee0da4b86f86c667132a94b74bb72160f58ee5a4afec74c23"
 dependencies = [
  "portable-atomic",
-]
-
-[[package]]
-name = "subenum"
-version = "1.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5eee3fb942ed39f3971438fcc7e05e20717e599e14c5c7cb50edd0df2a44b274"
-dependencies = [
- "heck",
- "proc-macro2",
- "quote",
- "syn",
 ]
 
 [[package]]

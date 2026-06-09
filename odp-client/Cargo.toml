@@ -1,0 +1,18 @@
+[package]
+name = "odp-client"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Transport-blind sync ODP client and server-side service-handler macro."
+
+[features]
+default = []
+defmt = ["mctp-rs/defmt", "dep:defmt"]
+
+[dependencies]
+bitfield = { workspace = true }
+defmt = { workspace = true, optional = true }
+embedded-io = { workspace = true }
+heapless = { workspace = true }
+mctp-rs = { workspace = true, features = ["odp", "serial", "espi"] }
+paste = { workspace = true }

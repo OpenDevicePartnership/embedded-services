@@ -19,7 +19,7 @@ const ASSEMBLY_BUF_SIZE: usize = 256;
 
 #[derive(Clone)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-struct HostResultMessage<RelayHandler: embedded_services::relay::mctp::RelayHandler> {
+struct HostResultMessage<RelayHandler: odp_client::server::RelayHandler> {
     pub handler_service_id: RelayHandler::ServiceIdType,
     pub message: RelayHandler::ResultEnumType,
 }
@@ -32,23 +32,23 @@ pub enum Error {
 }
 
 /// The memory required by the eSPI service to run
-pub struct Resources<'hw, RelayHandler: embedded_services::relay::mctp::RelayHandler> {
+pub struct Resources<'hw, RelayHandler: odp_client::server::RelayHandler> {
     inner: Option<ServiceInner<'hw, RelayHandler>>,
 }
 
-impl<'hw, RelayHandler: embedded_services::relay::mctp::RelayHandler> Default for Resources<'hw, RelayHandler> {
+impl<'hw, RelayHandler: odp_client::server::RelayHandler> Default for Resources<'hw, RelayHandler> {
     fn default() -> Self {
         Self { inner: None }
     }
 }
 
 /// Service runner for the eSPI service.  Users must call the run() method on the runner for the service to start processing events.
-pub struct Runner<'hw, RelayHandler: embedded_services::relay::mctp::RelayHandler> {
+pub struct Runner<'hw, RelayHandler: odp_client::server::RelayHandler> {
     inner: &'hw ServiceInner<'hw, RelayHandler>,
 }
 
-impl<'hw, RelayHandler: embedded_services::relay::mctp::RelayHandler>
-    odp_service_common::runnable_service::ServiceRunner<'hw> for Runner<'hw, RelayHandler>
+impl<'hw, RelayHandler: odp_client::server::RelayHandler> odp_service_common::runnable_service::ServiceRunner<'hw>
+    for Runner<'hw, RelayHandler>
 {
     /// Run the service event loop.
     async fn run(self) -> embedded_services::Never {
@@ -56,11 +56,11 @@ impl<'hw, RelayHandler: embedded_services::relay::mctp::RelayHandler>
     }
 }
 
-pub struct Service<'hw, RelayHandler: embedded_services::relay::mctp::RelayHandler> {
+pub struct Service<'hw, RelayHandler: odp_client::server::RelayHandler> {
     _inner: &'hw ServiceInner<'hw, RelayHandler>,
 }
 
-impl<'hw, RelayHandler: embedded_services::relay::mctp::RelayHandler> odp_service_common::runnable_service::Service<'hw>
+impl<'hw, RelayHandler: odp_client::server::RelayHandler> odp_service_common::runnable_service::Service<'hw>
     for Service<'hw, RelayHandler>
 {
     type Resources = Resources<'hw, RelayHandler>;
@@ -77,18 +77,18 @@ impl<'hw, RelayHandler: embedded_services::relay::mctp::RelayHandler> Service<'h
     }
 }
 
-pub struct InitParams<'hw, RelayHandler: embedded_services::relay::mctp::RelayHandler> {
+pub struct InitParams<'hw, RelayHandler: odp_client::server::RelayHandler> {
     pub espi: espi::Espi<'hw>,
     pub relay_handler: RelayHandler,
 }
 
-struct ServiceInner<'hw, RelayHandler: embedded_services::relay::mctp::RelayHandler> {
+struct ServiceInner<'hw, RelayHandler: odp_client::server::RelayHandler> {
     espi: Mutex<GlobalRawMutex, espi::Espi<'hw>>,
     host_tx_queue: Channel<GlobalRawMutex, HostResultMessage<RelayHandler>, HOST_TX_QUEUE_SIZE>,
     relay_handler: RelayHandler,
 }
 
-impl<'hw, RelayHandler: embedded_services::relay::mctp::RelayHandler> ServiceInner<'hw, RelayHandler> {
+impl<'hw, RelayHandler: odp_client::server::RelayHandler> ServiceInner<'hw, RelayHandler> {
     async fn new(mut init_params: InitParams<'hw, RelayHandler>) -> Self {
         init_params.espi.wait_for_plat_reset().await;
 
@@ -229,7 +229,7 @@ impl<'hw, RelayHandler: embedded_services::relay::mctp::RelayHandler> ServiceInn
         espi: &mut espi::Espi<'hw>,
         port_event: &espi::PortEvent,
     ) -> Result<(), Error> {
-        use embedded_services::relay::mctp::RelayHeader;
+        use odp_client::server::RelayHeader;
         info!("Host Request received");
 
         espi.complete_port(port_event.port);
@@ -263,7 +263,7 @@ impl<'hw, RelayHandler: embedded_services::relay::mctp::RelayHandler> ServiceInn
         espi: &mut espi::Espi<'hw>,
         result: HostResultMessage<RelayHandler>,
     ) -> Result<(), Error> {
-        use embedded_services::relay::mctp::RelayResponse;
+        use odp_client::server::RelayResponse;
         let mut assembly_buf = [0u8; ASSEMBLY_BUF_SIZE];
         let mut mctp_ctx =
             mctp_rs::MctpPacketContext::new(mctp_rs::smbus_espi::SmbusEspiMedium, assembly_buf.as_mut_slice());

@@ -107,7 +107,7 @@ Services use a variety of async IPC mechanisms from `embassy-sync` and `embedded
 - **`embassy_sync::signal::Signal`** — single-value async notifications
 - **`embedded_services::ipc::deferred`** — request/response channels where the caller awaits a reply
 - **`embedded_services::broadcaster`** — publish/subscribe pattern for event fan-out
-- **`embedded_services::relay`** — relay service pattern for MCTP-based request/response dispatch with direct async calls
+- **`odp_client::server`** — relay service pattern for MCTP-based request/response dispatch with direct async calls
 
 ### Composition
 
