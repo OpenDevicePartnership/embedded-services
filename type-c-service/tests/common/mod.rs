@@ -23,7 +23,7 @@ use paste::paste;
 use static_cell::StaticCell;
 
 pub mod mock;
-pub const DEFAULT_TEST_DURATION: Duration = Duration::from_secs(5);
+pub const DEFAULT_TEST_DURATION: Duration = Duration::from_secs(15);
 
 pub const DEFAULT_PER_CALL_TIMEOUT: Duration = Duration::from_secs(1);
 

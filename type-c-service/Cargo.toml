@@ -59,4 +59,5 @@ log = [
     "embassy-time/log",
     "embassy-sync/log",
     "tps6699x/log",
+    "power-policy-service/log",
 ]

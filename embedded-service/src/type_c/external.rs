@@ -159,7 +159,7 @@ pub enum Command {
 }
 
 /// UCSI command response
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct UcsiResponse {
     /// Notify the OPM, the function call
