@@ -2,7 +2,7 @@
 
 use embedded_usb_pd::GlobalPortId;
 
-/// Message generated when a debug acessory is connected or disconnected
+/// Message generated when a debug accessory is connected or disconnected
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct DebugAccessoryMessage {

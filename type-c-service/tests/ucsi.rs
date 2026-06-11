@@ -4,7 +4,7 @@ use crate::common::{DEFAULT_PER_CALL_TIMEOUT, DEFAULT_TEST_DURATION, Test, mock}
 
 use embassy_sync::mutex::Mutex;
 use embassy_sync::pubsub::{DynSubscriber, WaitResult};
-use embassy_time::{Timer, with_timeout};
+use embassy_time::with_timeout;
 use embedded_services::power::policy::PowerCapability;
 use embedded_services::type_c::comms::UsciChangeIndicator;
 use embedded_services::type_c::external::UcsiResponse;
@@ -95,12 +95,10 @@ async fn test_lpm(
     port.lock().await.connect_sink(CAPABILITY, false).await;
 
     // Give some time for the disconnect to be processed
-    Timer::after(DEFAULT_PER_CALL_TIMEOUT).await;
-
-    let message = type_c_receiver.try_next_message();
+    let message = with_timeout(DEFAULT_PER_CALL_TIMEOUT, type_c_receiver.next_message()).await;
     assert_eq!(
         message,
-        Some(WaitResult::Message(type_c::comms::CommsMessage::UcsiCci(
+        Ok(WaitResult::Message(type_c::comms::CommsMessage::UcsiCci(
             UsciChangeIndicator {
                 port: port_id,
                 notify_opm: true,
@@ -173,11 +171,10 @@ async fn test_lpm(
     port.lock().await.disconnect().await;
 
     // Give some time for the disconnect to be processed
-    Timer::after(DEFAULT_PER_CALL_TIMEOUT).await;
-    let message = type_c_receiver.try_next_message();
+    let message = with_timeout(DEFAULT_PER_CALL_TIMEOUT, type_c_receiver.next_message()).await;
     assert_eq!(
         message,
-        Some(WaitResult::Message(type_c::comms::CommsMessage::UcsiCci(
+        Ok(WaitResult::Message(type_c::comms::CommsMessage::UcsiCci(
             UsciChangeIndicator {
                 port: port_id,
                 notify_opm: true,
