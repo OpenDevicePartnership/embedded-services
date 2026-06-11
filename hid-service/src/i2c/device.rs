@@ -10,6 +10,8 @@ use embedded_services::{error, hid, info, trace};
 use crate::Error;
 
 const LENGTH_PREFIX_SIZE: usize = 2;
+const LENGTH_LO_OFFSET: usize = 0;
+const LENGTH_HI_OFFSET: usize = 1;
 
 /// Timeout configuration for I2C HID device operations.
 pub struct Config {
@@ -211,11 +213,11 @@ impl<A: AddressMode + Copy, B: I2c<A>> Device<A, B> {
                     Error::Hid(hid::Error::Serialize)
                 })?;
 
-            let response_size = match cmd {
+            let (response_size, constrained) = match cmd {
                 hid::Command::GetReport(_, _, Some(expected_payload_size)) => {
-                    *expected_payload_size as usize + LENGTH_PREFIX_SIZE
+                    (*expected_payload_size as usize + LENGTH_PREFIX_SIZE, true)
                 }
-                _ => buffer_len,
+                _ => (buffer_len, false),
             };
             let read_buf =
                 buf.get_mut(0..response_size)
@@ -248,6 +250,21 @@ impl<A: AddressMode + Copy, B: I2c<A>> Device<A, B> {
                 error!("Failed to execute command write_read");
                 Error::Bus(e)
             })?;
+
+            if constrained {
+                let actual_frame_len =
+                    u16::from_le_bytes([read_buf[LENGTH_LO_OFFSET], read_buf[LENGTH_HI_OFFSET]]) as usize;
+                if actual_frame_len != response_size {
+                    error!(
+                        "Length mismatch: declared={} expected={}",
+                        actual_frame_len, response_size
+                    );
+                    return Err(Error::Hid(hid::Error::InvalidSize(InvalidSizeError {
+                        expected: response_size,
+                        actual: actual_frame_len,
+                    })));
+                }
+            }
 
             Ok(Some(Response::FeatureReport(
                 self.buffer.reference().slice(0..response_size).map_err(Error::Buffer)?,
