@@ -27,20 +27,20 @@ pub const DEFAULT_TEST_DURATION: Duration = Duration::from_secs(15);
 
 pub const DEFAULT_PER_CALL_TIMEOUT: Duration = Duration::from_secs(1);
 
-const CONTROLLER0_ID: ControllerId = ControllerId(0);
-const PORT0_ID: GlobalPortId = GlobalPortId(0);
-const POWER0_ID: power::policy::DeviceId = power::policy::DeviceId(0);
-const CFU0_ID: u8 = 0x00;
+pub const CONTROLLER0_ID: ControllerId = ControllerId(0);
+pub const PORT0_ID: GlobalPortId = GlobalPortId(0);
+pub const POWER0_ID: power::policy::DeviceId = power::policy::DeviceId(0);
+pub const CFU0_ID: u8 = 0x00;
 
-const CONTROLLER1_ID: ControllerId = ControllerId(1);
-const PORT1_ID: GlobalPortId = GlobalPortId(1);
-const POWER1_ID: power::policy::DeviceId = power::policy::DeviceId(1);
-const CFU1_ID: u8 = 0x01;
+pub const CONTROLLER1_ID: ControllerId = ControllerId(1);
+pub const PORT1_ID: GlobalPortId = GlobalPortId(1);
+pub const POWER1_ID: power::policy::DeviceId = power::policy::DeviceId(1);
+pub const CFU1_ID: u8 = 0x01;
 
-const CONTROLLER2_ID: ControllerId = ControllerId(2);
-const PORT2_ID: GlobalPortId = GlobalPortId(2);
-const POWER2_ID: power::policy::DeviceId = power::policy::DeviceId(2);
-const CFU2_ID: u8 = 0x02;
+pub const CONTROLLER2_ID: ControllerId = ControllerId(2);
+pub const PORT2_ID: GlobalPortId = GlobalPortId(2);
+pub const POWER2_ID: power::policy::DeviceId = power::policy::DeviceId(2);
+pub const CFU2_ID: u8 = 0x02;
 
 /// Integration test trait
 ///
