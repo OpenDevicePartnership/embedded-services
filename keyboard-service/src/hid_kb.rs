@@ -5,12 +5,12 @@ use embassy_sync::channel::Channel;
 use embassy_sync::once_lock::OnceLock;
 use embassy_sync::signal::Signal;
 use embedded_hal::digital::OutputPin;
-use embedded_services::GlobalRawMutex;
 use embedded_services::buffer::SharedRef;
 use embedded_services::comms;
 use embedded_services::error;
 use embedded_services::hid;
 use embedded_services::ipc::deferred as ipc;
+use embedded_services::GlobalRawMutex;
 use hid_service::i2c::I2cSlaveAsync;
 use static_cell::StaticCell;
 
@@ -168,7 +168,7 @@ pub async fn handle_keyboard<T: HidKeyboard>(mut hid_kb: T) -> Result<embedded_s
                 }
 
                 // Instructs the keyboard to immediately return the latest input/feature report
-                hid::Command::GetReport(report_type, report_id) => {
+                hid::Command::GetReport(report_type, report_id, _expected_size) => {
                     {
                         let report = hid_kb.get_report(report_type, report_id);
                         let report = HidI2cReport::from_report_slice(report, max_input_len).to_bytes();
