@@ -3,6 +3,7 @@ use core::ptr;
 
 pub mod config;
 pub mod consumer;
+pub mod hooks;
 pub mod provider;
 pub mod registration;
 pub mod task;
@@ -27,18 +28,18 @@ use crate::service::registration::Registration;
 const MAX_CONNECTED_PROVIDERS: usize = 4;
 
 #[derive(Clone)]
-struct InternalState<'device, PSU: Lockable>
+pub struct InternalState<'device, PSU: Lockable>
 where
     PSU::Inner: Psu,
 {
     /// Current consumer state, if any
-    current_consumer_state: Option<consumer::AvailableConsumer<'device, PSU>>,
+    pub current_consumer_state: Option<consumer::AvailableConsumer<'device, PSU>>,
     /// Current provider global state
-    current_provider_state: provider::State,
+    pub current_provider_state: provider::State,
     /// System unconstrained power
-    unconstrained: UnconstrainedState,
+    pub unconstrained: UnconstrainedState,
     /// Connected providers
-    connected_providers: heapless::index_set::FnvIndexSet<usize, MAX_CONNECTED_PROVIDERS>,
+    pub connected_providers: heapless::index_set::FnvIndexSet<usize, MAX_CONNECTED_PROVIDERS>,
 }
 
 impl<PSU: Lockable> Default for InternalState<'_, PSU>
@@ -56,22 +57,32 @@ where
 }
 
 /// Power policy service
-pub struct Service<'device, Reg: Registration<'device>> {
+pub struct Service<'device, Reg: Registration<'device>, Hooks: hooks::Hooks<'device, Reg> = hooks::DefaultHooks> {
     /// Service registration
     registration: Reg,
     /// State
     state: InternalState<'device, Reg::Psu>,
     /// Config
     config: config::Config,
+    /// Hooks
+    hooks: Hooks,
 }
 
-impl<'device, Reg: Registration<'device>> Service<'device, Reg> {
+impl<'device, Reg: Registration<'device>, Hooks: hooks::Hooks<'device, Reg> + Default> Service<'device, Reg, Hooks> {
     /// Create a new power policy
     pub fn new(registration: Reg, config: config::Config) -> Self {
+        Self::new_with_hooks(registration, config, Hooks::default())
+    }
+}
+
+impl<'device, Reg: Registration<'device>, Hooks: hooks::Hooks<'device, Reg>> Service<'device, Reg, Hooks> {
+    /// Create a new power policy with custom hooks
+    pub fn new_with_hooks(registration: Reg, config: config::Config, hooks: Hooks) -> Self {
         Self {
             registration,
             state: InternalState::default(),
             config,
+            hooks,
         }
     }
 

@@ -2,6 +2,8 @@ use core::cmp::Ordering;
 use embedded_services::error;
 use embedded_services::named::Named;
 
+use crate::service::config::Config;
+
 use super::*;
 
 use power_policy_interface::psu;
@@ -26,12 +28,12 @@ impl<'device, Psu: Lockable<Inner: psu::Psu>> Clone for AvailableConsumer<'devic
 
 impl<'device, Psu: Lockable<Inner: psu::Psu>> Copy for AvailableConsumer<'device, Psu> {}
 
-/// Compare two consumer capabilities to determine which one is better
+/// Default function for comparing two consumer capabilities to determine which one is better
 ///
 /// This is not part of the `Ord` implementation for `ConsumerPowerCapability`, because it's specific to this implementation.
 /// *_is_current indicate if the device with that capability is the currently connected consumer. This is used to make the
 /// implementation stick so as to avoid switching between otherwise equivalent consumers.
-fn cmp_consumer_capability(
+pub fn cmp_consumer_capability_default(
     a: &ConsumerPowerCapability,
     a_is_current: bool,
     b: &ConsumerPowerCapability,
@@ -40,61 +42,70 @@ fn cmp_consumer_capability(
     (a.capability, a_is_current).cmp(&(b.capability, b_is_current))
 }
 
-impl<'device, Reg: Registration<'device>> Service<'device, Reg> {
-    /// Iterate over all devices to determine what is best power port provides the highest power
-    async fn find_best_consumer(&self) -> Result<Option<AvailableConsumer<'device, Reg::Psu>>, Error> {
-        let mut best_consumer = None;
-        let current_consumer = self.state.current_consumer_state.as_ref().map(|f| f.psu);
+/// Default logic for finding the best consumer
+pub async fn find_best_consumer_default<
+    'device,
+    Reg: Registration<'device>,
+    Cmp: Fn(&ConsumerPowerCapability, bool, &ConsumerPowerCapability, bool) -> Ordering,
+>(
+    config: &Config,
+    state: &InternalState<'device, Reg::Psu>,
+    registration: &Reg,
+    cmp: Cmp,
+) -> Result<Option<AvailableConsumer<'device, Reg::Psu>>, Error> {
+    let mut best_consumer = None;
+    let current_consumer = state.current_consumer_state.as_ref().map(|f| f.psu);
 
-        for psu in self.registration.psus() {
-            let locked_psu = psu.lock().await;
-            let consumer_capability = locked_psu.state().consumer_capability;
-            // Don't consider consumers below minimum threshold
-            if consumer_capability
-                .zip(self.config.min_consumer_threshold_mw)
-                .is_some_and(|(cap, min)| cap.capability.max_power_mw() < min)
-            {
-                info!(
-                    "({}): Not considering consumer, power capability is too low",
-                    locked_psu.name(),
-                );
-                continue;
-            }
-
-            // Update the best available consumer
-            best_consumer = match (best_consumer, consumer_capability) {
-                // Nothing available
-                (None, None) => None,
-                // No existing consumer
-                (None, Some(power_capability)) => Some(AvailableConsumer {
-                    psu: *psu,
-                    consumer_power_capability: power_capability,
-                }),
-                // Existing consumer, no new consumer
-                (Some(_), None) => best_consumer,
-                // Existing consumer, new available consumer
-                (Some(best), Some(available)) => {
-                    if cmp_consumer_capability(
-                        &available,
-                        current_consumer.is_some_and(|current_consumer| ptr::eq(current_consumer, *psu)),
-                        &best.consumer_power_capability,
-                        current_consumer.is_some_and(|current_consumer| ptr::eq(current_consumer, best.psu)),
-                    ) == core::cmp::Ordering::Greater
-                    {
-                        Some(AvailableConsumer {
-                            psu,
-                            consumer_power_capability: available,
-                        })
-                    } else {
-                        best_consumer
-                    }
-                }
-            };
+    for psu in registration.psus() {
+        let locked_psu = psu.lock().await;
+        let consumer_capability = locked_psu.state().consumer_capability;
+        // Don't consider consumers below minimum threshold
+        if consumer_capability
+            .zip(config.min_consumer_threshold_mw)
+            .is_some_and(|(cap, min)| cap.capability.max_power_mw() < min)
+        {
+            info!(
+                "({}): Not considering consumer, power capability is too low",
+                locked_psu.name(),
+            );
+            continue;
         }
 
-        Ok(best_consumer)
+        // Update the best available consumer
+        best_consumer = match (best_consumer, consumer_capability) {
+            // Nothing available
+            (None, None) => None,
+            // No existing consumer
+            (None, Some(power_capability)) => Some(AvailableConsumer {
+                psu: *psu,
+                consumer_power_capability: power_capability,
+            }),
+            // Existing consumer, no new consumer
+            (Some(_), None) => best_consumer,
+            // Existing consumer, new available consumer
+            (Some(best), Some(available)) => {
+                if cmp(
+                    &available,
+                    current_consumer.is_some_and(|current_consumer| ptr::eq(current_consumer, *psu)),
+                    &best.consumer_power_capability,
+                    current_consumer.is_some_and(|current_consumer| ptr::eq(current_consumer, best.psu)),
+                ) == core::cmp::Ordering::Greater
+                {
+                    Some(AvailableConsumer {
+                        psu,
+                        consumer_power_capability: available,
+                    })
+                } else {
+                    best_consumer
+                }
+            }
+        };
     }
 
+    Ok(best_consumer)
+}
+
+impl<'device, Reg: Registration<'device>, Hooks: hooks::Hooks<'device, Reg>> Service<'device, Reg, Hooks> {
     /// Update unconstrained state and broadcast notifications if needed
     async fn update_unconstrained_state(&mut self) -> Result<(), Error> {
         // Count how many available unconstrained devices we have
@@ -233,7 +244,10 @@ impl<'device, Reg: Registration<'device>> Service<'device, Reg> {
         };
         info!("Selecting power port, current power: {:#?}", current_consumer_name);
 
-        let best_consumer = self.find_best_consumer().await?;
+        let best_consumer = self
+            .hooks
+            .find_best_consumer(&self.config, &self.state, &self.registration)
+            .await?;
         let best_consumer_name = if let Some(best_consumer) = best_consumer {
             best_consumer.psu.lock().await.name()
         } else {
@@ -276,8 +290,11 @@ mod tests {
         let p0 = P0.into();
         let p1 = P1.into();
 
-        assert_eq!(cmp_consumer_capability(&p0, false, &p1, false), Ordering::Less);
-        assert_eq!(cmp_consumer_capability(&p1, false, &p1, false), Ordering::Equal);
-        assert_eq!(cmp_consumer_capability(&p1, false, &p0, false), Ordering::Greater);
+        assert_eq!(cmp_consumer_capability_default(&p0, false, &p1, false), Ordering::Less);
+        assert_eq!(cmp_consumer_capability_default(&p1, false, &p1, false), Ordering::Equal);
+        assert_eq!(
+            cmp_consumer_capability_default(&p1, false, &p0, false),
+            Ordering::Greater
+        );
     }
 }
