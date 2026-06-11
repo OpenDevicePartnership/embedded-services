@@ -40,7 +40,14 @@ pub enum KeyboardError {
 /// The HID backend will add the appropriate header for underlying protocol (e.g. HID over i2c header).
 pub struct HidReportSlice<'a>(&'a [u8]);
 
-impl HidReportSlice<'_> {
+impl<'a> HidReportSlice<'a> {
+    /// Creates a new HID report slice from a raw byte slice.
+    ///
+    /// The slice should contain a single key modifiers byte followed by KRO usage codes.
+    pub fn new(bytes: &'a [u8]) -> Self {
+        Self(bytes)
+    }
+
     /// Returns the HID report as a raw byte slice.
     pub fn as_bytes(&self) -> &[u8] {
         self.0
