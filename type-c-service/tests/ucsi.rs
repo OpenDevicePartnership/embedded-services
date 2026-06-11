@@ -94,7 +94,7 @@ async fn test_lpm(
     port.lock().await.next_result_enable_sink_path.push_back(Ok(()));
     port.lock().await.connect_sink(CAPABILITY, false).await;
 
-    // Give some time for the disconnect to be processed
+    // Give some time for the connect to be processed
     let message = with_timeout(DEFAULT_PER_CALL_TIMEOUT, type_c_receiver.next_message()).await;
     assert_eq!(
         message,
