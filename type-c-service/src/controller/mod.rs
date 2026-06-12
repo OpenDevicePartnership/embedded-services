@@ -132,7 +132,7 @@ impl<
             self.process_new_consumer_contract(&new_status).await?;
         }
 
-        if status_event.new_power_contract_as_provider() {
+        if new_status.is_connected() && new_status.available_source_contract != self.status.available_source_contract {
             self.process_new_provider_contract(&new_status).await?;
         }
 
