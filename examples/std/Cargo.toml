@@ -27,9 +27,6 @@ defmt = "0.3"
 
 embedded-usb-pd = { git = "https://github.com/OpenDevicePartnership/embedded-usb-pd", tag = "v0.1.0" }
 embedded-services = { path = "../../embedded-service", features = ["log"] }
-power-policy-service = { path = "../../power-policy-service", features = [
-    "log",
-] }
 cfu-service = { path = "../../cfu-service", features = ["log"] }
 embedded-cfu-protocol = { git = "https://github.com/OpenDevicePartnership/embedded-cfu", tag = "v0.1.0" }
 
@@ -62,10 +59,6 @@ path = "src/bin/debug.rs"
 [[bin]]
 name = "type-c-basic"
 path = "src/bin/type_c/basic.rs"
-
-[[bin]]
-name = "type-c-service"
-path = "src/bin/type_c/service.rs"
 
 # Needed otherwise cargo will pull from git
 [patch."https://github.com/OpenDevicePartnership/embedded-services"]
