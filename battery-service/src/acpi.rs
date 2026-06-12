@@ -1,8 +1,9 @@
 #![allow(dead_code)]
-use core::ops::Deref;
 
 use battery_service_interface::BatteryError;
+use battery_service_interface::fuel_gauge::{DynamicBatteryMsgs, FuelGauge, StaticBatteryMsgs};
 use embedded_batteries_async::acpi::{PowerSourceState, PowerUnit};
+use embedded_services::sync::Lockable;
 use embedded_services::{info, trace};
 
 use battery_service_interface::{
@@ -13,10 +14,16 @@ use battery_service_interface::{
 
 use power_policy_interface::capability::PowerCapability;
 
-use crate::{
-    context::PsuState,
-    device::{DynamicBatteryMsgs, StaticBatteryMsgs},
-};
+/// Cached power-supply state used when answering ACPI power-source queries.
+///
+/// Currently always the default; this is a placeholder for future power policy
+/// integration.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub(crate) struct PsuState {
+    pub psu_connected: bool,
+    pub power_capability: Option<PowerCapability>,
+}
 
 pub(crate) fn compute_bst(cache: &DynamicBatteryMsgs) -> embedded_batteries_async::acpi::BstReturn {
     let charging = if cache.battery_status & (1 << 6) == 0 {
@@ -181,49 +188,63 @@ pub(crate) fn compute_pif(psu_state: &PsuState) -> PifFixedStrings {
     }
 }
 
-impl crate::context::Context {
+impl<'hw, Reg: crate::registration::Registration<'hw>> crate::Service<'hw, Reg> {
     pub(super) async fn bix_handler(&self, device_id: DeviceId) -> Result<BixFixedStrings, BatteryError> {
         trace!("Battery service: got BIX command!");
 
-        let fg = self.get_fuel_gauge(device_id).ok_or(BatteryError::UnknownDeviceId)?;
+        let fg = self
+            .registration
+            .get_fuel_gauge(device_id)
+            .ok_or(BatteryError::UnknownDeviceId)?;
 
-        let static_cache_guard = fg.get_static_battery_cache_guarded().await;
-        let dynamic_cache_guard = fg.get_dynamic_battery_cache_guarded().await;
+        let guard = fg.lock().await;
 
-        compute_bix(static_cache_guard.deref(), dynamic_cache_guard.deref())
+        compute_bix(guard.state().static_cache(), guard.state().dynamic_cache())
             .map_err(|_| BatteryError::UnspecifiedFailure)
     }
 
     pub(super) async fn bst_handler(&self, device_id: DeviceId) -> Result<BstReturn, BatteryError> {
         trace!("Battery service: got BST command!");
 
-        let fg = self.get_fuel_gauge(device_id).ok_or(BatteryError::UnknownDeviceId)?;
+        let fg = self
+            .registration
+            .get_fuel_gauge(device_id)
+            .ok_or(BatteryError::UnknownDeviceId)?;
 
-        Ok(compute_bst(&fg.get_dynamic_battery_cache().await))
+        Ok(compute_bst(fg.lock().await.state().dynamic_cache()))
     }
 
     pub(super) async fn psr_handler(&self, device_id: DeviceId) -> Result<PsrReturn, BatteryError> {
         trace!("Battery service: got PSR command!");
 
-        let _fg = self.get_fuel_gauge(device_id).ok_or(BatteryError::UnknownDeviceId)?;
+        let _fg = self
+            .registration
+            .get_fuel_gauge(device_id)
+            .ok_or(BatteryError::UnknownDeviceId)?;
 
-        Ok(compute_psr(&self.get_power_info().await))
+        Ok(compute_psr(&PsuState::default()))
     }
 
     pub(super) async fn pif_handler(&self, device_id: DeviceId) -> Result<PifFixedStrings, BatteryError> {
         trace!("Battery service: got PIF command!");
 
-        let _fg = self.get_fuel_gauge(device_id).ok_or(BatteryError::UnknownDeviceId)?;
+        let _fg = self
+            .registration
+            .get_fuel_gauge(device_id)
+            .ok_or(BatteryError::UnknownDeviceId)?;
 
-        Ok(compute_pif(&self.get_power_info().await))
+        Ok(compute_pif(&PsuState::default()))
     }
 
     pub(super) async fn bps_handler(&self, device_id: DeviceId) -> Result<Bps, BatteryError> {
         trace!("Battery service: got BPS command!");
 
-        let fg = self.get_fuel_gauge(device_id).ok_or(BatteryError::UnknownDeviceId)?;
+        let fg = self
+            .registration
+            .get_fuel_gauge(device_id)
+            .ok_or(BatteryError::UnknownDeviceId)?;
 
-        Ok(compute_bps(&fg.get_dynamic_battery_cache().await))
+        Ok(compute_bps(fg.lock().await.state().dynamic_cache()))
     }
 
     pub(super) async fn btp_handler(
@@ -233,7 +254,10 @@ impl crate::context::Context {
     ) -> Result<(), BatteryError> {
         trace!("Battery service: got BTP command!");
 
-        let _fg = self.get_fuel_gauge(device_id).ok_or(BatteryError::UnknownDeviceId)?;
+        let _fg = self
+            .registration
+            .get_fuel_gauge(device_id)
+            .ok_or(BatteryError::UnknownDeviceId)?;
 
         // TODO: Save trip point
         info!("Battery service: New BTP {}", btp.trip_point);
@@ -248,7 +272,10 @@ impl crate::context::Context {
     ) -> Result<(), BatteryError> {
         trace!("Battery service: got BPT command!");
 
-        let _fg = self.get_fuel_gauge(device_id).ok_or(BatteryError::UnknownDeviceId)?;
+        let _fg = self
+            .registration
+            .get_fuel_gauge(device_id)
+            .ok_or(BatteryError::UnknownDeviceId)?;
 
         info!(
             "Battery service: Threshold ID: {:?}, Threshold value: {:?}",
@@ -262,9 +289,12 @@ impl crate::context::Context {
         trace!("Battery service: got BPC command!");
 
         // TODO: Save trip point
-        let fg = self.get_fuel_gauge(device_id).ok_or(BatteryError::UnknownDeviceId)?;
+        let fg = self
+            .registration
+            .get_fuel_gauge(device_id)
+            .ok_or(BatteryError::UnknownDeviceId)?;
 
-        Ok(compute_bpc(&fg.get_static_battery_cache().await))
+        Ok(compute_bpc(fg.lock().await.state().static_cache()))
     }
 
     pub(super) async fn bmc_handler(
@@ -274,7 +304,10 @@ impl crate::context::Context {
     ) -> Result<(), BatteryError> {
         trace!("Battery service: got BMC command!");
 
-        let _fg = self.get_fuel_gauge(device_id).ok_or(BatteryError::UnknownDeviceId)?;
+        let _fg = self
+            .registration
+            .get_fuel_gauge(device_id)
+            .ok_or(BatteryError::UnknownDeviceId)?;
 
         info!("Battery service: Bmc {}", bmc.maintenance_control_flags.bits());
 
@@ -284,12 +317,14 @@ impl crate::context::Context {
     pub(super) async fn bmd_handler(&self, device_id: DeviceId) -> Result<Bmd, BatteryError> {
         trace!("Battery service: got BMD command!");
 
-        let fg = self.get_fuel_gauge(device_id).ok_or(BatteryError::UnknownDeviceId)?;
+        let fg = self
+            .registration
+            .get_fuel_gauge(device_id)
+            .ok_or(BatteryError::UnknownDeviceId)?;
 
-        let static_cache = fg.get_static_battery_cache().await;
-        let dynamic_cache = fg.get_dynamic_battery_cache().await;
+        let guard = fg.lock().await;
 
-        Ok(compute_bmd(&static_cache, &dynamic_cache))
+        Ok(compute_bmd(guard.state().static_cache(), guard.state().dynamic_cache()))
     }
 
     pub(super) async fn bct_handler(
@@ -299,10 +334,13 @@ impl crate::context::Context {
     ) -> Result<BctReturnResult, BatteryError> {
         trace!("Battery service: got BCT command!");
 
-        let fg = self.get_fuel_gauge(device_id).ok_or(BatteryError::UnknownDeviceId)?;
+        let fg = self
+            .registration
+            .get_fuel_gauge(device_id)
+            .ok_or(BatteryError::UnknownDeviceId)?;
 
         info!("Recvd BCT charge_level_percent: {}", bct.charge_level_percent);
-        Ok(compute_bct(&bct, &fg.get_dynamic_battery_cache().await))
+        Ok(compute_bct(&bct, fg.lock().await.state().dynamic_cache()))
     }
 
     pub(super) async fn btm_handler(
@@ -312,10 +350,13 @@ impl crate::context::Context {
     ) -> Result<BtmReturnResult, BatteryError> {
         trace!("Battery service: got BTM command!");
 
-        let fg = self.get_fuel_gauge(device_id).ok_or(BatteryError::UnknownDeviceId)?;
+        let fg = self
+            .registration
+            .get_fuel_gauge(device_id)
+            .ok_or(BatteryError::UnknownDeviceId)?;
 
         info!("Recvd BTM discharge_rate: {}", btm.discharge_rate);
-        Ok(compute_btm(&btm, &fg.get_dynamic_battery_cache().await))
+        Ok(compute_btm(&btm, fg.lock().await.state().dynamic_cache()))
     }
 
     pub(super) async fn bms_handler(
@@ -325,7 +366,10 @@ impl crate::context::Context {
     ) -> Result<(), BatteryError> {
         trace!("Battery service: got BMS command!");
 
-        let _fg = self.get_fuel_gauge(device_id).ok_or(BatteryError::UnknownDeviceId)?;
+        let _fg = self
+            .registration
+            .get_fuel_gauge(device_id)
+            .ok_or(BatteryError::UnknownDeviceId)?;
 
         info!("Recvd BMS sampling_time: {}", bms.sampling_time_ms);
         Ok(())
@@ -338,7 +382,10 @@ impl crate::context::Context {
     ) -> Result<(), BatteryError> {
         trace!("Battery service: got BMA command!");
 
-        let _fg = self.get_fuel_gauge(device_id).ok_or(BatteryError::UnknownDeviceId)?;
+        let _fg = self
+            .registration
+            .get_fuel_gauge(device_id)
+            .ok_or(BatteryError::UnknownDeviceId)?;
 
         info!("Recvd BMA averaging_interval_ms: {}", bma.averaging_interval_ms);
         Ok(())
@@ -347,8 +394,181 @@ impl crate::context::Context {
     pub(super) async fn sta_handler(&self, device_id: DeviceId) -> Result<StaReturn, BatteryError> {
         trace!("Battery service: got STA command!");
 
-        let _fg = self.get_fuel_gauge(device_id).ok_or(BatteryError::UnknownDeviceId)?;
+        let _fg = self
+            .registration
+            .get_fuel_gauge(device_id)
+            .ok_or(BatteryError::UnknownDeviceId)?;
 
+        Ok(compute_sta())
+    }
+}
+
+/// Reference-based ACPI query API.
+///
+/// Unlike the [`BatteryService`](battery_service_interface::BatteryService) trait
+/// methods (which identify a battery by [`DeviceId`] and look the fuel gauge up
+/// through the service's [`Registration`](crate::registration::Registration)),
+/// these methods take an exclusive reference to the fuel gauge directly. The
+/// exclusive borrow proves the caller has sole access to the fuel gauge's cached
+/// state for the duration of the query, replacing the registration lookup and
+/// runtime lock with a compile-time guarantee.
+///
+/// TODO: Use this over DeviceId based approach?
+impl<'hw, Reg: crate::registration::Registration<'hw>> crate::Service<'hw, Reg> {
+    /// Queries the estimated time remaining until the battery reaches the specified charge level. Corresponds to ACPI's _BCT method.
+    pub fn battery_charge_time(
+        &self,
+        fuel_gauge: &mut <Reg::FuelGauge as Lockable>::Inner,
+        bct: embedded_batteries_async::acpi::Bct,
+    ) -> Result<BctReturnResult, BatteryError> {
+        trace!("Battery service: got BCT command!");
+        info!("Recvd BCT charge_level_percent: {}", bct.charge_level_percent);
+        Ok(compute_bct(&bct, fuel_gauge.state().dynamic_cache()))
+    }
+
+    /// Returns static information about the battery. Corresponds to ACPI's _BIX method.
+    pub fn battery_info(
+        &self,
+        fuel_gauge: &mut <Reg::FuelGauge as Lockable>::Inner,
+    ) -> Result<BixFixedStrings, BatteryError> {
+        trace!("Battery service: got BIX command!");
+        compute_bix(fuel_gauge.state().static_cache(), fuel_gauge.state().dynamic_cache())
+            .map_err(|_| BatteryError::UnspecifiedFailure)
+    }
+
+    /// Sets the averaging interval of battery capacity measurement in milliseconds. Corresponds to ACPI's _BMA method.
+    pub fn set_battery_measurement_averaging_interval(
+        &self,
+        _fuel_gauge: &mut <Reg::FuelGauge as Lockable>::Inner,
+        bma: embedded_batteries_async::acpi::Bma,
+    ) -> Result<(), BatteryError> {
+        trace!("Battery service: got BMA command!");
+        info!("Recvd BMA averaging_interval_ms: {}", bma.averaging_interval_ms);
+        Ok(())
+    }
+
+    /// Battery maintenance control. Corresponds to ACPI's _BMC method.
+    pub fn battery_maintenance_control(
+        &self,
+        _fuel_gauge: &mut <Reg::FuelGauge as Lockable>::Inner,
+        bmc: embedded_batteries_async::acpi::Bmc,
+    ) -> Result<(), BatteryError> {
+        trace!("Battery service: got BMC command!");
+        info!("Battery service: Bmc {}", bmc.maintenance_control_flags.bits());
+        Ok(())
+    }
+
+    /// Retrieves battery maintenance data. Corresponds to ACPI's _BMD method.
+    pub fn battery_maintenance_data(
+        &self,
+        fuel_gauge: &mut <Reg::FuelGauge as Lockable>::Inner,
+    ) -> Result<Bmd, BatteryError> {
+        trace!("Battery service: got BMD command!");
+        Ok(compute_bmd(
+            fuel_gauge.state().static_cache(),
+            fuel_gauge.state().dynamic_cache(),
+        ))
+    }
+
+    /// Sets the battery measurement sampling time in milliseconds. Corresponds to ACPI's _BMS method.
+    pub fn set_battery_measurement_sampling_time(
+        &self,
+        _fuel_gauge: &mut <Reg::FuelGauge as Lockable>::Inner,
+        bms: embedded_batteries_async::acpi::Bms,
+    ) -> Result<(), BatteryError> {
+        trace!("Battery service: got BMS command!");
+        info!("Recvd BMS sampling_time: {}", bms.sampling_time_ms);
+        Ok(())
+    }
+
+    /// Queries the current power characteristics of the battery. Corresponds to ACPI's _BPC method.
+    pub fn battery_power_characteristics(
+        &self,
+        fuel_gauge: &mut <Reg::FuelGauge as Lockable>::Inner,
+    ) -> Result<Bpc, BatteryError> {
+        trace!("Battery service: got BPC command!");
+        Ok(compute_bpc(fuel_gauge.state().static_cache()))
+    }
+
+    /// Queries the current state of the battery. Corresponds to ACPI's _BPS method.
+    pub fn battery_power_state(
+        &self,
+        fuel_gauge: &mut <Reg::FuelGauge as Lockable>::Inner,
+    ) -> Result<Bps, BatteryError> {
+        trace!("Battery service: got BPS command!");
+        Ok(compute_bps(fuel_gauge.state().dynamic_cache()))
+    }
+
+    /// Sets battery power threshold. Corresponds to ACPI's _BPT method.
+    pub fn set_battery_power_threshold(
+        &self,
+        _fuel_gauge: &mut <Reg::FuelGauge as Lockable>::Inner,
+        bpt: embedded_batteries_async::acpi::Bpt,
+    ) -> Result<(), BatteryError> {
+        trace!("Battery service: got BPT command!");
+        info!(
+            "Battery service: Threshold ID: {:?}, Threshold value: {:?}",
+            bpt.threshold_id as u32, bpt.threshold_value
+        );
+        Ok(())
+    }
+
+    /// Queries the battery's current estimated remaining capacity. Corresponds to ACPI's _BST method.
+    pub fn battery_status(
+        &self,
+        fuel_gauge: &mut <Reg::FuelGauge as Lockable>::Inner,
+    ) -> Result<BstReturn, BatteryError> {
+        trace!("Battery service: got BST command!");
+        Ok(compute_bst(fuel_gauge.state().dynamic_cache()))
+    }
+
+    /// Queries the estimated time remaining until the battery is fully discharged at the current discharge rate. Corresponds to ACPI's _BTM method.
+    pub fn battery_time_to_empty(
+        &self,
+        fuel_gauge: &mut <Reg::FuelGauge as Lockable>::Inner,
+        btm: embedded_batteries_async::acpi::Btm,
+    ) -> Result<BtmReturnResult, BatteryError> {
+        trace!("Battery service: got BTM command!");
+        info!("Recvd BTM discharge_rate: {}", btm.discharge_rate);
+        Ok(compute_btm(&btm, fuel_gauge.state().dynamic_cache()))
+    }
+
+    /// Sets a battery trip point. Corresponds to ACPI's _BTP method.
+    pub fn set_battery_trip_point(
+        &self,
+        _fuel_gauge: &mut <Reg::FuelGauge as Lockable>::Inner,
+        btp: embedded_batteries_async::acpi::Btp,
+    ) -> Result<(), BatteryError> {
+        trace!("Battery service: got BTP command!");
+        // TODO: Save trip point
+        info!("Battery service: New BTP {}", btp.trip_point);
+        Ok(())
+    }
+
+    /// Queries whether the power supply unit is currently in use (i.e., providing power to the system). Corresponds to ACPI's _PSR method.
+    pub fn is_psu_in_use(
+        &self,
+        _fuel_gauge: &mut <Reg::FuelGauge as Lockable>::Inner,
+    ) -> Result<PsrReturn, BatteryError> {
+        trace!("Battery service: got PSR command!");
+        Ok(compute_psr(&PsuState::default()))
+    }
+
+    /// Queries information about the battery's power source. Corresponds to ACPI's _PIF method.
+    pub fn power_source_information(
+        &self,
+        _fuel_gauge: &mut <Reg::FuelGauge as Lockable>::Inner,
+    ) -> Result<PifFixedStrings, BatteryError> {
+        trace!("Battery service: got PIF command!");
+        Ok(compute_pif(&PsuState::default()))
+    }
+
+    /// Queries the battery's status. Corresponds to ACPI's _STA method.
+    pub fn device_status(
+        &self,
+        _fuel_gauge: &mut <Reg::FuelGauge as Lockable>::Inner,
+    ) -> Result<StaReturn, BatteryError> {
+        trace!("Battery service: got STA command!");
         Ok(compute_sta())
     }
 }

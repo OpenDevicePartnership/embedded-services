@@ -1,102 +1,98 @@
+use battery_service_interface::fuel_gauge::{DynamicBatteryMsgs, FuelGauge, FuelGaugeError, State, StaticBatteryMsgs};
 use embassy_time::{Duration, Timer};
 use embedded_batteries_async::{
     acpi, charger,
     smart_battery::{self, SmartBattery},
 };
-use embedded_services::{GlobalRawMutex, error, info};
+use embedded_services::sync::Lockable;
+use embedded_services::{error, info, trace};
 
-// Convenience fns
-pub async fn init_state_machine<const N: usize>(
-    battery_service: &crate::Service<'_, N>,
-) -> Result<(), crate::context::ContextError> {
-    battery_service
-        .execute_event(crate::context::BatteryEvent {
-            event: crate::context::BatteryEventInner::DoInit,
-            device_id: crate::device::DeviceId(0),
-        })
+/// Convenience helper that drives a fuel gauge through its initial bring-up sequence:
+/// initialize, then collect static and dynamic data once.
+pub async fn init_state_machine<FG>(fuel_gauge: &FG) -> Result<(), <FG::Inner as FuelGauge>::FuelGaugeError>
+where
+    FG: Lockable,
+    FG::Inner: FuelGauge,
+{
+    let mut fg = fuel_gauge.lock().await;
+    fg.initialize()
         .await
-        .inspect_err(|f| embedded_services::debug!("Fuel gauge init error: {:?}", f))?;
-
-    battery_service
-        .execute_event(crate::context::BatteryEvent {
-            event: crate::context::BatteryEventInner::PollStaticData,
-            device_id: crate::device::DeviceId(0),
-        })
+        .inspect_err(|_| embedded_services::debug!("Fuel gauge init error"))?;
+    fg.update_static_data()
         .await
-        .inspect_err(|f| embedded_services::debug!("Fuel gauge static data error: {:?}", f))?;
-
-    battery_service
-        .execute_event(crate::context::BatteryEvent {
-            event: crate::context::BatteryEventInner::PollDynamicData,
-            device_id: crate::device::DeviceId(0),
-        })
+        .inspect_err(|_| embedded_services::debug!("Fuel gauge static data error"))?;
+    fg.update_dynamic_data()
         .await
-        .inspect_err(|f| embedded_services::debug!("Fuel gauge dynamic data error: {:?}", f))?;
-
+        .inspect_err(|_| embedded_services::debug!("Fuel gauge dynamic data error"))?;
     Ok(())
 }
 
-pub async fn recover_state_machine<const N: usize>(battery_service: &crate::Service<'_, N>) -> Result<(), ()> {
+/// Convenience helper that repeatedly pings a fuel gauge to recover communication,
+/// backing off between attempts.
+pub async fn recover_state_machine<FG>(fuel_gauge: &FG) -> Result<(), ()>
+where
+    FG: Lockable,
+    FG::Inner: FuelGauge,
+{
+    let mut retries = 5u32;
     loop {
-        match battery_service
-            .execute_event(crate::context::BatteryEvent {
-                event: crate::context::BatteryEventInner::Timeout,
-                device_id: crate::device::DeviceId(0),
-            })
-            .await
-        {
-            Ok(_) => {
-                embedded_services::info!("FG recovered!");
-                return Ok(());
-            }
-            Err(e) => match e {
-                crate::context::ContextError::StateError(e) => match e {
-                    crate::context::StateMachineError::DeviceTimeout => {
-                        embedded_services::trace!("Recovery failed, trying again after a backoff period");
-                        Timer::after(Duration::from_secs(10)).await;
-                    }
-                    crate::context::StateMachineError::NoOpRecoveryFailed => {
-                        embedded_services::error!("Couldn't recover, reinit needed");
-                        return Err(());
-                    }
-                    _ => embedded_services::debug!("Unexpected error"),
-                },
-                _ => embedded_services::debug!("Unexpected error"),
-            },
+        let result = fuel_gauge.lock().await.ping().await;
+        if result.is_ok() {
+            info!("FG recovered!");
+            return Ok(());
         }
+        retries = retries.saturating_sub(1);
+        if retries == 0 {
+            error!("Couldn't recover, reinit needed");
+            return Err(());
+        }
+        trace!("Recovery failed, trying again after a backoff period");
+        Timer::after(Duration::from_secs(10)).await;
     }
 }
 
-pub type MockBattery<'a> = crate::wrapper::Wrapper<'a, MockBatteryDriver>;
-
-#[derive(Default)]
-pub struct MockBatteryDriver {
-    capacity_mode_bit: embassy_sync::mutex::Mutex<GlobalRawMutex, bool>,
+/// A mock fuel gauge that manages its own state and produces static, arbitrary data.
+pub struct MockFuelGauge {
+    state: State,
+    capacity_mode_bit: bool,
 }
 
-impl MockBatteryDriver {
+impl MockFuelGauge {
     pub fn new() -> Self {
-        MockBatteryDriver {
-            capacity_mode_bit: embassy_sync::mutex::Mutex::new(false),
+        MockFuelGauge {
+            state: State::default(),
+            capacity_mode_bit: false,
         }
     }
 
     async fn set_capacity_bit(&mut self, mwh: bool) -> Result<(), MockBatteryError> {
         let battery_mode = self.battery_mode().await?;
         SmartBattery::set_battery_mode(self, battery_mode.with_capacity_mode(mwh)).await?;
-        *self.capacity_mode_bit.get_mut() = mwh;
+        self.capacity_mode_bit = mwh;
 
         Ok(())
+    }
+}
+
+impl Default for MockFuelGauge {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
 #[derive(Clone, Copy, Debug)]
 pub struct MockBatteryError;
 
-impl crate::controller::Controller for MockBatteryDriver {
-    type ControllerError = MockBatteryError;
+impl From<MockBatteryError> for FuelGaugeError {
+    fn from(_value: MockBatteryError) -> Self {
+        FuelGaugeError::BusError
+    }
+}
 
-    async fn initialize(&mut self) -> Result<(), Self::ControllerError> {
+impl FuelGauge for MockFuelGauge {
+    type FuelGaugeError = MockBatteryError;
+
+    async fn initialize(&mut self) -> Result<(), Self::FuelGaugeError> {
         // Milliamps
         let mwh = false;
         self.set_capacity_bit(mwh)
@@ -104,21 +100,23 @@ impl crate::controller::Controller for MockBatteryDriver {
             .inspect_err(|_| error!("FG: failed to initialize"))?;
 
         info!("FG: initialized");
+        self.state_mut().on_initialized();
         Ok(())
     }
 
-    async fn ping(&mut self) -> Result<(), Self::ControllerError> {
+    async fn ping(&mut self) -> Result<(), Self::FuelGaugeError> {
         if let Err(e) = self.charging_voltage().await {
             error!("FG: failed to ping");
             Err(e)
         } else {
             info!("FG: ping success");
+            self.state_mut().on_recovered();
             Ok(())
         }
     }
 
-    async fn get_dynamic_data(&mut self) -> Result<crate::device::DynamicBatteryMsgs, Self::ControllerError> {
-        let new_msgs = crate::device::DynamicBatteryMsgs {
+    async fn update_dynamic_data(&mut self) -> Result<(), Self::FuelGaugeError> {
+        let new_msgs = DynamicBatteryMsgs {
             average_current_ma: self.average_current().await?,
             battery_status: self.battery_status().await?.into(),
             max_power_mw: 100,
@@ -143,17 +141,18 @@ impl crate::controller::Controller for MockBatteryDriver {
             turbo_vload_mv: 0,
             turbo_rhf_effective_mohm: 0,
         };
-        Ok(new_msgs)
+        self.state_mut().on_dynamic_data(new_msgs);
+        Ok(())
     }
 
     #[allow(clippy::indexing_slicing)]
-    async fn get_static_data(&mut self) -> Result<crate::device::StaticBatteryMsgs, Self::ControllerError> {
+    async fn update_static_data(&mut self) -> Result<(), Self::FuelGaugeError> {
         let design_capacity: u32 = match self.design_capacity().await? {
             smart_battery::CapacityModeValue::CentiWattUnsigned(design_capacity) => design_capacity.into(),
             smart_battery::CapacityModeValue::MilliAmpUnsigned(design_capacity) => design_capacity.into(),
         };
 
-        let mut new_msgs = crate::device::StaticBatteryMsgs {
+        let mut new_msgs = StaticBatteryMsgs {
             manufacturer_name: Default::default(),
             device_name: Default::default(),
             device_chemistry: Default::default(),
@@ -205,17 +204,17 @@ impl crate::controller::Controller for MockBatteryDriver {
         let serial = serial.to_le_bytes();
         new_msgs.serial_num = [serial[0], serial[1], 0, 0];
 
-        Ok(new_msgs)
+        self.state_mut().on_static_data(new_msgs);
+        Ok(())
     }
 
-    async fn get_device_event(&mut self) -> crate::controller::ControllerEvent {
-        // TODO: Loop forever till we figure out what we want to do here
-        loop {
-            Timer::after_secs(1000000).await;
-        }
+    fn state(&self) -> &State {
+        &self.state
     }
 
-    fn set_timeout(&mut self, _duration: embassy_time::Duration) {}
+    fn state_mut(&mut self) -> &mut State {
+        &mut self.state
+    }
 }
 
 impl smart_battery::Error for MockBatteryError {
@@ -224,12 +223,12 @@ impl smart_battery::Error for MockBatteryError {
     }
 }
 
-impl smart_battery::ErrorType for MockBatteryDriver {
+impl smart_battery::ErrorType for MockFuelGauge {
     type Error = MockBatteryError;
 }
 
 // Revisit: Have this generate realistic data dynamically (right now just static arbitrary values)
-impl smart_battery::SmartBattery for MockBatteryDriver {
+impl smart_battery::SmartBattery for MockFuelGauge {
     async fn absolute_state_of_charge(&mut self) -> Result<smart_battery::Percent, Self::Error> {
         Ok(77)
     }

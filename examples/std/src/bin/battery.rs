@@ -1,53 +1,49 @@
 //! Standard battery example
 //!
+//! Demonstrates the battery service registration system: the OEM owns the fuel
+//! gauge (behind a `Mutex`) and drives it directly through the [`bs::FuelGauge`]
+//! trait methods, while the battery service holds the registration and answers
+//! ACPI queries by reading the fuel gauge's cached state.
+//!
 //! The example can be run simply by typing `cargo run --bin battery`
 
 use battery_service as bs;
+use bs::FuelGauge as _;
+use bs::mock::MockFuelGauge;
 use embassy_executor::{Executor, Spawner};
+use embassy_sync::mutex::Mutex;
 use embassy_time::{Duration, Timer};
+use embedded_services::GlobalRawMutex;
 use static_cell::StaticCell;
 
-use odp_service_common::runnable_service::spawn_service;
+/// The fuel gauge, wrapped in a mutex so it can be shared between the OEM driving
+/// code and the battery service.
+type FuelGauge = Mutex<GlobalRawMutex, MockFuelGauge>;
+/// The registration: a single fuel gauge, which becomes battery `0`.
+type Reg = bs::ArrayRegistration<'static, FuelGauge, 1>;
 
 #[embassy_executor::task]
 async fn embassy_main(spawner: Spawner) {
     embedded_services::debug!("Initializing battery service");
     embedded_services::init().await;
 
-    static BATTERY_DEVICE: StaticCell<bs::device::Device> = StaticCell::new();
-    let device = BATTERY_DEVICE.init(bs::device::Device::new(Default::default()));
+    // The OEM owns the fuel gauge. A shared reference is handed both to the
+    // service (via registration) and to the task that drives it.
+    static FUEL_GAUGE: StaticCell<FuelGauge> = StaticCell::new();
+    let fuel_gauge: &'static FuelGauge = FUEL_GAUGE.init(Mutex::new(MockFuelGauge::new()));
 
-    let battery_service = spawn_service!(spawner, battery_service::Service<'static, 1>, |resources| {
-        battery_service::Service::new(
-            resources,
-            battery_service::InitParams {
-                config: Default::default(),
-                devices: [device],
-            },
-        )
-    })
-    .expect("Failed to initialize battery service");
+    let battery_service = bs::Service::new(bs::ArrayRegistration {
+        fuel_gauges: [fuel_gauge],
+    });
 
-    static BATTERY_WRAPPER: StaticCell<bs::mock::MockBattery> = StaticCell::new();
-    let wrapper = BATTERY_WRAPPER.init(bs::wrapper::Wrapper::new(
-        device,
-        battery_service::mock::MockBatteryDriver::new(),
-    ));
-
-    #[embassy_executor::task]
-    async fn battery_wrapper_process(battery_wrapper: &'static battery_service::mock::MockBattery<'static>) {
-        battery_wrapper.process().await
-    }
-
-    spawner.spawn(battery_wrapper_process(wrapper).expect("Failed to create battery wrapper task"));
-    spawner.spawn(run_app(battery_service).expect("Failed to create run_app task"));
+    spawner.spawn(run_app(fuel_gauge, battery_service).expect("Failed to create run_app task"));
 }
 
 #[embassy_executor::task]
-pub async fn run_app(battery_service: battery_service::Service<'static, 1>) {
-    // Initialize battery state machine.
+pub async fn run_app(fuel_gauge: &'static FuelGauge, battery_service: bs::Service<'static, Reg>) {
+    // Initialize the fuel gauge by driving it directly.
     let mut retries = 5;
-    while let Err(e) = bs::mock::init_state_machine(&battery_service).await {
+    while let Err(e) = bs::mock::init_state_machine(fuel_gauge).await {
         retries -= 1;
         if retries <= 0 {
             embedded_services::error!("Failed to initialize Battery: {:?}", e);
@@ -61,32 +57,31 @@ pub async fn run_app(battery_service: battery_service::Service<'static, 1>) {
     loop {
         Timer::after(Duration::from_secs(1)).await;
         if count.is_multiple_of(const { 60 * 60 * 60 })
-            && let Err(e) = battery_service
-                .execute_event(battery_service::context::BatteryEvent {
-                    event: battery_service::context::BatteryEventInner::PollStaticData,
-                    device_id: bs::device::DeviceId(0),
-                })
-                .await
+            && let Err(e) = fuel_gauge.lock().await.update_static_data().await
         {
             failures += 1;
-            embedded_services::error!("Fuel gauge static data error: {:#?}", e);
+            embedded_services::error!("Fuel gauge static data error: {:?}", e);
         }
-        if let Err(e) = battery_service
-            .execute_event(battery_service::context::BatteryEvent {
-                event: battery_service::context::BatteryEventInner::PollDynamicData,
-                device_id: bs::device::DeviceId(0),
-            })
-            .await
-        {
+        if let Err(e) = fuel_gauge.lock().await.update_dynamic_data().await {
             failures += 1;
-            embedded_services::error!("Fuel gauge dynamic data error: {:#?}", e);
+            embedded_services::error!("Fuel gauge dynamic data error: {:?}", e);
+        }
+
+        // The battery service answers ACPI queries by reading the fuel gauge's
+        // cached state. The caller hands the service exclusive access to the
+        // fuel gauge for the duration of the query.
+        {
+            let mut fg = fuel_gauge.lock().await;
+            if battery_service.battery_status(&mut *fg).is_ok() {
+                embedded_services::debug!("Queried battery status via the battery service");
+            }
         }
 
         if failures > 10 {
             failures = 0;
             count = 0;
             embedded_services::error!("FG: Too many errors, timing out and starting recovery...");
-            if bs::mock::recover_state_machine(&battery_service).await.is_err() {
+            if bs::mock::recover_state_machine(fuel_gauge).await.is_err() {
                 embedded_services::error!("FG: Fatal error");
                 return;
             }
@@ -97,7 +92,7 @@ pub async fn run_app(battery_service: battery_service::Service<'static, 1>) {
 }
 
 fn main() {
-    env_logger::builder().filter_level(log::LevelFilter::Debug).init();
+    env_logger::builder().filter_level(log::LevelFilter::Trace).init();
     embedded_services::info!("battery example started");
 
     static EXECUTOR: StaticCell<Executor> = StaticCell::new();

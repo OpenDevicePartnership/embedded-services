@@ -95,13 +95,11 @@ name = "battery-service"
 version = "0.1.0"
 dependencies = [
  "battery-service-interface",
- "embassy-futures",
  "embassy-sync",
  "embassy-time",
  "embedded-batteries-async",
  "embedded-services",
  "log",
- "odp-service-common",
  "power-policy-interface",
 ]
 
