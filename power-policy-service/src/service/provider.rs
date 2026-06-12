@@ -24,12 +24,14 @@ pub enum PowerState {
 
 /// Power policy provider global state
 #[derive(Clone, Copy, Default)]
-pub(super) struct State {
+pub struct State {
     /// Current power state
     state: PowerState,
 }
 
-impl<'device, Reg: Registration<'device>> Service<'device, Reg> {
+impl<'device, Reg: Registration<'device>, Customization: customization::Customization>
+    Service<'device, Reg, Customization>
+{
     /// Attempt to connect the requester as a provider
     pub(super) async fn connect_provider(&mut self, requester: &'device Reg::Psu) -> Result<(), Error> {
         let requested_power_capability = {

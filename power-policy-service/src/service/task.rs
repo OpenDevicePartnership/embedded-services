@@ -4,6 +4,7 @@ use embedded_services::event::Receiver;
 use power_policy_interface::charger;
 use power_policy_interface::psu::event::EventData;
 
+use crate::service::customization;
 use crate::service::registration::Registration;
 
 use super::Service;
@@ -12,8 +13,9 @@ use super::Service;
 pub async fn psu_task<
     'device,
     const PSU_COUNT: usize,
-    S: Lockable<Inner = Service<'device, Reg>>,
+    S: Lockable<Inner = Service<'device, Reg, Customization>>,
     Reg: Registration<'device>,
+    Customization: customization::Customization,
     PsuReceiver: Receiver<EventData>,
 >(
     mut psu_events: crate::psu::PsuEventReceivers<'device, PSU_COUNT, Reg::Psu, PsuReceiver>,
@@ -33,8 +35,9 @@ pub async fn psu_task<
 pub async fn charger_task<
     'device,
     const CHARGER_COUNT: usize,
-    S: Lockable<Inner = Service<'device, Reg>>,
+    S: Lockable<Inner = Service<'device, Reg, Customization>>,
     Reg: Registration<'device>,
+    Customization: customization::Customization,
     ChargerReceiver: Receiver<charger::EventData>,
 >(
     mut charger_events: crate::charger::ChargerEventReceivers<'device, CHARGER_COUNT, Reg::Charger, ChargerReceiver>,
@@ -55,8 +58,9 @@ pub async fn task<
     'device,
     const PSU_COUNT: usize,
     const CHARGER_COUNT: usize,
-    S: Lockable<Inner = Service<'device, Reg>>,
+    S: Lockable<Inner = Service<'device, Reg, Customization>>,
     Reg: Registration<'device>,
+    Customization: customization::Customization,
     PsuReceiver: Receiver<EventData>,
     ChargerReceiver: Receiver<charger::EventData>,
 >(
