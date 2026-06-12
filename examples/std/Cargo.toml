@@ -60,10 +60,6 @@ name = "debug"
 path = "src/bin/debug.rs"
 
 [[bin]]
-name = "type-c-basic"
-path = "src/bin/type_c/basic.rs"
-
-[[bin]]
 name = "type-c-service"
 path = "src/bin/type_c/service.rs"
 
