@@ -20,7 +20,7 @@ use power_policy_interface::{
     capability::{ConsumerPowerCapability, PowerCapability, ProviderPowerCapability},
     service::{UnconstrainedState, event::Event as ServiceEvent},
 };
-use power_policy_service::service::{Service, config::Config};
+use power_policy_service::service::{Service, config::Config, hooks};
 use power_policy_service::{psu::PsuEventReceivers, service::registration::ArrayRegistration};
 
 pub mod mock;
@@ -50,7 +50,7 @@ pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(15);
 const EVENT_CHANNEL_SIZE: usize = 4;
 
 pub type DeviceType<'a> = Mutex<GlobalRawMutex, Mock<'a, DynamicSender<'a, EventData>>>;
-pub type ServiceType<'device, 'sender> = Service<
+pub type ServiceType<'device, 'sender, Hooks> = Service<
     'device,
     ArrayRegistration<
         'device,
@@ -61,13 +61,14 @@ pub type ServiceType<'device, 'sender> = Service<
         ChargerType<'device>,
         0,
     >,
+    Hooks,
 >;
 
-pub type ServiceMutex<'device, 'sender> = Mutex<GlobalRawMutex, ServiceType<'device, 'sender>>;
+pub type ServiceMutex<'device, 'sender, Hooks> = Mutex<GlobalRawMutex, ServiceType<'device, 'sender, Hooks>>;
 
-async fn power_policy_task<'device, 'sender, const N: usize>(
+async fn power_policy_task<'device, 'sender, const N: usize, Hooks: hooks::Hooks>(
     completion_signal: &'device Signal<GlobalRawMutex, ()>,
-    power_policy: &ServiceMutex<'device, 'sender>,
+    power_policy: &ServiceMutex<'device, 'sender, Hooks>,
     mut event_receivers: PsuEventReceivers<'device, N, DeviceType<'device>, DynamicReceiver<'device, EventData>>,
 ) {
     while let Either::First(result) = select(event_receivers.wait_event(), completion_signal.wait()).await {
@@ -80,9 +81,11 @@ async fn power_policy_task<'device, 'sender, const N: usize>(
 /// This exists because there are lifetime issues with being generic over FnOnce or FnMut.
 /// Those can be resolved, but having a dedicated trait is simpler.
 pub trait Test {
+    type Hooks: hooks::Hooks;
+
     fn run<'a>(
         &mut self,
-        service: &'a ServiceMutex<'a, 'a>,
+        service: &'a ServiceMutex<'a, 'a, Self::Hooks>,
         service_receiver: DynamicReceiver<'a, ServiceEvent<'a, DeviceType<'a>>>,
         device0: &'a DeviceType<'a>,
         device0_signal: &'a Signal<GlobalRawMutex, (usize, FnCall)>,
@@ -91,7 +94,7 @@ pub trait Test {
     ) -> impl Future<Output = ()>;
 }
 
-pub async fn run_test(timeout: Duration, mut test: impl Test, config: Config) {
+pub async fn run_test<T: Test>(timeout: Duration, mut test: T, config: Config, hooks: T::Hooks) {
     // Tokio runs tests in parallel, but logging is global so we need to run tests sequentially to avoid interleaved logs.
     static TEST_MUTEX: OnceLock<Mutex<GlobalRawMutex, ()>> = OnceLock::new();
     let test_mutex = TEST_MUTEX.get_or_init(|| Mutex::new(()));
@@ -128,9 +131,10 @@ pub async fn run_test(timeout: Duration, mut test: impl Test, config: Config) {
         chargers: [],
     };
 
-    let power_policy = Mutex::new(power_policy_service::service::Service::new(
+    let power_policy = Mutex::new(power_policy_service::service::Service::new_with_hooks(
         power_policy_registration,
         config,
+        hooks,
     ));
 
     with_timeout(

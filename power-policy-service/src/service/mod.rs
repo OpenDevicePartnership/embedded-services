@@ -57,7 +57,7 @@ where
 }
 
 /// Power policy service
-pub struct Service<'device, Reg: Registration<'device>, Hooks: hooks::Hooks<'device, Reg> = hooks::DefaultHooks> {
+pub struct Service<'device, Reg: Registration<'device>, Hooks: hooks::Hooks = hooks::DefaultHooks> {
     /// Service registration
     registration: Reg,
     /// State
@@ -68,14 +68,14 @@ pub struct Service<'device, Reg: Registration<'device>, Hooks: hooks::Hooks<'dev
     hooks: Hooks,
 }
 
-impl<'device, Reg: Registration<'device>, Hooks: hooks::Hooks<'device, Reg> + Default> Service<'device, Reg, Hooks> {
+impl<'device, Reg: Registration<'device>, Hooks: hooks::Hooks + Default> Service<'device, Reg, Hooks> {
     /// Create a new power policy
     pub fn new(registration: Reg, config: config::Config) -> Self {
         Self::new_with_hooks(registration, config, Hooks::default())
     }
 }
 
-impl<'device, Reg: Registration<'device>, Hooks: hooks::Hooks<'device, Reg>> Service<'device, Reg, Hooks> {
+impl<'device, Reg: Registration<'device>, Hooks: hooks::Hooks> Service<'device, Reg, Hooks> {
     /// Create a new power policy with custom hooks
     pub fn new_with_hooks(registration: Reg, config: config::Config, hooks: Hooks) -> Self {
         Self {

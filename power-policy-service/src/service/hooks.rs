@@ -8,9 +8,9 @@ use crate::service::{
 };
 
 /// Power policy service hooks
-pub trait Hooks<'device, Reg: Registration<'device>> {
+pub trait Hooks {
     /// Find the best available consumer based on the current state and configuration.
-    fn find_best_consumer(
+    fn find_best_consumer<'device, Reg: Registration<'device>>(
         &mut self,
         config: &Config,
         state: &InternalState<'device, Reg::Psu>,
@@ -24,4 +24,4 @@ pub trait Hooks<'device, Reg: Registration<'device>> {
 #[derive(Debug, Clone, Default)]
 pub struct DefaultHooks;
 
-impl<'device, Reg: Registration<'device>> Hooks<'device, Reg> for DefaultHooks {}
+impl Hooks for DefaultHooks {}

@@ -105,7 +105,7 @@ pub async fn find_best_consumer_default<
     Ok(best_consumer)
 }
 
-impl<'device, Reg: Registration<'device>, Hooks: hooks::Hooks<'device, Reg>> Service<'device, Reg, Hooks> {
+impl<'device, Reg: Registration<'device>, Hooks: hooks::Hooks> Service<'device, Reg, Hooks> {
     /// Update unconstrained state and broadcast notifications if needed
     async fn update_unconstrained_state(&mut self) -> Result<(), Error> {
         // Count how many available unconstrained devices we have
