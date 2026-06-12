@@ -7,8 +7,8 @@ use crate::service::{
     registration::Registration,
 };
 
-/// Power policy service hooks
-pub trait Hooks {
+/// Power policy service customization
+pub trait Customization {
     /// Find the best available consumer based on the current state and configuration.
     fn find_best_consumer<'device, Reg: Registration<'device>>(
         &mut self,
@@ -20,8 +20,8 @@ pub trait Hooks {
     }
 }
 
-/// Default hooks implementation
+/// Default customization implementation
 #[derive(Debug, Clone, Default)]
-pub struct DefaultHooks;
+pub struct DefaultCustomization;
 
-impl Hooks for DefaultHooks {}
+impl Customization for DefaultCustomization {}

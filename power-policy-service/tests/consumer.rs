@@ -19,8 +19,8 @@ use power_policy_service::service::config::Config;
 use power_policy_service::service::consumer::AvailableConsumer;
 use power_policy_service::service::consumer::cmp_consumer_capability_default;
 use power_policy_service::service::consumer::find_best_consumer_default;
-use power_policy_service::service::hooks;
-use power_policy_service::service::hooks::DefaultHooks;
+use power_policy_service::service::customization;
+use power_policy_service::service::customization::DefaultCustomization;
 use power_policy_service::service::registration::Registration;
 
 use crate::common::DeviceType;
@@ -41,11 +41,11 @@ const MIN_CONSUMER_THRESHOLD_MW: u32 = 7500;
 struct TestSingle;
 
 impl Test for TestSingle {
-    type Hooks = DefaultHooks;
+    type Customization = DefaultCustomization;
 
     async fn run<'a>(
         &mut self,
-        service: &ServiceMutex<'a, 'a, Self::Hooks>,
+        service: &ServiceMutex<'a, 'a, Self::Customization>,
         service_receiver: DynamicReceiver<'a, ServiceEvent<'a, DeviceType<'a>>>,
         device0: &DeviceType<'a>,
         device0_signal: &Signal<GlobalRawMutex, (usize, FnCall)>,
@@ -110,11 +110,11 @@ impl Test for TestSingle {
 struct TestSwapHigher;
 
 impl Test for TestSwapHigher {
-    type Hooks = DefaultHooks;
+    type Customization = DefaultCustomization;
 
     async fn run<'a>(
         &mut self,
-        service: &ServiceMutex<'a, 'a, Self::Hooks>,
+        service: &ServiceMutex<'a, 'a, Self::Customization>,
         service_receiver: DynamicReceiver<'a, ServiceEvent<'a, DeviceType<'a>>>,
         device0: &DeviceType<'a>,
         device0_signal: &Signal<GlobalRawMutex, (usize, FnCall)>,
@@ -244,11 +244,11 @@ impl Test for TestSwapHigher {
 struct TestDisconnect;
 
 impl Test for TestDisconnect {
-    type Hooks = DefaultHooks;
+    type Customization = DefaultCustomization;
 
     async fn run<'a>(
         &mut self,
-        service: &ServiceMutex<'a, 'a, Self::Hooks>,
+        service: &ServiceMutex<'a, 'a, Self::Customization>,
         service_receiver: DynamicReceiver<'a, ServiceEvent<'a, DeviceType<'a>>>,
         device0: &DeviceType<'a>,
         device0_signal: &Signal<GlobalRawMutex, (usize, FnCall)>,
@@ -379,11 +379,11 @@ impl Test for TestDisconnect {
 struct TestDisconnectOtherConsumer;
 
 impl Test for TestDisconnectOtherConsumer {
-    type Hooks = DefaultHooks;
+    type Customization = DefaultCustomization;
 
     async fn run<'a>(
         &mut self,
-        service: &ServiceMutex<'a, 'a, Self::Hooks>,
+        service: &ServiceMutex<'a, 'a, Self::Customization>,
         service_receiver: DynamicReceiver<'a, ServiceEvent<'a, DeviceType<'a>>>,
         device0: &DeviceType<'a>,
         device0_signal: &Signal<GlobalRawMutex, (usize, FnCall)>,
@@ -468,11 +468,11 @@ impl Test for TestDisconnectOtherConsumer {
 struct TestDisconnectOtherProvider;
 
 impl Test for TestDisconnectOtherProvider {
-    type Hooks = DefaultHooks;
+    type Customization = DefaultCustomization;
 
     async fn run<'a>(
         &mut self,
-        service: &ServiceMutex<'a, 'a, Self::Hooks>,
+        service: &ServiceMutex<'a, 'a, Self::Customization>,
         service_receiver: DynamicReceiver<'a, ServiceEvent<'a, DeviceType<'a>>>,
         device0: &DeviceType<'a>,
         device0_signal: &Signal<GlobalRawMutex, (usize, FnCall)>,
@@ -569,11 +569,11 @@ impl Test for TestDisconnectOtherProvider {
 struct TestMinConsumerPower;
 
 impl Test for TestMinConsumerPower {
-    type Hooks = DefaultHooks;
+    type Customization = DefaultCustomization;
 
     async fn run<'a>(
         &mut self,
-        service: &ServiceMutex<'a, 'a, Self::Hooks>,
+        service: &ServiceMutex<'a, 'a, Self::Customization>,
         service_receiver: DynamicReceiver<'a, ServiceEvent<'a, DeviceType<'a>>>,
         device0: &DeviceType<'a>,
         device0_signal: &Signal<GlobalRawMutex, (usize, FnCall)>,
@@ -609,11 +609,11 @@ impl Test for TestMinConsumerPower {
 struct TestNoSwap;
 
 impl Test for TestNoSwap {
-    type Hooks = DefaultHooks;
+    type Customization = DefaultCustomization;
 
     async fn run<'a>(
         &mut self,
-        service: &ServiceMutex<'a, 'a, Self::Hooks>,
+        service: &ServiceMutex<'a, 'a, Self::Customization>,
         service_receiver: DynamicReceiver<'a, ServiceEvent<'a, DeviceType<'a>>>,
         device0: &DeviceType<'a>,
         device0_signal: &Signal<GlobalRawMutex, (usize, FnCall)>,
@@ -684,10 +684,10 @@ impl Test for TestNoSwap {
     }
 }
 
-/// Power policy hooks that always returns the first PSU if it's available
-struct AlwaysFirstConsumerHooks;
+/// Power policy customization that always returns the first PSU if it's available
+struct AlwaysFirstConsumerCustomization;
 
-impl hooks::Hooks for AlwaysFirstConsumerHooks {
+impl customization::Customization for AlwaysFirstConsumerCustomization {
     async fn find_best_consumer<'device, Reg: Registration<'device>>(
         &mut self,
         config: &Config,
@@ -706,15 +706,15 @@ impl hooks::Hooks for AlwaysFirstConsumerHooks {
     }
 }
 
-/// Verify that [`hooks::Hooks::find_find_best_consumer`] is called
+/// Verify that [`customization::Customization::find_find_best_consumer`] is called
 struct TestFindBestConsumerHook;
 
 impl Test for TestFindBestConsumerHook {
-    type Hooks = AlwaysFirstConsumerHooks;
+    type Customization = AlwaysFirstConsumerCustomization;
 
     async fn run<'a>(
         &mut self,
-        _service: &ServiceMutex<'a, 'a, Self::Hooks>,
+        _service: &ServiceMutex<'a, 'a, Self::Customization>,
         service_receiver: DynamicReceiver<'a, ServiceEvent<'a, DeviceType<'a>>>,
         device0: &DeviceType<'a>,
         device0_signal: &Signal<GlobalRawMutex, (usize, FnCall)>,
@@ -793,17 +793,29 @@ impl Test for TestFindBestConsumerHook {
 
 #[tokio::test]
 async fn run_test_swap_higher() {
-    run_test(DEFAULT_TIMEOUT, TestSwapHigher, Default::default(), DefaultHooks).await;
+    run_test(
+        DEFAULT_TIMEOUT,
+        TestSwapHigher,
+        Default::default(),
+        DefaultCustomization,
+    )
+    .await;
 }
 
 #[tokio::test]
 async fn run_test_single() {
-    run_test(DEFAULT_TIMEOUT, TestSingle, Default::default(), DefaultHooks).await;
+    run_test(DEFAULT_TIMEOUT, TestSingle, Default::default(), DefaultCustomization).await;
 }
 
 #[tokio::test]
 async fn run_test_disconnect() {
-    run_test(DEFAULT_TIMEOUT, TestDisconnect, Default::default(), DefaultHooks).await;
+    run_test(
+        DEFAULT_TIMEOUT,
+        TestDisconnect,
+        Default::default(),
+        DefaultCustomization,
+    )
+    .await;
 }
 
 #[tokio::test]
@@ -812,7 +824,7 @@ async fn run_test_disconnect_other_consumer() {
         DEFAULT_TIMEOUT,
         TestDisconnectOtherConsumer,
         Default::default(),
-        DefaultHooks,
+        DefaultCustomization,
     )
     .await;
 }
@@ -823,7 +835,7 @@ async fn run_test_disconnect_other_provider() {
         DEFAULT_TIMEOUT,
         TestDisconnectOtherProvider,
         Default::default(),
-        DefaultHooks,
+        DefaultCustomization,
     )
     .await;
 }
@@ -833,12 +845,12 @@ async fn run_test_min_consumer_power() {
     let mut config = Config::default();
     config.min_consumer_threshold_mw = Some(MIN_CONSUMER_THRESHOLD_MW);
 
-    run_test(DEFAULT_TIMEOUT, TestMinConsumerPower, config, DefaultHooks).await;
+    run_test(DEFAULT_TIMEOUT, TestMinConsumerPower, config, DefaultCustomization).await;
 }
 
 #[tokio::test]
 async fn run_test_no_swap() {
-    run_test(DEFAULT_TIMEOUT, TestNoSwap, Default::default(), DefaultHooks).await;
+    run_test(DEFAULT_TIMEOUT, TestNoSwap, Default::default(), DefaultCustomization).await;
 }
 
 #[tokio::test]
@@ -847,7 +859,7 @@ async fn run_test_find_best_consumer_hook() {
         DEFAULT_TIMEOUT,
         TestFindBestConsumerHook,
         Default::default(),
-        AlwaysFirstConsumerHooks,
+        AlwaysFirstConsumerCustomization,
     )
     .await;
 }

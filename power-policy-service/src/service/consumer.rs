@@ -105,7 +105,9 @@ pub async fn find_best_consumer_default<
     Ok(best_consumer)
 }
 
-impl<'device, Reg: Registration<'device>, Hooks: hooks::Hooks> Service<'device, Reg, Hooks> {
+impl<'device, Reg: Registration<'device>, Cusomization: customization::Customization>
+    Service<'device, Reg, Cusomization>
+{
     /// Update unconstrained state and broadcast notifications if needed
     async fn update_unconstrained_state(&mut self) -> Result<(), Error> {
         // Count how many available unconstrained devices we have
@@ -245,7 +247,7 @@ impl<'device, Reg: Registration<'device>, Hooks: hooks::Hooks> Service<'device, 
         info!("Selecting power port, current power: {:#?}", current_consumer_name);
 
         let best_consumer = self
-            .hooks
+            .customization
             .find_best_consumer(&self.config, &self.state, &self.registration)
             .await?;
         let best_consumer_name = if let Some(best_consumer) = best_consumer {
