@@ -8,7 +8,10 @@ edition = "2024"
 
 
 [package.metadata.cargo-machete]
-ignored = ["critical-section"]
+# embassy-time is the embassy-time driver provider for this binary (std +
+# generic-queue-8 features); it is required at link time even though it is not
+# referenced directly in source.
+ignored = ["critical-section", "embassy-time"]
 
 [workspace.lints.rust]
 warnings = "deny"
@@ -19,22 +22,20 @@ workspace = true
 [dependencies]
 tokio = { version = "1.48.0", features = ["rt-multi-thread", "macros"] }
 embedded-services = { path = "../../embedded-service", features = ["log"] }
+embassy-sync = { version = "0.8", features = ["log", "std"] }
 embassy-time = { version = "0.5.0", features = [
     "log",
     "std",
     "generic-queue-8",
 ] }
-embassy-futures = "0.1.2"
 
 embedded-batteries-async = "0.3"
 battery-service = { path = "../../battery-service", features = ["log"] }
-odp-service-common = { path = "../../odp-service-common" }
 
 pico-de-gallo-hal = "0.1.0"
 
 env_logger = "0.11"
 log = "0.4.14"
-static_cell = "2"
 
 critical-section = { version = "1.1", features = ["std"] }
 bq40z50-rx = { version = "0.8", features = ["r5", "embassy-timeout"] }

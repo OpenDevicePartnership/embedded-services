@@ -1,5 +1,7 @@
 #![no_std]
 
+pub mod fuel_gauge;
+
 pub use embedded_batteries_async::acpi::{
     BatteryState, BatterySwapCapability, BatteryTechnology, Bct, BctReturnResult, Bma, Bmc, BmcControlFlags, Bmd,
     BmdCapabilityFlags, BmdStatusFlags, Bms, Bpc, Bps, Bpt, BstReturn, Btm, BtmReturnResult, Btp, PowerSource,
@@ -174,8 +176,11 @@ pub trait BatteryService {
         btp: Btp,
     ) -> impl core::future::Future<Output = Result<(), BatteryError>>;
 
-    /// Queries whether the battery is currently in use (i.e., providing power to the system). Corresponds to ACPI's _PSR method.
-    fn is_in_use(&self, battery_id: DeviceId) -> impl core::future::Future<Output = Result<PsrReturn, BatteryError>>;
+    /// Queries whether the power supply unit is currently in use (i.e., providing power to the system). Corresponds to ACPI's _PSR method.
+    fn is_psu_in_use(
+        &self,
+        battery_id: DeviceId,
+    ) -> impl core::future::Future<Output = Result<PsrReturn, BatteryError>>;
 
     /// Queries information about the battery's power source. Corresponds to ACPI's _PIF method.
     fn power_source_information(

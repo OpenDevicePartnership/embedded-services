@@ -38,7 +38,7 @@ impl<S: battery_service_interface::BatteryService> embedded_services::relay::mct
                 bst: self.service.battery_status(DeviceId(battery_id)).await?,
             },
             AcpiBatteryRequest::GetPsr { battery_id } => AcpiBatteryResponse::GetPsr {
-                psr: self.service.is_in_use(DeviceId(battery_id)).await?,
+                psr: self.service.is_psu_in_use(DeviceId(battery_id)).await?,
             },
             AcpiBatteryRequest::GetPif { battery_id } => AcpiBatteryResponse::GetPif {
                 pif: self.service.power_source_information(DeviceId(battery_id)).await?,
