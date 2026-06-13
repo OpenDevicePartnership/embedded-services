@@ -132,7 +132,6 @@ version = "0.1.0"
 dependencies = [
  "battery-service-interface",
  "defmt 0.3.100",
- "embassy-sync",
  "embassy-time",
  "embedded-batteries-async",
  "embedded-services",

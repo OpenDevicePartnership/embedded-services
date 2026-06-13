@@ -20,7 +20,7 @@ pub trait Registration<'hw> {
     /// Returns a slice of the registered fuel gauges.
     ///
     /// The position of a fuel gauge in this slice is its
-    /// [`DeviceId`](battery_service_interface::DeviceId) for ACPI queries (the
+    /// [`DeviceId`] for ACPI queries (the
     /// first registered fuel gauge is battery `0`, and so on).
     fn fuel_gauges(&self) -> &[&'hw Self::FuelGauge];
 

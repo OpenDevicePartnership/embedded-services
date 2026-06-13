@@ -16,7 +16,6 @@ workspace = true
 [dependencies]
 defmt = { workspace = true, optional = true }
 battery-service-interface.workspace = true
-embassy-sync.workspace = true
 embassy-time.workspace = true
 embedded-batteries-async.workspace = true
 embedded-services.workspace = true
@@ -30,7 +29,6 @@ defmt = [
     "battery-service-interface/defmt",
     "embedded-services/defmt",
     "embassy-time/defmt",
-    "embassy-sync/defmt",
     "embedded-batteries-async/defmt",
     "power-policy-interface/defmt",
 ]
@@ -39,7 +37,6 @@ log = [
     "battery-service-interface/log",
     "embedded-services/log",
     "embassy-time/log",
-    "embassy-sync/log",
     "power-policy-interface/log",
 ]
 mock = []
