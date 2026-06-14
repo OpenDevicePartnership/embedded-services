@@ -10,8 +10,6 @@ use embedded_services::{error, hid, info, trace};
 use crate::Error;
 
 const LENGTH_PREFIX_SIZE: usize = 2;
-const LENGTH_LO_OFFSET: usize = 0;
-const LENGTH_HI_OFFSET: usize = 1;
 
 /// Timeout configuration for I2C HID device operations.
 pub struct Config {
@@ -253,8 +251,13 @@ impl<A: AddressMode + Copy, B: I2c<A>> Device<A, B> {
             })?;
 
             if constrained {
-                let actual_frame_len =
-                    u16::from_le_bytes([read_buf[LENGTH_LO_OFFSET], read_buf[LENGTH_HI_OFFSET]]) as usize;
+                let actual_frame_len = read_buf
+                    .first_chunk::<LENGTH_PREFIX_SIZE>()
+                    .map(|b| u16::from_le_bytes(*b) as usize)
+                    .ok_or(Error::Hid(hid::Error::InvalidSize(InvalidSizeError {
+                        expected: LENGTH_PREFIX_SIZE,
+                        actual: read_buf.len(),
+                    })))?;
                 if actual_frame_len != response_size {
                     error!(
                         "Length mismatch: declared={} expected={}",
