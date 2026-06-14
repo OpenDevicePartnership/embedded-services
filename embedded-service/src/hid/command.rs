@@ -225,7 +225,14 @@ impl Opcode {
 #[allow(missing_docs)]
 pub enum Command<'a> {
     Reset,
-    GetReport(ReportType, ReportId, Option<u16>),
+    GetReport {
+        /// Report type (Input or Feature)
+        report_type: ReportType,
+        /// Report ID
+        report_id: ReportId,
+        /// Expected payload size in bytes, used to constrain the response read length
+        expected_payload_size: Option<u16>,
+    },
     SetReport(ReportType, ReportId, SharedRef<'a, u8>),
     GetIdle(ReportId),
     SetIdle(ReportId, ReportFreq),
@@ -239,7 +246,7 @@ impl From<Command<'_>> for Opcode {
     fn from(value: Command<'_>) -> Self {
         match value {
             Command::Reset => Opcode::Reset,
-            Command::GetReport(_, _, _) => Opcode::GetReport,
+            Command::GetReport { .. } => Opcode::GetReport,
             Command::SetReport(_, _, _) => Opcode::SetReport,
             Command::GetIdle(_) => Opcode::GetIdle,
             Command::SetIdle(_, _) => Opcode::SetIdle,
@@ -311,11 +318,11 @@ impl<'a> Command<'a> {
             Opcode::Reset => Command::Reset,
             Opcode::GetReport => {
                 if report_type? == ReportType::Input || report_type? == ReportType::Feature {
-                    Command::GetReport(
-                        report_type?,
-                        report_id.ok_or(Error::RequiresReportId)?,
-                        expected_response_size,
-                    )
+                    Command::GetReport {
+                        report_type: report_type?,
+                        report_id: report_id.ok_or(Error::RequiresReportId)?,
+                        expected_payload_size: expected_response_size,
+                    }
                 } else {
                     return Err(Error::InvalidReportType);
                 }
@@ -481,7 +488,11 @@ impl<'a> Command<'a> {
                 let (command_len, _) = Self::encode_basic_op(buf, Opcode::Reset)?;
                 len += command_len;
             }
-            Command::GetReport(report_type, report_id, _expected_size) => {
+            Command::GetReport {
+                report_type,
+                report_id,
+                expected_payload_size: _,
+            } => {
                 let (command_len, buf) = Self::encode_common(buf, Opcode::GetReport, Some(*report_type), *report_id)?;
                 len += command_len;
 
@@ -599,37 +610,57 @@ mod test {
         let mut test_buffer = [0u8; 7];
 
         // Test input report
-        let len = Command::GetReport(ReportType::Input, REPORT_ID, None)
-            .encode_into_slice(&mut test_buffer, None, None)
-            .unwrap();
+        let len = Command::GetReport {
+            report_type: ReportType::Input,
+            report_id: REPORT_ID,
+            expected_payload_size: None,
+        }
+        .encode_into_slice(&mut test_buffer, None, None)
+        .unwrap();
         assert_eq!(&test_buffer[0..len], [0x18, 0x02]);
 
         // Test feature report
         test_buffer.fill(0);
-        let len = Command::GetReport(ReportType::Feature, REPORT_ID, None)
-            .encode_into_slice(&mut test_buffer, None, None)
-            .unwrap();
+        let len = Command::GetReport {
+            report_type: ReportType::Feature,
+            report_id: REPORT_ID,
+            expected_payload_size: None,
+        }
+        .encode_into_slice(&mut test_buffer, None, None)
+        .unwrap();
         assert_eq!(&test_buffer[0..len], [0x38, 0x02]);
 
         // Test extended report
         test_buffer.fill(0);
-        let len = Command::GetReport(ReportType::Input, EXT_REPORT_ID, None)
-            .encode_into_slice(&mut test_buffer, None, None)
-            .unwrap();
+        let len = Command::GetReport {
+            report_type: ReportType::Input,
+            report_id: EXT_REPORT_ID,
+            expected_payload_size: None,
+        }
+        .encode_into_slice(&mut test_buffer, None, None)
+        .unwrap();
         assert_eq!(&test_buffer[0..len], [0x1f, 0x02, EXTENDED_REPORT_ID]);
 
         // Test standard report id with registers
         test_buffer.fill(0);
-        let len = Command::GetReport(ReportType::Feature, REPORT_ID, Some(64))
-            .encode_into_slice(&mut test_buffer, Some(CMD_REG), Some(DATA_REG))
-            .unwrap();
+        let len = Command::GetReport {
+            report_type: ReportType::Feature,
+            report_id: REPORT_ID,
+            expected_payload_size: Some(64),
+        }
+        .encode_into_slice(&mut test_buffer, Some(CMD_REG), Some(DATA_REG))
+        .unwrap();
         assert_eq!(&test_buffer[0..len], [0x05, 0x00, 0x38, 0x02, 0x06, 0x00]);
 
         // Test extended report id with registers
         test_buffer.fill(0);
-        let len = Command::GetReport(ReportType::Input, EXT_REPORT_ID, None)
-            .encode_into_slice(&mut test_buffer, Some(CMD_REG), Some(DATA_REG))
-            .unwrap();
+        let len = Command::GetReport {
+            report_type: ReportType::Input,
+            report_id: EXT_REPORT_ID,
+            expected_payload_size: None,
+        }
+        .encode_into_slice(&mut test_buffer, Some(CMD_REG), Some(DATA_REG))
+        .unwrap();
         assert_eq!(
             &test_buffer[0..len],
             [0x05, 0x00, 0x1f, 0x02, EXTENDED_REPORT_ID, 0x06, 0x00]

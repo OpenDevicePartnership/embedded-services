@@ -168,7 +168,11 @@ pub async fn handle_keyboard<T: HidKeyboard>(mut hid_kb: T) -> Result<embedded_s
                 }
 
                 // Instructs the keyboard to immediately return the latest input/feature report
-                hid::Command::GetReport(report_type, report_id, _expected_size) => {
+                hid::Command::GetReport {
+                    report_type,
+                    report_id,
+                    expected_payload_size: _,
+                } => {
                     {
                         let report = hid_kb.get_report(report_type, report_id);
                         let report = HidI2cReport::from_report_slice(report, max_input_len).to_bytes();

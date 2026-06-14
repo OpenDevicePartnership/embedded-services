@@ -1,10 +1,10 @@
 use core::borrow::BorrowMut;
 
 use embassy_sync::mutex::Mutex;
-use embassy_time::{Duration, with_timeout};
+use embassy_time::{with_timeout, Duration};
 use embedded_hal_async::i2c::{AddressMode, I2c};
 use embedded_services::hid::{DeviceContainer, InvalidSizeError, Opcode, Response};
-use embedded_services::{GlobalRawMutex, buffer::*};
+use embedded_services::{buffer::*, GlobalRawMutex};
 use embedded_services::{error, hid, info, trace};
 
 use crate::Error;
@@ -214,9 +214,10 @@ impl<A: AddressMode + Copy, B: I2c<A>> Device<A, B> {
                 })?;
 
             let (response_size, constrained) = match cmd {
-                hid::Command::GetReport(_, _, Some(expected_payload_size)) => {
-                    (*expected_payload_size as usize + LENGTH_PREFIX_SIZE, true)
-                }
+                hid::Command::GetReport {
+                    expected_payload_size: Some(expected_payload_size),
+                    ..
+                } => (*expected_payload_size as usize + LENGTH_PREFIX_SIZE, true),
                 _ => (buffer_len, false),
             };
             let read_buf =
