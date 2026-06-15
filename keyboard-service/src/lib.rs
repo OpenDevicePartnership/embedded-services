@@ -44,7 +44,7 @@ impl<'a> HidReportSlice<'a> {
     /// Creates a new HID report slice from a raw byte slice.
     ///
     /// The slice should contain a single key modifiers byte followed by KRO usage codes.
-    pub fn new(bytes: &'a [u8]) -> Self {
+    pub const fn new(bytes: &'a [u8]) -> Self {
         Self(bytes)
     }
 
