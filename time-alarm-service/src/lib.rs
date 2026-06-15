@@ -104,16 +104,6 @@ impl<'hw> Timers<'hw> {
 
 // -------------------------------------------------
 
-/// Parameters required to initialize the time/alarm service.
-pub struct InitParams<'hw> {
-    pub backing_clock: &'hw mut dyn DatetimeClock,
-    pub tz_storage: &'hw mut dyn NvramStorage<'hw, u32>,
-    pub ac_expiration_storage: &'hw mut dyn NvramStorage<'hw, u32>,
-    pub ac_policy_storage: &'hw mut dyn NvramStorage<'hw, u32>,
-    pub dc_expiration_storage: &'hw mut dyn NvramStorage<'hw, u32>,
-    pub dc_policy_storage: &'hw mut dyn NvramStorage<'hw, u32>,
-}
-
 /// The main service implementation.  Users will interact with this via the Service struct, which is a thin wrapper around this that allows
 /// the client to provide storage for the service.
 struct ServiceInner<'hw> {
@@ -128,18 +118,25 @@ struct ServiceInner<'hw> {
 }
 
 impl<'hw> ServiceInner<'hw> {
-    fn new(init_params: InitParams<'hw>) -> Self {
+    fn new(
+        backing_clock: &'hw mut dyn DatetimeClock,
+        tz_storage: &'hw mut dyn NvramStorage<'hw, u32>,
+        ac_expiration_storage: &'hw mut dyn NvramStorage<'hw, u32>,
+        ac_policy_storage: &'hw mut dyn NvramStorage<'hw, u32>,
+        dc_expiration_storage: &'hw mut dyn NvramStorage<'hw, u32>,
+        dc_policy_storage: &'hw mut dyn NvramStorage<'hw, u32>,
+    ) -> Self {
         Self {
             clock_state: Mutex::new(RefCell::new(ClockState {
-                datetime_clock: init_params.backing_clock,
-                tz_data: TimeZoneData::new(init_params.tz_storage),
+                datetime_clock: backing_clock,
+                tz_data: TimeZoneData::new(tz_storage),
             })),
             power_source_signal: Signal::new(),
             timers: Timers::new(
-                init_params.ac_expiration_storage,
-                init_params.ac_policy_storage,
-                init_params.dc_expiration_storage,
-                init_params.dc_policy_storage,
+                ac_expiration_storage,
+                ac_policy_storage,
+                dc_expiration_storage,
+                dc_policy_storage,
             ),
             capabilities: {
                 // TODO [CONFIG] We could consider making some of these user-configurable, e.g. if we want to support devices that don't have a battery
@@ -374,15 +371,28 @@ impl<'hw> TimeAlarmService for Service<'hw> {
 
 impl<'hw> odp_service_common::runnable_service::Service<'hw> for Service<'hw> {
     type Runner = Runner<'hw>;
-    type ErrorType = DatetimeClockError;
-    type InitParams = InitParams<'hw>;
     type Resources = Resources<'hw>;
+}
 
-    async fn new(
+impl<'hw> Service<'hw> {
+    /// Initializes an instance of the time-alarm service.
+    pub async fn new(
         service_storage: &'hw mut Resources<'hw>,
-        init_params: Self::InitParams,
+        backing_clock: &'hw mut dyn DatetimeClock,
+        tz_storage: &'hw mut dyn NvramStorage<'hw, u32>,
+        ac_expiration_storage: &'hw mut dyn NvramStorage<'hw, u32>,
+        ac_policy_storage: &'hw mut dyn NvramStorage<'hw, u32>,
+        dc_expiration_storage: &'hw mut dyn NvramStorage<'hw, u32>,
+        dc_policy_storage: &'hw mut dyn NvramStorage<'hw, u32>,
     ) -> Result<(Self, Runner<'hw>), DatetimeClockError> {
-        let service = service_storage.inner.insert(ServiceInner::new(init_params));
+        let service = service_storage.inner.insert(ServiceInner::new(
+            backing_clock,
+            tz_storage,
+            ac_expiration_storage,
+            ac_policy_storage,
+            dc_expiration_storage,
+            dc_policy_storage,
+        ));
 
         // TODO [POWER_SOURCE] we need to subscribe to messages that tell us if we're on AC or DC power so we can decide which alarms to trigger, but those notifications are not yet implemented - revisit when they are.
         // TODO [POWER_SOURCE] if it's possible to learn which power source is active at init time, we should set that one active rather than defaulting to the AC timer.

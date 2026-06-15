@@ -17,14 +17,15 @@ async fn embassy_main(spawner: Spawner) {
     static BATTERY_DEVICE: StaticCell<bs::device::Device> = StaticCell::new();
     let device = BATTERY_DEVICE.init(bs::device::Device::new(Default::default()));
 
-    let battery_service = spawn_service!(
-        spawner,
-        battery_service::Service<'static, 1>,
-        battery_service::InitParams {
-            config: Default::default(),
-            devices: [device],
-        }
-    )
+    let battery_service = spawn_service!(spawner, battery_service::Service<'static, 1>, |resources| {
+        battery_service::Service::new(
+            resources,
+            battery_service::InitParams {
+                config: Default::default(),
+                devices: [device],
+            },
+        )
+    })
     .expect("Failed to initialize battery service");
 
     static BATTERY_WRAPPER: StaticCell<bs::mock::MockBattery> = StaticCell::new();

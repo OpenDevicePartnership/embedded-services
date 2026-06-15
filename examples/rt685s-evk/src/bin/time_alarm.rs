@@ -31,18 +31,17 @@ async fn main(spawner: embassy_executor::Spawner) {
     embedded_services::init().await;
     info!("services initialized");
 
-    let time_service = odp_service_common::spawn_service!(
-        spawner,
-        TimeAlarmServiceType,
-        time_alarm_service::InitParams {
-            backing_clock: dt_clock,
-            tz_storage: tz,
-            ac_expiration_storage: ac_expiration,
-            ac_policy_storage: ac_policy,
-            dc_expiration_storage: dc_expiration,
-            dc_policy_storage: dc_policy
-        }
-    )
+    let time_service = odp_service_common::spawn_service!(spawner, TimeAlarmServiceType, |resources| {
+        time_alarm_service::Service::new(
+            resources,
+            dt_clock,
+            tz,
+            ac_expiration,
+            ac_policy,
+            dc_expiration,
+            dc_policy,
+        )
+    })
     .expect("Failed to spawn time alarm service");
 
     use embedded_services::relay::mctp::impl_odp_mctp_relay_handler;

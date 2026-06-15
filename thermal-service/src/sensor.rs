@@ -310,13 +310,15 @@ impl<'hw, T: sensor::Driver, E: NonBlockingSender<sensor::Event> + 'hw, const SA
 {
     type Runner = Runner<'hw, T, E, SAMPLE_BUF_LEN>;
     type Resources = Resources<T, SAMPLE_BUF_LEN>;
-    type ErrorType = sensor::Error;
-    type InitParams = InitParams<'hw, T, E>;
+}
 
-    async fn new(
-        service_storage: &'hw mut Self::Resources,
-        init_params: Self::InitParams,
-    ) -> Result<(Self, Self::Runner), Self::ErrorType> {
+impl<'hw, T: sensor::Driver, E: NonBlockingSender<sensor::Event> + 'hw, const SAMPLE_BUF_LEN: usize>
+    Service<'hw, T, E, SAMPLE_BUF_LEN>
+{
+    pub async fn new(
+        service_storage: &'hw mut Resources<T, SAMPLE_BUF_LEN>,
+        init_params: InitParams<'hw, T, E>,
+    ) -> Result<(Self, Runner<'hw, T, E, SAMPLE_BUF_LEN>), sensor::Error> {
         let service = service_storage
             .inner
             .insert(ServiceInner::new(init_params.driver, init_params.config));

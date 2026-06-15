@@ -6,7 +6,7 @@
 mod test {
     use embassy_time::Timer;
     use embedded_mcu_hal::time::{Datetime, DatetimeClock};
-    use odp_service_common::runnable_service::{Service, ServiceRunner};
+    use odp_service_common::runnable_service::ServiceRunner;
 
     use time_alarm_service_interface::{AcpiDaylightSavingsTimeStatus, AcpiTimeZone, AcpiTimestamp, TimeAlarmService};
 
@@ -25,14 +25,12 @@ mod test {
 
         let (service, runner) = time_alarm_service::Service::new(
             &mut storage,
-            time_alarm_service::InitParams {
-                backing_clock: &mut clock,
-                tz_storage: &mut tz_storage,
-                ac_expiration_storage: &mut ac_exp_storage,
-                ac_policy_storage: &mut ac_pol_storage,
-                dc_expiration_storage: &mut dc_exp_storage,
-                dc_policy_storage: &mut dc_pol_storage,
-            },
+            &mut clock,
+            &mut tz_storage,
+            &mut ac_exp_storage,
+            &mut ac_pol_storage,
+            &mut dc_exp_storage,
+            &mut dc_pol_storage,
         )
         .await
         .unwrap();
@@ -75,14 +73,12 @@ mod test {
 
         let (service, runner) = time_alarm_service::Service::new(
             &mut storage,
-            time_alarm_service::InitParams {
-                backing_clock: &mut clock,
-                tz_storage: &mut tz_storage,
-                ac_expiration_storage: &mut ac_exp_storage,
-                ac_policy_storage: &mut ac_pol_storage,
-                dc_expiration_storage: &mut dc_exp_storage,
-                dc_policy_storage: &mut dc_pol_storage,
-            },
+            &mut clock,
+            &mut tz_storage,
+            &mut ac_exp_storage,
+            &mut ac_pol_storage,
+            &mut dc_exp_storage,
+            &mut dc_pol_storage,
         )
         .await
         .unwrap();

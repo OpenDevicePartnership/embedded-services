@@ -19,7 +19,7 @@
 use battery_service as bs;
 use bq40z50_rx::{BQ40Z50Error, Bq40z50R5};
 use embedded_batteries_async::smart_battery::{BatteryModeFields, SmartBattery};
-use odp_service_common::runnable_service::{Service, ServiceRunner};
+use odp_service_common::runnable_service::ServiceRunner;
 use static_cell::StaticCell;
 
 /// Platform specific battery errors.

@@ -404,13 +404,21 @@ impl<
 {
     type Runner = Runner<'hw, T, S, E, SAMPLE_BUF_LEN>;
     type Resources = Resources<T, SAMPLE_BUF_LEN>;
-    type ErrorType = fan::Error;
-    type InitParams = InitParams<'hw, T, S, E>;
+}
 
-    async fn new(
-        service_storage: &'hw mut Self::Resources,
-        init_params: Self::InitParams,
-    ) -> Result<(Self, Self::Runner), Self::ErrorType> {
+impl<
+    'hw,
+    T: fan::Driver,
+    S: sensor::SensorService + 'hw,
+    E: NonBlockingSender<fan::Event> + 'hw,
+    const SAMPLE_BUF_LEN: usize,
+> Service<'hw, T, S, E, SAMPLE_BUF_LEN>
+{
+    /// Initializes an instance of the fan service.
+    pub async fn new(
+        service_storage: &'hw mut Resources<T, SAMPLE_BUF_LEN>,
+        init_params: InitParams<'hw, T, S, E>,
+    ) -> Result<(Self, Runner<'hw, T, S, E, SAMPLE_BUF_LEN>), fan::Error> {
         let service = service_storage
             .inner
             .insert(ServiceInner::new(init_params.driver, init_params.config));

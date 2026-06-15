@@ -36,29 +36,28 @@ async fn run(spawner: Spawner) {
     let event_senders = SENSOR_SENDERS.init([sensor_event_channel.sender()]);
 
     // Spawn the sensor service which will begin running and generating events
-    let sensor_service = odp_service_common::spawn_service!(
-        spawner,
-        MockSensorService,
-        ts::sensor::InitParams {
-            driver: ts::mock::sensor::MockSensor::new(),
-            config: ts::mock::sensor::MockSensor::config(),
-            event_senders,
-        }
-    )
-    .expect("Failed to spawn sensor service");
+    let sensor_service =
+        odp_service_common::spawn_service!(spawner, MockSensorService, |resources| ts::sensor::Service::new(
+            resources,
+            ts::sensor::InitParams {
+                driver: ts::mock::sensor::MockSensor::new(),
+                config: ts::mock::sensor::MockSensor::config(),
+                event_senders,
+            },
+        ))
+        .expect("Failed to spawn sensor service");
 
     // Spawn the fan service which uses the above sensor service for automatic speed control
     // In this example, we use an empty event sender list since the fan won't generate any events
-    let fan_service = odp_service_common::spawn_service!(
-        spawner,
-        MockFanService,
+    let fan_service = odp_service_common::spawn_service!(spawner, MockFanService, |resources| ts::fan::Service::new(
+        resources,
         ts::fan::InitParams {
             driver: ts::mock::fan::MockFan::new(),
             config: ts::mock::fan::MockFan::config(),
             sensor_service,
             event_senders: &mut [],
-        }
-    )
+        },
+    ))
     .expect("Failed to spawn fan service");
 
     // The thermal service accepts slices of associated sensors and fans,
