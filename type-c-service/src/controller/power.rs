@@ -11,7 +11,8 @@ use power_policy_interface::{
 };
 use type_c_interface::controller::power::SystemPowerStateStatus;
 
-use crate::{controller::config::UnconstrainedSink, util::power_policy_error_from_pd_error};
+use crate::controller::config::UnconstrainedSink;
+use type_c_interface::util::power_policy_error_from_pd_error;
 
 use super::*;
 
