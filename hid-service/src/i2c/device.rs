@@ -258,7 +258,7 @@ impl<A: AddressMode + Copy, B: I2c<A>> Device<A, B> {
                         expected: LENGTH_PREFIX_SIZE,
                         actual: read_buf.len(),
                     })))?;
-                if actual_frame_len != response_size {
+                if actual_frame_len > response_size {
                     error!(
                         "Length mismatch: declared={} expected={}",
                         actual_frame_len, response_size
