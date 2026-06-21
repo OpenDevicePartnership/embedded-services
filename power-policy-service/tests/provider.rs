@@ -11,6 +11,7 @@ mod common;
 
 use common::{LOW_POWER, ServiceMutex};
 use power_policy_interface::service::event::Event as ServiceEvent;
+use power_policy_service::service::customization::DefaultCustomization;
 
 use crate::common::DeviceType;
 use crate::common::HIGH_POWER;
@@ -24,9 +25,11 @@ const PER_CALL_TIMEOUT: Duration = Duration::from_millis(1000);
 struct TestSingle;
 
 impl Test for TestSingle {
+    type Customization = DefaultCustomization;
+
     async fn run<'a>(
         &mut self,
-        _service: &ServiceMutex<'a, 'a>,
+        _service: &ServiceMutex<'a, 'a, Self::Customization>,
         service_receiver: DynamicReceiver<'a, ServiceEvent<'a, DeviceType<'a>>>,
         device0: &DeviceType<'a>,
         device0_signal: &Signal<GlobalRawMutex, (usize, FnCall)>,
@@ -82,9 +85,11 @@ impl Test for TestSingle {
 struct TestUpgrade;
 
 impl Test for TestUpgrade {
+    type Customization = DefaultCustomization;
+
     async fn run<'a>(
         &mut self,
-        service: &ServiceMutex<'a, 'a>,
+        service: &ServiceMutex<'a, 'a, Self::Customization>,
         service_receiver: DynamicReceiver<'a, ServiceEvent<'a, DeviceType<'a>>>,
         device0: &DeviceType<'a>,
         device0_signal: &Signal<GlobalRawMutex, (usize, FnCall)>,
@@ -239,9 +244,11 @@ impl Test for TestUpgrade {
 struct TestDisconnect;
 
 impl Test for TestDisconnect {
+    type Customization = DefaultCustomization;
+
     async fn run<'a>(
         &mut self,
-        service: &ServiceMutex<'a, 'a>,
+        service: &ServiceMutex<'a, 'a, Self::Customization>,
         service_receiver: DynamicReceiver<'a, ServiceEvent<'a, DeviceType<'a>>>,
         device0: &DeviceType<'a>,
         device0_signal: &Signal<GlobalRawMutex, (usize, FnCall)>,
@@ -297,15 +304,21 @@ impl Test for TestDisconnect {
 
 #[tokio::test]
 async fn run_test_single() {
-    run_test(DEFAULT_TIMEOUT, TestSingle, Default::default()).await;
+    run_test(DEFAULT_TIMEOUT, TestSingle, Default::default(), DefaultCustomization).await;
 }
 
 #[tokio::test]
 async fn run_test_upgrade() {
-    run_test(DEFAULT_TIMEOUT, TestUpgrade, Default::default()).await;
+    run_test(DEFAULT_TIMEOUT, TestUpgrade, Default::default(), DefaultCustomization).await;
 }
 
 #[tokio::test]
 async fn run_test_disconnect() {
-    run_test(DEFAULT_TIMEOUT, TestDisconnect, Default::default()).await;
+    run_test(
+        DEFAULT_TIMEOUT,
+        TestDisconnect,
+        Default::default(),
+        DefaultCustomization,
+    )
+    .await;
 }

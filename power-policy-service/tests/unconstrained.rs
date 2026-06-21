@@ -12,6 +12,7 @@ mod common;
 use common::LOW_POWER;
 use power_policy_interface::service::UnconstrainedState;
 use power_policy_interface::service::event::Event as ServiceEvent;
+use power_policy_service::service::customization::DefaultCustomization;
 
 use crate::common::HIGH_POWER;
 use crate::common::{
@@ -26,9 +27,11 @@ const PER_CALL_TIMEOUT: Duration = Duration::from_millis(1000);
 struct TestUnconstrained;
 
 impl Test for TestUnconstrained {
+    type Customization = DefaultCustomization;
+
     async fn run<'a>(
         &mut self,
-        _service: &ServiceMutex<'a, 'a>,
+        _service: &ServiceMutex<'a, 'a, Self::Customization>,
         service_receiver: DynamicReceiver<'a, ServiceEvent<'a, DeviceType<'a>>>,
         device0: &DeviceType<'a>,
         device0_signal: &Signal<GlobalRawMutex, (usize, FnCall)>,
@@ -173,5 +176,11 @@ impl Test for TestUnconstrained {
 
 #[tokio::test]
 async fn run_test_unconstrained() {
-    run_test(DEFAULT_TIMEOUT, TestUnconstrained, Default::default()).await;
+    run_test(
+        DEFAULT_TIMEOUT,
+        TestUnconstrained,
+        Default::default(),
+        DefaultCustomization,
+    )
+    .await;
 }

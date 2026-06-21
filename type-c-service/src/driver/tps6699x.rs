@@ -44,9 +44,8 @@ use type_c_interface::controller::pd::Pd;
 use type_c_interface::controller::retimer::Retimer;
 use type_c_interface::port::event::PortEventBitfield;
 
-use crate::util::{
-    basic_fw_update_error_from_pd_error, power_capability_from_current, power_capability_try_from_contract,
-};
+use crate::util::basic_fw_update_error_from_pd_error;
+use type_c_interface::util::{power_capability_from_current, power_capability_try_from_contract};
 
 type Updater<'a, M, B> = BorrowedUpdaterInProgress<tps6699x_drv::Tps6699x<'a, M, B>>;
 

@@ -18,6 +18,7 @@ use std_examples::type_c::mock_controller::Port;
 use std_examples::type_c::mock_controller::{self, InterruptReceiver};
 use type_c_interface::port::event::PortEventBitfield;
 use type_c_interface::service::event::PortEventData as ServicePortEventData;
+use type_c_interface::util::power_capability_from_current;
 use type_c_service::controller::event_receiver::InterruptReceiver as _;
 use type_c_service::controller::event_receiver::{EventReceiver as PortEventReceiver, PortEventSplitter};
 use type_c_service::controller::macros::PortComponents;
@@ -25,7 +26,6 @@ use type_c_service::controller::state::SharedState;
 use type_c_service::define_controller_port_static_cell_channel;
 use type_c_service::service::Service;
 use type_c_service::service::config::Config;
-use type_c_service::util::power_capability_from_current;
 
 const DELAY_MS: u64 = 1000;
 

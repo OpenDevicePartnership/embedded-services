@@ -3,6 +3,7 @@ use core::ptr;
 
 pub mod config;
 pub mod consumer;
+pub mod customization;
 pub mod provider;
 pub mod registration;
 pub mod task;
@@ -27,18 +28,18 @@ use crate::service::registration::Registration;
 const MAX_CONNECTED_PROVIDERS: usize = 4;
 
 #[derive(Clone)]
-struct InternalState<'device, PSU: Lockable>
+pub struct InternalState<'device, PSU: Lockable>
 where
     PSU::Inner: Psu,
 {
     /// Current consumer state, if any
-    current_consumer_state: Option<consumer::AvailableConsumer<'device, PSU>>,
+    pub current_consumer_state: Option<consumer::AvailableConsumer<'device, PSU>>,
     /// Current provider global state
-    current_provider_state: provider::State,
+    pub current_provider_state: provider::State,
     /// System unconstrained power
-    unconstrained: UnconstrainedState,
+    pub unconstrained: UnconstrainedState,
     /// Connected providers
-    connected_providers: heapless::index_set::FnvIndexSet<usize, MAX_CONNECTED_PROVIDERS>,
+    pub connected_providers: heapless::index_set::FnvIndexSet<usize, MAX_CONNECTED_PROVIDERS>,
 }
 
 impl<PSU: Lockable> Default for InternalState<'_, PSU>
@@ -56,22 +57,40 @@ where
 }
 
 /// Power policy service
-pub struct Service<'device, Reg: Registration<'device>> {
+pub struct Service<
+    'device,
+    Reg: Registration<'device>,
+    Customization: customization::Customization = customization::DefaultCustomization,
+> {
     /// Service registration
     registration: Reg,
     /// State
     state: InternalState<'device, Reg::Psu>,
     /// Config
     config: config::Config,
+    /// Customization
+    customization: Customization,
 }
 
-impl<'device, Reg: Registration<'device>> Service<'device, Reg> {
+impl<'device, Reg: Registration<'device>, Customization: customization::Customization + Default>
+    Service<'device, Reg, Customization>
+{
     /// Create a new power policy
     pub fn new(registration: Reg, config: config::Config) -> Self {
+        Self::new_with_customization(registration, config, Customization::default())
+    }
+}
+
+impl<'device, Reg: Registration<'device>, Customization: customization::Customization>
+    Service<'device, Reg, Customization>
+{
+    /// Create a new power policy with customization
+    pub fn new_with_customization(registration: Reg, config: config::Config, customization: Customization) -> Self {
         Self {
             registration,
             state: InternalState::default(),
             config,
+            customization,
         }
     }
 
