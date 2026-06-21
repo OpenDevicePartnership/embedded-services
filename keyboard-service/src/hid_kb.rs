@@ -5,12 +5,12 @@ use embassy_sync::channel::Channel;
 use embassy_sync::once_lock::OnceLock;
 use embassy_sync::signal::Signal;
 use embedded_hal::digital::OutputPin;
+use embedded_services::GlobalRawMutex;
 use embedded_services::buffer::SharedRef;
 use embedded_services::comms;
 use embedded_services::error;
 use embedded_services::hid;
 use embedded_services::ipc::deferred as ipc;
-use embedded_services::GlobalRawMutex;
 use hid_service::i2c::I2cSlaveAsync;
 use static_cell::StaticCell;
 
