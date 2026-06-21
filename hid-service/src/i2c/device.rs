@@ -1,10 +1,10 @@
 use core::borrow::BorrowMut;
 
 use embassy_sync::mutex::Mutex;
-use embassy_time::{with_timeout, Duration};
+use embassy_time::{Duration, with_timeout};
 use embedded_hal_async::i2c::{AddressMode, I2c};
 use embedded_services::hid::{DeviceContainer, InvalidSizeError, Opcode, Response};
-use embedded_services::{buffer::*, GlobalRawMutex};
+use embedded_services::{GlobalRawMutex, buffer::*};
 use embedded_services::{error, hid, info, trace};
 
 use crate::Error;
@@ -250,7 +250,7 @@ impl<A: AddressMode + Copy, B: I2c<A>> Device<A, B> {
                 Error::Bus(e)
             })?;
 
-            if constrained {
+            let returned_len = if constrained {
                 let actual_frame_len = read_buf
                     .first_chunk::<LENGTH_PREFIX_SIZE>()
                     .map(|b| u16::from_le_bytes(*b) as usize)
@@ -258,20 +258,23 @@ impl<A: AddressMode + Copy, B: I2c<A>> Device<A, B> {
                         expected: LENGTH_PREFIX_SIZE,
                         actual: read_buf.len(),
                     })))?;
-                if actual_frame_len > response_size {
+                if actual_frame_len < LENGTH_PREFIX_SIZE || actual_frame_len > response_size {
                     error!(
-                        "Length mismatch: declared={} expected={}",
-                        actual_frame_len, response_size
+                        "Length mismatch: declared={} expected<={} min={}",
+                        actual_frame_len, response_size, LENGTH_PREFIX_SIZE
                     );
                     return Err(Error::Hid(hid::Error::InvalidSize(InvalidSizeError {
                         expected: response_size,
                         actual: actual_frame_len,
                     })));
                 }
-            }
+                actual_frame_len
+            } else {
+                response_size
+            };
 
             Ok(Some(Response::FeatureReport(
-                self.buffer.reference().slice(0..response_size).map_err(Error::Buffer)?,
+                self.buffer.reference().slice(0..returned_len).map_err(Error::Buffer)?,
             )))
         } else {
             let len = cmd
