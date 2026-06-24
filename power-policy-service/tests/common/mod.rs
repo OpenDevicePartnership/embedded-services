@@ -11,7 +11,6 @@ use embassy_sync::{
     channel::{Channel, DynamicReceiver, DynamicSender},
     mutex::Mutex,
     once_lock::OnceLock,
-    signal::Signal,
 };
 use embassy_time::{Duration, with_timeout};
 use embedded_services::GlobalRawMutex;
@@ -21,7 +20,7 @@ use power_policy_interface::{
     service::{UnconstrainedState, event::Event as ServiceEvent},
 };
 use power_policy_interface_test_mocks::charger::ChargerType;
-use power_policy_interface_test_mocks::psu::{FnCall, Mock};
+use power_policy_interface_test_mocks::psu::Mock;
 use power_policy_service::service::{Service, config::Config, customization};
 use power_policy_service::{psu::PsuEventReceivers, service::registration::ArrayRegistration};
 
@@ -43,9 +42,13 @@ pub const HIGH_POWER: PowerCapability = PowerCapability {
 
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(15);
 
+/// Default timeout for waiting for the power policy task to process events.
+/// Used in tests where no service event is expected after an action.
+pub const DEFAULT_PER_CALL_TIMEOUT: Duration = Duration::from_millis(100);
+
 const EVENT_CHANNEL_SIZE: usize = 4;
 
-pub type DeviceType<'a> = Mutex<GlobalRawMutex, Mock<'a, DynamicSender<'a, EventData>>>;
+pub type DeviceType<'a> = Mutex<GlobalRawMutex, Mock<DynamicSender<'a, EventData>>>;
 pub type ServiceType<'device, 'sender, Customization> = Service<
     'device,
     ArrayRegistration<
@@ -54,7 +57,7 @@ pub type ServiceType<'device, 'sender, Customization> = Service<
         2,
         DynamicSender<'sender, ServiceEvent<'device, DeviceType<'device>>>,
         1,
-        ChargerType<'device>,
+        ChargerType<DynamicSender<'device, power_policy_interface::charger::event::EventData>>,
         0,
     >,
     Customization,
@@ -64,7 +67,7 @@ pub type ServiceMutex<'device, 'sender, Customization> =
     Mutex<GlobalRawMutex, ServiceType<'device, 'sender, Customization>>;
 
 async fn power_policy_task<'device, 'sender, const N: usize, Customization: customization::Customization>(
-    completion_signal: &'device Signal<GlobalRawMutex, ()>,
+    completion_signal: &'device embassy_sync::signal::Signal<GlobalRawMutex, ()>,
     power_policy: &ServiceMutex<'device, 'sender, Customization>,
     mut event_receivers: PsuEventReceivers<'device, N, DeviceType<'device>, DynamicReceiver<'device, EventData>>,
 ) {
@@ -85,9 +88,7 @@ pub trait Test {
         service: &'a ServiceMutex<'a, 'a, Self::Customization>,
         service_receiver: DynamicReceiver<'a, ServiceEvent<'a, DeviceType<'a>>>,
         device0: &'a DeviceType<'a>,
-        device0_signal: &'a Signal<GlobalRawMutex, (usize, FnCall)>,
         device1: &'a DeviceType<'a>,
-        device1_signal: &'a Signal<GlobalRawMutex, (usize, FnCall)>,
     ) -> impl Future<Output = ()>;
 }
 
@@ -101,19 +102,17 @@ pub async fn run_test<T: Test>(timeout: Duration, mut test: T, config: Config, c
     let _ = env_logger::builder().filter_level(log::LevelFilter::Info).try_init();
     embedded_services::init().await;
 
-    let device0_signal = Signal::new();
     let device0_event_channel: Channel<GlobalRawMutex, EventData, EVENT_CHANNEL_SIZE> = Channel::new();
     let device0_sender = device0_event_channel.dyn_sender();
     let device0_receiver = device0_event_channel.dyn_receiver();
-    let device0 = Mutex::new(Mock::new("PSU0", device0_sender, &device0_signal));
+    let device0 = Mutex::new(Mock::new("PSU0", device0_sender));
 
-    let device1_signal = Signal::new();
     let device1_event_channel: Channel<GlobalRawMutex, EventData, EVENT_CHANNEL_SIZE> = Channel::new();
     let device1_sender = device1_event_channel.dyn_sender();
     let device1_receiver = device1_event_channel.dyn_receiver();
-    let device1 = Mutex::new(Mock::new("PSU1", device1_sender, &device1_signal));
+    let device1 = Mutex::new(Mock::new("PSU1", device1_sender));
 
-    let completion_signal = Signal::new();
+    let completion_signal = embassy_sync::signal::Signal::new();
 
     // For simplicity, Test::run is only generic over a single lifetime. But this causes issues with the drop checker because
     // the device lifetime doesn't outlive the channel lifetime from its perspective. Use ManuallyDrop to work around this.
@@ -143,15 +142,7 @@ pub async fn run_test<T: Test>(timeout: Duration, mut test: T, config: Config, c
                 PsuEventReceivers::new([&device0, &device1], [device0_receiver, device1_receiver]),
             ),
             async {
-                test.run(
-                    &power_policy,
-                    service_receiver,
-                    &device0,
-                    &device0_signal,
-                    &device1,
-                    &device1_signal,
-                )
-                .await;
+                test.run(&power_policy, service_receiver, &device0, &device1).await;
                 completion_signal.signal(());
             },
         ),

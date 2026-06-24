@@ -1,8 +1,8 @@
 //! PSU mock implementation for testing
 
-use embassy_sync::signal::Signal;
-use embedded_services::{GlobalRawMutex, event::NonBlockingSender, named::Named};
-use log::info;
+use std::collections::VecDeque;
+
+use embedded_services::{event::NonBlockingSender, named::Named};
 use power_policy_interface::{
     capability::{
         ConsumerDisconnect, ConsumerPowerCapability, PowerCapability, ProviderFlags, ProviderPowerCapability,
@@ -10,38 +10,40 @@ use power_policy_interface::{
     psu::{Error, Psu, State, event::EventData},
 };
 
+/// Contains a PSU function call and its arguments
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FnCall {
     ConnectConsumer(ConsumerPowerCapability),
     ConnectProvider(ProviderPowerCapability),
     Disconnect,
-    Reset,
 }
 
-pub struct Mock<'a, S: NonBlockingSender<EventData>> {
+/// Mock PSU for use in tests
+pub struct Mock<S: NonBlockingSender<EventData>> {
     sender: S,
-    fn_call: &'a Signal<GlobalRawMutex, (usize, FnCall)>,
-    pub state: State,
     name: &'static str,
+    pub state: State,
+    /// Recorded function calls
+    pub fn_calls: VecDeque<FnCall>,
+    /// Next results to return for [`Psu::connect_consumer`]
+    pub next_result_connect_consumer: VecDeque<Result<(), Error>>,
+    /// Next results to return for [`Psu::connect_provider`]
+    pub next_result_connect_provider: VecDeque<Result<(), Error>>,
+    /// Next results to return for [`Psu::disconnect`]
+    pub next_result_disconnect: VecDeque<Result<(), Error>>,
 }
 
-impl<'a, S: NonBlockingSender<EventData>> Mock<'a, S> {
-    pub fn new(name: &'static str, sender: S, fn_call: &'a Signal<GlobalRawMutex, (usize, FnCall)>) -> Self {
+impl<S: NonBlockingSender<EventData>> Mock<S> {
+    pub fn new(name: &'static str, sender: S) -> Self {
         Self {
             name,
             sender,
-            fn_call,
             state: Default::default(),
+            fn_calls: VecDeque::new(),
+            next_result_connect_consumer: VecDeque::new(),
+            next_result_connect_provider: VecDeque::new(),
+            next_result_disconnect: VecDeque::new(),
         }
-    }
-
-    fn record_fn_call(&mut self, fn_call: FnCall) {
-        let num_fn_calls = self
-            .fn_call
-            .try_take()
-            .map(|(num_fn_calls, _)| num_fn_calls)
-            .unwrap_or(0);
-        self.fn_call.signal((num_fn_calls + 1, fn_call));
     }
 
     pub async fn simulate_consumer_connection(&mut self, capability: ConsumerPowerCapability) {
@@ -102,23 +104,41 @@ impl<'a, S: NonBlockingSender<EventData>> Mock<'a, S> {
     }
 }
 
-impl<'a, S: NonBlockingSender<EventData>> Psu for Mock<'a, S> {
+impl<S: NonBlockingSender<EventData>> Psu for Mock<S> {
     async fn connect_consumer(&mut self, capability: ConsumerPowerCapability) -> Result<(), Error> {
-        info!("Connect consumer {:#?}", capability);
-        self.record_fn_call(FnCall::ConnectConsumer(capability));
-        self.state.connect_consumer(capability)
+        self.fn_calls.push_back(FnCall::ConnectConsumer(capability));
+        let result = self
+            .next_result_connect_consumer
+            .pop_front()
+            .expect("next_result_connect_consumer not set");
+        if result.is_ok() {
+            self.state.connect_consumer(capability).unwrap();
+        }
+        result
     }
 
     async fn connect_provider(&mut self, capability: ProviderPowerCapability) -> Result<(), Error> {
-        info!("Connect provider: {:#?}", capability);
-        self.record_fn_call(FnCall::ConnectProvider(capability));
-        self.state.connect_provider(capability)
+        self.fn_calls.push_back(FnCall::ConnectProvider(capability));
+        let result = self
+            .next_result_connect_provider
+            .pop_front()
+            .expect("next_result_connect_provider not set");
+        if result.is_ok() {
+            self.state.connect_provider(capability).unwrap();
+        }
+        result
     }
 
     async fn disconnect(&mut self) -> Result<(), Error> {
-        info!("Disconnect");
-        self.record_fn_call(FnCall::Disconnect);
-        self.state.disconnect(false)
+        self.fn_calls.push_back(FnCall::Disconnect);
+        let result = self
+            .next_result_disconnect
+            .pop_front()
+            .expect("next_result_disconnect not set");
+        if result.is_ok() {
+            self.state.disconnect(false).unwrap();
+        }
+        result
     }
 
     fn state(&self) -> &State {
@@ -130,7 +150,7 @@ impl<'a, S: NonBlockingSender<EventData>> Psu for Mock<'a, S> {
     }
 }
 
-impl<'a, S: NonBlockingSender<EventData>> Named for Mock<'a, S> {
+impl<S: NonBlockingSender<EventData>> Named for Mock<S> {
     fn name(&self) -> &'static str {
         self.name
     }

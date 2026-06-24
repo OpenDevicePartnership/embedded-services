@@ -10,7 +10,6 @@ repository.workspace = true
 embassy-sync.workspace = true
 embedded-batteries-async.workspace = true
 embedded-services = { workspace = true }
-log = { workspace = true }
 power-policy-interface = { workspace = true }
 
 [lints]

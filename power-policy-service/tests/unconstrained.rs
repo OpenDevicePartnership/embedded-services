@@ -1,9 +1,5 @@
 #![allow(clippy::unwrap_used)]
 use embassy_sync::channel::DynamicReceiver;
-use embassy_sync::signal::Signal;
-use embassy_time::TimeoutError;
-use embassy_time::{Duration, with_timeout};
-use embedded_services::GlobalRawMutex;
 use embedded_services::info;
 use power_policy_interface::capability::{ConsumerFlags, ConsumerPowerCapability};
 
@@ -19,10 +15,8 @@ use crate::common::{
     DEFAULT_TIMEOUT, assert_consumer_connected, assert_consumer_disconnected, assert_no_event, assert_unconstrained,
     run_test,
 };
-use power_policy_interface_test_mocks::psu::FnCall;
 use crate::common::{DeviceType, ServiceMutex, Test};
-
-const PER_CALL_TIMEOUT: Duration = Duration::from_millis(1000);
+use power_policy_interface_test_mocks::psu::FnCall;
 
 /// Test unconstrained consumer flow with multiple devices.
 struct TestUnconstrained;
@@ -35,30 +29,17 @@ impl Test for TestUnconstrained {
         _service: &ServiceMutex<'a, 'a, Self::Customization>,
         service_receiver: DynamicReceiver<'a, ServiceEvent<'a, DeviceType<'a>>>,
         device0: &DeviceType<'a>,
-        device0_signal: &Signal<GlobalRawMutex, (usize, FnCall)>,
         device1: &DeviceType<'a>,
-        device1_signal: &Signal<GlobalRawMutex, (usize, FnCall)>,
     ) {
         info!("Running test_unconstrained");
         {
             // Connect device0, without unconstrained,
+            device0.lock().await.next_result_connect_consumer.push_back(Ok(()));
             device0
                 .lock()
                 .await
                 .simulate_consumer_connection(LOW_POWER.into())
                 .await;
-
-            assert_eq!(
-                with_timeout(PER_CALL_TIMEOUT, device0_signal.wait()).await.unwrap(),
-                (
-                    1,
-                    FnCall::ConnectConsumer(ConsumerPowerCapability {
-                        capability: LOW_POWER,
-                        flags: ConsumerFlags::none(),
-                    })
-                )
-            );
-            device0_signal.reset();
 
             assert_consumer_connected(
                 service_receiver,
@@ -70,12 +51,24 @@ impl Test for TestUnconstrained {
             )
             .await;
 
+            let mut device = device0.lock().await;
+            assert_eq!(
+                device.fn_calls.pop_front().unwrap(),
+                FnCall::ConnectConsumer(ConsumerPowerCapability {
+                    capability: LOW_POWER,
+                    flags: ConsumerFlags::none(),
+                })
+            );
+            assert!(device.fn_calls.is_empty());
+
             // Should not have any unconstrained events
             assert!(service_receiver.try_receive().is_err());
         }
 
         {
             // Connect device1 with unconstrained at HIGH_POWER to force power policy to select this consumer.
+            device0.lock().await.next_result_disconnect.push_back(Ok(()));
+            device1.lock().await.next_result_connect_consumer.push_back(Ok(()));
             device1
                 .lock()
                 .await
@@ -84,24 +77,6 @@ impl Test for TestUnconstrained {
                     flags: ConsumerFlags::none().with_unconstrained_power(),
                 })
                 .await;
-
-            assert_eq!(
-                with_timeout(PER_CALL_TIMEOUT, device0_signal.wait()).await.unwrap(),
-                (1, FnCall::Disconnect)
-            );
-            device0_signal.reset();
-
-            assert_eq!(
-                with_timeout(PER_CALL_TIMEOUT, device1_signal.wait()).await.unwrap(),
-                (
-                    1,
-                    FnCall::ConnectConsumer(ConsumerPowerCapability {
-                        capability: HIGH_POWER,
-                        flags: ConsumerFlags::none().with_unconstrained_power(),
-                    })
-                )
-            );
-            device1_signal.reset();
 
             // Should receive a disconnect event from device0 first
             assert_consumer_disconnected(service_receiver, device0).await;
@@ -124,29 +99,29 @@ impl Test for TestUnconstrained {
                 },
             )
             .await;
+
+            {
+                let mut device0 = device0.lock().await;
+                assert_eq!(device0.fn_calls.pop_front().unwrap(), FnCall::Disconnect);
+                assert!(device0.fn_calls.is_empty());
+            }
+            {
+                let mut device1 = device1.lock().await;
+                assert_eq!(
+                    device1.fn_calls.pop_front().unwrap(),
+                    FnCall::ConnectConsumer(ConsumerPowerCapability {
+                        capability: HIGH_POWER,
+                        flags: ConsumerFlags::none().with_unconstrained_power(),
+                    })
+                );
+                assert!(device1.fn_calls.is_empty());
+            }
         }
 
         {
             // Test detach device1, unconstrained state should change
+            device0.lock().await.next_result_connect_consumer.push_back(Ok(()));
             device1.lock().await.simulate_detach().await;
-
-            // Power policy shouldn't call any functions on detach so we'll timeout
-            assert_eq!(
-                with_timeout(PER_CALL_TIMEOUT, device1_signal.wait()).await,
-                Err(TimeoutError)
-            );
-
-            assert_eq!(
-                with_timeout(PER_CALL_TIMEOUT, device0_signal.wait()).await.unwrap(),
-                (
-                    1,
-                    FnCall::ConnectConsumer(ConsumerPowerCapability {
-                        capability: LOW_POWER,
-                        flags: ConsumerFlags::none(),
-                    })
-                )
-            );
-            device0_signal.reset();
 
             // Should receive a disconnect event from device1 first
             assert_consumer_disconnected(service_receiver, device1).await;
@@ -169,6 +144,19 @@ impl Test for TestUnconstrained {
                 },
             )
             .await;
+
+            // Power policy shouldn't call any functions on device1 for detach
+            assert!(device1.lock().await.fn_calls.is_empty());
+
+            let mut device0 = device0.lock().await;
+            assert_eq!(
+                device0.fn_calls.pop_front().unwrap(),
+                FnCall::ConnectConsumer(ConsumerPowerCapability {
+                    capability: LOW_POWER,
+                    flags: ConsumerFlags::none(),
+                })
+            );
+            assert!(device0.fn_calls.is_empty());
         }
 
         assert_no_event(service_receiver);

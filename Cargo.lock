@@ -1546,7 +1546,6 @@ dependencies = [
  "embassy-sync",
  "embedded-batteries-async",
  "embedded-services",
- "log",
  "power-policy-interface",
 ]
 
