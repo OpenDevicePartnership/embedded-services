@@ -17,8 +17,9 @@ use power_policy_service::service::customization::DefaultCustomization;
 use crate::common::HIGH_POWER;
 use crate::common::{
     DEFAULT_TIMEOUT, assert_consumer_connected, assert_consumer_disconnected, assert_no_event, assert_unconstrained,
-    mock::FnCall, run_test,
+    run_test,
 };
+use power_policy_interface_test_mocks::psu::FnCall;
 use crate::common::{DeviceType, ServiceMutex, Test};
 
 const PER_CALL_TIMEOUT: Duration = Duration::from_millis(1000);

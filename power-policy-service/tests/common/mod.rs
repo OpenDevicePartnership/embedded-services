@@ -20,14 +20,10 @@ use power_policy_interface::{
     capability::{ConsumerDisconnect, ConsumerPowerCapability, PowerCapability, ProviderPowerCapability},
     service::{UnconstrainedState, event::Event as ServiceEvent},
 };
+use power_policy_interface_test_mocks::charger::ChargerType;
+use power_policy_interface_test_mocks::psu::{FnCall, Mock};
 use power_policy_service::service::{Service, config::Config, customization};
 use power_policy_service::{psu::PsuEventReceivers, service::registration::ArrayRegistration};
-
-pub mod mock;
-
-use mock::Mock;
-
-use crate::common::mock::{ChargerType, FnCall};
 
 pub const MINIMAL_POWER: PowerCapability = PowerCapability {
     voltage_mv: 5000,

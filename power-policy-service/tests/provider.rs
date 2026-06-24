@@ -17,7 +17,8 @@ use crate::common::DeviceType;
 use crate::common::HIGH_POWER;
 use crate::common::Test;
 use crate::common::assert_no_event;
-use crate::common::{DEFAULT_TIMEOUT, assert_provider_connected, assert_provider_disconnected, mock::FnCall, run_test};
+use crate::common::{DEFAULT_TIMEOUT, assert_provider_connected, assert_provider_disconnected, run_test};
+use power_policy_interface_test_mocks::psu::FnCall;
 
 const PER_CALL_TIMEOUT: Duration = Duration::from_millis(1000);
 

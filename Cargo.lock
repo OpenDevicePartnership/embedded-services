@@ -1540,6 +1540,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "power-policy-interface-test-mocks"
+version = "0.1.0"
+dependencies = [
+ "embassy-sync",
+ "embedded-batteries-async",
+ "embedded-services",
+ "log",
+ "power-policy-interface",
+]
+
+[[package]]
 name = "power-policy-service"
 version = "0.1.0"
 dependencies = [
@@ -1554,6 +1565,7 @@ dependencies = [
  "heapless 0.9.3",
  "log",
  "power-policy-interface",
+ "power-policy-interface-test-mocks",
  "tokio",
 ]
 
