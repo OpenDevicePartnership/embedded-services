@@ -9,7 +9,29 @@ repository.workspace = true
 [dependencies]
 embedded-services = { workspace = true }
 embedded-usb-pd = { workspace = true }
+power-policy-interface = { workspace = true }
 type-c-interface = { workspace = true }
+defmt = { workspace = true, optional = true }
+log = { workspace = true, optional = true }
+
+[features]
+default = []
+defmt = [
+    "dep:defmt",
+    "embedded-services/defmt",
+    "embedded-usb-pd/defmt",
+    "power-policy-interface/defmt",
+    "type-c-interface/defmt",
+]
+log = ["dep:log", "embedded-services/log", "type-c-interface/log"]
+
+[dev-dependencies]
+embassy-sync = { workspace = true, features = ["std"] }
+critical-section = { workspace = true, features = ["std"] }
+tokio = { workspace = true, features = ["rt", "macros", "time"] }
 
 [lints]
 workspace = true
+
+[package.metadata.cargo-machete]
+ignored = ["defmt", "log"]

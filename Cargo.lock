@@ -2200,6 +2200,21 @@ dependencies = [
 name = "type-c-interface-mocks"
 version = "0.1.0"
 dependencies = [
+ "critical-section",
+ "defmt 0.3.100",
+ "embassy-sync",
+ "embedded-services",
+ "embedded-usb-pd",
+ "log",
+ "power-policy-interface",
+ "tokio",
+ "type-c-interface",
+]
+
+[[package]]
+name = "type-c-interface-test-mocks"
+version = "0.1.0"
+dependencies = [
  "embedded-services",
  "embedded-usb-pd",
  "type-c-interface",
@@ -2229,7 +2244,7 @@ dependencies = [
  "tokio",
  "tps6699x",
  "type-c-interface",
- "type-c-interface-mocks",
+ "type-c-interface-test-mocks",
 ]
 
 [[package]]

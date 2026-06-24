@@ -37,7 +37,7 @@ embassy-futures.workspace = true
 tokio = { workspace = true, features = ["rt", "macros", "time"] }
 log.workspace = true
 env_logger = "0.11.8"
-type-c-interface-mocks.workspace = true
+type-c-interface-test-mocks.workspace = true
 power-policy-service.workspace = true
 paste.workspace = true
 critical-section = { workspace = true, features = ["std"] }
@@ -66,4 +66,5 @@ log = [
     "type-c-interface/log",
     "fw-update-interface/log",
     "power-policy-service/log",
+    "type-c-interface-test-mocks/log",
 ]

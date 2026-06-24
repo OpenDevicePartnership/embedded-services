@@ -32,6 +32,7 @@ members = [
     "fw-update-interface-mocks",
     "mctp-rs",
     "type-c-interface-mocks",
+    "type-c-interface-test-mocks",
 ]
 exclude = ["examples/*"]
 
@@ -116,6 +117,7 @@ time-alarm-service-interface = { path = "./time-alarm-service-interface" }
 time-alarm-service-relay = { path = "./time-alarm-service-relay" }
 type-c-interface = { path = "./type-c-interface" }
 type-c-interface-mocks = { path = "./type-c-interface-mocks" }
+type-c-interface-test-mocks = { path = "./type-c-interface-test-mocks" }
 syn = "2.0"
 tps6699x = { git = "https://github.com/OpenDevicePartnership/tps6699x"}
 tokio = { version = "1.42.0" }
