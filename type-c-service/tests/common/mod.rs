@@ -29,7 +29,7 @@ pub const TYPE_C_SERVICE_SENDER_COUNT: usize = 1;
 pub const POWER_POLICY_SENDER_COUNT: usize = 1;
 
 /// Mutex wrapped controller mock
-pub type ControllerMockMutexType = Mutex<GlobalRawMutex, type_c_interface_mocks::controller::Mock>;
+pub type ControllerMockMutexType = Mutex<GlobalRawMutex, type_c_interface_test_mocks::controller::Mock>;
 
 /// [`type_c_service::controller::Port`] sender to type-C service
 pub type PortTypeCSender<'a> = DynamicSender<'a, type_c_interface::service::event::PortEventData>;
@@ -199,7 +199,7 @@ macro_rules! define_port {
         paste! { let [<$name _interrupt_sender>] = [<$name _interrupt_channel>].dyn_sender(); }
         paste! { let [<$name _interrupt_receiver>] = [<$name _interrupt_channel>].dyn_receiver(); }
 
-        paste! { let [<$name _mock>] = Mutex::new(type_c_interface_mocks::controller::Mock::new($mock_name)); }
+        paste! { let [<$name _mock>] = Mutex::new(type_c_interface_test_mocks::controller::Mock::new($mock_name)); }
         paste! { let [<$name _shared_state>] =
         PortSharedState::new(type_c_service::controller::state::SharedState::new()); }
         paste! { let [<$name _event_receiver>] = type_c_service::controller::event_receiver::EventReceiver::new(

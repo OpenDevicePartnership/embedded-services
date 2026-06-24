@@ -1,5 +1,5 @@
 [package]
-name = "type-c-interface-mocks"
+name = "type-c-interface-test-mocks"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -10,6 +10,10 @@ repository.workspace = true
 embedded-services = { workspace = true }
 embedded-usb-pd = { workspace = true }
 type-c-interface = { workspace = true }
+
+[features]
+default = []
+log = ["embedded-services/log", "type-c-interface/log"]
 
 [lints]
 workspace = true

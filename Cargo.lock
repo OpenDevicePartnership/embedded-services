@@ -2197,7 +2197,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "type-c-interface-mocks"
+name = "type-c-interface-test-mocks"
 version = "0.1.0"
 dependencies = [
  "embedded-services",
@@ -2229,7 +2229,7 @@ dependencies = [
  "tokio",
  "tps6699x",
  "type-c-interface",
- "type-c-interface-mocks",
+ "type-c-interface-test-mocks",
 ]
 
 [[package]]
