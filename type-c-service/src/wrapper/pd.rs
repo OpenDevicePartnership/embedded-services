@@ -7,6 +7,8 @@ use embedded_services::type_c::controller::{InternalResponseData, Response};
 use embedded_usb_pd::constants::{T_PS_TRANSITION_EPR_MS, T_PS_TRANSITION_SPR_MS};
 use embedded_usb_pd::ucsi::{self, lpm};
 
+use crate::wrapper::backing::PortState;
+
 use super::*;
 
 impl<'device, M: RawMutex, C: Lockable, V: FwOfferValidator> ControllerWrapper<'device, M, C, V>
@@ -36,6 +38,20 @@ where
                 }
             }
         }
+    }
+
+    /// Returns the timeout duration for the sink ready check.
+    fn check_sink_ready_timeout_duration(is_epr: bool) -> Duration {
+        Duration::from_millis(
+            (if is_epr {
+                T_PS_TRANSITION_EPR_MS
+            } else {
+                T_PS_TRANSITION_SPR_MS
+            }
+            .maximum
+            .0 * 2)
+                .into(),
+        )
     }
 
     /// Check the sink ready timeout
@@ -72,16 +88,9 @@ where
         if new_contract && !sink_ready && contract_changed {
             // Start the timeout
             // Double the spec maximum transition time to provide a safety margin for hardware/controller delays or out-of-spec controllers.
-            let timeout_ms = if status.epr {
-                T_PS_TRANSITION_EPR_MS
-            } else {
-                T_PS_TRANSITION_SPR_MS
-            }
-            .maximum
-            .0 * 2;
-
-            debug!("Port{}: Sink ready timeout started for {}ms", port.0, timeout_ms);
-            *deadline = Some(Instant::now() + Duration::from_millis(timeout_ms as u64));
+            let timeout = Self::check_sink_ready_timeout_duration(status.epr);
+            debug!("Port{}: Sink ready timeout started for {:?}", port.0, timeout);
+            *deadline = Some(Instant::now() + timeout);
         } else if deadline.is_some()
             && (!status.is_connected() || status.available_sink_contract.is_none() || sink_ready)
         {
@@ -125,8 +134,13 @@ where
     /// Set the maximum sink voltage for a port
     pub async fn set_max_sink_voltage(&self, local_port: LocalPortId, voltage_mv: Option<u16>) -> Result<(), PdError> {
         let mut controller = self.controller.lock().await;
+        let mut state = self.state.lock().await;
+        let port_state = state
+            .port_states_mut()
+            .get_mut(local_port.0 as usize)
+            .ok_or(PdError::InvalidPort)?;
         let _ = self
-            .process_set_max_sink_voltage(&mut controller, local_port, voltage_mv)
+            .process_set_max_sink_voltage(&mut controller, port_state, local_port, voltage_mv)
             .await?;
         Ok(())
     }
@@ -135,13 +149,14 @@ where
     async fn process_set_max_sink_voltage(
         &self,
         controller: &mut C::Inner,
+        port_state: &mut PortState<'_>,
         local_port: LocalPortId,
         voltage_mv: Option<u16>,
     ) -> Result<controller::PortResponseData, PdError> {
         let power_device = self.get_power_device(local_port).ok_or(PdError::InvalidPort)?;
 
-        let state = power_device.state().await;
-        debug!("Port{}: Current state: {:#?}", local_port.0, state);
+        let power_state = power_device.state().await;
+        debug!("Port{}: Current state: {:#?}", local_port.0, power_state);
         if let Ok(connected_consumer) = power_device.try_device_action::<action::ConnectedConsumer>().await {
             debug!("Port{}: Set max sink voltage, connected consumer found", local_port.0);
 
@@ -166,6 +181,16 @@ where
                         Error::Pd(e) => Err(e),
                     },
                 }?;
+
+                // In general it's not possible know if setting the max sink voltage will trigger a renegotiation
+                // because the logic to select a particular contract is specific to the PD controller.
+                // Enable the sink ready timeout as a recovery mechanism. If there's no renegotiation, then the timeout
+                // will result in us broadcasting the existing contract back to the power policy.
+                if port_state.sink_ready_deadline.is_none() {
+                    port_state.sink_ready_deadline =
+                        Some(Instant::now() + Self::check_sink_ready_timeout_duration(port_state.status.epr));
+                }
+
                 let _ = connected_consumer
                     .disconnect(flags::ConsumerDisconnect::default().with_renegotiation(true))
                     .await;
@@ -290,8 +315,17 @@ where
             controller::PortCommandData::SetMaxSinkVoltage(voltage_mv) => {
                 match self.registration.pd_controller.lookup_local_port(command.port) {
                     Ok(local_port) => {
-                        self.process_set_max_sink_voltage(controller, local_port, voltage_mv)
-                            .await
+                        match state
+                            .port_states_mut()
+                            .get_mut(local_port.0 as usize)
+                            .ok_or(PdError::InvalidPort)
+                        {
+                            Ok(port_state) => {
+                                self.process_set_max_sink_voltage(controller, port_state, local_port, voltage_mv)
+                                    .await
+                            }
+                            Err(e) => Err(e),
+                        }
                     }
                     Err(e) => Err(e),
                 }
