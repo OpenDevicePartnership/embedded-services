@@ -1,8 +1,5 @@
 #![allow(clippy::unwrap_used)]
 use embassy_sync::channel::DynamicReceiver;
-use embassy_sync::signal::Signal;
-use embassy_time::{Duration, TimeoutError, with_timeout};
-use embedded_services::GlobalRawMutex;
 use embedded_services::info;
 use power_policy_interface::capability::ProviderFlags;
 use power_policy_interface::capability::ProviderPowerCapability;
@@ -17,9 +14,8 @@ use crate::common::DeviceType;
 use crate::common::HIGH_POWER;
 use crate::common::Test;
 use crate::common::assert_no_event;
-use crate::common::{DEFAULT_TIMEOUT, assert_provider_connected, assert_provider_disconnected, mock::FnCall, run_test};
-
-const PER_CALL_TIMEOUT: Duration = Duration::from_millis(1000);
+use crate::common::{DEFAULT_TIMEOUT, assert_provider_connected, assert_provider_disconnected, run_test};
+use power_policy_interface_test_mocks::psu::FnCall;
 
 /// Test the basic provider flow with a single device.
 struct TestSingle;
@@ -32,26 +28,13 @@ impl Test for TestSingle {
         _service: &ServiceMutex<'a, 'a, Self::Customization>,
         service_receiver: DynamicReceiver<'a, ServiceEvent<'a, DeviceType<'a>>>,
         device0: &DeviceType<'a>,
-        device0_signal: &Signal<GlobalRawMutex, (usize, FnCall)>,
         _device1: &DeviceType<'a>,
-        _device1_signal: &Signal<GlobalRawMutex, (usize, FnCall)>,
     ) {
         info!("Running test_single");
         // Test initial connection
         {
+            device0.lock().await.next_result_connect_provider.push_back(Ok(()));
             device0.lock().await.simulate_provider_connection(LOW_POWER).await;
-
-            assert_eq!(
-                with_timeout(PER_CALL_TIMEOUT, device0_signal.wait()).await.unwrap(),
-                (
-                    1,
-                    FnCall::ConnectProvider(ProviderPowerCapability {
-                        capability: LOW_POWER,
-                        flags: ProviderFlags::none(),
-                    })
-                )
-            );
-            device0_signal.reset();
 
             assert_provider_connected(
                 service_receiver,
@@ -62,19 +45,27 @@ impl Test for TestSingle {
                 },
             )
             .await;
+
+            {
+                let mut device = device0.lock().await;
+                assert_eq!(
+                    device.fn_calls.pop_front().unwrap(),
+                    FnCall::ConnectProvider(ProviderPowerCapability {
+                        capability: LOW_POWER,
+                        flags: ProviderFlags::none(),
+                    })
+                );
+                assert!(device.fn_calls.is_empty());
+            }
         }
         // Test detach
         {
             device0.lock().await.simulate_detach().await;
 
-            // Power policy shouldn't call any functions on detach so we'll timeout
-            assert_eq!(
-                with_timeout(PER_CALL_TIMEOUT, device0_signal.wait()).await,
-                Err(TimeoutError)
-            );
-            device0_signal.reset();
-
             assert_provider_disconnected(service_receiver, device0).await;
+
+            // Power policy shouldn't call any functions on detach
+            assert!(device0.lock().await.fn_calls.is_empty());
         }
 
         assert_no_event(service_receiver);
@@ -92,26 +83,13 @@ impl Test for TestUpgrade {
         service: &ServiceMutex<'a, 'a, Self::Customization>,
         service_receiver: DynamicReceiver<'a, ServiceEvent<'a, DeviceType<'a>>>,
         device0: &DeviceType<'a>,
-        device0_signal: &Signal<GlobalRawMutex, (usize, FnCall)>,
         device1: &DeviceType<'a>,
-        device1_signal: &Signal<GlobalRawMutex, (usize, FnCall)>,
     ) {
         info!("Running test_upgrade");
         {
             // Connect device0 at high power, default service config should allow this
+            device0.lock().await.next_result_connect_provider.push_back(Ok(()));
             device0.lock().await.simulate_provider_connection(HIGH_POWER).await;
-
-            assert_eq!(
-                with_timeout(PER_CALL_TIMEOUT, device0_signal.wait()).await.unwrap(),
-                (
-                    1,
-                    FnCall::ConnectProvider(ProviderPowerCapability {
-                        capability: HIGH_POWER,
-                        flags: ProviderFlags::none(),
-                    })
-                )
-            );
-            device0_signal.reset();
 
             assert_provider_connected(
                 service_receiver,
@@ -123,24 +101,25 @@ impl Test for TestUpgrade {
             )
             .await;
 
+            {
+                let mut device = device0.lock().await;
+                assert_eq!(
+                    device.fn_calls.pop_front().unwrap(),
+                    FnCall::ConnectProvider(ProviderPowerCapability {
+                        capability: HIGH_POWER,
+                        flags: ProviderFlags::none(),
+                    })
+                );
+                assert!(device.fn_calls.is_empty());
+            }
+
             assert_eq!(service.lock().await.compute_total_provider_power_mw().await, 15000);
         }
 
         {
             // Connect device1 at low power, default service config should allow this
+            device1.lock().await.next_result_connect_provider.push_back(Ok(()));
             device1.lock().await.simulate_provider_connection(LOW_POWER).await;
-
-            assert_eq!(
-                with_timeout(PER_CALL_TIMEOUT, device1_signal.wait()).await.unwrap(),
-                (
-                    1,
-                    FnCall::ConnectProvider(ProviderPowerCapability {
-                        capability: LOW_POWER,
-                        flags: ProviderFlags::none(),
-                    })
-                )
-            );
-            device1_signal.reset();
 
             assert_provider_connected(
                 service_receiver,
@@ -151,6 +130,18 @@ impl Test for TestUpgrade {
                 },
             )
             .await;
+
+            {
+                let mut device = device1.lock().await;
+                assert_eq!(
+                    device.fn_calls.pop_front().unwrap(),
+                    FnCall::ConnectProvider(ProviderPowerCapability {
+                        capability: LOW_POWER,
+                        flags: ProviderFlags::none(),
+                    })
+                );
+                assert!(device.fn_calls.is_empty());
+            }
 
             assert_eq!(service.lock().await.compute_total_provider_power_mw().await, 22500);
         }
@@ -158,23 +149,12 @@ impl Test for TestUpgrade {
         {
             // Attempt to upgrade device1 to high power, power policy should reject this since device0 is already connected at high power
             // Power policy will instead allow us to connect at low power
+            device1.lock().await.next_result_connect_provider.push_back(Ok(()));
             device1
                 .lock()
                 .await
                 .simulate_update_requested_provider_power_capability(Some(HIGH_POWER.into()))
                 .await;
-
-            assert_eq!(
-                with_timeout(PER_CALL_TIMEOUT, device1_signal.wait()).await.unwrap(),
-                (
-                    1,
-                    FnCall::ConnectProvider(ProviderPowerCapability {
-                        capability: LOW_POWER,
-                        flags: ProviderFlags::none(),
-                    })
-                )
-            );
-            device1_signal.reset();
 
             assert_provider_connected(
                 service_receiver,
@@ -185,6 +165,18 @@ impl Test for TestUpgrade {
                 },
             )
             .await;
+
+            {
+                let mut device = device1.lock().await;
+                assert_eq!(
+                    device.fn_calls.pop_front().unwrap(),
+                    FnCall::ConnectProvider(ProviderPowerCapability {
+                        capability: LOW_POWER,
+                        flags: ProviderFlags::none(),
+                    })
+                );
+                assert!(device.fn_calls.is_empty());
+            }
 
             assert_eq!(service.lock().await.compute_total_provider_power_mw().await, 22500);
         }
@@ -193,36 +185,22 @@ impl Test for TestUpgrade {
             // Detach device0, this should allow us to upgrade device1 to high power
             device0.lock().await.simulate_detach().await;
 
-            // Power policy shouldn't call any functions on detach so we'll timeout
-            assert_eq!(
-                with_timeout(PER_CALL_TIMEOUT, device0_signal.wait()).await,
-                Err(TimeoutError)
-            );
-            device0_signal.reset();
-
             assert_provider_disconnected(service_receiver, device0).await;
+
+            // Power policy shouldn't call any functions on detach
+            assert!(device0.lock().await.fn_calls.is_empty());
+
             assert_eq!(service.lock().await.compute_total_provider_power_mw().await, 7500);
         }
 
         {
             // Attempt to upgrade device1 to high power should now succeed
+            device1.lock().await.next_result_connect_provider.push_back(Ok(()));
             device1
                 .lock()
                 .await
                 .simulate_update_requested_provider_power_capability(Some(HIGH_POWER.into()))
                 .await;
-
-            assert_eq!(
-                with_timeout(PER_CALL_TIMEOUT, device1_signal.wait()).await.unwrap(),
-                (
-                    1,
-                    FnCall::ConnectProvider(ProviderPowerCapability {
-                        capability: HIGH_POWER,
-                        flags: ProviderFlags::none(),
-                    })
-                )
-            );
-            device1_signal.reset();
 
             assert_provider_connected(
                 service_receiver,
@@ -233,6 +211,19 @@ impl Test for TestUpgrade {
                 },
             )
             .await;
+
+            {
+                let mut device = device1.lock().await;
+                assert_eq!(
+                    device.fn_calls.pop_front().unwrap(),
+                    FnCall::ConnectProvider(ProviderPowerCapability {
+                        capability: HIGH_POWER,
+                        flags: ProviderFlags::none(),
+                    })
+                );
+                assert!(device.fn_calls.is_empty());
+            }
+
             assert_eq!(service.lock().await.compute_total_provider_power_mw().await, 15000);
         }
 
@@ -251,26 +242,13 @@ impl Test for TestDisconnect {
         service: &ServiceMutex<'a, 'a, Self::Customization>,
         service_receiver: DynamicReceiver<'a, ServiceEvent<'a, DeviceType<'a>>>,
         device0: &DeviceType<'a>,
-        device0_signal: &Signal<GlobalRawMutex, (usize, FnCall)>,
         _device1: &DeviceType<'a>,
-        _device1_signal: &Signal<GlobalRawMutex, (usize, FnCall)>,
     ) {
         info!("Running test_disconnect");
         // Test initial connection
         {
+            device0.lock().await.next_result_connect_provider.push_back(Ok(()));
             device0.lock().await.simulate_provider_connection(LOW_POWER).await;
-
-            assert_eq!(
-                with_timeout(PER_CALL_TIMEOUT, device0_signal.wait()).await.unwrap(),
-                (
-                    1,
-                    FnCall::ConnectProvider(ProviderPowerCapability {
-                        capability: LOW_POWER,
-                        flags: ProviderFlags::none(),
-                    })
-                )
-            );
-            device0_signal.reset();
 
             assert_provider_connected(
                 service_receiver,
@@ -281,20 +259,30 @@ impl Test for TestDisconnect {
                 },
             )
             .await;
+
+            {
+                let mut device = device0.lock().await;
+                assert_eq!(
+                    device.fn_calls.pop_front().unwrap(),
+                    FnCall::ConnectProvider(ProviderPowerCapability {
+                        capability: LOW_POWER,
+                        flags: ProviderFlags::none(),
+                    })
+                );
+                assert!(device.fn_calls.is_empty());
+            }
+
             assert_eq!(service.lock().await.compute_total_provider_power_mw().await, 7500);
         }
         // Test disconnect
         {
             device0.lock().await.simulate_disconnect().await;
 
-            // Power policy shouldn't call any functions on disconnect so we'll timeout
-            assert_eq!(
-                with_timeout(PER_CALL_TIMEOUT, device0_signal.wait()).await,
-                Err(TimeoutError)
-            );
-            device0_signal.reset();
-
             assert_provider_disconnected(service_receiver, device0).await;
+
+            // Power policy shouldn't call any functions on disconnect
+            assert!(device0.lock().await.fn_calls.is_empty());
+
             assert_eq!(service.lock().await.compute_total_provider_power_mw().await, 0);
         }
 

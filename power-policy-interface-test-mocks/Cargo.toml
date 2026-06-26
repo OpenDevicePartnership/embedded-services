@@ -1,0 +1,16 @@
+[package]
+name = "power-policy-interface-test-mocks"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+embassy-sync.workspace = true
+embedded-batteries-async.workspace = true
+embedded-services = { workspace = true }
+power-policy-interface = { workspace = true }
+
+[lints]
+workspace = true
