@@ -188,3 +188,29 @@ impl<R: RelayHandler> DefaultService<R> {
         )
     }
 }
+
+/// Type alias for `MctpSerialMedium` services (DSP0253-style framed
+/// serial, no per-medium addressing). Used by the QEMU EC ↔ SP relay
+/// path where the secure PL011 is bridged via a host PTY.
+pub type MctpSerialService<R> = Service<R, mctp_rs::MctpSerialMedium>;
+
+impl<R: RelayHandler> MctpSerialService<R> {
+    /// Constructor for `MctpSerialMedium` services. Hardcodes the
+    /// EC ↔ SP reply context (`source = EC_EID`, `message_tag = 0`,
+    /// `medium_context = ()`). The `destination_endpoint_id` is
+    /// overridden per-response inside `process_response`, so the
+    /// `SP_EID` passed here is a placeholder.
+    pub fn default_mctp_serial(relay_handler: R) -> Result<Self, Error<mctp_rs::MctpSerialMedium>> {
+        Self::new(
+            relay_handler,
+            mctp_rs::MctpSerialMedium,
+            mctp_rs::MctpReplyContext {
+                source_endpoint_id: mctp_rs::EC_EID,
+                destination_endpoint_id: mctp_rs::SP_EID,
+                packet_sequence_number: mctp_rs::MctpSequenceNumber::new(0),
+                message_tag: mctp_rs::MctpMessageTag::try_from(0).map_err(Error::Serialize)?,
+                medium_context: (),
+            },
+        )
+    }
+}
