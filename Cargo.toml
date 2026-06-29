@@ -29,7 +29,7 @@ members = [
     "odp-service-common",
     "type-c-interface",
     "fw-update-interface",
-    "fw-update-interface-mocks",
+    "fw-update-interface-test-mocks",
     "mctp-rs",
     "type-c-interface-test-mocks",
 ]
@@ -82,19 +82,19 @@ embedded-hal-nb = "1.0"
 embedded-io-async = "0.7.0"
 embedded-mcu-hal = "0.3.0"
 embassy-futures = "0.1.2"
-embassy-imxrt = { git = "https://github.com/OpenDevicePartnership/embassy-imxrt"}
+embassy-imxrt = { git = "https://github.com/OpenDevicePartnership/embassy-imxrt" }
 embassy-sync = "0.8"
 embassy-time = "0.5.1"
 embassy-time-driver = "0.2.2"
 embedded-batteries-async = "0.3"
-embedded-cfu-protocol = { git = "https://github.com/OpenDevicePartnership/embedded-cfu"}
+embedded-cfu-protocol = { git = "https://github.com/OpenDevicePartnership/embedded-cfu" }
 embedded-hal = "1.0"
 embedded-hal-async = "1.0"
 embedded-services = { path = "./embedded-service" }
 embedded-storage-async = "0.4.1"
 embedded-usb-pd = { git = "https://github.com/OpenDevicePartnership/embedded-usb-pd", tag = "v0.1.0", default-features = false }
 fw-update-interface = { path = "./fw-update-interface" }
-fw-update-interface-mocks = { path = "./fw-update-interface-mocks" }
+fw-update-interface-test-mocks = { path = "./fw-update-interface-test-mocks" }
 mctp-rs = { path = "./mctp-rs" }
 num_enum = { version = "0.7.5", default-features = false }
 portable-atomic = { version = "1.11", default-features = false }
@@ -117,7 +117,7 @@ time-alarm-service-relay = { path = "./time-alarm-service-relay" }
 type-c-interface = { path = "./type-c-interface" }
 type-c-interface-test-mocks = { path = "./type-c-interface-test-mocks" }
 syn = "2.0"
-tps6699x = { git = "https://github.com/OpenDevicePartnership/tps6699x"}
+tps6699x = { git = "https://github.com/OpenDevicePartnership/tps6699x" }
 tokio = { version = "1.42.0" }
 uuid = { version = "=1.17.0", default-features = false }
 zerocopy = "0.8"

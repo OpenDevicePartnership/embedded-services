@@ -316,7 +316,7 @@ dependencies = [
  "embedded-services",
  "env_logger",
  "fw-update-interface",
- "fw-update-interface-mocks",
+ "fw-update-interface-test-mocks",
  "heapless 0.9.3",
  "log",
  "static_cell",
@@ -992,7 +992,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "fw-update-interface-mocks"
+name = "fw-update-interface-test-mocks"
 version = "0.1.0"
 dependencies = [
  "embedded-services",

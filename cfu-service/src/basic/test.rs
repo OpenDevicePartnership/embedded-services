@@ -21,7 +21,7 @@ use embedded_cfu_protocol::protocol_definitions::{
 use embedded_services::GlobalRawMutex;
 
 use crate::mocks::customization::{FnCall as CustomizationFnCall, Mock as MockCustomization};
-use fw_update_interface_mocks::basic::{FnCall as FwFnCall, Mock};
+use fw_update_interface_test_mocks::basic::{FnCall as FwFnCall, Mock};
 
 use std::vec;
 

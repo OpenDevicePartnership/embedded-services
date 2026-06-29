@@ -1,5 +1,5 @@
 [package]
-name = "fw-update-interface-mocks"
+name = "fw-update-interface-test-mocks"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

@@ -33,7 +33,7 @@ concurrency:
 name: check
 env:
   # Crates that require std and won't build on embedded-targets
-  STD_EXCLUDED_CRATES: "--exclude fw-update-interface-mocks --exclude type-c-interface-test-mocks"
+  STD_EXCLUDED_CRATES: "--exclude fw-update-interface-test-mocks --exclude type-c-interface-test-mocks"
 jobs:
 
   fmt:
