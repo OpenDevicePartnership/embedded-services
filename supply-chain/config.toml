@@ -21,3 +21,8 @@ audit-as-crates-io = false
 
 [policy.keyberon]
 audit-as-crates-io = false
+
+[[exemptions.anyhow]]
+version = "1.0.103"
+criteria = "safe-to-deploy"
+notes = "Security bump for RUSTSEC-2026-0190 (unsoundness in anyhow 1.0.102 Error::downcast_mut). anyhow 1.0.103 was published after the trusted-publisher (dtolnay) window in audits.toml ended (2026-04-16). Follow-up: drop this exemption once the [[trusted.anyhow]] window is extended to cover 1.0.103."
