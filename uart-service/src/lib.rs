@@ -1,9 +1,8 @@
 //! uart-service
 //!
 //! UART transport for MCTP packets, generic over [`mctp_rs::MctpMedium`].
-//! Use [`DefaultService`] for the SmbusEspi-medium baseline; use
-//! [`Service::new`] directly with another medium (e.g. DSP0253 serial)
-//! for non-SmbusEspi callers.
+//! Use [`MctpSerialService`] for the DSP0253 serial baseline; use
+//! [`Service::new`] directly with another medium for other callers.
 //!
 //! Revisit: Will also need to consider how to handle notifications (likely need to have user
 //! provide GPIO pin we can use).
@@ -18,7 +17,6 @@ use embedded_services::GlobalRawMutex;
 use embedded_services::relay::mctp::{RelayHandler, RelayHeader, RelayResponse};
 use embedded_services::trace;
 use mctp_rs::MctpMedium;
-use mctp_rs::smbus_espi::{SmbusEspiMedium, SmbusEspiReplyContext};
 
 // Should be as large as the largest possible MCTP packet and its metadata.
 const BUF_SIZE: usize = 256;
@@ -159,33 +157,6 @@ impl<R: RelayHandler, M: MctpMedium + Copy> Service<R, M> {
 
     async fn wait_for_response(&self) -> HostResultMessage<R> {
         self.host_tx_queue.receive().await
-    }
-}
-
-/// Backwards-compatible alias for SmbusEspi-medium services.
-pub type DefaultService<R> = Service<R, SmbusEspiMedium>;
-
-impl<R: RelayHandler> DefaultService<R> {
-    /// Constructor for SmbusEspi-medium services. Hardcodes the
-    /// reply-context addressing used by the existing SmbusEspi
-    /// consumers (destination_slave_address: 1, source_slave_address: 0).
-    /// The `destination_endpoint_id` is overridden per-response inside
-    /// `process_response`, so the value passed here is a placeholder.
-    pub fn default_smbusespi(relay_handler: R) -> Result<Self, Error<SmbusEspiMedium>> {
-        Self::new(
-            relay_handler,
-            SmbusEspiMedium,
-            mctp_rs::MctpReplyContext {
-                source_endpoint_id: mctp_rs::EndpointId::Id(0x80),
-                destination_endpoint_id: mctp_rs::EndpointId::Id(0),
-                packet_sequence_number: mctp_rs::MctpSequenceNumber::new(0),
-                message_tag: mctp_rs::MctpMessageTag::try_from(3).map_err(Error::Serialize)?,
-                medium_context: SmbusEspiReplyContext {
-                    destination_slave_address: 1,
-                    source_slave_address: 0,
-                },
-            },
-        )
     }
 }
 
