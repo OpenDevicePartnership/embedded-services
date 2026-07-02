@@ -66,6 +66,12 @@ who = "Robert Zieba <robertzieba@microsoft.com>"
 criteria = "safe-to-run"
 version = "3.0.11"
 
+[[audits.anyhow]]
+who = "Dylan Knutson <tcdknutson@gmail.com>"
+criteria = "safe-to-deploy"
+delta = "1.0.102 -> 1.0.103"
+notes = "Delta audit 1.0.102->1.0.103: fixes RUSTSEC-2026-0190 (unsoundness in Error::downcast_mut). object_downcast/context_chain_downcast now read the target field through a raw pointer via ptr::addr_of! instead of forming an intermediate &ErrorImpl reference, avoiding aliasing UB with downcast_mut; NonNull::new_unchecked is sound as the pointer derives from a valid NonNull field. Adds a test_downcast_mut regression test. Remaining changes are version/html_root_url bumps and CI config. No new powerful imports, no ambient capabilities, no_std. Assisted-by: GitHub Copilot:claude-opus-4.8"
+
 [[audits.aquamarine]]
 who = "Robert Zieba <robertzieba@microsoft.com>"
 criteria = "safe-to-deploy"
