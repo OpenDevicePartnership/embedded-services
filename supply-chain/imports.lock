@@ -9,8 +9,8 @@ user-login = "BurntSushi"
 user-name = "Andrew Gallant"
 
 [[publisher.anyhow]]
-version = "1.0.99"
-when = "2025-08-11"
+version = "1.0.103"
+when = "2026-06-25"
 user-id = 3618
 user-login = "dtolnay"
 user-name = "David Tolnay"
@@ -368,7 +368,10 @@ aggregated-from = "https://raw.githubusercontent.com/OpenDevicePartnership/embas
 who = "Felipe Balbi <febalbi@microsoft.com>"
 criteria = "safe-to-deploy"
 version = "0.5.0"
-aggregated-from = "https://raw.githubusercontent.com/OpenDevicePartnership/tps6699x/refs/heads/main/supply-chain/audits.toml"
+aggregated-from = [
+    "https://raw.githubusercontent.com/OpenDevicePartnership/tps6699x/refs/heads/main/supply-chain/audits.toml",
+    "https://raw.githubusercontent.com/OpenDevicePartnership/tps6699x/refs/heads/main/supply-chain/audits.toml",
+]
 
 [[audits.OpenDevicePartnership.audits.embassy-time-queue-utils]]
 who = "Felipe Balbi <febalbi@microsoft.com>"
