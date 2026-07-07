@@ -39,14 +39,26 @@ pub mod _macro_internal {
 ///
 /// Used because ThreadModeRawMutex is not unit test friendly
 /// but CriticalSectionRawMutex would incur a significant performance impact, since it disables interrupts.
-#[cfg(any(test, not(target_os = "none"), target_arch = "riscv32"))]
+#[cfg(any(
+    test,
+    not(target_os = "none"),
+    target_arch = "riscv32",
+    target_arch = "aarch64",
+    target_arch = "x86_64"
+))]
 pub type GlobalRawMutex = embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 /// Global Mutex type, ThreadModeRawMutex is used in a microcontroller context, whereas CriticalSectionRawMutex is used
 /// in a standard context for unit testing.
 ///
 /// Used because ThreadModeRawMutex is not unit test friendly
 /// but CriticalSectionRawMutex would incur a significant performance impact, since it disables interrupts.
-#[cfg(all(not(test), target_os = "none", not(target_arch = "riscv32")))]
+#[cfg(all(
+    not(test),
+    target_os = "none",
+    not(target_arch = "riscv32"),
+    not(target_arch = "aarch64"),
+    not(target_arch = "x86_64")
+))]
 pub type GlobalRawMutex = embassy_sync::blocking_mutex::raw::ThreadModeRawMutex;
 
 /// AtomicUsize and Ordering re-exports. Uses core::sync::atomic if the target supports atomic operations,
