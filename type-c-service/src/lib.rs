@@ -1,6 +1,5 @@
 #![no_std]
 pub mod controller;
-pub mod driver;
 pub mod service;
 pub mod task;
 pub mod util;

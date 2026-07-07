@@ -181,7 +181,7 @@ dependencies = [
  "embedded-cfu-protocol",
  "embedded-services",
  "fw-update-interface",
- "heapless 0.9.3",
+ "heapless",
 ]
 
 [[package]]
@@ -496,7 +496,7 @@ dependencies = [
  "embedded-io-async 0.7.0",
  "futures-core",
  "futures-sink",
- "heapless 0.9.3",
+ "heapless",
 ]
 
 [[package]]
@@ -532,7 +532,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "168297bf80aaf114b3c9ad589bf38b01b3009b9af7f97cd18086c5bbf96f5693"
 dependencies = [
  "embassy-executor-timer-queue",
- "heapless 0.9.3",
+ "heapless",
 ]
 
 [[package]]
@@ -705,7 +705,7 @@ dependencies = [
 [[package]]
 name = "espi-device"
 version = "0.1.0"
-source = "git+https://github.com/OpenDevicePartnership/haf-ec-service#fe63c1fc0bb2463922d956003caf8ac9d6224231"
+source = "git+https://github.com/OpenDevicePartnership/haf-ec-service#e2a7c6f4bc8e0259d85f53b4014847eb276c885a"
 dependencies = [
  "bit-register 0.1.0 (git+https://github.com/OpenDevicePartnership/odp-utilities?tag=v0.1.0)",
  "bitflags 2.11.1",
@@ -792,16 +792,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "47d60b12902ba28e2730cd37e95b8c9223af2808df9e902d4df49588d1470606"
 dependencies = [
  "byteorder",
-]
-
-[[package]]
-name = "heapless"
-version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0bfb9eb618601c89945a70e254898da93b13be0388091d42117462b265bb3fad"
-dependencies = [
- "hash32",
- "stable_deref_trait",
 ]
 
 [[package]]
@@ -1121,7 +1111,7 @@ dependencies = [
  "embassy-sync",
  "embassy-time",
  "embedded-services",
- "heapless 0.9.3",
+ "heapless",
  "power-policy-interface",
 ]
 
@@ -1444,10 +1434,11 @@ dependencies = [
 [[package]]
 name = "tps6699x"
 version = "0.1.0"
-source = "git+https://github.com/OpenDevicePartnership/tps6699x#159ae3bd52592eaa40e72b318cf1385dd1670e71"
+source = "git+https://github.com/OpenDevicePartnership/tps6699x#593c5e44a234529e8f024733fae75023f27c33a2"
 dependencies = [
  "bincode",
  "bitfield 0.19.4",
+ "bitflags 2.11.1",
  "defmt 0.3.100",
  "device-driver",
  "embassy-sync",
@@ -1455,9 +1446,14 @@ dependencies = [
  "embedded-hal 1.0.0",
  "embedded-hal-async",
  "embedded-io-async 0.6.1",
+ "embedded-services",
  "embedded-usb-pd",
- "heapless 0.8.0",
+ "fw-update-interface",
+ "heapless",
  "itertools 0.14.0",
+ "power-policy-interface",
+ "type-c-interface",
+ "type-c-service",
 ]
 
 [[package]]
@@ -1529,7 +1525,7 @@ dependencies = [
  "defmt 0.3.100",
  "embedded-services",
  "embedded-usb-pd",
- "heapless 0.9.3",
+ "heapless",
  "power-policy-interface",
 ]
 
@@ -1537,19 +1533,15 @@ dependencies = [
 name = "type-c-service"
 version = "0.1.0"
 dependencies = [
- "bitfield 0.17.0",
- "bitflags 2.11.1",
  "defmt 0.3.100",
  "embassy-futures",
  "embassy-sync",
  "embassy-time",
- "embedded-hal-async",
  "embedded-services",
  "embedded-usb-pd",
  "fw-update-interface",
- "heapless 0.9.3",
+ "heapless",
  "power-policy-interface",
- "tps6699x",
  "type-c-interface",
 ]
 
