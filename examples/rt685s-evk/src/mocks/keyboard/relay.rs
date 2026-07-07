@@ -87,6 +87,7 @@ impl<'s, Service: KeyboardService<'s>> embedded_services::relay::hid::HidDevice 
     type FeatureReportMaxSize = typenum::U0;
 
     const MAX_REPORT_COUNT: u8 = 1;
+    const MAX_DESCRIPTOR_LEN: usize = KEYBOARD_HID_REPORT_DESCRIPTOR_NO_ID.len();
 
     fn report_descriptor(&self) -> &HidReportDescriptor<'_> {
         &self.descriptor

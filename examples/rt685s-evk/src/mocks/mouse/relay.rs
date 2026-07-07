@@ -67,7 +67,8 @@ impl<'s, Service: MouseService<'s>> embedded_services::relay::hid::HidDevice for
     type OutputReportMaxSize = typenum::U0;
     type FeatureReportMaxSize = typenum::U0;
 
-    const MAX_REPORT_COUNT: u8 = 3;
+    const MAX_REPORT_COUNT: u8 = 1;
+    const MAX_DESCRIPTOR_LEN: usize = MOUSE_HID_REPORT_DESCRIPTOR.len();
 
     fn report_descriptor(&self) -> &HidReportDescriptor<'_> {
         &self.descriptor

@@ -1,7 +1,9 @@
 #![no_std]
 #![no_main]
 
-use defmt::info;
+//! Combined mock HID-I2C device that presents as both a mouse and a keyboard over a single I2C endpoint.
+
+use defmt::{info, warn};
 use defmt_rtt as _;
 use embassy_executor::Spawner;
 use embassy_imxrt::i2c::slave::{Address, I2cSlave};
@@ -13,9 +15,24 @@ use rt685s_evk_example::mocks::keyboard::{
     interface::KeyCode,
     relay::MockKeyboardHidRelay,
 };
+use rt685s_evk_example::mocks::mouse::{
+    device::{MockMouseService, MockMouseServiceResources},
+    relay::MockMouseHidRelay,
+};
 use static_cell::StaticCell;
 
 const SLAVE_ADDR: Option<Address> = Address::new(0x15);
+
+// Number of subscriber slots each sub-device's pubsub channel exposes. Both sub-devices are driven
+// by a single relay, so one subscriber each is sufficient.
+const KB_SUBS: usize = 1;
+const MOUSE_SUBS: usize = 1;
+
+// Compose the keyboard and mouse sub-devices into a single `HidDevice`. The macro generates a
+// `MockCompositeHidRelay` type that owns both sub-devices, serves a combined report descriptor,
+// and routes every report to the owning sub-device, including report ID translation.
+//
+embedded_services::impl_hid_aggregate_device!(MockCompositeHidRelay: MockKeyboardHidRelay<'static, MockKeyboardService<'static, KB_SUBS>>, MockMouseHidRelay<'static, MockMouseService<'static, MOUSE_SUBS>>);
 
 bind_interrupts!(struct Irqs {
     FLEXCOMM2 => i2c::InterruptHandler<peripherals::FLEXCOMM2>;
@@ -24,10 +41,9 @@ bind_interrupts!(struct Irqs {
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
     let p = embassy_imxrt::init(Default::default());
-    info!("HID-I2C mock keyboard example starting...");
+    info!("HID-I2C mock mouse+keyboard example starting...");
     let i2c = I2cSlave::new_async(p.FLEXCOMM2, p.PIO0_18, p.PIO0_17, Irqs, SLAVE_ADDR.unwrap(), p.DMA0_CH4).unwrap();
 
-    // GPIO on P0_28.
     use embassy_imxrt::gpio;
     let attn_pin = gpio::Output::new(
         p.PIO0_28,
@@ -37,24 +53,37 @@ async fn main(spawner: Spawner) {
         gpio::SlewRate::Standard,
     );
 
-    const KB_SUBS: usize = 1;
+    // Set up the mouse sub-device's pubsub channel.
+    static MOUSE_RESOURCES: StaticCell<MockMouseServiceResources<MOUSE_SUBS>> = StaticCell::new();
+    let (mouse_service, mouse_runner) = MockMouseService::new(MOUSE_RESOURCES.init(Default::default()));
+    static MOUSE_SERVICE: StaticCell<MockMouseService<'static, MOUSE_SUBS>> = StaticCell::new();
+
+    // Set up the keyboard sub-device's pubsub channel.
     static KB_RESOURCES: StaticCell<MockKeyboardServiceResources<KB_SUBS>> = StaticCell::new();
     let (keyboard_service, keyboard_runner) = MockKeyboardService::new(KB_RESOURCES.init(Default::default()));
-
     static KEYBOARD_SERVICE: StaticCell<MockKeyboardService<'static, KB_SUBS>> = StaticCell::new();
+
+    static COMPOSITE_RESOURCES: StaticCell<MockCompositeHidRelayResources> = StaticCell::new();
+    let composite = MockCompositeHidRelay::new(
+        COMPOSITE_RESOURCES.init(MockCompositeHidRelayResources::new()),
+        MockKeyboardHidRelay::new(KEYBOARD_SERVICE.init(keyboard_service)),
+        MockMouseHidRelay::new(MOUSE_SERVICE.init(mouse_service)),
+    )
+    .expect("Failed to combine HID report descriptors");
+
     let mut hidsvc = odp_service_common::spawn_service!(
         spawner,
         hidi2c_target_service::Service<
             'static,
             I2cSlave<'static, Async>,
             gpio::Output<'static>,
-            MockKeyboardHidRelay<'static, MockKeyboardService<'static, KB_SUBS>>,
+            MockCompositeHidRelay<'static>,
         >,
         |resources| hidi2c_target_service::Service::new(
             resources,
             i2c,
             attn_pin,
-            MockKeyboardHidRelay::new(KEYBOARD_SERVICE.init(keyboard_service)),
+            composite,
             hidi2c_target_service::HardwareVersionInfo {
                 vendor_id: hidi2c_target_service::VendorId::new(0x1234).unwrap(),
                 product_id: hidi2c_target_service::ProductId(0x5678),
@@ -68,14 +97,19 @@ async fn main(spawner: Spawner) {
     info!("Waiting 10s before starting to send inputs");
     embassy_time::Timer::after(embassy_time::Duration::from_secs(10)).await;
 
-    let mut i = 0;
+    let mut i = 0u32;
     loop {
+        info!("clicking mouse");
+        mouse_runner.send_click().await;
+        embassy_time::Timer::after(embassy_time::Duration::from_millis(1000)).await;
+
         info!("pressing key");
         keyboard_runner.click_key(KeyCode::NumLock).await;
-        embassy_time::Timer::after(embassy_time::Duration::from_millis(2000)).await;
+        embassy_time::Timer::after(embassy_time::Duration::from_millis(1000)).await;
+
         i += 1;
-        if i % 5 == 0 {
-            defmt::warn!("Manually triggering reset of HID service after 5 clicks to test reset handling");
+        if i.is_multiple_of(5) {
+            warn!("Manually triggering reset of HID service after 5 rounds to test reset handling");
             hidsvc.reset();
         }
     }

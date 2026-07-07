@@ -4,7 +4,7 @@
 
 mod device_descriptor;
 use device_descriptor::DeviceDescriptor;
-pub use device_descriptor::{HardwareVersionInfo, ProductId, VendorId, VersionId};
+pub use device_descriptor::{DeviceDescriptorError, HardwareVersionInfo, ProductId, VendorId, VersionId};
 
 mod attn_pin_handler;
 use attn_pin_handler::AttnPinHandler;

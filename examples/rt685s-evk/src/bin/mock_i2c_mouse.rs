@@ -41,31 +41,6 @@ async fn main(spawner: Spawner) {
     let (mouse_service, mouse_runner) = MockMouseService::new(MOUSE_RESOURCES.init(Default::default()));
 
     static MOUSE_SERVICE: StaticCell<MockMouseService<'static, MOUSE_SUBS>> = StaticCell::new();
-
-    // NOTE: here's where the "aggregate HID devices" macro is currently missing.  Compare with time_alarm.rs where we do this:
-    //
-    //     impl_odp_mctp_relay_handler!(
-    //         EspiRelayHandler;
-    //         TimeAlarm, 0x0B, crate::TimeAlarmServiceRelayHandlerType;
-    //     );
-    //
-    //  We will eventually write a macro that looks something like this:
-    //
-    //     impl_hid_aggregate_device!(
-    //         MyAggregateDevice;
-    //         time_alarm_service_relay::hid::TimeAlarmHidRelay,
-    //         battery_service_relay::hid::BatteryHidRelay,
-    //         ...
-    //     );
-    //
-    // which will emit a type MyAggregateDevice that implements HidDevice and takes as construction parameters one instance
-    // of each of the handlers, in the order they were specified.
-    //
-    // For a concrete example of this pattern, see what we're doing with MCTP here: https://github.com/OpenDevicePartnership/odp-embedded-controller/blob/d6fb3ce5d9ae52ca51d6ef7b87518c6c4cb3c809/platform/platform-common/src/lib.rs#L20
-    //
-    // This depends on writing the 'hid support library', though, so for now we're just going to directly use the time-alarm device for testing
-    // (pending getting actual hardware to test on, implementing I2C traits for embassy, etc).
-
     let _hidsvc = odp_service_common::spawn_service!(
         spawner,
         hidi2c_target_service::Service<

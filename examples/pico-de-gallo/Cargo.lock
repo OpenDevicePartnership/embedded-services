@@ -440,12 +440,14 @@ dependencies = [
  "embassy-futures",
  "embassy-sync",
  "generic-array",
+ "heapless 0.9.3",
  "log",
  "mctp-rs",
  "num_enum",
  "paste",
  "portable-atomic",
  "serde",
+ "typenum",
 ]
 
 [[package]]

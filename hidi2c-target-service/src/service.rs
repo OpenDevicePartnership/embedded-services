@@ -694,8 +694,8 @@ impl<
         hid_device: HidDevice,
         hwinfo: HardwareVersionInfo,
         timeout_settings: TimeoutSettings,
-    ) -> Result<(Self, Runner<'hw, Bus, AttnPin, HidDevice>), core::convert::Infallible> {
-        let device_descriptor = DeviceDescriptor::new(&hid_device, hwinfo);
+    ) -> Result<(Self, Runner<'hw, Bus, AttnPin, HidDevice>), crate::DeviceDescriptorError> {
+        let device_descriptor = DeviceDescriptor::new(&hid_device, hwinfo)?;
 
         let resources = storage.inner.insert(InnerResources {
             reset_signal: embassy_sync::signal::Signal::new(),

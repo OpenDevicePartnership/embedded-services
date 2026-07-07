@@ -86,9 +86,56 @@ pub const HID_REPORT_HEADER_SIZE_BYTES: u16 = 2;
 /// as soon as you add a second of any one of those you need this).
 pub const HID_REPORT_ID_SIZE_BYTES: u16 = 1;
 
+/// Errors that can occur while constructing a `DeviceDescriptor` for a HID device.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum DeviceDescriptorError {
+    /// The HID device returned an input report descriptor whose largest report (`actual` bytes)
+    /// is larger than the device's `InputReportMaxSize` (`max` bytes).
+    InputReportTooLarge { declared: usize, max: usize },
+
+    /// The HID device returned an output report descriptor whose largest report (`actual` bytes)
+    /// is larger than the device's `OutputReportMaxSize` (`max` bytes).
+    OutputReportTooLarge { declared: usize, max: usize },
+
+    /// The HID device returned a feature report descriptor whose largest report (`actual` bytes)
+    /// is larger than the device's `FeatureReportMaxSize` (`max` bytes).
+    FeatureReportTooLarge { declared: usize, max: usize },
+}
+
 impl DeviceDescriptor {
-    pub fn new<HidDevice: hid::HidDevice>(hid_device: &HidDevice, hwinfo: HardwareVersionInfo) -> Self {
+    pub fn new<HidDevice: hid::HidDevice>(
+        hid_device: &HidDevice,
+        hwinfo: HardwareVersionInfo,
+    ) -> Result<Self, DeviceDescriptorError> {
         const HID_I2C_PROTOCOL_VERSION: u16 = 0x0100;
+
+        let descriptor = hid_device.report_descriptor();
+
+        let actual_max_sizes = descriptor.max_report_sizes();
+        let input_max = HidDevice::InputReportMaxSize::USIZE;
+        if actual_max_sizes.input > input_max {
+            return Err(DeviceDescriptorError::InputReportTooLarge {
+                declared: actual_max_sizes.input,
+                max: input_max,
+            });
+        }
+
+        let output_max = HidDevice::OutputReportMaxSize::USIZE;
+        if actual_max_sizes.output > output_max {
+            return Err(DeviceDescriptorError::OutputReportTooLarge {
+                declared: actual_max_sizes.output,
+                max: output_max,
+            });
+        }
+
+        if actual_max_sizes.feature > HidDevice::FeatureReportMaxSize::USIZE {
+            return Err(DeviceDescriptorError::FeatureReportTooLarge {
+                declared: actual_max_sizes.feature,
+                max: HidDevice::FeatureReportMaxSize::USIZE,
+            });
+        }
+
         let report_length_header_size = HID_REPORT_HEADER_SIZE_BYTES
             + if hid_device.report_descriptor().report_ids_implicit() {
                 0
@@ -96,21 +143,21 @@ impl DeviceDescriptor {
                 HID_REPORT_ID_SIZE_BYTES
             };
 
-        Self {
+        Ok(Self {
             w_hid_desc_length: core::mem::size_of::<DeviceDescriptor>() as u16,
             bcd_version: HID_I2C_PROTOCOL_VERSION,
-            w_report_desc_length: hid_device.report_descriptor().as_bytes().len() as u16,
+            w_report_desc_length: descriptor.as_bytes().len() as u16,
             w_report_desc_register: crate::HidI2cRegister::ReportDescriptor as u16,
             w_input_register: crate::HidI2cRegister::Input.into(),
-            w_max_input_length: HidDevice::InputReportMaxSize::USIZE as u16 + report_length_header_size,
+            w_max_input_length: input_max as u16 + report_length_header_size,
             w_output_register: crate::HidI2cRegister::Output.into(),
-            w_max_output_length: HidDevice::OutputReportMaxSize::USIZE as u16 + report_length_header_size,
+            w_max_output_length: output_max as u16 + report_length_header_size,
             w_command_register: crate::HidI2cRegister::Command.into(),
             w_data_register: crate::HidI2cRegister::Data.into(),
             w_vendor_id: hwinfo.vendor_id.value(),
             w_product_id: hwinfo.product_id.0,
             w_version_id: hwinfo.version_id.0,
             reserved: [0; 4],
-        }
+        })
     }
 }

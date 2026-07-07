@@ -30,8 +30,10 @@ pub mod sync;
 #[doc(hidden)]
 pub mod _macro_internal {
     pub use bitfield;
+    pub use embassy_futures;
     pub use mctp_rs;
     pub use paste;
+    pub use typenum;
 }
 
 /// Global Mutex type, ThreadModeRawMutex is used in a microcontroller context, whereas CriticalSectionRawMutex is used

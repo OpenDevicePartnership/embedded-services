@@ -670,11 +670,13 @@ dependencies = [
  "embassy-futures",
  "embassy-sync",
  "generic-array",
+ "heapless",
  "mctp-rs",
  "num_enum",
  "paste",
  "portable-atomic",
  "serde",
+ "typenum",
 ]
 
 [[package]]

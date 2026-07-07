@@ -17,9 +17,11 @@ defmt = { workspace = true, optional = true }
 embassy-sync.workspace = true
 embassy-futures.workspace = true
 generic-array.workspace = true
+heapless.workspace = true
 log = { workspace = true, optional = true }
 num_enum.workspace = true
 paste.workspace = true
+typenum.workspace = true
 
 [dependencies.mctp-rs]
 workspace = true
