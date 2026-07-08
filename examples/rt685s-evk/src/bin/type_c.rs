@@ -20,7 +20,7 @@ use power_policy_interface::psu;
 use power_policy_service::psu::PsuEventReceivers;
 use power_policy_service::service::registration::ArrayRegistration;
 use static_cell::StaticCell;
-use tps6699x::asynchronous::embassy as tps6699x;
+use tps6699x::odp::driver as tps6699x_drv;
 use type_c_interface::port::event::PortEventBitfield;
 use type_c_service::controller::Port;
 use type_c_service::controller::event_receiver::{
@@ -29,7 +29,6 @@ use type_c_service::controller::event_receiver::{
 use type_c_service::controller::macros::PortComponents;
 use type_c_service::controller::state::SharedState;
 use type_c_service::define_controller_port_static_cell_channel;
-use type_c_service::driver::tps6699x::{self as tps6699x_drv};
 use type_c_service::service::Service;
 use type_c_service::service::registration::PortData;
 
@@ -56,8 +55,9 @@ type ChargerType = power_policy_interface::charger::mock::ChargerType;
 type BusMaster<'a> = I2cMaster<'a, Async>;
 type BusDevice<'a> = I2cDevice<'a, GlobalRawMutex, BusMaster<'a>>;
 type Tps6699xMutex<'a> = Mutex<GlobalRawMutex, tps6699x_drv::Tps6699x<'a, GlobalRawMutex, BusDevice<'a>>>;
-type Controller<'a> = tps6699x::controller::Controller<GlobalRawMutex, BusDevice<'a>>;
-type InterruptProcessor<'a> = tps6699x::interrupt::InterruptProcessor<'a, GlobalRawMutex, BusDevice<'a>>;
+type Controller<'a> = tps6699x::asynchronous::embassy::controller::Controller<GlobalRawMutex, BusDevice<'a>>;
+type InterruptProcessor<'a> =
+    tps6699x::asynchronous::embassy::interrupt::InterruptProcessor<'a, GlobalRawMutex, BusDevice<'a>>;
 
 type PowerPolicySenderType = MapSender<
     power_policy_interface::service::event::Event<'static, PortType>,
@@ -114,7 +114,7 @@ async fn port_task(mut event_receiver: PortEventReceiverType, port: &'static Por
 
 #[embassy_executor::task]
 async fn interrupt_task(mut int_in: Input<'static>, mut interrupt: InterruptProcessor<'static>) {
-    tps6699x::task::interrupt_task(&mut int_in, &mut [&mut interrupt]).await;
+    tps6699x::asynchronous::embassy::task::interrupt_task(&mut int_in, &mut [&mut interrupt]).await;
 }
 
 #[embassy_executor::task]

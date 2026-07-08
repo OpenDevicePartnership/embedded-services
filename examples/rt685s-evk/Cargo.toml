@@ -62,7 +62,8 @@ power-policy-service = { path = "../../power-policy-service", features = [
 ] }
 tps6699x = { git = "https://github.com/OpenDevicePartnership/tps6699x", features = [
     "defmt",
-    "embassy",
+    "odp-type-c-service",
+    "odp-fw-update-interface",
 ] }
 embedded-usb-pd = { git = "https://github.com/OpenDevicePartnership/embedded-usb-pd", tag = "v0.1.0", default-features = false, features = [
     "defmt",
@@ -90,3 +91,8 @@ cfu-service = { path = "../../cfu-service", features = ["defmt"] }
 # Needed otherwise cargo will pull from git
 [patch."https://github.com/OpenDevicePartnership/embedded-services"]
 embedded-services = { path = "../../embedded-service" }
+type-c-service = { path = "../../type-c-service" }
+type-c-interface = { path = "../../type-c-interface" }
+power-policy-service = { path = "../../power-policy-service" }
+power-policy-interface = { path = "../../power-policy-interface" }
+fw-update-interface = { path = "../../fw-update-interface" }

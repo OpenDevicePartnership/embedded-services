@@ -68,7 +68,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0f50776554130342de4836ba542aa85a4ddb361690d7e8df13774d7284c3d5c2"
 dependencies = [
  "include_dir",
- "itertools 0.10.5",
+ "itertools",
  "proc-macro-error2",
  "proc-macro2",
  "quote",
@@ -127,17 +127,7 @@ version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "36eaf5d7b090263e8150820482d5d93cd964a81e4019913c972f4edcc6edb740"
 dependencies = [
- "bincode_derive",
  "unty",
-]
-
-[[package]]
-name = "bincode_derive"
-version = "2.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bf95709a440f45e986983918d0e8a1f30a9b1df04918fc828670606804ac3c09"
-dependencies = [
- "virtue",
 ]
 
 [[package]]
@@ -243,7 +233,7 @@ dependencies = [
  "embedded-cfu-protocol",
  "embedded-services",
  "fw-update-interface",
- "heapless 0.9.3",
+ "heapless",
  "log",
 ]
 
@@ -386,16 +376,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "device-driver"
-version = "1.0.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c2e4547bd66511372d2a38ac3c1b2892c7ebf83cf0d5411c3406e496c85a1d96"
-dependencies = [
- "embedded-io 0.6.1",
- "embedded-io-async 0.6.1",
-]
-
-[[package]]
 name = "document-features"
 version = "0.2.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -459,7 +439,7 @@ dependencies = [
  "embedded-io-async 0.7.0",
  "futures-core",
  "futures-sink",
- "heapless 0.9.3",
+ "heapless",
  "log",
 ]
 
@@ -497,7 +477,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "168297bf80aaf114b3c9ad589bf38b01b3009b9af7f97cd18086c5bbf96f5693"
 dependencies = [
  "embassy-executor-timer-queue",
- "heapless 0.9.3",
+ "heapless",
 ]
 
 [[package]]
@@ -748,16 +728,6 @@ dependencies = [
 
 [[package]]
 name = "heapless"
-version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0bfb9eb618601c89945a70e254898da93b13be0388091d42117462b265bb3fad"
-dependencies = [
- "hash32",
- "stable_deref_trait",
-]
-
-[[package]]
-name = "heapless"
 version = "0.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "25ba4bd83f9415b58b4ed8dc5714c76e626a105be4646c02630ad730ad3b5aa4"
@@ -808,15 +778,6 @@ name = "itertools"
 version = "0.10.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b0fd2260e829bddf4cb6ea802289de2f86d6a7a690192fbe91b3f46e0f2c8473"
-dependencies = [
- "either",
-]
-
-[[package]]
-name = "itertools"
-version = "0.14.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2b192c782037fadd9cfa75548310488aabdbf3d2da73885b31bd0abd03351285"
 dependencies = [
  "either",
 ]
@@ -1076,7 +1037,7 @@ dependencies = [
  "embassy-sync",
  "embassy-time",
  "embedded-services",
- "heapless 0.9.3",
+ "heapless",
  "log",
  "power-policy-interface",
 ]
@@ -1346,7 +1307,7 @@ dependencies = [
  "embedded-fans-async",
  "embedded-sensors-hal-async",
  "embedded-services",
- "heapless 0.9.3",
+ "heapless",
  "log",
  "odp-service-common",
  "thermal-service-interface",
@@ -1388,25 +1349,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f60246a4944f24f6e018aa17cdeffb7818b76356965d03b07d6a9886e8962185"
 dependencies = [
  "cfg-if",
-]
-
-[[package]]
-name = "tps6699x"
-version = "0.1.0"
-source = "git+https://github.com/OpenDevicePartnership/tps6699x#159ae3bd52592eaa40e72b318cf1385dd1670e71"
-dependencies = [
- "bincode",
- "bitfield 0.19.4",
- "device-driver",
- "embassy-sync",
- "embassy-time",
- "embedded-hal 1.0.0",
- "embedded-hal-async",
- "embedded-io-async 0.6.1",
- "embedded-usb-pd",
- "heapless 0.8.0",
- "itertools 0.14.0",
- "log",
 ]
 
 [[package]]
@@ -1477,7 +1419,7 @@ dependencies = [
  "bitfield 0.17.0",
  "embedded-services",
  "embedded-usb-pd",
- "heapless 0.9.3",
+ "heapless",
  "log",
  "power-policy-interface",
 ]
@@ -1486,19 +1428,15 @@ dependencies = [
 name = "type-c-service"
 version = "0.1.0"
 dependencies = [
- "bitfield 0.17.0",
- "bitflags 2.11.1",
  "embassy-futures",
  "embassy-sync",
  "embassy-time",
- "embedded-hal-async",
  "embedded-services",
  "embedded-usb-pd",
  "fw-update-interface",
- "heapless 0.9.3",
+ "heapless",
  "log",
  "power-policy-interface",
- "tps6699x",
  "type-c-interface",
 ]
 
@@ -1537,12 +1475,6 @@ name = "vcell"
 version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "77439c1b53d2303b20d9459b1ade71a83c716e3f9c34f3228c00e6f185d6c002"
-
-[[package]]
-name = "virtue"
-version = "0.0.18"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "051eb1abcf10076295e815102942cc58f9d5e3b4560e46e53c21e8ff6f3af7b1"
 
 [[package]]
 name = "void"

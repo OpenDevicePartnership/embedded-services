@@ -119,7 +119,6 @@ time-alarm-service-relay = { path = "./time-alarm-service-relay" }
 type-c-interface = { path = "./type-c-interface" }
 type-c-interface-test-mocks = { path = "./type-c-interface-test-mocks" }
 syn = "2.0"
-tps6699x = { git = "https://github.com/OpenDevicePartnership/tps6699x" }
 tokio = { version = "1.42.0" }
 uuid = { version = "=1.17.0", default-features = false }
 zerocopy = "0.8"
