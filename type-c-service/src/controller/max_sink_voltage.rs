@@ -1,4 +1,5 @@
 //! Max sink voltage port trait implementation
+use embassy_time::Instant;
 use embedded_services::{event::NonBlockingSender, sync::Lockable};
 use embedded_usb_pd::PdError;
 use power_policy_interface::capability::ConsumerDisconnect;
@@ -34,6 +35,18 @@ impl<
         if disable_sink_path {
             debug!("({}): Disabling sink path before max sink voltage change", self.name);
             self.controller.lock().await.enable_sink_path(self.port, false).await?;
+
+            // In general it's not possible to know if setting the max sink voltage will trigger a renegotiation
+            // because the logic to select a particular contract is specific to the PD controller.
+            // Enable the sink ready timeout as a recovery mechanism. If there's no renegotiation, then the timeout
+            // will result in us broadcasting the existing contract back to the power policy.
+            {
+                let mut shared_state = self.shared_state.lock().await;
+                if shared_state.sink_ready_deadline.is_none() {
+                    shared_state.sink_ready_deadline =
+                        Some(Instant::now() + Self::check_sink_ready_timeout_duration(self.status.epr));
+                }
+            }
 
             // Move our local state out of the consumer state and notify the power policy so it stops
             // tracking us as the active consumer and broadcasts a ConsumerDisconnected event. The
