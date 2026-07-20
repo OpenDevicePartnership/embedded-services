@@ -35,7 +35,7 @@ power-policy-interface = { path = "../../power-policy-interface", features = [
     "log",
 ] }
 cfu-service = { path = "../../cfu-service", features = ["log"] }
-embedded-cfu-protocol = { git = "https://github.com/OpenDevicePartnership/embedded-cfu"}
+embedded-cfu-protocol = { git = "https://github.com/OpenDevicePartnership/embedded-cfu" }
 
 battery-service = { path = "../../battery-service", features = ["log", "mock"] }
 type-c-service = { path = "../../type-c-service", features = ["log"] }
@@ -62,18 +62,6 @@ path = "src/lib/lib.rs"
 [[bin]]
 name = "debug"
 path = "src/bin/debug.rs"
-
-[[bin]]
-name = "type-c-service"
-path = "src/bin/type_c/service.rs"
-
-[[bin]]
-name = "type-c-unconstrained"
-path = "src/bin/type_c/unconstrained.rs"
-
-[[bin]]
-name = "type-c-ucsi"
-path = "src/bin/type_c/ucsi.rs"
 
 # Needed otherwise cargo will pull from git
 [patch."https://github.com/OpenDevicePartnership/embedded-services"]
