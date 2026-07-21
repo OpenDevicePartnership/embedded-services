@@ -4,6 +4,7 @@ use embedded_services::named::Named;
 use crate::capability::{ConsumerPowerCapability, PowerCapability, ProviderPowerCapability};
 
 pub mod event;
+pub mod notification;
 
 /// Error type
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

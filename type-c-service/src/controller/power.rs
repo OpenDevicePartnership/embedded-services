@@ -21,9 +21,9 @@ impl<
     C: Lockable<Inner: Pd>,
     Shared: Lockable<Inner = SharedState>,
     TypeCSender: NonBlockingSender<type_c_interface::service::event::PortEventData>,
-    PowerSender: NonBlockingSender<power_policy_interface::psu::event::EventData>,
+    PowerNotifier: power_policy_interface::psu::notification::Notifier,
     LoopbackSender: NonBlockingSender<event::Loopback>,
-> Port<'device, C, Shared, TypeCSender, PowerSender, LoopbackSender>
+> Port<'device, C, Shared, TypeCSender, PowerNotifier, LoopbackSender>
 {
     /// Handle a new contract as consumer
     pub(super) async fn process_new_consumer_contract(&mut self, new_status: &PortStatus) -> Result<(), PdError> {
@@ -44,12 +44,16 @@ impl<
             error!("Failed to update consumer power capability: {:?}", e);
             return Err(PdError::Failed);
         }
-        if self
-            .power_policy_sender
-            .try_send(power_policy_interface::psu::event::EventData::UpdatedConsumerCapability(available_sink_contract))
-            .is_none()
+
+        if let Err(e) = self
+            .power_policy_notifier
+            .notify_updated_consumer_capability(available_sink_contract)
+            .await
         {
-            error!("Failed to send updated consumer capability event");
+            error!(
+                "({}): Failed to notify power policy of updated consumer capability: {:#?}",
+                self.name, e
+            );
         }
         Ok(())
     }
@@ -66,12 +70,16 @@ impl<
             error!("Failed to update requested provider power capability: {:?}", e);
             return Err(PdError::Failed);
         }
-        if self
-            .power_policy_sender
-            .try_send(power_policy_interface::psu::event::EventData::RequestedProviderCapability(capability))
-            .is_none()
+
+        if let Err(e) = self
+            .power_policy_notifier
+            .notify_requested_provider_capability(capability)
+            .await
         {
-            error!("Failed to send requested provider capability event");
+            error!(
+                "({}): Failed to notify power policy of requested provider capability: {:#?}",
+                self.name, e
+            );
         }
         Ok(())
     }
@@ -110,14 +118,15 @@ impl<
         if let Err(e) = self.psu_state.disconnect(true) {
             error!("({}): Error updating PSU state on role swap: {:?}", self.name, e);
         }
-        if self
-            .power_policy_sender
-            .try_send(power_policy_interface::psu::event::EventData::Disconnected(
-                ConsumerDisconnect::none(),
-            ))
-            .is_none()
+        if let Err(e) = self
+            .power_policy_notifier
+            .notify_disconnected(ConsumerDisconnect::none())
+            .await
         {
-            error!("({}): Failed to notify power policy of role swap disconnect", self.name);
+            error!(
+                "({}): Failed to notify power policy of role swap disconnect: {:#?}",
+                self.name, e
+            );
         }
 
         Ok(())
@@ -172,9 +181,9 @@ impl<
     C: Lockable<Inner: Pd>,
     Shared: Lockable<Inner = SharedState>,
     TypeCSender: NonBlockingSender<type_c_interface::service::event::PortEventData>,
-    PowerSender: NonBlockingSender<power_policy_interface::psu::event::EventData>,
+    PowerNotifier: power_policy_interface::psu::notification::Notifier,
     LoopbackSender: NonBlockingSender<event::Loopback>,
-> Psu for Port<'device, C, Shared, TypeCSender, PowerSender, LoopbackSender>
+> Psu for Port<'device, C, Shared, TypeCSender, PowerNotifier, LoopbackSender>
 {
     async fn disconnect(&mut self) -> Result<(), PsuError> {
         self.controller
@@ -228,10 +237,10 @@ impl<
     C: Lockable<Inner: Pd + SystemPowerStateStatus>,
     Shared: Lockable<Inner = SharedState>,
     TypeCSender: NonBlockingSender<type_c_interface::service::event::PortEventData>,
-    PowerSender: NonBlockingSender<power_policy_interface::psu::event::EventData>,
+    PowerNotifier: power_policy_interface::psu::notification::Notifier,
     LoopbackSender: NonBlockingSender<event::Loopback>,
 > type_c_interface::port::power::SystemPowerStateStatus
-    for Port<'device, C, Shared, TypeCSender, PowerSender, LoopbackSender>
+    for Port<'device, C, Shared, TypeCSender, PowerNotifier, LoopbackSender>
 {
     async fn set_system_power_state_status(
         &mut self,

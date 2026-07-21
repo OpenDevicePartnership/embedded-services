@@ -11,9 +11,9 @@ impl<
     C: Lockable<Inner: Pd + UcsiLpm>,
     Shared: Lockable<Inner = SharedState>,
     TypeCSender: NonBlockingSender<type_c_interface::service::event::PortEventData>,
-    PowerSender: NonBlockingSender<power_policy_interface::psu::event::EventData>,
+    PowerNotifier: power_policy_interface::psu::notification::Notifier,
     LoopbackSender: NonBlockingSender<event::Loopback>,
-> type_c_interface::ucsi::Lpm for Port<'device, C, Shared, TypeCSender, PowerSender, LoopbackSender>
+> type_c_interface::ucsi::Lpm for Port<'device, C, Shared, TypeCSender, PowerNotifier, LoopbackSender>
 {
     async fn execute_lpm_command(&mut self, command: lpm::LocalCommand) -> Result<Option<lpm::ResponseData>, PdError> {
         self.controller.lock().await.execute_lpm_command(command).await

@@ -44,8 +44,8 @@ macro_rules! define_controller_port_static_cell_channel {
             // We prefix all aliases with 'Inner' to avoid potential name conflicts with user code when this macro is invoked
             // Unfortunately, super::$ty is not valid syntax in a macro, so we have to pull in everything with super::*.
             /// Type alias for the power policy sender
-            pub type InnerPowerPolicySenderType =
-                ::embassy_sync::channel::DynamicSender<'static, ::power_policy_interface::psu::event::EventData>;
+            pub type InnerPowerPolicyNotifierType =
+                ::power_policy_interface::psu::event::NonBlockingSenderNotifier<::embassy_sync::channel::DynamicSender<'static, ::power_policy_interface::psu::event::EventData>>;
             /// Type alias for the power policy receiver
             pub type InnerPowerPolicyReceiverType =
                 ::embassy_sync::channel::DynamicReceiver<'static, ::power_policy_interface::psu::event::EventData>;
@@ -84,7 +84,7 @@ macro_rules! define_controller_port_static_cell_channel {
                     // Type-C service event sender type
                     InnerTypeCSenderType,
                     // Power policy event sender type
-                    InnerPowerPolicySenderType,
+                    InnerPowerPolicyNotifierType,
                     // Loopback event sender type
                     InnerLoopbackSenderType,
                 >,
@@ -171,7 +171,7 @@ macro_rules! define_controller_port_static_cell_channel {
                     controller,
                     shared_state,
                     type_c_sender,
-                    power_policy_sender,
+                    power_policy_sender.into(),
                     loopback_sender,
                 )));
                 let event_receiver = $crate::controller::event_receiver::EventReceiver::new(

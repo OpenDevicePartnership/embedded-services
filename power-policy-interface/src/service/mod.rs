@@ -1,4 +1,5 @@
 pub mod event;
+pub mod notification;
 
 /// Unconstrained state information
 #[derive(Debug, Clone, Default, Copy, PartialEq, Eq)]

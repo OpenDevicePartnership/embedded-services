@@ -345,11 +345,14 @@ impl type_c_interface::controller::retimer::Retimer for Controller<'_> {
     }
 }
 
+pub type PowerNotifier<'a> = power_policy_interface::psu::event::NonBlockingSenderNotifier<
+    channel::DynamicSender<'a, power_policy_interface::psu::event::EventData>,
+>;
 pub type Port<'a> = type_c_service::controller::Port<
     'a,
     Mutex<GlobalRawMutex, Controller<'a>>,
     Mutex<GlobalRawMutex, SharedState>,
     channel::DynamicSender<'a, type_c_interface::service::event::PortEventData>,
-    channel::DynamicSender<'a, power_policy_interface::psu::event::EventData>,
+    PowerNotifier<'a>,
     channel::DynamicSender<'a, type_c_service::controller::event::Loopback>,
 >;

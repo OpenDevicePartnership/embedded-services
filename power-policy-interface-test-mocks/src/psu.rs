@@ -2,12 +2,12 @@
 
 use std::collections::VecDeque;
 
-use embedded_services::{event::NonBlockingSender, named::Named};
+use embedded_services::named::Named;
 use power_policy_interface::{
     capability::{
         ConsumerDisconnect, ConsumerPowerCapability, PowerCapability, ProviderFlags, ProviderPowerCapability,
     },
-    psu::{Error, Psu, State, event::EventData},
+    psu::{self, Error, Psu, State},
 };
 
 /// Contains a PSU function call and its arguments
@@ -19,8 +19,8 @@ pub enum FnCall {
 }
 
 /// Mock PSU for use in tests
-pub struct Mock<S: NonBlockingSender<EventData>> {
-    sender: S,
+pub struct Mock<Notifier: psu::notification::Notifier> {
+    notifier: Notifier,
     name: &'static str,
     pub state: State,
     /// Recorded function calls
@@ -33,11 +33,11 @@ pub struct Mock<S: NonBlockingSender<EventData>> {
     pub next_result_disconnect: VecDeque<Result<(), Error>>,
 }
 
-impl<S: NonBlockingSender<EventData>> Mock<S> {
-    pub fn new(name: &'static str, sender: S) -> Self {
+impl<Notifier: psu::notification::Notifier> Mock<Notifier> {
+    pub fn new(name: &'static str, notifier: Notifier) -> Self {
         Self {
             name,
-            sender,
+            notifier,
             state: Default::default(),
             fn_calls: VecDeque::new(),
             next_result_connect_consumer: VecDeque::new(),
@@ -48,29 +48,31 @@ impl<S: NonBlockingSender<EventData>> Mock<S> {
 
     pub async fn simulate_consumer_connection(&mut self, capability: ConsumerPowerCapability) {
         self.state.attach().unwrap();
-        self.sender.try_send(EventData::Attached).unwrap();
+        self.notifier.notify_attached().await.unwrap();
         self.state.update_consumer_power_capability(Some(capability)).unwrap();
-        self.sender
-            .try_send(EventData::UpdatedConsumerCapability(Some(capability)))
+        self.notifier
+            .notify_updated_consumer_capability(Some(capability))
+            .await
             .unwrap();
     }
 
     /// Simulate an already-attached consumer renegotiating a new power capability.
     pub async fn simulate_update_consumer_power_capability(&mut self, capability: Option<ConsumerPowerCapability>) {
         self.state.update_consumer_power_capability(capability).unwrap();
-        self.sender
-            .try_send(EventData::UpdatedConsumerCapability(capability))
+        self.notifier
+            .notify_updated_consumer_capability(capability)
+            .await
             .unwrap();
     }
 
     pub async fn simulate_detach(&mut self) {
         self.state.detach();
-        self.sender.try_send(EventData::Detached).unwrap();
+        self.notifier.notify_detached().await.unwrap();
     }
 
     pub async fn simulate_provider_connection(&mut self, capability: PowerCapability) {
         self.state.attach().unwrap();
-        self.sender.try_send(EventData::Attached).unwrap();
+        self.notifier.notify_attached().await.unwrap();
 
         let capability = Some(ProviderPowerCapability {
             capability,
@@ -79,15 +81,17 @@ impl<S: NonBlockingSender<EventData>> Mock<S> {
         self.state
             .update_requested_provider_power_capability(capability)
             .unwrap();
-        self.sender
-            .try_send(EventData::RequestedProviderCapability(capability))
+        self.notifier
+            .notify_requested_provider_capability(capability)
+            .await
             .unwrap();
     }
 
     pub async fn simulate_disconnect(&mut self) {
         self.state.disconnect(true).unwrap();
-        self.sender
-            .try_send(EventData::Disconnected(ConsumerDisconnect::none()))
+        self.notifier
+            .notify_disconnected(ConsumerDisconnect::none())
+            .await
             .unwrap();
     }
 
@@ -98,13 +102,14 @@ impl<S: NonBlockingSender<EventData>> Mock<S> {
         self.state
             .update_requested_provider_power_capability(capability)
             .unwrap();
-        self.sender
-            .try_send(EventData::RequestedProviderCapability(capability))
+        self.notifier
+            .notify_requested_provider_capability(capability)
+            .await
             .unwrap();
     }
 }
 
-impl<S: NonBlockingSender<EventData>> Psu for Mock<S> {
+impl<Notifier: psu::notification::Notifier> Psu for Mock<Notifier> {
     async fn connect_consumer(&mut self, capability: ConsumerPowerCapability) -> Result<(), Error> {
         self.fn_calls.push_back(FnCall::ConnectConsumer(capability));
         let result = self
@@ -150,7 +155,7 @@ impl<S: NonBlockingSender<EventData>> Psu for Mock<S> {
     }
 }
 
-impl<S: NonBlockingSender<EventData>> Named for Mock<S> {
+impl<Notifier: psu::notification::Notifier> Named for Mock<Notifier> {
     fn name(&self) -> &'static str {
         self.name
     }

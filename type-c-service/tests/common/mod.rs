@@ -39,6 +39,8 @@ pub type PortTypeCReceiver<'a> = DynamicReceiver<'a, type_c_interface::service::
 pub type PortPowerSender<'a> = DynamicSender<'a, power_policy_interface::psu::event::EventData>;
 /// Corresponding receiver for [`PortPowerSender`]
 pub type PortPowerReceiver<'a> = DynamicReceiver<'a, power_policy_interface::psu::event::EventData>;
+/// Power policy notification wrapper
+pub type PortPowerNotifier<'a> = power_policy_interface::psu::event::NonBlockingSenderNotifier<PortPowerSender<'a>>;
 /// [`type_c_service::controller::Port`] sender for loopback events
 pub type PortLoopbackSender<'a> = DynamicSender<'a, type_c_service::controller::event::Loopback>;
 /// Corresponding receiver for [`PortLoopbackSender`]
@@ -60,8 +62,8 @@ pub type PortMutexType<'port, 'ch> = Mutex<
         PortSharedState,
         // Sender to the type-C service
         PortTypeCSender<'ch>,
-        // Sender to the power policy
-        PortPowerSender<'ch>,
+        // Power policy notifier
+        PortPowerNotifier<'ch>,
         // Loopback sender
         PortLoopbackSender<'ch>,
     >,
@@ -80,6 +82,12 @@ pub type PowerPolicyServiceSender<'port, 'ch> = PowerPolicyServiceEventRouter<'p
 /// Receiver for events broadcast by the power policy service
 pub type PowerPolicyServiceReceiver<'port, 'ch> =
     DynamicReceiver<'ch, power_policy_interface::service::event::Event<'port, PortMutexType<'port, 'ch>>>;
+/// Notifier for events broadcast by the power policy service
+type PowerPolicyNotifierType<'port, 'ch> = power_policy_interface::service::event::NonBlockingSenderNotifier<
+    'port,
+    PortMutexType<'port, 'ch>,
+    PowerPolicyServiceSender<'port, 'ch>,
+>;
 /// Power policy registration type
 pub type PowerPolicyRegistrationType<'port, 'ch> = power_policy_service::service::registration::ArrayRegistration<
     'port,
@@ -88,7 +96,7 @@ pub type PowerPolicyRegistrationType<'port, 'ch> = power_policy_service::service
     // PSU count
     TYPE_C_PORT_COUNT,
     // Senders for events broadcast by the service
-    PowerPolicyServiceSender<'port, 'ch>,
+    PowerPolicyNotifierType<'port, 'ch>,
     // Number of registered service event senders
     POWER_POLICY_SENDER_COUNT,
     // Charger type
@@ -215,7 +223,7 @@ macro_rules! define_port {
                     &paste! { [<$name _mock>] },
                     &paste! { [<$name _shared_state>] },
                     paste! { [<$name _type_c_sender>] },
-                    paste! { [<$name _power_policy_sender>] },
+                    paste! { [<$name _power_policy_sender>].into() },
                     paste! { [<$name _loopback_sender>] },
             )),
             mock: &paste! { [<$name _mock>] },
@@ -387,7 +395,7 @@ pub async fn run_test(
         power_policy_service::service::registration::ArrayRegistration {
             psus: [&port0, &port1, &port2],
             chargers: [],
-            service_senders: [power_policy_service_event_router],
+            service_notifiers: [power_policy_service_event_router.into()],
         },
         Default::default(),
     ));

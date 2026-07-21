@@ -21,11 +21,13 @@ use power_policy_service::{
 };
 use static_cell::StaticCell;
 
+type ServiceNotifier =
+    power_policy_interface::service::event::NonBlockingSenderNotifier<'static, DeviceType, NoopSender>;
 type ServiceType = Mutex<
     GlobalRawMutex,
     power_policy_service::service::Service<
         'static,
-        ArrayRegistration<'static, DeviceType, 2, NoopSender, 1, ChargerType, 1>,
+        ArrayRegistration<'static, DeviceType, 2, ServiceNotifier, 1, ChargerType, 1>,
     >,
 >;
 
@@ -251,7 +253,7 @@ async fn run(spawner: Spawner) {
 
     let registration = ArrayRegistration {
         psus: [device0, device1],
-        service_senders: [NoopSender],
+        service_notifiers: [NoopSender.into()],
         chargers: [charger0],
     };
 

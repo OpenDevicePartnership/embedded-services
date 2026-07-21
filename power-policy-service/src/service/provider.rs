@@ -98,13 +98,13 @@ impl<'device, Reg: Registration<'device>, Customization: customization::Customiz
             e
         } else {
             locked_requester.connect_provider(target_power).await?;
-            self.post_provider_connected(requester, target_power);
+            self.post_provider_connected(requester, target_power).await;
             Ok(())
         }
     }
 
     /// Common logic for after a provider has successfully connected
-    fn post_provider_connected(&mut self, requester: &'device Reg::Psu, target_power: ProviderPowerCapability) {
+    async fn post_provider_connected(&mut self, requester: &'device Reg::Psu, target_power: ProviderPowerCapability) {
         if self
             .state
             .connected_providers
@@ -113,7 +113,8 @@ impl<'device, Reg: Registration<'device>, Customization: customization::Customiz
         {
             error!("Tracked providers set is full");
         }
-        self.broadcast_event(ServiceEvent::ProviderConnected(requester, target_power));
+
+        self.notify_provider_connected(requester, target_power).await;
     }
 
     /// Common logic for when a provider is removed
@@ -138,7 +139,7 @@ impl<'device, Reg: Registration<'device>, Customization: customization::Customiz
                 self.state.current_provider_state.state = PowerState::Unlimited;
             }
 
-            self.broadcast_event(ServiceEvent::ProviderDisconnected(psu));
+            self.notify_provider_disconnected(psu).await;
             true
         } else {
             false
