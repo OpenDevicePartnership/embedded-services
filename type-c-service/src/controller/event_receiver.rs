@@ -119,7 +119,7 @@ impl<
     ///
     /// Returns the local port ID and the event bitfield.
     pub async fn wait_event(&mut self) -> Event {
-        let timeout = self.shared_state.lock().await.sink_ready_timeout;
+        let timeout = self.shared_state.lock().await.sink_ready_deadline;
         match select(self.port_event_receiver.wait_next(), async move {
             if let Some(timeout) = timeout {
                 Timer::at(timeout).await;
@@ -133,7 +133,7 @@ impl<
             Either::Second(_) => {
                 let mut status_event = PortStatusEventBitfield::none();
                 status_event.set_sink_ready(true);
-                self.shared_state.lock().await.sink_ready_timeout = None;
+                self.shared_state.lock().await.sink_ready_deadline = None;
                 Event::PortEvent(PortEvent::StatusChanged(status_event))
             }
         }

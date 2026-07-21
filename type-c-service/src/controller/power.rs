@@ -123,6 +123,20 @@ impl<
         Ok(())
     }
 
+    /// Returns the timeout duration for the sink ready check.
+    pub(super) fn check_sink_ready_timeout_duration(is_epr: bool) -> Duration {
+        Duration::from_millis(
+            (if is_epr {
+                T_PS_TRANSITION_EPR_MS
+            } else {
+                T_PS_TRANSITION_SPR_MS
+            }
+            .maximum
+            .0 * 2)
+                .into(),
+        )
+    }
+
     /// Check the sink ready timeout
     ///
     /// After accepting a sink contract (new contract as consumer), the PD spec guarantees that the
@@ -136,32 +150,26 @@ impl<
     ) -> Result<(), PdError> {
         let contract_changed = self.status.available_sink_contract != new_status.available_sink_contract;
         let mut shared_state = self.shared_state.lock().await;
-        let timeout = &mut shared_state.sink_ready_timeout;
+        let deadline = &mut shared_state.sink_ready_deadline;
 
         // Don't start the timeout if the sink has signaled it's ready or if the contract didn't change.
         // The latter ensures that soft resets won't continually reset the ready timeout
         debug!(
             "({}): Check sink ready: new_contract={:?}, sink_ready={:?}, contract_changed={:?}, deadline={:?}",
-            self.name, new_contract, sink_ready, contract_changed, timeout,
+            self.name, new_contract, sink_ready, contract_changed, deadline,
         );
         if new_contract && !sink_ready && contract_changed {
             // Start the timeout
             // Double the spec maximum transition time to provide a safety margin for hardware/controller delays or out-of-spec controllers.
-            let timeout_ms = if new_status.epr {
-                T_PS_TRANSITION_EPR_MS
-            } else {
-                T_PS_TRANSITION_SPR_MS
-            }
-            .maximum
-            .0 * 2;
+            let timeout = Self::check_sink_ready_timeout_duration(new_status.epr);
 
-            debug!("({}): Sink ready timeout started for {}ms", self.name, timeout_ms);
-            *timeout = Some(Instant::now() + Duration::from_millis(timeout_ms as u64));
-        } else if timeout.is_some()
+            debug!("({}): Sink ready timeout started for {}ms", self.name, timeout);
+            *deadline = Some(Instant::now() + timeout);
+        } else if deadline.is_some()
             && (!new_status.is_connected() || new_status.available_sink_contract.is_none() || sink_ready)
         {
             debug!("({}): Sink ready timeout cleared", self.name);
-            *timeout = None;
+            *deadline = None;
         }
         Ok(())
     }

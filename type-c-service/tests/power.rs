@@ -4,7 +4,11 @@ use std::ptr;
 
 use embassy_futures::join::join;
 use embassy_time::{Duration, Instant, TimeoutError, with_timeout};
-use embedded_usb_pd::{PowerRole, constants::T_PS_TRANSITION_SPR_MS, type_c::ConnectionState};
+use embedded_usb_pd::{
+    PowerRole,
+    constants::{T_PS_TRANSITION_EPR_MS, T_PS_TRANSITION_SPR_MS},
+    type_c::ConnectionState,
+};
 use power_policy_interface::{
     capability::{
         ConsumerDisconnect, ConsumerFlags, ConsumerPowerCapability, ProviderFlags, ProviderPowerCapability, PsuType,
@@ -310,7 +314,7 @@ impl Test for TestConsumerFlowTimerSinkReady {
 
         // Initially detached with no pending sink-ready timeout.
         assert_eq!(port.lock().await.state().psu_state, PsuState::Detached);
-        assert!(shared_state.lock().await.sink_ready_timeout().is_none());
+        assert!(shared_state.lock().await.sink_ready_deadline().is_none());
 
         let start = Instant::now();
 
@@ -328,7 +332,7 @@ impl Test for TestConsumerFlowTimerSinkReady {
         // The port is attached but not consuming yet, the sink-ready timeout is armed, and no
         // consumer connection has been broadcast to the power policy.
         assert_eq!(port.lock().await.state().psu_state, PsuState::Idle);
-        assert!(shared_state.lock().await.sink_ready_timeout().is_some());
+        assert!(shared_state.lock().await.sink_ready_deadline().is_some());
         assert!(power_policy_receiver.try_receive().is_err());
 
         // The next event is synthesized *inside* `wait_event` by a real timer; nothing in this test
@@ -348,7 +352,7 @@ impl Test for TestConsumerFlowTimerSinkReady {
         // The timer cleared the sink-ready timeout when it synthesized the sink-ready event. The
         // port is not a connected consumer yet: it has only forwarded the updated consumer
         // capability to the power policy, which still has to connect it.
-        assert!(shared_state.lock().await.sink_ready_timeout().is_none());
+        assert!(shared_state.lock().await.sink_ready_deadline().is_none());
 
         // The power policy should now broadcast a consumer connect event.
         match with_timeout(DEFAULT_PER_CALL_TIMEOUT, power_policy_receiver.receive()).await {
@@ -390,7 +394,7 @@ impl Test for TestConsumerFlowTimerSinkReady {
 
         // Back to detached with no pending sink-ready timeout.
         assert_eq!(port.lock().await.state().psu_state, PsuState::Detached);
-        assert!(shared_state.lock().await.sink_ready_timeout().is_none());
+        assert!(shared_state.lock().await.sink_ready_deadline().is_none());
     }
 }
 
@@ -510,6 +514,150 @@ impl Test for TestSinkDisableOnVoltageChange {
             );
             assert!(mock0.fn_calls.is_empty());
         }
+    }
+}
+
+/// It's not possible to know if setting the max sink voltage will trigger a renegotiation
+/// because the logic to select a particular contract is specific to the PD controller.
+/// This test ensures that the sink path is disabled and the power policy is notified regardless of whether a renegotiation occurs.
+struct TestSetMaxSinkVoltageRecovery;
+
+impl Test for TestSetMaxSinkVoltageRecovery {
+    async fn run<'port, 'ch>(
+        &mut self,
+        type_c_receiver: TypeCServiceReceiver<'port, 'ch>,
+        power_policy_receiver: PowerPolicyServiceReceiver<'port, 'ch>,
+        port0: TestPort<'port, 'ch>,
+        _port1: TestPort<'port, 'ch>,
+        _port2: TestPort<'port, 'ch>,
+    ) {
+        let TestPort {
+            port,
+            mock,
+            mut event_receiver,
+            ..
+        } = port0;
+
+        {
+            // Set up the mock to report a sink connection and allow enabling the sink path
+            let mut mock = mock.lock().await;
+
+            mock.next_result_get_port_status.push_back(Ok(PortStatus {
+                available_sink_contract: Some(POWER_CAPABILITY_5V_1A5),
+                connection_state: Some(ConnectionState::Attached),
+                power_role: PowerRole::Sink,
+                ..Default::default()
+            }));
+            mock.next_result_enable_sink_path.push_back(Ok(()));
+        }
+
+        // Simulate a plug event and a new consumer contract
+        let mut port_event = PortStatusEventBitfield::none();
+        port_event.set_plug_inserted_or_removed(true);
+        port_event.set_new_power_contract_as_consumer(true);
+        port_event.set_sink_ready(true);
+
+        port.lock()
+            .await
+            .process_event(Event::PortEvent(PortEvent::StatusChanged(port_event)))
+            .await
+            .unwrap();
+
+        let (type_c_result, power_policy_result) = join(
+            with_timeout(DEFAULT_PER_CALL_TIMEOUT, type_c_receiver.receive()),
+            with_timeout(DEFAULT_PER_CALL_TIMEOUT, power_policy_receiver.receive()),
+        )
+        .await;
+
+        // Power policy service should broadcast a consumer connected event
+        match power_policy_result {
+            Ok(PowerPolicyEvent::ConsumerConnected(psu, capability)) => {
+                assert_eq!(
+                    capability,
+                    ConsumerPowerCapability {
+                        capability: POWER_CAPABILITY_5V_1A5,
+                        flags: ConsumerFlags::none().with_psu_type(PsuType::TypeC),
+                    }
+                );
+                assert!(ptr::eq(psu, port0.port));
+            }
+            _ => panic!("Did not receive consumer connected event"),
+        }
+        // Shouldn't get any Type-C service events in this flow
+        assert_eq!(type_c_result.err(), Some(TimeoutError));
+
+        {
+            // Set up the mock to accept a max sink voltage change and disable the sink path
+            let mut mock = mock.lock().await;
+
+            mock.next_result_set_max_sink_voltage.push_back(Ok(()));
+            mock.next_result_enable_sink_path.push_back(Ok(()));
+        }
+
+        port.lock().await.set_max_sink_voltage(None).await.unwrap();
+
+        let (type_c_result, power_policy_result) = join(
+            with_timeout(DEFAULT_PER_CALL_TIMEOUT, type_c_receiver.receive()),
+            with_timeout(DEFAULT_PER_CALL_TIMEOUT, power_policy_receiver.receive()),
+        )
+        .await;
+
+        // Power policy service should broadcast a consumer disconnected event
+        match power_policy_result {
+            Ok(PowerPolicyEvent::ConsumerDisconnected(psu, flags)) => {
+                assert_eq!(flags, ConsumerDisconnect::none().with_renegotiation(true));
+                assert!(ptr::eq(psu, port0.port));
+            }
+            _ => panic!("Did not receive provider connected event"),
+        }
+        // Shouldn't get any Type-C service events in this flow
+        assert_eq!(type_c_result.err(), Some(TimeoutError));
+
+        {
+            // Setup the mock to return the existing contract and enable the sink path again
+            let mut mock = mock.lock().await;
+
+            mock.next_result_get_port_status.push_back(Ok(PortStatus {
+                available_sink_contract: Some(POWER_CAPABILITY_5V_1A5),
+                connection_state: Some(ConnectionState::Attached),
+                power_role: PowerRole::Sink,
+                ..Default::default()
+            }));
+            mock.next_result_enable_sink_path.push_back(Ok(()));
+        }
+
+        // Wait for sink ready recovery, x3 just to be safe and ensure the deadline has passed.
+        let event = with_timeout(
+            Duration::from_millis(T_PS_TRANSITION_EPR_MS.maximum.0 as u64 * 3),
+            event_receiver.wait_event(),
+        )
+        .await
+        .unwrap();
+
+        port.lock().await.process_event(event).await.unwrap();
+
+        let (type_c_result, power_policy_result) = join(
+            with_timeout(DEFAULT_PER_CALL_TIMEOUT, type_c_receiver.receive()),
+            with_timeout(DEFAULT_PER_CALL_TIMEOUT, power_policy_receiver.receive()),
+        )
+        .await;
+
+        // Power policy service should broadcast a consumer connected event
+        match power_policy_result {
+            Ok(PowerPolicyEvent::ConsumerConnected(psu, capability)) => {
+                assert_eq!(
+                    capability,
+                    ConsumerPowerCapability {
+                        capability: POWER_CAPABILITY_5V_1A5,
+                        flags: ConsumerFlags::none().with_psu_type(PsuType::TypeC),
+                    }
+                );
+                assert!(ptr::eq(psu, port0.port));
+            }
+            _ => panic!("Did not receive consumer connected event"),
+        }
+        // Shouldn't get any Type-C service events in this flow
+        assert_eq!(type_c_result.err(), Some(TimeoutError));
     }
 }
 
@@ -847,6 +995,17 @@ async fn test_sink_disable_on_voltage_change() {
         Default::default(),
         Default::default(),
         TestSinkDisableOnVoltageChange,
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn test_set_max_sink_voltage_recovery() {
+    common::run_test(
+        DEFAULT_TEST_DURATION,
+        Default::default(),
+        Default::default(),
+        TestSetMaxSinkVoltageRecovery,
     )
     .await;
 }
