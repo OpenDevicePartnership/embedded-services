@@ -623,7 +623,6 @@ dependencies = [
  "paste",
  "portable-atomic",
  "serde",
- "typenum",
 ]
 
 [[package]]
