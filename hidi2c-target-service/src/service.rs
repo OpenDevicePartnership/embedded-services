@@ -433,8 +433,6 @@ impl<
         let report_ids_implicit = self.hid_device.report_descriptor().report_ids_implicit();
         self.hid_device
             .process_next_input_report(async |report| {
-                info!("HID-I2C: Got report to return - listening to bus for read request");
-
                 let size_bytes = report.data().len() as u16
                     + device_descriptor::HID_REPORT_HEADER_SIZE_BYTES
                     + if report_ids_implicit {
@@ -450,12 +448,6 @@ impl<
                     &[size_low, size_high, report.id().0]
                 };
 
-                trace!(
-                    "Responding with input report {}: {:x} {:x}",
-                    report.id(),
-                    header_slice,
-                    report.data()
-                );
                 self.bus.write_unterminated(header_slice).await?;
                 self.bus.write(report.data()).await?;
                 Ok::<(), Error<Bus::Error>>(())
