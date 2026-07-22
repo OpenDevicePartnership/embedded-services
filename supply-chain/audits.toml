@@ -736,6 +736,11 @@ criteria = "safe-to-deploy"
 delta = "0.8.7 -> 0.8.8"
 notes = "Delta audit: replaces heavy windows crate with lighter windows-link/windows-result + auto-generated bindings (windows-bindgen 0.65.0). Fixes fn-ptr-to-int casts for strict provenance. Improves TLS optimization bug workaround on macOS/Windows (compiler_fence + black_box replacing double thread::current hack). No new unsafe patterns; all changes consistent with stackful coroutine purpose. Assisted-by: GitHub Copilot:claude-opus-4.6"
 
+[[audits.generic-array]]
+who = "Billy Price <williamp@microsoft.com>"
+criteria = "safe-to-deploy"
+version = "1.4.2"
+
 [[audits.gimli]]
 who = "Robert Zieba <robertzieba@microsoft.com>"
 criteria = "safe-to-run"
