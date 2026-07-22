@@ -1086,6 +1086,7 @@ dependencies = [
  "embedded-mcu-hal",
  "embedded-services",
  "generic-array",
+ "log",
  "num_enum",
  "odp-service-common",
  "typenum",
