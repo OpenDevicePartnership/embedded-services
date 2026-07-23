@@ -12,6 +12,7 @@ members = [
     "espi-service",
     "uart-service",
     "hid-service",
+    "hidi2c-target-service",
     "partition-manager/generation",
     "partition-manager/macros",
     "partition-manager/partition-manager",
@@ -96,6 +97,7 @@ embedded-storage-async = "0.4.1"
 embedded-usb-pd = { git = "https://github.com/OpenDevicePartnership/embedded-usb-pd", tag = "v0.1.0", default-features = false }
 fw-update-interface = { path = "./fw-update-interface" }
 fw-update-interface-test-mocks = { path = "./fw-update-interface-test-mocks" }
+generic-array = "1.4.1"
 mctp-rs = { path = "./mctp-rs" }
 num_enum = { version = "0.7.5", default-features = false }
 portable-atomic = { version = "1.11", default-features = false }
@@ -118,6 +120,7 @@ time-alarm-service-interface = { path = "./time-alarm-service-interface" }
 time-alarm-service-relay = { path = "./time-alarm-service-relay" }
 type-c-interface = { path = "./type-c-interface" }
 type-c-interface-test-mocks = { path = "./type-c-interface-test-mocks" }
+typenum = "1.20"
 syn = "2.0"
 tokio = { version = "1.42.0" }
 uuid = { version = "=1.17.0", default-features = false }

@@ -448,7 +448,7 @@ dependencies = [
 [[package]]
 name = "embassy-imxrt"
 version = "0.1.0"
-source = "git+https://github.com/OpenDevicePartnership/embassy-imxrt#8b9a6f0e11d9b65f1616a9e487af2cf04aef3584"
+source = "git+https://github.com/OpenDevicePartnership/embassy-imxrt#0e68fe138967b9469ecd952a702fc7e42852fe47"
 dependencies = [
  "cfg-if",
  "cortex-m",
@@ -669,7 +669,9 @@ dependencies = [
  "defmt 0.3.100",
  "embassy-futures",
  "embassy-sync",
+ "generic-array",
  "mctp-rs",
+ "num_enum",
  "paste",
  "portable-atomic",
  "serde",
@@ -775,6 +777,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "generic-array"
+version = "1.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fb130435a959a8d525e6bca66ff6c40981a300ee96d70e3ef56f046556d614a3"
+dependencies = [
+ "rustversion",
+ "typenum",
+]
+
+[[package]]
 name = "half"
 version = "2.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -809,6 +821,24 @@ name = "heck"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
+
+[[package]]
+name = "hidi2c-target-service"
+version = "0.1.0"
+dependencies = [
+ "defmt 0.3.100",
+ "embassy-futures",
+ "embassy-sync",
+ "embassy-time",
+ "embedded-hal 1.0.0",
+ "embedded-mcu-hal",
+ "embedded-services",
+ "generic-array",
+ "num_enum",
+ "odp-service-common",
+ "typenum",
+ "zerocopy",
+]
 
 [[package]]
 name = "ident_case"
@@ -1198,7 +1228,9 @@ dependencies = [
  "embedded-mcu-hal",
  "embedded-services",
  "embedded-usb-pd",
+ "hidi2c-target-service",
  "mimxrt600-fcb 0.1.0",
+ "num_enum",
  "odp-service-common",
  "panic-probe",
  "platform-service",
@@ -1212,6 +1244,8 @@ dependencies = [
  "tps6699x",
  "type-c-interface",
  "type-c-service",
+ "typenum",
+ "zerocopy",
 ]
 
 [[package]]

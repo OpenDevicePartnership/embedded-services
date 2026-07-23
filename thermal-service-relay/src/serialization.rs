@@ -1,5 +1,5 @@
 use crate::DeciKelvin;
-use embedded_services::relay::{MessageSerializationError, SerializableMessage};
+use embedded_services::relay::mctp::{MessageSerializationError, SerializableMessage};
 
 // Standard MPTF requests expected by the thermal subsystem
 #[derive(num_enum::IntoPrimitive, num_enum::TryFromPrimitive, Copy, Clone, Debug, PartialEq)]
