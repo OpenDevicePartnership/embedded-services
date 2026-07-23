@@ -40,4 +40,4 @@ where
     type MaxOutputOrFeatureSize = <T::FeatureReportMaxSize as Max<T::OutputReportMaxSize>>::Output;
 }
 
-impl<T> sealed::Sealed for T where T: ConstrainedHidDevice {}
+impl<T> sealed::Sealed for T where T: embedded_services::relay::hid::HidDevice {}

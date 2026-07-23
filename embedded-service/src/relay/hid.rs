@@ -28,7 +28,7 @@ pub enum HidDevicePowerState {
     Off,
 }
 
-/// A HID report of no more than X bytes
+/// A HID report
 pub struct HidReport<'buf> {
     id: ReportId,
 
