@@ -340,7 +340,11 @@ impl<
 
     async fn process_register_access(&mut self) -> Result<(), Error<Bus::Error>> {
         let mut reg = [0u8; 2];
-        self.bus.read(&mut reg).await?;
+        let read = self.bus.read(&mut reg).await?;
+        if read != reg.len() {
+            error!("Expected to read {} bytes but got {}", reg.len(), read);
+            return Err(Error::Protocol(ProtocolError::InvalidData));
+        }
 
         let register = HidI2cRegister::try_from(u16::from_le_bytes(reg))
             .map_err(|_| Error::Protocol(ProtocolError::InvalidRegisterAddress))?;
@@ -476,10 +480,16 @@ impl<
             .get_mut(..header_len)
             .ok_or(Error::Protocol(ProtocolError::InvalidSize))?;
 
-        self.bus.read(header_buf_slice).await?;
+        let header_read = self.bus.read(header_buf_slice).await?;
+        if header_read != header_len {
+            error!("Expected to read {} bytes but got {}", header_len, header_read);
+            return Err(Error::Protocol(ProtocolError::InvalidSize));
+        }
 
         let [len_low, len_high, report_id] = write_header_buf;
-        let length = u16::from_le_bytes([len_low, len_high]) as usize - header_len; // Note: per HID spec, the length field needs to include its own length (2 bytes) and the report ID (1 byte)
+        let length = (u16::from_le_bytes([len_low, len_high]) as usize)
+            .checked_sub(header_len)
+            .ok_or(Error::Protocol(ProtocolError::InvalidSize))?; // Note: per HID spec, the length field needs to include its own length (2 bytes) and the report ID (1 byte)
         trace!("Reading {} bytes", length);
 
         let read_result = self.bus.read(&mut self.write_buf).await?;
@@ -560,11 +570,18 @@ impl<
                 trace!("Processing set report command");
                 let (report_type, report_id) = self.get_command_report_header(command_byte).await?;
                 let mut len_header = [0u8; core::mem::size_of::<u16>()];
-                self.bus.read(&mut len_header).await?;
+
+                let header_read = self.bus.read(&mut len_header).await?;
+                if header_read != len_header.len() {
+                    error!("Expected to read {} bytes but got {}", len_header.len(), header_read);
+                    return Err(Error::Protocol(ProtocolError::InvalidSize));
+                }
 
                 // Note: per HID spec, the length field relayed over the wire needs to include its own length (2 bytes)
-                let report_size =
-                    (u16::from_le_bytes(len_header) - device_descriptor::HID_REPORT_HEADER_SIZE_BYTES) as usize;
+                let report_size = (u16::from_le_bytes(len_header)
+                    .checked_sub(device_descriptor::HID_REPORT_HEADER_SIZE_BYTES))
+                .ok_or(Error::Protocol(ProtocolError::InvalidSize))? as usize;
+
                 self.bus
                     .read(
                         self.write_buf
