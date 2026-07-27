@@ -517,7 +517,10 @@ impl<
         Ok(())
     }
 
-    async fn get_command_report_header(
+    /// Attempts to parse the provided command byte as an input / output command header, including reading any more bytes if
+    /// needed and verifying that the host followed the command header with the expected write to the data register address.
+    /// Upon success, callers should proceed to read or write the requested payload to/from the bus.
+    async fn get_io_command_report_header(
         &mut self,
         command_byte: u8,
     ) -> Result<(HidI2cReportType, embedded_services::relay::hid::ReportId), Error<Bus::Error>> {
@@ -529,6 +532,26 @@ impl<
             self.bus.read(core::slice::from_mut(&mut report_id)).await?;
             embedded_services::relay::hid::ReportId(report_id)
         };
+
+        let mut data_register_address = [0u8; core::mem::size_of::<u16>()];
+        let data_register_address_read = self.bus.read(&mut data_register_address).await?;
+        if data_register_address_read != data_register_address.len() {
+            error!(
+                "Expected to read {} bytes but got {}",
+                data_register_address.len(),
+                data_register_address_read
+            );
+            return Err(Error::Protocol(ProtocolError::InvalidSize));
+        }
+
+        if u16::from_le_bytes(data_register_address) != HidI2cRegister::Data as u16 {
+            error!(
+                "Expected the host to write the data register address after the header ({:?}) but got {:?}",
+                HidI2cRegister::Data,
+                u16::from_le_bytes(data_register_address)
+            );
+            return Err(Error::Protocol(ProtocolError::InvalidRegisterAddress));
+        }
 
         Ok((command_header.report_type, report_id))
     }
@@ -557,7 +580,7 @@ impl<
             Opcode::GetReport => {
                 trace!("Processing get report command");
 
-                let (report_type, report_id) = self.get_command_report_header(command_byte).await?;
+                let (report_type, report_id) = self.get_io_command_report_header(command_byte).await?;
                 self.hid_device
                     .process_get_report(report_type.try_into()?, report_id, async |report| {
                         // Note: per HID spec, the length field needs to include its own length (2 bytes)
@@ -574,9 +597,9 @@ impl<
 
             Opcode::SetReport => {
                 trace!("Processing set report command");
-                let (report_type, report_id) = self.get_command_report_header(command_byte).await?;
-                let mut len_header = [0u8; core::mem::size_of::<u16>()];
+                let (report_type, report_id) = self.get_io_command_report_header(command_byte).await?;
 
+                let mut len_header = [0u8; core::mem::size_of::<u16>()];
                 let header_read = self.bus.read(&mut len_header).await?;
                 if header_read != len_header.len() {
                     error!("Expected to read {} bytes but got {}", len_header.len(), header_read);
