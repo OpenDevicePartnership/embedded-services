@@ -2,7 +2,8 @@ use crate::*;
 
 /// Handler for the ATTN pin, which is used to signal the host that we have an input report ready to be read.
 /// This is a simple wrapper around an OutputPin that tracks whether we've asserted the interrupt or not, because
-/// OutputPin doesn't have a built-in way to interrogate its own state.
+/// OutputPin doesn't have a built-in way to interrogate its own state.  There is a StatefulOutputPin trait that
+/// does have that functionality, but not all pins support it so we just implement it ourselves here.
 ///
 pub struct AttnPinHandler<AttnPin: embedded_hal::digital::OutputPin> {
     attn_pin: AttnPin,

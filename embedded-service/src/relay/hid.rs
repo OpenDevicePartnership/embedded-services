@@ -9,6 +9,7 @@ use num_enum::TryFromPrimitive;
 /// rather than swallowing them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[non_exhaustive]
 pub enum HidError {
     /// The operation has failed and a device-initiated reset should be triggered.
     TriggerReset,
@@ -162,6 +163,7 @@ pub trait HidDevice {
 
     /// Blocks until the device is ready to yield an unsolicited input report.
     /// When this returns, the next call to process_next_input_report should be able to run without blocking on I/O.
+    /// Must be cancellation-safe.
     fn wait_for_input_report(&mut self) -> impl core::future::Future<Output = ()>;
 
     /// Returns true if there is a pending input report that can be retrieved immediately with process_next_input_report().

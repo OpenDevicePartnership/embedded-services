@@ -335,6 +335,12 @@ impl<
                 warn!("HID-I2C: HID device requested device-initiated reset");
                 self.reset().await;
             }
+            Err(Error::Device(hid_error)) => {
+                error!(
+                    "HID-I2C: non-resetting HID device error during bus operation: {:?}",
+                    hid_error
+                );
+            }
         }
     }
 
