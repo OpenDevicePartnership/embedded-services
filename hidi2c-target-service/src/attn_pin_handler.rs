@@ -5,14 +5,14 @@ use crate::*;
 /// OutputPin doesn't have a built-in way to interrogate its own state.  There is a StatefulOutputPin trait that
 /// does have that functionality, but not all pins support it so we just implement it ourselves here.
 ///
-pub struct AttnPinHandler<AttnPin: embedded_hal::digital::OutputPin> {
+pub(crate) struct AttnPinHandler<AttnPin: embedded_hal::digital::OutputPin> {
     attn_pin: AttnPin,
     asserted: bool,
 }
 
 impl<AttnPin: embedded_hal::digital::OutputPin> AttnPinHandler<AttnPin> {
     /// Construct a new handler that owns the provided GPIO hardware
-    pub fn new(attn_pin: AttnPin) -> Self {
+    pub(crate) fn new(attn_pin: AttnPin) -> Self {
         let mut result = Self {
             attn_pin,
             asserted: false,
@@ -22,7 +22,7 @@ impl<AttnPin: embedded_hal::digital::OutputPin> AttnPinHandler<AttnPin> {
     }
 
     /// Clear the interrupt, which is done by setting the pin high.
-    pub fn clear_interrupt(&mut self) {
+    pub(crate) fn clear_interrupt(&mut self) {
         trace!("HID-I2C: ATTN: clear interrupt");
         self.attn_pin
             .set_high()
@@ -31,7 +31,7 @@ impl<AttnPin: embedded_hal::digital::OutputPin> AttnPinHandler<AttnPin> {
     }
 
     /// Assert the interrupt, which is done by pulling the pin low.
-    pub fn assert_interrupt(&mut self) {
+    pub(crate) fn assert_interrupt(&mut self) {
         trace!("HID-I2C: ATTN: assert interrupt");
         self.attn_pin
             .set_low()
@@ -40,7 +40,7 @@ impl<AttnPin: embedded_hal::digital::OutputPin> AttnPinHandler<AttnPin> {
     }
 
     /// Returns true if we are asserting the interrupt, false otherwise.
-    pub fn asserted(&self) -> bool {
+    pub(crate) fn asserted(&self) -> bool {
         self.asserted
     }
 }
