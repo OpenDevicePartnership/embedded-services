@@ -89,27 +89,22 @@ pub const HID_REPORT_ID_SIZE_BYTES: u16 = 1;
 impl DeviceDescriptor {
     pub fn new<HidDevice: hid::HidDevice>(hid_device: &HidDevice, hwinfo: HardwareVersionInfo) -> Self {
         const HID_I2C_PROTOCOL_VERSION: u16 = 0x0100;
+        let report_length_header_size = HID_REPORT_HEADER_SIZE_BYTES
+            + if hid_device.report_descriptor().report_ids_implicit() {
+                0
+            } else {
+                HID_REPORT_ID_SIZE_BYTES
+            };
+
         Self {
             w_hid_desc_length: core::mem::size_of::<DeviceDescriptor>() as u16,
             bcd_version: HID_I2C_PROTOCOL_VERSION,
             w_report_desc_length: hid_device.report_descriptor().as_bytes().len() as u16,
             w_report_desc_register: crate::HidI2cRegister::ReportDescriptor as u16,
             w_input_register: crate::HidI2cRegister::Input.into(),
-            w_max_input_length: HidDevice::InputReportMaxSize::USIZE as u16
-                + HID_REPORT_HEADER_SIZE_BYTES
-                + if hid_device.report_descriptor().report_ids_implicit() {
-                    0
-                } else {
-                    HID_REPORT_ID_SIZE_BYTES
-                },
+            w_max_input_length: HidDevice::InputReportMaxSize::USIZE as u16 + report_length_header_size,
             w_output_register: crate::HidI2cRegister::Output.into(),
-            w_max_output_length: HidDevice::OutputReportMaxSize::USIZE as u16
-                + HID_REPORT_HEADER_SIZE_BYTES
-                + if hid_device.report_descriptor().report_ids_implicit() {
-                    0
-                } else {
-                    HID_REPORT_ID_SIZE_BYTES
-                },
+            w_max_output_length: HidDevice::OutputReportMaxSize::USIZE as u16 + report_length_header_size,
             w_command_register: crate::HidI2cRegister::Command.into(),
             w_data_register: crate::HidI2cRegister::Data.into(),
             w_vendor_id: hwinfo.vendor_id.value(),
