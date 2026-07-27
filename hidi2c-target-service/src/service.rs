@@ -581,6 +581,13 @@ impl<
                 trace!("Processing get report command");
 
                 let (report_type, report_id) = self.get_io_command_report_header(command_byte).await?;
+
+                // TODO - here, if the report ID is invalid, we're supposed to return a zero-length report.  We should know from the
+                //        report descriptor whether the report ID is valid or not, but we don't yet have the report descriptor parsing
+                //        implemented, so we can't do that yet.  For now, that responsibility has to fall on the HidDevice implementation,
+                //        but as soon as the aggregation / HID library goes in, look into leveraging it for filtering out invalid report
+                //        IDs here.
+
                 self.hid_device
                     .process_get_report(report_type.try_into()?, report_id, async |report| {
                         // Note: per HID spec, the length field needs to include its own length (2 bytes)
