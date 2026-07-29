@@ -26,6 +26,8 @@ pub trait ConstrainedHidDevice: embedded_services::relay::hid::HidDevice + seale
     type MaxInputOrFeatureSize: ArrayLength;
     /// `max(FeatureReportMaxSize, OutputReportMaxSize)`.
     type MaxOutputOrFeatureSize: ArrayLength;
+    /// `max(FeatureReportMaxSize, OutputReportMaxSize) + 9`.
+    type WriteBufferSize: ArrayLength;
 }
 
 impl<T> ConstrainedHidDevice for T
@@ -35,9 +37,31 @@ where
     T::FeatureReportMaxSize: Max<T::OutputReportMaxSize>,
     <T::FeatureReportMaxSize as Max<T::InputReportMaxSize>>::Output: ArrayLength,
     <T::FeatureReportMaxSize as Max<T::OutputReportMaxSize>>::Output: ArrayLength,
+    <T::FeatureReportMaxSize as Max<T::OutputReportMaxSize>>::Output: core::ops::Add<typenum::U9>,
+    <<T::FeatureReportMaxSize as Max<T::OutputReportMaxSize>>::Output as core::ops::Add<typenum::U9>>::Output:
+        ArrayLength,
 {
     type MaxInputOrFeatureSize = <T::FeatureReportMaxSize as Max<T::InputReportMaxSize>>::Output;
     type MaxOutputOrFeatureSize = <T::FeatureReportMaxSize as Max<T::OutputReportMaxSize>>::Output;
+
+    /// To avoid splitting the received values across multiple I2C read calls (which injects await points between them and manifests
+    /// on the bus as clock stretching), we need to have a buffer that's large enough to consume the largest write that a host can do
+    /// in a single transaction.
+    ///
+    /// In this case, that write is for handling the Command: SetReport path (note: not the 'normal' output report register, the one that
+    /// goes through the Command/Data register path) - see section 7.2.3 of the HID spec.
+    /// In that path, the largest possible write is:
+    ///   2 bytes: command register address
+    ///   2 bytes: command register value (SetReport)
+    ///   1 byte: optional report ID extension to command register value for report IDs > 15
+    ///   2 bytes: data register address
+    ///   2 bytes: data register length header
+    ///   N bytes: length of the actual report payload
+    ///
+    /// Therefore, this buffer needs to be 9 bytes larger than the largest output or feature report
+    ///
+    type WriteBufferSize =
+        <<T::FeatureReportMaxSize as Max<T::OutputReportMaxSize>>::Output as core::ops::Add<typenum::U9>>::Output;
 }
 
 impl<T> sealed::Sealed for T where T: embedded_services::relay::hid::HidDevice {}

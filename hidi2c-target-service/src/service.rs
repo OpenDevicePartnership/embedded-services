@@ -148,7 +148,10 @@ impl<Bus: I2cTargetAsync> TimeoutBus<Bus> {
     }
 
     /// Read bytes the host is writing to us, applying the data-read timeout and recovering the bus on failure.
-    async fn read(&mut self, buffer: &mut [u8]) -> Result<usize, Error<Bus::Error>> {
+    /// Buffer must be as large as the largest possible write the host can do in a single transaction. If the host
+    /// writes more bytes than the provided buffer, we drop any remaining bytes so as to not stall the bus and return
+    /// an error.
+    async fn read<'buf>(&mut self, buffer: &'buf mut [u8]) -> Result<&'buf [u8], Error<Bus::Error>> {
         match with_timeout(
             self.timeout_settings.data_read_timeout,
             self.bus.respond_to_write(buffer),
@@ -162,11 +165,15 @@ impl<Bus: I2cTargetAsync> TimeoutBus<Bus> {
                 Err(Error::Protocol(ProtocolError::Timeout))
             }
             // Controller finished writing; report how many bytes we drained.
-            Ok(Ok(
-                status @ (WriteStatus::Stopped(bytes) | WriteStatus::Restarted(bytes) | WriteStatus::BufferFull(bytes)),
-            )) => {
+            Ok(Ok(status @ (WriteStatus::Stopped(bytes) | WriteStatus::Restarted(bytes)))) => {
                 trace!("Host issued write command: {:?}", status);
-                Ok(bytes)
+
+                Ok(buffer.get(..bytes).ok_or(Error::Protocol(ProtocolError::InvalidData))?)
+            }
+            Ok(Ok(WriteStatus::BufferFull(_bytes))) => {
+                warn!("Host attempted to issue more bytes than we can handle - failing read");
+                self.discard_remaining_bytes_from_host().await?;
+                Err(Error::Protocol(ProtocolError::InvalidData))
             }
             // Some other write status we don't expect while reading.
             Ok(Ok(status)) => {
@@ -177,6 +184,24 @@ impl<Bus: I2cTargetAsync> TimeoutBus<Bus> {
             Ok(Err(e)) => {
                 error!("Error during bus read");
                 Err(Error::Bus(e))
+            }
+        }
+    }
+
+    async fn discard_remaining_bytes_from_host(&mut self) -> Result<(), Error<Bus::Error>> {
+        let mut discard_buffer = [0u8; 16];
+        loop {
+            let result = with_timeout(
+                self.timeout_settings.data_read_timeout,
+                self.bus.respond_to_write(&mut discard_buffer),
+            )
+            .await?
+            .map_err(Error::Bus)?;
+            match result {
+                WriteStatus::BufferFull(_bytes) => {
+                    continue;
+                }
+                _ => return Ok(()),
             }
         }
     }
@@ -193,6 +218,8 @@ impl<Bus: I2cTargetAsync> TimeoutBus<Bus> {
     }
 
     /// Write `buffer` to the host; returns true if the host requested more bytes than we provided.
+    /// TODO - we should augment the I2C trait to allow us to write a slice of slices in a single operation so we don't have
+    ///        multiple await points, which causes us to hog the bus.  When we land that, remove this and switch to that API instead.
     async fn write_unterminated(&mut self, buffer: &[u8]) -> Result<bool, Error<Bus::Error>> {
         match with_timeout(
             self.timeout_settings.device_response_timeout,
@@ -227,7 +254,7 @@ pub struct Runner<'hw, Bus: I2cTargetAsync, AttnPin: embedded_hal::digital::Outp
     device_descriptor: DeviceDescriptor,
 
     /// Buffer for receiving messages.
-    write_buf: generic_array::GenericArray<u8, HidDevice::MaxOutputOrFeatureSize>,
+    write_buf: generic_array::GenericArray<u8, HidDevice::WriteBufferSize>,
 
     /// True if a reset has been triggered but not yet acknowledged by the host
     pending_reset: bool,
@@ -345,14 +372,13 @@ impl<
     }
 
     async fn process_register_access(&mut self) -> Result<(), Error<Bus::Error>> {
-        let mut reg = [0u8; 2];
-        let read = self.bus.read(&mut reg).await?;
-        if read != reg.len() {
-            error!("Expected to read {} bytes but got {}", reg.len(), read);
-            return Err(Error::Protocol(ProtocolError::InvalidData));
-        }
+        let data = self.bus.read(&mut self.write_buf).await?;
 
-        let register = HidI2cRegister::try_from(u16::from_le_bytes(reg))
+        let (&register, data) = data
+            .split_first_chunk::<2>()
+            .ok_or(Error::Protocol(ProtocolError::InvalidData))?;
+
+        let register = HidI2cRegister::try_from(u16::from_le_bytes(register))
             .map_err(|_| Error::Protocol(ProtocolError::InvalidRegisterAddress))?;
 
         info!("HID-I2C: Host requested to access register {:?}", register);
@@ -390,8 +416,38 @@ impl<
                 }
             },
             HidI2cRegister::Input => self.process_input_report_read().await,
-            HidI2cRegister::Output => self.process_output_report_write().await,
-            HidI2cRegister::Command => self.process_command().await,
+            HidI2cRegister::Output => {
+                let (&report_length_bytes, data) = data
+                    .split_first_chunk::<{ core::mem::size_of::<u16>() }>()
+                    .ok_or(Error::Protocol(ProtocolError::InvalidSize))?;
+
+                // NOTE - if we're using implicit report IDs, we present that to HidDevice implementations as report ID 0.
+                let (&report_id, data) = if self.hid_device.report_descriptor().report_ids_implicit() {
+                    (&0, data)
+                } else {
+                    data.split_first().ok_or(Error::Protocol(ProtocolError::InvalidSize))?
+                };
+
+                let header_size_bytes = 2 + if self.hid_device.report_descriptor().report_ids_implicit() {
+                    0
+                } else {
+                    1
+                };
+
+                let length = (u16::from_le_bytes(report_length_bytes) as usize)
+                    .checked_sub(header_size_bytes)
+                    .ok_or(Error::Protocol(ProtocolError::InvalidSize))?; // Note: per HID spec, the length field needs to include its own length (2 bytes) and the report ID (1 byte)
+
+                let output_report = embedded_services::relay::hid::SetHidReport::Output(HidReport::new(
+                    embedded_services::relay::hid::ReportId(report_id),
+                    data.get(..length).ok_or(Error::Protocol(ProtocolError::InvalidSize))?,
+                ));
+
+                self.hid_device.set_report(&output_report).await?;
+
+                Ok(())
+            }
+            HidI2cRegister::Command => Self::process_command(data, &mut self.bus, &mut self.hid_device).await,
             HidI2cRegister::Data => {
                 error!(
                     "HID-I2C: Got read to Data register without a preceding write to the Command register; this is unexpected and may indicate a bug in the service."
@@ -471,97 +527,52 @@ impl<
         Ok(())
     }
 
-    async fn process_output_report_write(&mut self) -> Result<(), Error<Bus::Error>> {
-        let mut write_header_buf = [0u8; (device_descriptor::HID_REPORT_HEADER_SIZE_BYTES
-            + device_descriptor::HID_REPORT_ID_SIZE_BYTES) as usize];
-
-        // NOTE - if we're using implicit report IDs, we present that to HidDevice implementations as report ID 0.
-        let header_len = if self.hid_device.report_descriptor().report_ids_implicit() {
-            write_header_buf.len() - (device_descriptor::HID_REPORT_ID_SIZE_BYTES as usize)
+    /// Attempts to parse the provided command byte as an input / output command header, including consuming any additional
+    /// bytes from the read as needed.
+    /// Returns:
+    /// - The report type (input, output, feature)
+    /// - The report ID
+    /// - A slice over the remaining bytes from data
+    async fn get_io_command_report_header(
+        data: &[u8],
+        command_byte: u8,
+    ) -> Result<(HidI2cReportType, embedded_services::relay::hid::ReportId, &[u8]), Error<Bus::Error>> {
+        let command_header = HidI2cReportCommandHeader::try_from_command_byte(command_byte)?;
+        let (report_id, data) = if let Some(report_id) = command_header.report_id {
+            (report_id, data)
         } else {
-            write_header_buf.len()
+            let (&report_id, data) = data.split_first().ok_or(Error::Protocol(ProtocolError::InvalidSize))?;
+            (embedded_services::relay::hid::ReportId(report_id), data)
         };
 
-        let header_buf_slice = write_header_buf
-            .get_mut(..header_len)
+        let (&data_register_address, data) = data
+            .split_first_chunk::<{ core::mem::size_of::<u16>() }>()
             .ok_or(Error::Protocol(ProtocolError::InvalidSize))?;
 
-        let header_read = self.bus.read(header_buf_slice).await?;
-        if header_read != header_len {
-            error!("Expected to read {} bytes but got {}", header_len, header_read);
-            return Err(Error::Protocol(ProtocolError::InvalidSize));
-        }
-
-        let [len_low, len_high, report_id] = write_header_buf;
-        let length = (u16::from_le_bytes([len_low, len_high]) as usize)
-            .checked_sub(header_len)
-            .ok_or(Error::Protocol(ProtocolError::InvalidSize))?; // Note: per HID spec, the length field needs to include its own length (2 bytes) and the report ID (1 byte)
-        trace!("Reading {} bytes", length);
-
-        let read_result = self.bus.read(&mut self.write_buf).await?;
-
-        if read_result != length {
-            error!("Expected to read {} bytes but got {}", length, read_result);
-            return Err(Error::Protocol(ProtocolError::InvalidSize));
-        }
-
-        let output_report = embedded_services::relay::hid::SetHidReport::Output(HidReport::new(
-            embedded_services::relay::hid::ReportId(report_id),
-            self.write_buf
-                .get(..length)
-                .ok_or(Error::Protocol(ProtocolError::InvalidSize))?,
-        ));
-
-        self.hid_device.set_report(&output_report).await?;
-
-        Ok(())
-    }
-
-    /// Attempts to parse the provided command byte as an input / output command header, including reading any more bytes if
-    /// needed and verifying that the host followed the command header with the expected write to the data register address.
-    /// Upon success, callers should proceed to read or write the requested payload to/from the bus.
-    async fn get_io_command_report_header(
-        &mut self,
-        command_byte: u8,
-    ) -> Result<(HidI2cReportType, embedded_services::relay::hid::ReportId), Error<Bus::Error>> {
-        let command_header = HidI2cReportCommandHeader::try_from_command_byte(command_byte)?;
-        let report_id = if let Some(report_id) = command_header.report_id {
-            report_id
-        } else {
-            let mut report_id = 0u8;
-            self.bus.read(core::slice::from_mut(&mut report_id)).await?;
-            embedded_services::relay::hid::ReportId(report_id)
-        };
-
-        let mut data_register_address = [0u8; core::mem::size_of::<u16>()];
-        let data_register_address_read = self.bus.read(&mut data_register_address).await?;
-        if data_register_address_read != data_register_address.len() {
-            error!(
-                "Expected to read {} bytes but got {}",
-                data_register_address.len(),
-                data_register_address_read
-            );
-            return Err(Error::Protocol(ProtocolError::InvalidSize));
-        }
-
-        if u16::from_le_bytes(data_register_address) != HidI2cRegister::Data as u16 {
+        let data_register_address = u16::from_le_bytes(data_register_address);
+        if data_register_address != HidI2cRegister::Data as u16 {
             error!(
                 "Expected the host to write the data register address after the header ({:?}) but got {:?}",
                 HidI2cRegister::Data,
-                u16::from_le_bytes(data_register_address)
+                data_register_address
             );
             return Err(Error::Protocol(ProtocolError::InvalidRegisterAddress));
         }
 
-        Ok((command_header.report_type, report_id))
+        Ok((command_header.report_type, report_id, data))
     }
 
-    async fn process_command(&mut self) -> Result<(), Error<Bus::Error>> {
-        let [command_byte, opcode_byte] = {
-            let mut command_header_buffer = [0u8; 2];
-            self.bus.read(&mut command_header_buffer).await?;
-            command_header_buffer
-        };
+    async fn process_command(
+        data: &[u8],
+        bus: &mut TimeoutBus<Bus>,
+        hid_device: &mut HidDevice,
+    ) -> Result<(), Error<Bus::Error>> {
+        let (&command_byte, data) = data
+            .split_first()
+            .ok_or(Error::Protocol(ProtocolError::InvalidCommand))?;
+        let (&opcode_byte, data) = data
+            .split_first()
+            .ok_or(Error::Protocol(ProtocolError::InvalidCommand))?;
 
         match Opcode::try_from(opcode_byte).map_err(|_| Error::Protocol(ProtocolError::InvalidCommand))? {
             Opcode::Reset => {
@@ -573,14 +584,14 @@ impl<
                 trace!("Processing set power command");
                 let power_state = I2cPowerState::try_from(command_byte)
                     .map_err(|_| Error::Protocol(ProtocolError::InvalidCommand))?;
-                self.hid_device.set_power_state(power_state.into()).await?;
+                hid_device.set_power_state(power_state.into()).await?;
                 Ok(())
             }
 
             Opcode::GetReport => {
                 trace!("Processing get report command");
 
-                let (report_type, report_id) = self.get_io_command_report_header(command_byte).await?;
+                let (report_type, report_id, _data) = Self::get_io_command_report_header(data, command_byte).await?;
 
                 // TODO - here, if the report ID is invalid, we're supposed to return a zero-length report.  We should know from the
                 //        report descriptor whether the report ID is valid or not, but we don't yet have the report descriptor parsing
@@ -588,13 +599,13 @@ impl<
                 //        but as soon as the aggregation / HID library goes in, look into leveraging it for filtering out invalid report
                 //        IDs here.
 
-                self.hid_device
+                hid_device
                     .process_get_report(report_type.try_into()?, report_id, async |report| {
                         // Note: per HID spec, the length field needs to include its own length (2 bytes)
                         let len_header = (report.data().len() as u16 + device_descriptor::HID_REPORT_HEADER_SIZE_BYTES)
                             .to_le_bytes();
-                        self.bus.write(&len_header).await?;
-                        self.bus.write(report.data()).await?;
+                        bus.write_unterminated(&len_header).await?;
+                        bus.write(report.data()).await?;
                         Ok::<(), Error<Bus::Error>>(())
                     })
                     .await??;
@@ -604,48 +615,31 @@ impl<
 
             Opcode::SetReport => {
                 trace!("Processing set report command");
-                let (report_type, report_id) = self.get_io_command_report_header(command_byte).await?;
+                let (report_type, report_id, data) = Self::get_io_command_report_header(data, command_byte).await?;
 
-                let mut len_header = [0u8; core::mem::size_of::<u16>()];
-                let header_read = self.bus.read(&mut len_header).await?;
-                if header_read != len_header.len() {
-                    error!("Expected to read {} bytes but got {}", len_header.len(), header_read);
-                    return Err(Error::Protocol(ProtocolError::InvalidSize));
-                }
+                let (&len_header, data) = data
+                    .split_first_chunk::<{ core::mem::size_of::<u16>() }>()
+                    .ok_or(Error::Protocol(ProtocolError::InvalidSize))?;
 
                 // Note: per HID spec, the length field relayed over the wire needs to include its own length (2 bytes)
                 let report_size = (u16::from_le_bytes(len_header)
                     .checked_sub(device_descriptor::HID_REPORT_HEADER_SIZE_BYTES))
                 .ok_or(Error::Protocol(ProtocolError::InvalidSize))? as usize;
 
-                self.bus
-                    .read(
-                        self.write_buf
-                            .get_mut(..report_size)
-                            .ok_or(Error::Protocol(ProtocolError::InvalidSize))?,
-                    )
-                    .await?;
+                let report_data = data
+                    .get(..report_size)
+                    .ok_or(Error::Protocol(ProtocolError::InvalidSize))?;
 
                 let set_report = match report_type {
                     HidI2cReportType::Input => {
                         error!("Host attempted to send us an input report, which is invalid");
                         return Err(Error::Protocol(ProtocolError::InvalidReportType));
                     }
-                    HidI2cReportType::Output => SetHidReport::Output(HidReport::new(
-                        report_id,
-                        self.write_buf
-                            .get(..report_size)
-                            .ok_or(Error::Protocol(ProtocolError::InvalidSize))?,
-                    )),
-                    HidI2cReportType::Feature => SetHidReport::Feature(HidReport::new(
-                        report_id,
-                        self.write_buf
-                            .get(..report_size)
-                            .ok_or(Error::Protocol(ProtocolError::InvalidSize))?,
-                    )),
+                    HidI2cReportType::Output => SetHidReport::Output(HidReport::new(report_id, report_data)),
+                    HidI2cReportType::Feature => SetHidReport::Feature(HidReport::new(report_id, report_data)),
                 };
 
-                self.hid_device.set_report(&set_report).await?;
+                hid_device.set_report(&set_report).await?;
 
                 Ok(())
             }
