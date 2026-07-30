@@ -17,26 +17,24 @@ impl<AttnPin: embedded_hal::digital::OutputPin> AttnPinHandler<AttnPin> {
             attn_pin,
             asserted: false,
         };
-        result.clear_interrupt();
+        let _ = result.clear_interrupt();
         result
     }
 
     /// Clear the interrupt, which is done by setting the pin high.
-    pub(crate) fn clear_interrupt(&mut self) {
+    pub(crate) fn clear_interrupt(&mut self) -> Result<(), AttnPin::Error> {
         trace!("HID-I2C: ATTN: clear interrupt");
-        self.attn_pin
-            .set_high()
-            .unwrap_or_else(|_| error!("HID-I2C: Failed to clear interrupt on attn pin"));
+        self.attn_pin.set_high()?;
         self.asserted = false;
+        Ok(())
     }
 
     /// Assert the interrupt, which is done by pulling the pin low.
-    pub(crate) fn assert_interrupt(&mut self) {
+    pub(crate) fn assert_interrupt(&mut self) -> Result<(), AttnPin::Error> {
         trace!("HID-I2C: ATTN: assert interrupt");
-        self.attn_pin
-            .set_low()
-            .unwrap_or_else(|_| error!("HID-I2C: Failed to assert interrupt on attn pin"));
+        self.attn_pin.set_low()?;
         self.asserted = true;
+        Ok(())
     }
 
     /// Returns true if we are asserting the interrupt, false otherwise.

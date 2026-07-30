@@ -305,7 +305,9 @@ impl<
                 }
                 embassy_futures::select::Either3::Second(()) => {
                     trace!("HID-I2C: Signalling host that an input report is ready");
-                    self.attn_pin.assert_interrupt();
+                    self.attn_pin
+                        .assert_interrupt()
+                        .unwrap_or_else(|_| error!("HID-I2C: Failed to assert interrupt on attn pin"));
                 }
                 embassy_futures::select::Either3::Third(()) => {
                     trace!("HID-I2C: Received reset request");
@@ -480,7 +482,9 @@ impl<
             self.bus.write(&[00, 00]).await?;
 
             self.pending_reset = false;
-            self.attn_pin.clear_interrupt();
+            self.attn_pin
+                .clear_interrupt()
+                .unwrap_or_else(|_| error!("HID-I2C: Failed to clear interrupt on attn pin"));
             return Ok(());
         }
 
@@ -492,7 +496,9 @@ impl<
         if !self.hid_device.has_pending_input_report() {
             warn!("HID-I2C: Host polled when no input report was pending; responding with zero-length report");
             self.bus.write(&[00, 00]).await?;
-            self.attn_pin.clear_interrupt();
+            self.attn_pin
+                .clear_interrupt()
+                .unwrap_or_else(|_| error!("HID-I2C: Failed to clear interrupt on attn pin"));
             return Ok(());
         }
 
@@ -521,7 +527,9 @@ impl<
             .await??;
 
         if !self.hid_device.has_pending_input_report() {
-            self.attn_pin.clear_interrupt();
+            self.attn_pin
+                .clear_interrupt()
+                .unwrap_or_else(|_| error!("HID-I2C: Failed to clear interrupt on attn pin"));
         }
 
         Ok(())
@@ -650,7 +658,9 @@ impl<
         warn!("HID-I2C: Executing device reset");
         self.hid_device.reset().await;
         self.pending_reset = true;
-        self.attn_pin.assert_interrupt();
+        self.attn_pin
+            .assert_interrupt()
+            .unwrap_or_else(|_| error!("HID-I2C: Failed to assert interrupt on attn pin"));
     }
 }
 
