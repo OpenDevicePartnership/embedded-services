@@ -1,4 +1,4 @@
-///! A simplified interface for a hypothetical keyboard service.
+//! A simplified interface for a hypothetical keyboard service.
 pub trait KeyboardService<'hw> {
     fn set_led(&mut self, state: u8) -> impl core::future::Future<Output = ()> + Send;
 

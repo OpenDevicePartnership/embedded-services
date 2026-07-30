@@ -1,7 +1,4 @@
 //! Mock HID keyboard device used by the `mock_i2c_keyboard` example.
-//!
-//! Unlike the mouse mock, the keyboard copies each report out of a regular channel, which is simpler,
-//! but can be costly for larger reports.
 
 use super::interface::*;
 use embedded_services::{info, warn};

@@ -8,7 +8,10 @@ use embassy_imxrt::i2c::slave::{Address, I2cSlave};
 use embassy_imxrt::i2c::{self, Async};
 use embassy_imxrt::{bind_interrupts, peripherals};
 use panic_probe as _;
-use rt685s_evk_example::mocks::mouse::{MockMouseHidRelay, MockMouseResources, MockMouseService};
+use rt685s_evk_example::mocks::mouse::{
+    device::{MockMouseService, MockMouseServiceResources},
+    relay::MockMouseHidRelay,
+};
 use static_cell::StaticCell;
 
 const SLAVE_ADDR: Option<Address> = Address::new(0x15);
@@ -33,9 +36,11 @@ async fn main(spawner: Spawner) {
         gpio::SlewRate::Standard,
     );
 
-    static MOUSE_RESOURCES: StaticCell<MockMouseResources> = StaticCell::new();
-    let mouse_resources = MOUSE_RESOURCES.init(MockMouseResources::default());
-    let (mouse_service, mut mouse_runner) = MockMouseService::new(mouse_resources);
+    const MOUSE_SUBS: usize = 1;
+    static MOUSE_RESOURCES: StaticCell<MockMouseServiceResources<MOUSE_SUBS>> = StaticCell::new();
+    let (mouse_service, mouse_runner) = MockMouseService::new(MOUSE_RESOURCES.init(Default::default()));
+
+    static MOUSE_SERVICE: StaticCell<MockMouseService<'static, MOUSE_SUBS>> = StaticCell::new();
 
     // NOTE: here's where the "aggregate HID devices" macro is currently missing.  Compare with time_alarm.rs where we do this:
     //
@@ -67,13 +72,13 @@ async fn main(spawner: Spawner) {
             'static,
             I2cSlave<'static, Async>,
             gpio::Output<'static>,
-            MockMouseHidRelay<'static>,
+            MockMouseHidRelay<'static, MockMouseService<'static, MOUSE_SUBS>>,
         >,
         |resources| hidi2c_target_service::Service::new(
             resources,
             i2c,
             attn_pin,
-            MockMouseHidRelay::new(mouse_service),
+            MockMouseHidRelay::new(MOUSE_SERVICE.init(mouse_service)),
             hidi2c_target_service::HardwareVersionInfo {
                 vendor_id: hidi2c_target_service::VendorId::new(0x1234).unwrap(),
                 product_id: hidi2c_target_service::ProductId(0x5678),
