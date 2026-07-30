@@ -8,7 +8,11 @@ use embassy_imxrt::i2c::slave::{Address, I2cSlave};
 use embassy_imxrt::i2c::{self, Async};
 use embassy_imxrt::{bind_interrupts, peripherals};
 use panic_probe as _;
-use rt685s_evk_example::mocks::keyboard::{KeyCode, MockKeyboardHidRelay, MockKeyboardService};
+use rt685s_evk_example::mocks::keyboard::{
+    device::{MockKeyboardService, MockKeyboardServiceResources},
+    interface::KeyCode,
+    relay::MockKeyboardHidRelay,
+};
 use static_cell::StaticCell;
 
 const SLAVE_ADDR: Option<Address> = Address::new(0x15);
@@ -33,8 +37,11 @@ async fn main(spawner: Spawner) {
         gpio::SlewRate::Standard,
     );
 
-    static KEYBOARD_SERVICE: StaticCell<MockKeyboardService> = StaticCell::new();
-    let keyboard_service = KEYBOARD_SERVICE.init(MockKeyboardService::new());
+    const KB_SUBS: usize = 1;
+    static KB_RESOURCES: StaticCell<MockKeyboardServiceResources<KB_SUBS>> = StaticCell::new();
+    let (keyboard_service, keyboard_runner) = MockKeyboardService::new(KB_RESOURCES.init(Default::default()));
+
+    static KEYBOARD_SERVICE: StaticCell<MockKeyboardService<'static, KB_SUBS>> = StaticCell::new();
 
     // NOTE: here's where the "aggregate HID devices" macro is currently missing.  Compare with time_alarm.rs where we do this:
     //
@@ -66,13 +73,13 @@ async fn main(spawner: Spawner) {
             'static,
             I2cSlave<'static, Async>,
             gpio::Output<'static>,
-            MockKeyboardHidRelay<'static>,
+            MockKeyboardHidRelay<'static, MockKeyboardService<'static, KB_SUBS>>,
         >,
         |resources| hidi2c_target_service::Service::new(
             resources,
             i2c,
             attn_pin,
-            MockKeyboardHidRelay::new(keyboard_service),
+            MockKeyboardHidRelay::new(KEYBOARD_SERVICE.init(keyboard_service)),
             hidi2c_target_service::HardwareVersionInfo {
                 vendor_id: hidi2c_target_service::VendorId::new(0x1234).unwrap(),
                 product_id: hidi2c_target_service::ProductId(0x5678),
@@ -89,7 +96,7 @@ async fn main(spawner: Spawner) {
     let mut i = 0;
     loop {
         info!("pressing key");
-        keyboard_service.click_key(KeyCode::NumLock).await;
+        keyboard_runner.click_key(KeyCode::NumLock).await;
         embassy_time::Timer::after(embassy_time::Duration::from_millis(2000)).await;
         i += 1;
         if i % 5 == 0 {
