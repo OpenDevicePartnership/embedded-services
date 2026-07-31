@@ -38,6 +38,8 @@ bind_interrupts!(struct Irqs {
     FLEXCOMM2 => embassy_imxrt::i2c::InterruptHandler<peripherals::FLEXCOMM2>;
 });
 
+type PowerNotifier<'a> =
+    power_policy_interface::psu::event::NonBlockingSenderNotifier<DynamicSender<'a, psu::event::EventData>>;
 type SharedStateType = Mutex<GlobalRawMutex, SharedState>;
 type PortType = Mutex<
     GlobalRawMutex,
@@ -46,7 +48,7 @@ type PortType = Mutex<
         Tps6699xMutex<'static>,
         SharedStateType,
         DynamicSender<'static, type_c_interface::service::event::PortEventData>,
-        DynamicSender<'static, power_policy_interface::psu::event::EventData>,
+        PowerNotifier<'static>,
         DynamicSender<'static, type_c_service::controller::event::Loopback>,
     >,
 >;
@@ -69,12 +71,13 @@ type PowerPolicySenderType = MapSender<
 >;
 
 type PowerPolicyReceiverType = DynSubscriber<'static, power_policy_interface::service::event::EventData>;
-
+type PowerPolicyNotifierType =
+    power_policy_interface::service::event::NonBlockingSenderNotifier<'static, PortType, PowerPolicySenderType>;
 type PowerPolicyServiceType = Mutex<
     GlobalRawMutex,
     power_policy_service::service::Service<
         'static,
-        ArrayRegistration<'static, PortType, 2, PowerPolicySenderType, 1, ChargerType, 0>,
+        ArrayRegistration<'static, PortType, 2, PowerPolicyNotifierType, 1, ChargerType, 0>,
     >,
 >;
 
@@ -228,7 +231,7 @@ async fn main(spawner: Spawner) {
     let power_policy_registration = ArrayRegistration {
         psus: [port0, port1],
         chargers: [],
-        service_senders: [power_policy_sender],
+        service_notifiers: [power_policy_sender.into()],
     };
 
     static POWER_SERVICE: StaticCell<PowerPolicyServiceType> = StaticCell::new();

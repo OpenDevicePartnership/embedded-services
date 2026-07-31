@@ -7,7 +7,6 @@ use crate::service::config::Config;
 use super::*;
 
 use power_policy_interface::psu;
-use power_policy_interface::service::event::Event as ServiceEvent;
 use power_policy_interface::{
     capability::{ConsumerDisconnect, ConsumerPowerCapability},
     psu::PsuState,
@@ -133,7 +132,7 @@ impl<'device, Reg: Registration<'device>, Customization: customization::Customiz
         if unconstrained_new != self.state.unconstrained {
             info!("Unconstrained state changed: {:?}", unconstrained_new);
             self.state.unconstrained = unconstrained_new;
-            self.broadcast_event(ServiceEvent::Unconstrained(self.state.unconstrained));
+            self.notify_unconstrained(self.state.unconstrained).await;
         }
         Ok(())
     }
@@ -169,10 +168,8 @@ impl<'device, Reg: Registration<'device>, Customization: customization::Customiz
                 .await
                 .map_err(|e| Error::Charger(e.into()))?;
         }
-        self.broadcast_event(ServiceEvent::ConsumerConnected(
-            connected_consumer.psu,
-            connected_consumer.consumer_power_capability,
-        ));
+        self.notify_consumer_connected(connected_consumer.psu, connected_consumer.consumer_power_capability)
+            .await;
 
         Ok(())
     }
@@ -227,7 +224,7 @@ impl<'device, Reg: Registration<'device>, Customization: customization::Customiz
             } else {
                 ConsumerDisconnect::none().with_switching(true)
             };
-            self.broadcast_event(ServiceEvent::ConsumerDisconnected(current_consumer.psu, flags));
+            self.notify_consumer_disconnected(current_consumer.psu, flags).await;
 
             // Don't update the unconstrained here because this is a transitional state
         }
@@ -278,10 +275,8 @@ impl<'device, Reg: Registration<'device>, Customization: customization::Customiz
             // Notify disconnect if recently detached consumer was previously attached.
             if let Some(current_consumer) = self.state.current_consumer_state {
                 self.disconnect_chargers().await?;
-                self.broadcast_event(ServiceEvent::ConsumerDisconnected(
-                    current_consumer.psu,
-                    disconnect_flags,
-                ));
+                self.notify_consumer_disconnected(current_consumer.psu, disconnect_flags)
+                    .await;
             }
             // No new consumer available
             self.state.current_consumer_state = None;

@@ -48,14 +48,21 @@ pub const DEFAULT_PER_CALL_TIMEOUT: Duration = Duration::from_millis(100);
 
 const EVENT_CHANNEL_SIZE: usize = 4;
 
-pub type DeviceType<'a> = Mutex<GlobalRawMutex, Mock<DynamicSender<'a, EventData>>>;
+pub type PowerNotifier<'device> =
+    power_policy_interface::psu::event::NonBlockingSenderNotifier<DynamicSender<'device, EventData>>;
+pub type DeviceType<'device> = Mutex<GlobalRawMutex, Mock<PowerNotifier<'device>>>;
+pub type ServiceNotifier<'sender, 'device> = power_policy_interface::service::event::NonBlockingSenderNotifier<
+    'device,
+    DeviceType<'device>,
+    DynamicSender<'sender, ServiceEvent<'device, DeviceType<'device>>>,
+>;
 pub type ServiceType<'device, 'sender, Customization> = Service<
     'device,
     ArrayRegistration<
         'device,
         DeviceType<'device>,
         2,
-        DynamicSender<'sender, ServiceEvent<'device, DeviceType<'device>>>,
+        ServiceNotifier<'sender, 'device>,
         1,
         ChargerType<DynamicSender<'device, power_policy_interface::charger::event::EventData>>,
         0,
@@ -105,12 +112,12 @@ pub async fn run_test<T: Test>(timeout: Duration, mut test: T, config: Config, c
     let device0_event_channel: Channel<GlobalRawMutex, EventData, EVENT_CHANNEL_SIZE> = Channel::new();
     let device0_sender = device0_event_channel.dyn_sender();
     let device0_receiver = device0_event_channel.dyn_receiver();
-    let device0 = Mutex::new(Mock::new("PSU0", device0_sender));
+    let device0 = Mutex::new(Mock::new("PSU0", device0_sender.into()));
 
     let device1_event_channel: Channel<GlobalRawMutex, EventData, EVENT_CHANNEL_SIZE> = Channel::new();
     let device1_sender = device1_event_channel.dyn_sender();
     let device1_receiver = device1_event_channel.dyn_receiver();
-    let device1 = Mutex::new(Mock::new("PSU1", device1_sender));
+    let device1 = Mutex::new(Mock::new("PSU1", device1_sender.into()));
 
     let completion_signal = embassy_sync::signal::Signal::new();
 
@@ -123,7 +130,7 @@ pub async fn run_test<T: Test>(timeout: Duration, mut test: T, config: Config, c
 
     let power_policy_registration = ArrayRegistration {
         psus: [&device0, &device1],
-        service_senders: [service_event_channel.dyn_sender()],
+        service_notifiers: [service_event_channel.dyn_sender().into()],
         chargers: [],
     };
 

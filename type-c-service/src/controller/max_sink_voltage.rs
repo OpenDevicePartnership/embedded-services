@@ -12,10 +12,10 @@ impl<
     C: Lockable<Inner: Pd + MaxSinkVoltage>,
     Shared: Lockable<Inner = SharedState>,
     TypeCSender: NonBlockingSender<type_c_interface::service::event::PortEventData>,
-    PowerSender: NonBlockingSender<power_policy_interface::psu::event::EventData>,
+    PowerNotifier: power_policy_interface::psu::notification::Notifier,
     LoopbackSender: NonBlockingSender<event::Loopback>,
 > type_c_interface::port::max_sink_voltage::MaxSinkVoltage
-    for Port<'device, C, Shared, TypeCSender, PowerSender, LoopbackSender>
+    for Port<'device, C, Shared, TypeCSender, PowerNotifier, LoopbackSender>
 {
     async fn set_max_sink_voltage(&mut self, voltage_mv: Option<u16>) -> Result<(), PdError> {
         // A change in the maximum sink voltage can trigger a PD renegotiation. During that transition the
@@ -41,14 +41,13 @@ impl<
             if let Err(e) = self.psu_state.disconnect(true) {
                 error!("({}): Error updating PSU state on disconnect: {:?}", self.name, e);
             }
-            if self
-                .power_policy_sender
-                .try_send(power_policy_interface::psu::event::EventData::Disconnected(
-                    ConsumerDisconnect::none().with_renegotiation(true),
-                ))
-                .is_none()
+
+            if let Err(e) = self
+                .power_policy_notifier
+                .notify_disconnected(ConsumerDisconnect::none().with_renegotiation(true))
+                .await
             {
-                error!("({}): Failed to notify power policy of disconnect", self.name);
+                error!("({}): Failed to notify power policy of disconnect: {:#?}", self.name, e);
             }
         }
 

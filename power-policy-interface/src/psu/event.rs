@@ -1,5 +1,10 @@
 //! Messages originating from a PSU
-use embedded_services::sync::Lockable;
+use core::future::ready;
+
+use embedded_services::{
+    event::{NonBlockingSender, Sender},
+    sync::Lockable,
+};
 
 use crate::{
     capability::{ConsumerDisconnect, ConsumerPowerCapability, ProviderPowerCapability},
@@ -34,4 +39,110 @@ where
     pub psu: &'a D,
     /// Event data
     pub event: EventData,
+}
+
+/// New-type that implements the [`crate::psu::notification::Notifier`] trait for any [`NonBlockingSender<EventData>`].
+///
+/// This allows the user to choose blocking/non-blocking behavior when a type supports both.
+pub struct NonBlockingSenderNotifier<S: NonBlockingSender<EventData>>(pub S);
+
+impl<S: NonBlockingSender<EventData>> crate::psu::notification::Notifier for NonBlockingSenderNotifier<S> {
+    fn notify_attached(&mut self) -> impl Future<Output = Result<(), crate::psu::notification::Error>> {
+        ready(
+            self.0
+                .try_send(EventData::Attached)
+                .ok_or(crate::psu::notification::Error::WouldBlock),
+        )
+    }
+
+    fn notify_updated_consumer_capability(
+        &mut self,
+        capability: Option<ConsumerPowerCapability>,
+    ) -> impl Future<Output = Result<(), crate::psu::notification::Error>> {
+        ready(
+            self.0
+                .try_send(EventData::UpdatedConsumerCapability(capability))
+                .ok_or(crate::psu::notification::Error::WouldBlock),
+        )
+    }
+
+    fn notify_requested_provider_capability(
+        &mut self,
+        capability: Option<ProviderPowerCapability>,
+    ) -> impl Future<Output = Result<(), crate::psu::notification::Error>> {
+        ready(
+            self.0
+                .try_send(EventData::RequestedProviderCapability(capability))
+                .ok_or(crate::psu::notification::Error::WouldBlock),
+        )
+    }
+
+    fn notify_disconnected(
+        &mut self,
+        flags: ConsumerDisconnect,
+    ) -> impl Future<Output = Result<(), crate::psu::notification::Error>> {
+        ready(
+            self.0
+                .try_send(EventData::Disconnected(flags))
+                .ok_or(crate::psu::notification::Error::WouldBlock),
+        )
+    }
+
+    fn notify_detached(&mut self) -> impl Future<Output = Result<(), crate::psu::notification::Error>> {
+        ready(
+            self.0
+                .try_send(EventData::Detached)
+                .ok_or(crate::psu::notification::Error::WouldBlock),
+        )
+    }
+}
+
+impl<S: NonBlockingSender<EventData>> From<S> for NonBlockingSenderNotifier<S> {
+    fn from(sender: S) -> Self {
+        Self(sender)
+    }
+}
+
+/// New-type that implements the [`crate::psu::notification::Notifier`] trait for any [`Sender<EventData>`].
+///
+/// This allows the user to choose blocking/non-blocking behavior when a type supports both.
+pub struct SenderNotifier<S: Sender<EventData>>(pub S);
+
+impl<S: Sender<EventData>> crate::psu::notification::Notifier for SenderNotifier<S> {
+    async fn notify_attached(&mut self) -> Result<(), crate::psu::notification::Error> {
+        self.0.send(EventData::Attached).await;
+        Ok(())
+    }
+
+    async fn notify_updated_consumer_capability(
+        &mut self,
+        capability: Option<ConsumerPowerCapability>,
+    ) -> Result<(), crate::psu::notification::Error> {
+        self.0.send(EventData::UpdatedConsumerCapability(capability)).await;
+        Ok(())
+    }
+
+    async fn notify_requested_provider_capability(
+        &mut self,
+        capability: Option<ProviderPowerCapability>,
+    ) -> Result<(), crate::psu::notification::Error> {
+        self.0.send(EventData::RequestedProviderCapability(capability)).await;
+        Ok(())
+    }
+
+    async fn notify_disconnected(&mut self, flags: ConsumerDisconnect) -> Result<(), crate::psu::notification::Error> {
+        self.0.send(EventData::Disconnected(flags)).await;
+        Ok(())
+    }
+
+    async fn notify_detached(&mut self) -> Result<(), crate::psu::notification::Error> {
+        self.0.send(EventData::Detached).await;
+        Ok(())
+    }
+}
+
+impl<S: Sender<EventData>> From<S> for SenderNotifier<S> {
+    fn from(sender: S) -> Self {
+        Self(sender)
+    }
 }

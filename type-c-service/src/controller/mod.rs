@@ -29,7 +29,7 @@ pub struct Port<
     C: Lockable<Inner: Pd>,
     Shared: Lockable<Inner = SharedState>,
     TypeCSender: NonBlockingSender<type_c_interface::service::event::PortEventData>,
-    PowerSender: NonBlockingSender<power_policy_interface::psu::event::EventData>,
+    PowerNotifier: power_policy_interface::psu::notification::Notifier,
     LoopbackSender: NonBlockingSender<event::Loopback>,
 > {
     /// Local port
@@ -44,8 +44,8 @@ pub struct Port<
     status: PortStatus,
     /// Sender for type-c service events
     type_c_sender: TypeCSender,
-    /// Sender for power policy events
-    power_policy_sender: PowerSender,
+    /// Notifier for power policy events
+    power_policy_notifier: PowerNotifier,
     /// Configuration
     config: config::Config,
     /// Shared state
@@ -59,9 +59,9 @@ impl<
     C: Lockable<Inner: Pd>,
     Shared: Lockable<Inner = SharedState>,
     TypeCSender: NonBlockingSender<type_c_interface::service::event::PortEventData>,
-    PowerSender: NonBlockingSender<power_policy_interface::psu::event::EventData>,
+    PowerNotifier: power_policy_interface::psu::notification::Notifier,
     LoopbackSender: NonBlockingSender<event::Loopback>,
-> Port<'device, C, Shared, TypeCSender, PowerSender, LoopbackSender>
+> Port<'device, C, Shared, TypeCSender, PowerNotifier, LoopbackSender>
 {
     /// Create new Port instance
     // TODO: refactor arguments into a registration struct
@@ -73,7 +73,7 @@ impl<
         controller: &'device C,
         shared_state: &'device Shared,
         type_c_sender: TypeCSender,
-        power_policy_sender: PowerSender,
+        power_policy_notifier: PowerNotifier,
         loopback_sender: LoopbackSender,
     ) -> Self {
         Self {
@@ -82,7 +82,7 @@ impl<
             port,
             status: PortStatus::default(),
             psu_state: power_policy_interface::psu::State::default(),
-            power_policy_sender,
+            power_policy_notifier,
             config,
             shared_state,
             loopback_sender,
@@ -176,22 +176,14 @@ impl<
                 return Err(PdError::Failed);
             }
 
-            if self
-                .power_policy_sender
-                .try_send(power_policy_interface::psu::event::EventData::Attached)
-                .is_none()
-            {
-                error!("Failed to send power policy event");
+            if let Err(e) = self.power_policy_notifier.notify_attached().await {
+                error!("({}): Failed to notify power policy of attach: {:#?}", self.name, e);
             }
         } else {
             info!("Plug removed");
             self.psu_state.detach();
-            if self
-                .power_policy_sender
-                .try_send(power_policy_interface::psu::event::EventData::Detached)
-                .is_none()
-            {
-                error!("Failed to send power policy event");
+            if let Err(e) = self.power_policy_notifier.notify_detached().await {
+                error!("({}): Failed to notify power policy of detach: {:#?}", self.name, e);
             }
         }
 
@@ -234,9 +226,9 @@ impl<
     C: Lockable<Inner: Pd>,
     Shared: Lockable<Inner = SharedState>,
     TypeCSender: NonBlockingSender<type_c_interface::service::event::PortEventData>,
-    PowerSender: NonBlockingSender<power_policy_interface::psu::event::EventData>,
+    PowerNotifier: power_policy_interface::psu::notification::Notifier,
     LoopbackSender: NonBlockingSender<event::Loopback>,
-> Named for Port<'device, C, Shared, TypeCSender, PowerSender, LoopbackSender>
+> Named for Port<'device, C, Shared, TypeCSender, PowerNotifier, LoopbackSender>
 {
     fn name(&self) -> &'static str {
         self.name

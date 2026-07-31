@@ -1,4 +1,9 @@
-use embedded_services::sync::Lockable;
+use core::{future::ready, marker::PhantomData};
+
+use embedded_services::{
+    event::{NonBlockingSender, Sender},
+    sync::Lockable,
+};
 
 use crate::{
     capability::{ConsumerDisconnect, ConsumerPowerCapability, ProviderPowerCapability},
@@ -77,4 +82,179 @@ where
     PSU: Lockable,
     PSU::Inner: Psu,
 {
+}
+
+/// New-type that implements the [`crate::service::notification::Notifier`] trait for any [`NonBlockingSender<Event>`].
+///
+/// This allows the user to choose blocking/non-blocking behavior when a type supports both.
+pub struct NonBlockingSenderNotifier<
+    'device,
+    PSU: Lockable<Inner: Psu> + 'device,
+    S: NonBlockingSender<Event<'device, PSU>>,
+> {
+    pub sender: S,
+    _phantom: PhantomData<&'device PSU>,
+}
+
+impl<'device, PSU: Lockable<Inner: Psu>, S: NonBlockingSender<Event<'device, PSU>>>
+    NonBlockingSenderNotifier<'device, PSU, S>
+{
+    /// Create a new [`NonBlockingSenderNotifier`]
+    pub fn new(sender: S) -> Self {
+        Self {
+            sender,
+            _phantom: PhantomData,
+        }
+    }
+}
+
+impl<'device, PSU: Lockable<Inner: Psu>, S: NonBlockingSender<Event<'device, PSU>>>
+    crate::service::notification::Notifier<'device> for NonBlockingSenderNotifier<'device, PSU, S>
+{
+    type Psu = PSU;
+
+    fn notify_consumer_disconnected(
+        &mut self,
+        psu: &'device Self::Psu,
+        flags: ConsumerDisconnect,
+    ) -> impl Future<Output = Result<(), crate::service::notification::Error>> {
+        ready(
+            self.sender
+                .try_send(Event::ConsumerDisconnected(psu, flags))
+                .ok_or(crate::service::notification::Error::WouldBlock),
+        )
+    }
+
+    fn notify_consumer_connected(
+        &mut self,
+        psu: &'device Self::Psu,
+        capability: ConsumerPowerCapability,
+    ) -> impl Future<Output = Result<(), crate::service::notification::Error>> {
+        ready(
+            self.sender
+                .try_send(Event::ConsumerConnected(psu, capability))
+                .ok_or(crate::service::notification::Error::WouldBlock),
+        )
+    }
+
+    fn notify_provider_disconnected(
+        &mut self,
+        psu: &'device Self::Psu,
+    ) -> impl Future<Output = Result<(), crate::service::notification::Error>> {
+        ready(
+            self.sender
+                .try_send(Event::ProviderDisconnected(psu))
+                .ok_or(crate::service::notification::Error::WouldBlock),
+        )
+    }
+
+    fn notify_provider_connected(
+        &mut self,
+        psu: &'device Self::Psu,
+        capability: ProviderPowerCapability,
+    ) -> impl Future<Output = Result<(), crate::service::notification::Error>> {
+        ready(
+            self.sender
+                .try_send(Event::ProviderConnected(psu, capability))
+                .ok_or(crate::service::notification::Error::WouldBlock),
+        )
+    }
+
+    fn notify_unconstrained(
+        &mut self,
+        unconstrained: UnconstrainedState,
+    ) -> impl Future<Output = Result<(), crate::service::notification::Error>> {
+        ready(
+            self.sender
+                .try_send(Event::Unconstrained(unconstrained))
+                .ok_or(crate::service::notification::Error::WouldBlock),
+        )
+    }
+}
+
+impl<'device, PSU: Lockable<Inner: Psu>, S: NonBlockingSender<Event<'device, PSU>>> From<S>
+    for NonBlockingSenderNotifier<'device, PSU, S>
+{
+    fn from(sender: S) -> Self {
+        Self {
+            sender,
+            _phantom: PhantomData,
+        }
+    }
+}
+
+/// New-type that implements the [`crate::service::notification::Notifier`] trait for any [`Sender<Event>`].
+///
+/// This allows the user to choose blocking/non-blocking behavior when a type supports both.
+pub struct SenderNotifier<'device, PSU: Lockable<Inner: Psu> + 'device, S: Sender<Event<'device, PSU>>> {
+    pub sender: S,
+    _phantom: PhantomData<&'device PSU>,
+}
+
+impl<'device, PSU: Lockable<Inner: Psu> + 'device, S: Sender<Event<'device, PSU>>> SenderNotifier<'device, PSU, S> {
+    /// Create a new [`SenderNotifier`]
+    pub fn new(sender: S) -> Self {
+        Self {
+            sender,
+            _phantom: PhantomData,
+        }
+    }
+}
+
+impl<'device, PSU: Lockable<Inner: Psu> + 'device, S: Sender<Event<'device, PSU>>>
+    crate::service::notification::Notifier<'device> for SenderNotifier<'device, PSU, S>
+{
+    type Psu = PSU;
+
+    async fn notify_consumer_disconnected(
+        &mut self,
+        psu: &'device Self::Psu,
+        flags: ConsumerDisconnect,
+    ) -> Result<(), crate::service::notification::Error> {
+        self.sender.send(Event::ConsumerDisconnected(psu, flags)).await;
+        Ok(())
+    }
+
+    async fn notify_consumer_connected(
+        &mut self,
+        psu: &'device Self::Psu,
+        capability: ConsumerPowerCapability,
+    ) -> Result<(), crate::service::notification::Error> {
+        self.sender.send(Event::ConsumerConnected(psu, capability)).await;
+        Ok(())
+    }
+
+    async fn notify_provider_disconnected(
+        &mut self,
+        psu: &'device Self::Psu,
+    ) -> Result<(), crate::service::notification::Error> {
+        self.sender.send(Event::ProviderDisconnected(psu)).await;
+        Ok(())
+    }
+
+    async fn notify_provider_connected(
+        &mut self,
+        psu: &'device Self::Psu,
+        capability: ProviderPowerCapability,
+    ) -> Result<(), crate::service::notification::Error> {
+        self.sender.send(Event::ProviderConnected(psu, capability)).await;
+        Ok(())
+    }
+
+    async fn notify_unconstrained(
+        &mut self,
+        unconstrained: UnconstrainedState,
+    ) -> Result<(), crate::service::notification::Error> {
+        self.sender.send(Event::Unconstrained(unconstrained)).await;
+        Ok(())
+    }
+}
+
+impl<'device, PSU: Lockable<Inner: Psu>, S: Sender<Event<'device, PSU>>> From<S> for SenderNotifier<'device, PSU, S> {
+    fn from(sender: S) -> Self {
+        Self {
+            sender,
+            _phantom: PhantomData,
+        }
+    }
 }
