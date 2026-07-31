@@ -195,9 +195,14 @@ impl<Bus: I2cTargetAsync> TimeoutBus<Bus> {
                 self.timeout_settings.data_read_timeout,
                 self.bus.respond_to_write(&mut discard_buffer),
             )
-            .await?
-            .map_err(Error::Bus)?;
-            match result {
+            .await;
+
+            let Ok(result) = result else {
+                self.bus.recover().await.map_err(Error::Bus)?;
+                return Err(Error::Protocol(ProtocolError::Timeout));
+            };
+
+            match result.map_err(Error::Bus)? {
                 WriteStatus::BufferFull(_bytes) => {
                     continue;
                 }
