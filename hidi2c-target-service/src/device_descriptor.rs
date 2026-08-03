@@ -92,15 +92,15 @@ pub const HID_REPORT_ID_SIZE_BYTES: u16 = 1;
 pub enum DeviceDescriptorError {
     /// The HID device returned an input report descriptor whose largest report (`actual` bytes)
     /// is larger than the device's `InputReportMaxSize` (`max` bytes).
-    InputReportTooLarge { declared: usize, max: usize },
+    InputReportTooLarge { actual: usize, max: usize },
 
     /// The HID device returned an output report descriptor whose largest report (`actual` bytes)
     /// is larger than the device's `OutputReportMaxSize` (`max` bytes).
-    OutputReportTooLarge { declared: usize, max: usize },
+    OutputReportTooLarge { actual: usize, max: usize },
 
     /// The HID device returned a feature report descriptor whose largest report (`actual` bytes)
     /// is larger than the device's `FeatureReportMaxSize` (`max` bytes).
-    FeatureReportTooLarge { declared: usize, max: usize },
+    FeatureReportTooLarge { actual: usize, max: usize },
 }
 
 impl DeviceDescriptor {
@@ -116,7 +116,7 @@ impl DeviceDescriptor {
         let input_max = HidDevice::InputReportMaxSize::USIZE;
         if actual_max_sizes.input > input_max {
             return Err(DeviceDescriptorError::InputReportTooLarge {
-                declared: actual_max_sizes.input,
+                actual: actual_max_sizes.input,
                 max: input_max,
             });
         }
@@ -124,14 +124,14 @@ impl DeviceDescriptor {
         let output_max = HidDevice::OutputReportMaxSize::USIZE;
         if actual_max_sizes.output > output_max {
             return Err(DeviceDescriptorError::OutputReportTooLarge {
-                declared: actual_max_sizes.output,
+                actual: actual_max_sizes.output,
                 max: output_max,
             });
         }
 
         if actual_max_sizes.feature > HidDevice::FeatureReportMaxSize::USIZE {
             return Err(DeviceDescriptorError::FeatureReportTooLarge {
-                declared: actual_max_sizes.feature,
+                actual: actual_max_sizes.feature,
                 max: HidDevice::FeatureReportMaxSize::USIZE,
             });
         }
