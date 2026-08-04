@@ -286,9 +286,9 @@ impl<'a> HidReportDescriptor<'a> {
                 HidItemType::Global => {
                     let tag = item.header.item_tag();
                     if tag == GlobalItemTag::ReportSize as u8 {
-                        state.report_size_bits = read_item_value(item.data);
+                        state.report_size_bits = item.try_value_as_int().ok_or(HidDescriptorError::TruncatedItem)?;
                     } else if tag == GlobalItemTag::ReportCount as u8 {
-                        state.report_count = read_item_value(item.data);
+                        state.report_count = item.try_value_as_int().ok_or(HidDescriptorError::TruncatedItem)?;
                     } else if tag == GlobalItemTag::ReportId as u8 {
                         let &[id] = item.data else {
                             return Err(HidDescriptorError::UnsupportedReportId);
@@ -369,15 +369,6 @@ pub struct MaxReportSizes {
     pub output: usize,
     /// Largest feature report payload, in bytes.
     pub feature: usize,
-}
-
-/// Reads a little-endian unsigned value from a short item's data payload (0..=4 bytes).
-fn read_item_value(data: &[u8]) -> u32 {
-    let mut value = 0u32;
-    for (index, &byte) in data.iter().enumerate().take(4) {
-        value |= (byte as u32) << (8 * index as u32);
-    }
-    value
 }
 
 /// Converts a bit count to whole bytes, rounding up.
@@ -571,6 +562,23 @@ struct DescriptorItem<'a> {
     header: HidReportDescriptorElementHeader,
     data: &'a [u8],
     raw: &'a [u8],
+}
+
+impl DescriptorItem<'_> {
+    /// Reads a little-endian unsigned value from a short item's data payload (0..=4 bytes).
+    /// If the value has no data or doesn't fit in a u32 (which isn't legal for short items),
+    /// returns None.
+    fn try_value_as_int(&self) -> Option<u32> {
+        if self.data.is_empty() || self.data.len() > ShortItemSize::Four.data_bytes() {
+            None
+        } else {
+            let mut value = 0u32;
+            for (index, &byte) in self.data.iter().enumerate().take(4) {
+                value |= (byte as u32) << (8 * index as u32);
+            }
+            Some(value)
+        }
+    }
 }
 
 impl<'a> Iterator for DescriptorItems<'a> {
