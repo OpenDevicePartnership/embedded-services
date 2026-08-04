@@ -225,6 +225,11 @@ pub trait HidDevice {
     fn reset(&mut self) -> impl core::future::Future<Output = ()>;
 }
 
+/// Maximum `Push`/`Pop` global-item nesting depth supported when parsing a report descriptor
+/// (section 6.2.2.7 of the HID 1.11 spec). Descriptors that nest deeper are rejected with
+/// [`HidDescriptorError::PushPopStackOverflow`].
+const MAX_PUSH_POP_STACK_DEPTH: usize = 16;
+
 /// A HID report descriptor
 ///
 #[derive(Debug, Clone, Copy)]
@@ -273,7 +278,7 @@ impl<'a> HidReportDescriptor<'a> {
         };
 
         let mut state = GlobalItemState::default();
-        let mut stack = heapless::Vec::<GlobalItemState, 16>::new();
+        let mut stack = heapless::Vec::<GlobalItemState, MAX_PUSH_POP_STACK_DEPTH>::new();
 
         for item in DescriptorItems::new(bytes) {
             let item = item?;
@@ -431,12 +436,24 @@ impl ShortItemSize {
     }
 }
 
+/// Bit layout of a HID short-item header byte (section 6.2.2.2 of the HID 1.11 spec):
+/// bits `[1:0]` are the data size, bits `[3:2]` are the item type, and bits `[7:4]` are the tag.
+const HEADER_ITEM_TYPE_SHIFT: u8 = 2;
+/// Bit position of the tag field within a short-item header byte (see [`HEADER_ITEM_TYPE_SHIFT`]).
+const HEADER_ITEM_TAG_SHIFT: u8 = 4;
+/// Mask selecting the size or type field once shifted down (both are 2-bit fields).
+const HEADER_ITEM_FIELD_MASK: u8 = 0b11;
+
 struct HidReportDescriptorElementHeader(u8);
 impl HidReportDescriptorElementHeader {
     /// Encode a Global short-item header with the given `tag` and data size (section 6.2.2.2 of the
     /// HID 1.11 spec).
     const fn global(tag: GlobalItemTag, size: ShortItemSize) -> Self {
-        Self(((tag as u8) << 4) | ((HidItemType::Global as u8) << 2) | (size as u8))
+        Self(
+            ((tag as u8) << HEADER_ITEM_TAG_SHIFT)
+                | ((HidItemType::Global as u8) << HEADER_ITEM_TYPE_SHIFT)
+                | (size as u8),
+        )
     }
 
     /// The raw header byte, for writing this item into a descriptor byte stream.
@@ -448,13 +465,13 @@ impl HidReportDescriptorElementHeader {
     fn item_type(&self) -> HidItemType {
         // Panic safety: This can't actually panic because we mask to 2 bits and the enum covers all 2-bit values, but there's no way to express that in the type system
         #[allow(clippy::expect_used)]
-        HidItemType::try_from_primitive((self.0 >> 2) & 0b11)
+        HidItemType::try_from_primitive((self.0 >> HEADER_ITEM_TYPE_SHIFT) & HEADER_ITEM_FIELD_MASK)
             .expect("HidItemType::try_from_primitive should never fail because we mask to 2 bits")
     }
 
     /// The tag of this item, which is a 4-bit value that identifies the specific item within its type (e.g. start collection, end collection, input, output, etc)
     fn item_tag(&self) -> u8 {
-        self.0 >> 4
+        self.0 >> HEADER_ITEM_TAG_SHIFT
     }
 
     /// Whether this is a "long item" header (see section 6.2.2.3 of the HID 1.11 spec). A long item
@@ -468,7 +485,7 @@ impl HidReportDescriptorElementHeader {
     fn short_item_data_size(&self) -> ShortItemSize {
         // Panic safety: This can't actually panic because we mask to 2 bits and the enum covers all 2-bit values, but there's no way to express that in the type system
         #[allow(clippy::expect_used)]
-        ShortItemSize::try_from_primitive(self.0 & 0b11).expect(
+        ShortItemSize::try_from_primitive(self.0 & HEADER_ITEM_FIELD_MASK).expect(
             "HidReportDescriptorElementHeader::short_item_data_size should never fail because we mask to 2 bits",
         )
     }
@@ -491,6 +508,12 @@ const COLLECTION_ITEM_TAG: u8 = 0b1010;
 
 /// Header byte value that introduces a long item (section 6.2.2.3 of the HID 1.11 spec).
 const LONG_ITEM_HEADER: u8 = 0b1111_1110;
+
+/// Length, in bytes, of a short-item header (`[header]`).
+const SHORT_ITEM_HEADER_LEN: usize = 1;
+
+/// Length, in bytes, of a long-item header (`[0b1111_1110, bDataSize, bLongItemTag]`, section 6.2.2.3).
+const LONG_ITEM_HEADER_LEN: usize = 3;
 
 /// Encoded header for a one-byte Global "Report ID" item (size=1).
 const REPORT_ID_HEADER_SIZE1: HidReportDescriptorElementHeader =
@@ -600,9 +623,9 @@ impl<'a> Iterator for DescriptorItems<'a> {
                 self.done = true;
                 return Some(Err(HidDescriptorError::TruncatedItem));
             };
-            (3, data_size as usize)
+            (LONG_ITEM_HEADER_LEN, data_size as usize)
         } else {
-            (1, header.short_item_data_size().data_bytes())
+            (SHORT_ITEM_HEADER_LEN, header.short_item_data_size().data_bytes())
         };
 
         let data_start = self.pos + header_len;
