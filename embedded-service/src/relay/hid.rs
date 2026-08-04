@@ -455,6 +455,7 @@ impl HidReportDescriptorElementHeader {
 
     /// The type of the item, which is one of Main, Global, Local, or Reserved.
     fn item_type(&self) -> HidItemType {
+        // Panic safety: This can't actually panic because we mask to 2 bits and the enum covers all 2-bit values, but there's no way to express that in the type system
         #[allow(clippy::expect_used)]
         HidItemType::try_from_primitive((self.0 >> 2) & 0b11)
             .expect("HidItemType::try_from_primitive should never fail because we mask to 2 bits")
@@ -474,6 +475,7 @@ impl HidReportDescriptorElementHeader {
 
     /// The number of data bytes encoded by a *short* item header. Only meaningful for short items.
     fn short_item_data_size(&self) -> ShortItemSize {
+        // Panic safety: This can't actually panic because we mask to 2 bits and the enum covers all 2-bit values, but there's no way to express that in the type system
         #[allow(clippy::expect_used)]
         ShortItemSize::try_from_primitive(self.0 & 0b11).expect(
             "HidReportDescriptorElementHeader::short_item_data_size should never fail because we mask to 2 bits",
