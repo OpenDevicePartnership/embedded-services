@@ -519,8 +519,9 @@ pub enum HidDescriptorError {
     /// or more than the 255 distinct report IDs the HID specification can represent.
     TooManyReportIds,
 
-    /// The caller-provided output buffer was too small to hold the combined descriptor.
-    OutputBufferTooSmall,
+    /// The caller-provided output buffer was too small to hold the combined descriptor; buffer should
+    /// be at least `usize` bytes.
+    OutputBufferTooSmall(usize),
 
     /// The caller-provided report-ID remap buffer was too small to hold every mapping.
     RemapBufferTooSmall,
@@ -638,21 +639,23 @@ impl<'buf> BoundedWriter<'buf> {
     }
 
     fn push(&mut self, byte: u8) -> Result<(), HidDescriptorError> {
+        let buflen = self.buf.len();
         let slot = self
             .buf
             .get_mut(self.pos)
-            .ok_or(HidDescriptorError::OutputBufferTooSmall)?;
+            .ok_or(HidDescriptorError::OutputBufferTooSmall(buflen))?;
         *slot = byte;
         self.pos += 1;
         Ok(())
     }
 
     fn push_slice(&mut self, bytes: &[u8]) -> Result<(), HidDescriptorError> {
+        let buflen = self.buf.len();
         let end = self.pos + bytes.len();
         let dst = self
             .buf
             .get_mut(self.pos..end)
-            .ok_or(HidDescriptorError::OutputBufferTooSmall)?;
+            .ok_or(HidDescriptorError::OutputBufferTooSmall(buflen))?;
         dst.copy_from_slice(bytes);
         self.pos = end;
         Ok(())
@@ -767,6 +770,12 @@ impl<const REPORT_COUNT: usize, const DEVICE_COUNT: usize> ReportIdMap<REPORT_CO
             blocks: BlockBoundaries::new(),
         };
 
+        let expected_output_buffer_size = inputs.iter().map(|input| input.as_bytes().len()).sum::<usize>()
+            + inputs.len() * MAX_DESCRIPTOR_FRAMING_OVERHEAD;
+        if out.len() < expected_output_buffer_size {
+            return Err(HidDescriptorError::OutputBufferTooSmall(expected_output_buffer_size));
+        }
+
         let mut writer = BoundedWriter::new(out);
         let mut builder = ReportIdMapBuilder::new(&mut map.remaps, &mut map.blocks);
 
@@ -817,7 +826,10 @@ impl<const REPORT_COUNT: usize, const DEVICE_COUNT: usize> ReportIdMap<REPORT_CO
         builder.finish()?;
 
         let len = writer.pos;
-        let bytes: &'buf [u8] = writer.buf.get(..len).ok_or(HidDescriptorError::OutputBufferTooSmall)?;
+        let bytes: &'buf [u8] = writer
+            .buf
+            .get(..len)
+            .ok_or(HidDescriptorError::OutputBufferTooSmall(expected_output_buffer_size))?;
 
         Ok((HidReportDescriptor::new(bytes)?, map))
     }
