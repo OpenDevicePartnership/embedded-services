@@ -1566,7 +1566,7 @@ mod tests {
         let a = explicit_descriptor(1);
         let mut out = [0u8; 4];
         let err = combine::<8, _>(&[&HidReportDescriptor::new(&a).unwrap()], &mut out).unwrap_err();
-        assert_eq!(err, HidDescriptorError::OutputBufferTooSmall);
+        assert!(matches!(err, HidDescriptorError::OutputBufferTooSmall(_)));
     }
 
     #[test]
