@@ -458,7 +458,7 @@ impl HidReportDescriptorElementHeader {
     }
 
     /// Whether this is a "long item" header (see section 6.2.2.3 of the HID 1.11 spec). A long item
-    /// is encoded as `[0xFE, bDataSize, bLongItemTag, data..]`, i.e. a 3-byte header followed by
+    /// is encoded as `[0b1111_1110, bDataSize, bLongItemTag, data..]`, i.e. a 3-byte header followed by
     /// `bDataSize` data bytes.
     fn is_long_item(&self) -> bool {
         self.0 == LONG_ITEM_HEADER
@@ -554,7 +554,7 @@ impl<'a> DescriptorItems<'a> {
 
 /// A single parsed item from a HID report descriptor.
 ///
-/// Both short items (`[header, data..]`) and long items (`[0xFE, bDataSize, bLongItemTag, data..]`)
+/// Both short items (`[header, data..]`) and long items (`[0b1111_1110, bDataSize, bLongItemTag, data..]`)
 /// are represented: [`header`](Self::header) is the leading byte, [`data`](Self::data) is just the
 /// item's data payload (excluding any header bytes), and [`raw`](Self::raw) is the complete item
 /// including its header, so it can be copied verbatim.
@@ -595,7 +595,7 @@ impl<'a> Iterator for DescriptorItems<'a> {
         };
         let header = HidReportDescriptorElementHeader(header_byte);
 
-        // A long item carries a 3-byte header (`[0xFE, bDataSize, bLongItemTag]`) with its data size
+        // A long item carries a 3-byte header (`[0b1111_1110, bDataSize, bLongItemTag]`) with its data size
         // in the second byte; a short item has a 1-byte header encoding its own data size.
         let (header_len, data_size) = if header.is_long_item() {
             let Some(&data_size) = self.bytes.get(self.pos + 1) else {
@@ -1543,7 +1543,7 @@ mod tests {
 
     #[test]
     fn long_item_is_preserved() {
-        // A descriptor containing a long item (`[0xFE, bDataSize, bLongItemTag, data..]`) alongside a
+        // A descriptor containing a long item (`[0b1111_1110, bDataSize, bLongItemTag, data..]`) alongside a
         // Report ID. The long item must be parsed and copied through the combiner verbatim.
         const LONG_ITEM: &[u8] = &[LONG_ITEM_HEADER, 0x02, 0x42, 0xAA, 0xBB];
         #[rustfmt::skip]
