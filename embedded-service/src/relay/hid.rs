@@ -523,9 +523,6 @@ pub enum HidDescriptorError {
     /// be at least `usize` bytes.
     OutputBufferTooSmall(usize),
 
-    /// The caller-provided report-ID remap buffer was too small to hold every mapping.
-    RemapBufferTooSmall,
-
     /// The descriptor nested `Push` global items more deeply than this parser supports.
     PushPopStackOverflow,
 
@@ -705,10 +702,7 @@ impl<const OWNERS: usize> BlockBoundaries<OWNERS> {
     /// Record that `owner`'s block begins at `report_index`. Called once per owner in increasing
     /// order as the tables are built.
     fn set_start(&mut self, owner: usize, report_index: usize) -> Result<(), HidDescriptorError> {
-        let slot = self
-            .starts
-            .get_mut(owner)
-            .ok_or(HidDescriptorError::RemapBufferTooSmall)?;
+        let slot = self.starts.get_mut(owner).ok_or(HidDescriptorError::TooManyReportIds)?;
         *slot = u8::try_from(report_index).map_err(|_| HidDescriptorError::TooManyReportIds)?;
         Ok(())
     }
@@ -918,14 +912,13 @@ impl<'a, const OWNERS: usize> ReportIdMapBuilder<'a, OWNERS> {
     /// IDs are handed out contiguously from 1, so the assigned ID is `count + 1`.
     ///
     /// Errors with [`HidDescriptorError::TooManyReportIds`] if the assigned ID would exceed the
-    /// single-byte report-ID space, or [`HidDescriptorError::RemapBufferTooSmall`] if `remaps` is
-    /// full.
+    /// single-byte report-ID space or number of configured remaps
     fn record(&mut self, native_id: u8) -> Result<u8, HidDescriptorError> {
         let assigned = u8::try_from(self.count + 1).map_err(|_| HidDescriptorError::TooManyReportIds)?;
         let slot = self
             .remaps
             .get_mut(self.count)
-            .ok_or(HidDescriptorError::RemapBufferTooSmall)?;
+            .ok_or(HidDescriptorError::TooManyReportIds)?;
         *slot = native_id;
         self.count += 1;
         Ok(assigned)
@@ -1641,7 +1634,7 @@ mod tests {
             &mut out,
         )
         .unwrap_err();
-        assert_eq!(err, HidDescriptorError::RemapBufferTooSmall);
+        assert_eq!(err, HidDescriptorError::TooManyReportIds);
     }
 
     // ---- max_report_sizes ----
