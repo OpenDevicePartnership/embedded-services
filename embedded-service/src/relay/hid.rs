@@ -268,14 +268,9 @@ impl<'a> HidReportDescriptor<'a> {
 
         let mut report_ids_implicit = true;
 
-        let mut current = ReportBits::default();
-        let mut max = ReportBits::default();
-        let mut flush = |current: &mut ReportBits| {
-            max.input = max.input.max(current.input);
-            max.output = max.output.max(current.output);
-            max.feature = max.feature.max(current.feature);
-            *current = ReportBits::default();
-        };
+        // Report fields for an ID need not be contiguous in the descriptor, so we have to track
+        // each report ID's accumulated size until the entire thing has been parsed.
+        let mut reports = [ReportBits::default(); u8::MAX as usize + 1];
 
         let mut state = GlobalItemState::default();
         let mut stack = heapless::Vec::<GlobalItemState, MAX_PUSH_POP_STACK_DEPTH>::new();
@@ -299,26 +294,20 @@ impl<'a> HidReportDescriptor<'a> {
                             return Err(HidDescriptorError::UnsupportedReportId);
                         };
                         report_ids_implicit = false;
-                        // Switching report IDs ends the current report and starts a new one.
-                        if id != state.report_id {
-                            flush(&mut current);
-                        }
                         state.report_id = id;
                     } else if tag == GlobalItemTag::Push as u8 {
                         stack
                             .push(state)
                             .map_err(|_| HidDescriptorError::PushPopStackOverflow)?;
                     } else if tag == GlobalItemTag::Pop as u8 {
-                        let restored = stack.pop().ok_or(HidDescriptorError::UnbalancedPop)?;
-                        // A Pop that restores a different report ID ends the current report.
-                        if restored.report_id != state.report_id {
-                            flush(&mut current);
-                        }
-                        state = restored;
+                        state = stack.pop().ok_or(HidDescriptorError::UnbalancedPop)?;
                     }
                 }
                 HidItemType::Main => {
                     let bits = state.report_size_bits.saturating_mul(state.report_count);
+                    let current = reports
+                        .get_mut(state.report_id as usize)
+                        .ok_or(HidDescriptorError::UnsupportedReportId)?;
                     let field = match MainItemTag::try_from_primitive(item.header.item_tag()) {
                         Ok(MainItemTag::Input) => Some(&mut current.input),
                         Ok(MainItemTag::Output) => Some(&mut current.output),
@@ -333,7 +322,13 @@ impl<'a> HidReportDescriptor<'a> {
                 HidItemType::Local | HidItemType::Reserved => {}
             }
         }
-        flush(&mut current);
+
+        let mut max = ReportBits::default();
+        for report in reports {
+            max.input = max.input.max(report.input);
+            max.output = max.output.max(report.output);
+            max.feature = max.feature.max(report.feature);
+        }
 
         Ok(Self {
             bytes,
@@ -1737,6 +1732,52 @@ mod tests {
         ];
         let sizes = HidReportDescriptor::new(&bytes).unwrap().max_report_sizes();
         assert_eq!(sizes.input, 2);
+    }
+
+    #[test]
+    fn max_report_sizes_sums_noncontiguous_report_id_fields() {
+        // Report 1 is declared in two separate regions around report 2. Its fields still form one
+        // four-byte report rather than two independent two-byte reports.
+        #[rustfmt::skip]
+        let bytes = [
+            0xA1, 0x01,       // Collection (Application)
+            0x75, 0x08,       //   Report Size (8)
+            0x85, 0x01,       //   Report ID (1)
+            0x95, 0x02,       //   Report Count (2)
+            0x81, 0x02,       //   Input (2 bytes into report 1)
+            0x85, 0x02,       //   Report ID (2)
+            0x95, 0x03,       //   Report Count (3)
+            0x81, 0x02,       //   Input (3 bytes into report 2)
+            0x85, 0x01,       //   Report ID (1)
+            0x95, 0x02,       //   Report Count (2)
+            0x81, 0x02,       //   Input (+2 bytes => 4 bytes total in report 1)
+            0xC0,             // End Collection
+        ];
+        let sizes = HidReportDescriptor::new(&bytes).unwrap().max_report_sizes();
+        assert_eq!(sizes.input, 4);
+    }
+
+    #[test]
+    fn max_report_sizes_sums_report_id_fields_restored_by_pop() {
+        // Push saves report ID 1, report ID 2 is declared in the nested state, and Pop restores
+        // report ID 1. The fields before and after the nested state form one four-byte report.
+        #[rustfmt::skip]
+        let bytes = [
+            0xA1, 0x01,       // Collection (Application)
+            0x75, 0x08,       //   Report Size (8)
+            0x85, 0x01,       //   Report ID (1)
+            0x95, 0x02,       //   Report Count (2)
+            0x81, 0x02,       //   Input (2 bytes into report 1)
+            0xA4,             //   Push (saves report ID 1)
+            0x85, 0x02,       //     Report ID (2)
+            0x95, 0x03,       //     Report Count (3)
+            0x81, 0x02,       //     Input (3 bytes into report 2)
+            0xB4,             //   Pop (restores report ID 1 and report count 2)
+            0x81, 0x02,       //   Input (+2 bytes => 4 bytes total in report 1)
+            0xC0,             // End Collection
+        ];
+        let sizes = HidReportDescriptor::new(&bytes).unwrap().max_report_sizes();
+        assert_eq!(sizes.input, 4);
     }
 
     #[test]
