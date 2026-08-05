@@ -1,4 +1,10 @@
 [toolchain]
-channel = "1.93"
+channel = "1.97"
 targets = ["thumbv8m.main-none-eabihf"]
-components = ["rust-src", "rustfmt", "llvm-tools-preview", "clippy"]
+components = [
+    "rust-src",
+    "rustfmt",
+    "llvm-tools-preview",
+    "clippy",
+    "rust-analyzer",
+]
