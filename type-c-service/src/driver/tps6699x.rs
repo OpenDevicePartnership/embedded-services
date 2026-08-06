@@ -366,13 +366,19 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
                         return Err(PdError::InvalidParams.into());
                     }
 
+                    let source::Pdo::Fixed(fixed_source_pdo) = source_pdos[0] else {
+                        error!("Port{}: First rx source PDO is not fixed", port.0);
+                        return Err(PdError::InvalidParams.into());
+                    };
+
                     let pdo = sink::Pdo::try_from(pdo_raw).map_err(|_| Error::from(PdError::InvalidParams))?;
                     let rdo = Rdo::for_pdo(rdo_raw, pdo).ok_or(Error::Pd(PdError::InvalidParams))?;
                     debug!("PDO: {:#?}", pdo);
                     debug!("RDO: {:#?}", rdo);
                     port_status.available_sink_contract = Contract::from_sink(pdo, rdo).try_into().ok();
-                    port_status.dual_power = source_pdos[0].dual_role_power();
-                    port_status.unconstrained_power = source_pdos[0].unconstrained_power();
+                    port_status.dual_power = fixed_source_pdo.dual_role_power;
+                    port_status.unconstrained_power = fixed_source_pdo.unconstrained_power;
+                    port_status.epr = fixed_source_pdo.epr_capable;
                 }
             } else if status.port_role() {
                 // port_role is true for source

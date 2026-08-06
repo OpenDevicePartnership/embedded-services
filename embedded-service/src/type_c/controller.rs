@@ -48,7 +48,7 @@ pub struct PortStatus {
     pub alt_mode: AltMode,
     /// Power path status
     pub power_path: PowerPathStatus,
-    /// EPR mode active
+    /// Port partner is EPR capable
     pub epr: bool,
     /// Port partner is unconstrained
     pub unconstrained_power: bool,
