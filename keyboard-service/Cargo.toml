@@ -13,15 +13,19 @@ ignored = ["defmt", "log"]
 [dependencies]
 defmt = { workspace = true, optional = true }
 log = { workspace = true, optional = true }
-embassy-futures.workspace = true
 embassy-sync.workspace = true
 embassy-time.workspace = true
 embedded-services.workspace = true
 embedded-hal.workspace = true
-static_cell.workspace = true
+odp-service-common.workspace = true
+typenum.workspace = true
 bitflags.workspace = true
-hid-service = { path = "../hid-service" }
 keyberon = { git = "https://github.com/TeXitoi/keyberon", rev = "362c209f729d05505abb1984a0ddb321ec9ebf53" }
+
+[dev-dependencies]
+critical-section = { workspace = true, features = ["std"] }
+embassy-futures.workspace = true
+embassy-time = { workspace = true, features = ["std", "generic-queue-8"] }
 
 [features]
 default = []
@@ -30,14 +34,12 @@ defmt = [
     "embedded-services/defmt",
     "embassy-time/defmt",
     "embassy-sync/defmt",
-    "hid-service/defmt",
 ]
 log = [
     "dep:log",
     "embedded-services/log",
     "embassy-time/log",
     "embassy-sync/log",
-    "hid-service/log",
 ]
 
 [lints]

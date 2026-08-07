@@ -1,149 +1,91 @@
-//! A configurable GPIO keyboard which can be used for the keyboard service.
-//! If this does not meets the user's needs, the user can implement the `HidKeyboard` trait
-//! for their own specific use case.
-use super::HidKeyboard;
-use core::borrow::Borrow;
+//! A configurable GPIO matrix keyboard service.
+//!
+//! [`Service`] implements the transport-neutral [`KeyboardService`] interface and
+//! [`odp_service_common::runnable_service::Service`]. Use [`crate::KeyboardHidRelay`] to expose it
+//! through HID, or provide another relay implementation for a different protocol.
+use core::cell::Cell;
+use core::marker::PhantomData;
+
+use embassy_sync::blocking_mutex::Mutex as BlockingMutex;
+use embassy_sync::pubsub::{DynSubscriber, PubSubChannel, Publisher};
 use embassy_sync::signal::Signal;
 use embassy_time::Timer;
 use embedded_hal::digital::{InputPin, OutputPin};
-use embedded_services::GlobalRawMutex;
-use embedded_services::hid;
-use embedded_services::{error, warn};
+use embedded_services::{GlobalRawMutex, Never, error, warn};
 use keyberon::debounce::Debouncer;
 use keyberon::key_code::KbHidReport;
 use keyberon::layout::Layout;
 pub use keyberon::layout::{Layers, layout};
 use keyberon::matrix::Matrix;
 
-// Currently hard cap this to 6 since Keyberon only supports 6 keys
-// If move away from Keyberon this can be changed and allow user to configure
-const KRO: usize = 6;
+use crate::interface::{KeyboardInputReport, KeyboardPowerState, KeyboardService, LedFlags};
 
-// A single byte represents the state of 8 key modifiers
-const KEYMOD_SZ: usize = 1;
+// Depth of the channel carrying input reports from the scan `Runner` to subscribers.
+const REPORT_QUEUE_DEPTH: usize = 8;
 
-// Don't like how this still needs knowledge of i2c representation
-// May need to consider letting hid back end create the hid descriptor
-const INPUT_MAX_LEN: usize = super::hid_kb::I2C_REPORT_HEADER_SZ + KEYMOD_SZ + KRO;
+// HID keyboard error codes placed in the key slots of an input report to signal an error condition.
+const ERROR_ROLL_OVER: u8 = 0x01;
+const ERROR_UNDEFINED: u8 = 0x03;
 
-// Output reports are the I2C header plus a single byte for LED on/off status
-const OUTPUT_MAX_LEN: usize = super::hid_kb::I2C_REPORT_HEADER_SZ + 1;
-
-// An input/output report
-const REPORT_ID: u8 = 1;
-
-// This is a basic report descriptor that defines a single keyboard report with 6 keys
-// Revisit: Could also allow user to pass in a custom report descriptor
-// Revisit: Investigate a struct representation of report descriptors,
-// but may prove challenging due to the fact that a strict ordering and length is not defined.
-#[rustfmt::skip]
-const REPORT_DESCRIPTOR: &[u8] = &[
-    // Usage Page (Generic Desktop Ctrls)
-    0x05, 0x01,
-    // Usage (Keyboard)
-    0x09, 0x06,
-    // Collection (Application)
-    0xA1, 0x01,
-    // Report ID (1)
-    0x85, REPORT_ID,
-    // Usage Page (Keypad)
-    0x05, 0x07,
-    // Usage Minimum (0xE0)
-    0x19, 0xE0,
-    // Usage Maximum (0xE7)
-    0x29, 0xE7,
-    // Logical Minimum (0)
-    0x15, 0x00,
-    // Logical Maximum (1)
-    0x25, 0x01,
-    // Report Size (1)
-    0x75, 0x01,
-    // Report Count (8) (8 modifier keys represented by single bit)
-    0x95, 0x08,
-    // Input (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
-    0x81, 0x02,
-    // Usage Minimum (0x00)
-    0x19, 0x00,
-    // Usage Maximum (0x91)
-    0x29, 0x91,
-    // Logical Maximum (255)
-    0x26, 0xFF, 0x00,
-    // Report Size (8)
-    0x75, 0x08,
-    // Report Count (6) (Keyberon only supports 6 keys)
-    0x95, 0x06,
-    // Input (Data,Array,Abs,No Wrap,Linear,Preferred State,No Null Position)
-    0x81, 0x00,
-    // LED report
-    // Usage Page (LEDs)
-    0x05, 0x08,
-    // Usage Minimum (Num Lock)
-    0x19, 0x01,
-    // Usage Maximum (Scroll Lock)
-    0x29, 0x03,
-    // Report Size (1)
-    0x75, 0x01,
-    // Report Count (3)
-    0x95, 0x03,
-    // Logical Maximum (1)
-    0x25, 0x01,
-    // Output (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
-    0x91, 0x02,
-    // Report Count (5)
-    0x95, 0x05,
-    // Output (Const,Array,Abs,No Wrap,Linear,Preferred State,No Null Position)
-    0x91, 0x01,
-    // End LED report
-    // Revisit: Consumer reports... but can we make that generic?
-    // End Collection
-    0xC0,
-];
-
-// Matches the format described by report descriptor
-// As in, each LED on/off status represented by single-bit
-bitflags::bitflags! {
-    pub struct LedFlags: u8 {
-        const NumLock = 1 << 0;
-        const CapsLock = 1 << 1;
-        const ScrollLock = 1 << 2;
-        // The host may set any bits
-        const _ = !0;
-    }
+/// Keyboard service error.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum KeyboardError {
+    /// Failed to drive a GPIO (e.g. a row/column pin or an LED pin).
+    Scan,
 }
 
-fn set_led(led: &mut Option<impl OutputPin>, cond: bool) -> Result<(), super::KeyboardError> {
+/// Error returned while initializing a GPIO keyboard service.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum KeyboardInitError<E> {
+    /// Failed to initialize the key matrix.
+    Matrix(E),
+    /// Deghosting supports at most 128 rows.
+    TooManyRowsForDeghosting,
+}
+
+fn set_led(led: &mut Option<impl OutputPin>, cond: bool) -> Result<(), KeyboardError> {
     if let Some(led) = led {
         if cond {
-            led.set_high().map_err(|_| super::KeyboardError::Scan)?;
+            led.set_high().map_err(|_| KeyboardError::Scan)?;
         } else {
-            led.set_low().map_err(|_| super::KeyboardError::Scan)?;
+            led.set_low().map_err(|_| KeyboardError::Scan)?;
         }
     }
 
     Ok(())
 }
 
-// Note: This is not defined at top-level because operations on const generics is not yet stable
-// E.g. `struct HidReport<const KRO: usize>([u8; KRO + 1])` is not currently possible
-#[derive(Default)]
-struct HidReport([u8; KRO + KEYMOD_SZ]);
-
-impl HidReport {
-    fn as_slice(&self) -> super::HidReportSlice<'_> {
-        super::HidReportSlice(&self.0)
-    }
+/// State shared between the [`Service`] control handle and its scanning [`Runner`].
+struct Shared<const SUBS: usize> {
+    /// Input reports produced by the scan `Runner` and consumed by the control handle.
+    reports: PubSubChannel<GlobalRawMutex, KeyboardInputReport, REPORT_QUEUE_DEPTH, SUBS, 1>,
+    /// Current host-commanded power state, written by the control handle and read by the scanner.
+    power_state: BlockingMutex<GlobalRawMutex, Cell<KeyboardPowerState>>,
+    /// Pulsed whenever `power_state` changes so the scanner can re-evaluate its power gate.
+    power_changed: Signal<GlobalRawMutex, ()>,
 }
 
-impl From<KbHidReport> for HidReport {
-    fn from(keyberon: KbHidReport) -> Self {
-        // Note: Keyberon uses boot/usb protocol which is [0:modifers, 1:reserved, 2..8: usage codes]
-        let keyberon = keyberon.as_bytes();
+impl<const SUBS: usize> Shared<SUBS> {
+    fn new() -> Self {
+        Self {
+            reports: PubSubChannel::new(),
+            // Spec says a device starts in the ON state, but we gate scanning until the host
+            // explicitly powers us on, matching the previous keyboard-service behavior.
+            power_state: BlockingMutex::new(Cell::new(KeyboardPowerState::Sleep)),
+            power_changed: Signal::new(),
+        }
+    }
 
-        let mut buf = [0; KRO + KEYMOD_SZ];
-        buf[0] = keyberon[0];
-        buf[1..1 + KRO].copy_from_slice(&keyberon[2..2 + KRO]);
+    fn is_powered_on(&self) -> bool {
+        self.power_state
+            .lock(|state| matches!(state.get(), KeyboardPowerState::On))
+    }
 
-        HidReport(buf)
+    fn set_power_state(&self, state: KeyboardPowerState) {
+        self.power_state.lock(|cell| cell.set(state));
+        self.power_changed.signal(());
     }
 }
 
@@ -229,14 +171,6 @@ impl<
     }
 }
 
-/// Keyboard HID configuration.
-pub struct HidConfig {
-    /// Vendor ID
-    pub vid: u16,
-    /// Product ID
-    pub pid: u16,
-}
-
 /// Keyboard LED configuration.
 ///
 /// HID spec defines many usage IDs for LED page, so trying to support them here is difficult.
@@ -257,11 +191,11 @@ fn has_ghost<const NROWS: usize, const NCOLS: usize>(pressed: &[[bool; NROWS]; N
     // Chose u128 as it's the largest primitive and it's very unlikely a keyboard will have more than 128 rows
     let mut pressed_bits = [0u128; NCOLS];
     let mut count = 0;
-    for (c, row) in pressed.iter().enumerate() {
+    for (row, pressed_bits_col) in pressed.iter().zip(pressed_bits.iter_mut()) {
         for (r, &key) in row.iter().enumerate() {
             if key {
                 count += 1;
-                pressed_bits[c] |= 1 << r;
+                *pressed_bits_col |= 1 << r;
             }
         }
     }
@@ -298,258 +232,489 @@ fn has_ghost<const NROWS: usize, const NCOLS: usize>(pressed: &[[bool; NROWS]; N
     false
 }
 
-/// A HID-aware GPIO keyboard ready to be used by the Keyboard Service.
-pub struct GpioKeyboard<
+/// Caller-allocated storage for a keyboard [`Service`].
+///
+/// `SUBS` is the maximum number of simultaneous input-report subscribers.
+///
+/// This is an opaque type; construct it with [`Default`] and hand a `&mut` reference to
+/// [`Service::new`] (typically via `spawn_service!`).
+pub struct Resources<const SUBS: usize> {
+    inner: Option<Shared<SUBS>>,
+}
+
+impl<const SUBS: usize> Default for Resources<SUBS> {
+    fn default() -> Self {
+        Self { inner: None }
+    }
+}
+
+/// The outcome of a single scan cycle in the [`Runner`].
+enum ScanOutcome {
+    /// A fresh input report is ready to be sent to the host.
+    Report(KeyboardInputReport),
+    /// The keyboard was powered down mid-cycle; the runner should re-gate on power.
+    Unpowered,
+}
+
+/// Scanning runner for a GPIO keyboard [`Service`].
+///
+/// Owns the key matrix and drives it in a loop, pushing input reports to the control handle. You
+/// must call [`run`](odp_service_common::runnable_service::ServiceRunner::run) on this to make the
+/// keyboard produce reports; consider using `spawn_service!`.
+pub struct Runner<
+    'hw,
     const NCOLS: usize,
     const NROWS: usize,
     const NLAYERS: usize,
+    const SUBS: usize,
+    E,
+    INPUT: InputPin<Error = E>,
+    OUTPUT: OutputPin<Error = E>,
+    DELAY: FnMut(),
+> {
+    shared: &'hw Shared<SUBS>,
+    publisher: Publisher<'hw, GlobalRawMutex, KeyboardInputReport, REPORT_QUEUE_DEPTH, SUBS, 1>,
+    kb: KeyberonConfig<NCOLS, NROWS, NLAYERS, E, INPUT, OUTPUT, DELAY>,
+}
+
+impl<
+    'hw,
+    const NCOLS: usize,
+    const NROWS: usize,
+    const NLAYERS: usize,
+    const SUBS: usize,
+    E,
+    INPUT: InputPin<Error = E>,
+    OUTPUT: OutputPin<Error = E>,
+    DELAY: FnMut(),
+> Runner<'hw, NCOLS, NROWS, NLAYERS, SUBS, E, INPUT, OUTPUT, DELAY>
+{
+    /// Polls the matrix until a report is ready, an error is detected, or the keyboard is powered off.
+    async fn scan_cycle(&mut self) -> ScanOutcome {
+        loop {
+            // Stop producing reports as soon as the host powers us down.
+            if !self.shared.is_powered_on() {
+                return ScanOutcome::Unpowered;
+            }
+
+            match self.kb.matrix.get_with_delay(&mut self.kb.delay) {
+                Ok(pressed) => {
+                    // If ghosting detected, report a rollover error.
+                    if self.kb.deghost && has_ghost(&pressed) {
+                        warn!("Key ghosting detected");
+                        return ScanOutcome::Report(KeyboardInputReport::error(ERROR_ROLL_OVER));
+                    }
+
+                    // Run the scan through the debouncer, applying a coordinate transform.
+                    // Note: Keyberon expects cols as input and rows as output, but we are the opposite so swap them.
+                    let events = self.kb.debouncer.events(pressed).map(|e| e.transform(|x, y| (y, x)));
+
+                    // Processes each event, notifying the layout of state change.
+                    // If there was any event, we know we have a new report to produce.
+                    let mut changed = false;
+                    for event in events {
+                        self.kb.layout.event(event);
+                        self.kb.layout.tick();
+                        changed = true;
+                    }
+
+                    // We only want to send a report once on press, and once on release.
+                    if changed {
+                        // Keyberon layout produces boot/usb protocol; convert to our contiguous payload.
+                        return ScanOutcome::Report(self.kb.layout.keycodes().collect::<KbHidReport>().into());
+                    }
+                }
+                Err(_) => {
+                    error!("Failed to scan keyboard!");
+                    return ScanOutcome::Report(KeyboardInputReport::error(ERROR_UNDEFINED));
+                }
+            }
+
+            // No events; sleep then scan again.
+            // Revisit: Instead of periodic polling which could waste power, could wait for interrupt
+            // from any row input.
+            Timer::after_millis(self.kb.poll_ms).await;
+        }
+    }
+}
+
+impl<
+    'hw,
+    const NCOLS: usize,
+    const NROWS: usize,
+    const NLAYERS: usize,
+    const SUBS: usize,
+    E: 'hw,
+    INPUT: InputPin<Error = E> + 'hw,
+    OUTPUT: OutputPin<Error = E> + 'hw,
+    DELAY: FnMut() + 'hw,
+> odp_service_common::runnable_service::ServiceRunner<'hw>
+    for Runner<'hw, NCOLS, NROWS, NLAYERS, SUBS, E, INPUT, OUTPUT, DELAY>
+{
+    async fn run(mut self) -> Never {
+        loop {
+            // Wait until the host powers the keyboard on before scanning.
+            while !self.shared.is_powered_on() {
+                self.shared.power_changed.wait().await;
+            }
+
+            match self.scan_cycle().await {
+                ScanOutcome::Report(report) => self.publisher.publish(report).await,
+                // Powered off mid-cycle; loop back around to re-gate on power.
+                ScanOutcome::Unpowered => {}
+            }
+        }
+    }
+}
+
+/// GPIO keyboard control handle.
+///
+/// The matching [`Runner`] must be run for the keyboard to produce input reports.
+pub struct Service<
+    'hw,
+    const NCOLS: usize,
+    const NROWS: usize,
+    const NLAYERS: usize,
+    const SUBS: usize,
     E,
     INPUT: InputPin<Error = E>,
     OUTPUT: OutputPin<Error = E>,
     LED: OutputPin,
     DELAY: FnMut(),
 > {
-    kb_cfg: KeyberonConfig<NCOLS, NROWS, NLAYERS, E, INPUT, OUTPUT, DELAY>,
-    hid_cfg: HidConfig,
+    shared: &'hw Shared<SUBS>,
     led_cfg: LedConfig<LED>,
-    report: HidReport,
-    power_state: hid::PowerState,
-    scan_signal: Signal<GlobalRawMutex, ()>,
-    report_freq: hid::ReportFreq,
+    _phantom: PhantomData<Runner<'hw, NCOLS, NROWS, NLAYERS, SUBS, E, INPUT, OUTPUT, DELAY>>,
 }
 
 impl<
+    'hw,
     const NCOLS: usize,
     const NROWS: usize,
     const NLAYERS: usize,
+    const SUBS: usize,
     E,
     INPUT: InputPin<Error = E>,
     OUTPUT: OutputPin<Error = E>,
     LED: OutputPin,
     DELAY: FnMut(),
-> GpioKeyboard<NCOLS, NROWS, NLAYERS, E, INPUT, OUTPUT, LED, DELAY>
+> Service<'hw, NCOLS, NROWS, NLAYERS, SUBS, E, INPUT, OUTPUT, LED, DELAY>
 {
-    /// Create a new instance of a GPIO Keyboard with given configuration.
+    /// Creates a new GPIO keyboard control handle and its associated scanning runner.
     ///
-    /// # Panics
+    /// You must run the returned [`Runner`] (e.g. via `spawn_service!`) for the keyboard to produce
+    /// input reports. Pass the returned control handle to a relay such as
+    /// [`crate::KeyboardHidRelay`].
     ///
-    /// If `deghosting` is enabled in `kb_cfg`, panics if `NROWS > 128`.
-    pub fn new(
+    /// # Errors
+    ///
+    /// Returns [`KeyboardInitError::TooManyRowsForDeghosting`] if deghosting is enabled for more
+    /// than 128 rows, or [`KeyboardInitError::Matrix`] if the key matrix cannot be initialized.
+    pub async fn new(
+        resources: &'hw mut Resources<SUBS>,
         kb_cfg: KeyboardConfig<NCOLS, NROWS, NLAYERS, E, INPUT, OUTPUT, DELAY>,
-        hid_cfg: HidConfig,
         led_cfg: LedConfig<LED>,
-    ) -> Result<Self, E> {
-        // We can only support upto 128 rows for deghosting
-        if kb_cfg.deghost {
-            assert!(NROWS <= 128);
+    ) -> Result<(Self, Runner<'hw, NCOLS, NROWS, NLAYERS, SUBS, E, INPUT, OUTPUT, DELAY>), KeyboardInitError<E>> {
+        if kb_cfg.deghost && NROWS > 128 {
+            return Err(KeyboardInitError::TooManyRowsForDeghosting);
         }
 
-        Ok(Self {
-            kb_cfg: KeyberonConfig::try_from(kb_cfg)?,
-            hid_cfg,
-            led_cfg,
-            report: HidReport::default(),
-            power_state: hid::PowerState::Sleep,
-            scan_signal: Signal::new(),
-            report_freq: hid::ReportFreq::Infinite,
-        })
+        let kb = KeyberonConfig::try_from(kb_cfg).map_err(KeyboardInitError::Matrix)?;
+        let shared: &'hw Shared<SUBS> = resources.inner.insert(Shared::new());
+
+        // Panic safety: we just created the pubsub and haven't handed out any references, so we know there is a free publisher slot available.
+        #[allow(clippy::expect_used)]
+        let publisher = shared
+            .reports
+            .publisher()
+            .expect("newly-constructed channel is guaranteed to have a publisher slot available");
+
+        Ok((
+            Service {
+                shared,
+                led_cfg,
+                _phantom: PhantomData,
+            },
+            Runner { shared, publisher, kb },
+        ))
+    }
+
+    fn apply_leds(&mut self, flags: LedFlags) -> Result<(), KeyboardError> {
+        set_led(&mut self.led_cfg.num_lock, flags.contains(LedFlags::NumLock))?;
+        set_led(&mut self.led_cfg.caps_lock, flags.contains(LedFlags::CapsLock))?;
+        set_led(&mut self.led_cfg.scroll_lock, flags.contains(LedFlags::ScrollLock))?;
+        Ok(())
     }
 }
 
 impl<
+    'hw,
     const NCOLS: usize,
     const NROWS: usize,
     const NLAYERS: usize,
+    const SUBS: usize,
+    E: 'hw,
+    INPUT: InputPin<Error = E> + 'hw,
+    OUTPUT: OutputPin<Error = E> + 'hw,
+    LED: OutputPin + 'hw,
+    DELAY: FnMut() + 'hw,
+> odp_service_common::runnable_service::Service<'hw>
+    for Service<'hw, NCOLS, NROWS, NLAYERS, SUBS, E, INPUT, OUTPUT, LED, DELAY>
+{
+    type Runner = Runner<'hw, NCOLS, NROWS, NLAYERS, SUBS, E, INPUT, OUTPUT, DELAY>;
+    type Resources = Resources<SUBS>;
+}
+
+impl<
+    's,
+    'hw,
+    const NCOLS: usize,
+    const NROWS: usize,
+    const NLAYERS: usize,
+    const SUBS: usize,
     E,
     INPUT: InputPin<Error = E>,
     OUTPUT: OutputPin<Error = E>,
     LED: OutputPin,
     DELAY: FnMut(),
-> HidKeyboard for GpioKeyboard<NCOLS, NROWS, NLAYERS, E, INPUT, OUTPUT, LED, DELAY>
+> KeyboardService<'s> for Service<'hw, NCOLS, NROWS, NLAYERS, SUBS, E, INPUT, OUTPUT, LED, DELAY>
+where
+    'hw: 's,
 {
-    fn register_file(&self) -> hid::RegisterFile {
-        // Don't need anything special so use the default
-        hid::RegisterFile::default()
+    type Error = KeyboardError;
+
+    async fn set_leds(&mut self, flags: LedFlags) -> Result<(), Self::Error> {
+        self.apply_leds(flags)
     }
 
-    fn hid_descriptor(&self) -> hid::Descriptor {
-        const VERSION: u16 = 0x0100;
+    fn set_power_state(&mut self, state: KeyboardPowerState) {
+        self.shared.set_power_state(state);
+    }
 
-        hid::Descriptor {
-            w_hid_desc_length: hid::DESCRIPTOR_LEN as u16,
-            bcd_version: VERSION,
-            w_report_desc_length: REPORT_DESCRIPTOR.len() as u16,
-            w_report_desc_register: self.register_file().report_desc_reg,
-            w_input_register: self.register_file().input_reg,
-            w_max_input_length: INPUT_MAX_LEN as u16,
-            w_output_register: self.register_file().output_reg,
-            w_max_output_length: OUTPUT_MAX_LEN as u16,
-            w_command_register: self.register_file().command_reg,
-            w_data_register: self.register_file().data_reg,
-            w_vendor_id: self.hid_cfg.vid,
-            w_product_id: self.hid_cfg.pid,
-            w_version_id: VERSION,
+    fn subscriber(&self) -> Result<DynSubscriber<'s, KeyboardInputReport>, embassy_sync::pubsub::Error> {
+        self.shared.reports.dyn_subscriber()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    // Panic safety: tests use panic to communicate failure
+    #![allow(clippy::expect_used)]
+    #![allow(clippy::panic)]
+
+    extern crate std;
+
+    use core::convert::Infallible;
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    use embedded_hal::digital::{ErrorType, InputPin, OutputPin};
+    use keyberon::key_code::KeyCode;
+
+    use super::*;
+    use crate::interface::*;
+    use odp_service_common::runnable_service::ServiceRunner;
+
+    static LAYERS: Layers<3, 3, 1> = keyberon::layout::layout! {
+        {
+            [ A B C ]
+            [ D E F ]
+            [ G H I ]
         }
+    };
+
+    #[derive(Default)]
+    struct MatrixState {
+        active_col: Option<usize>,
+        pressed: [[bool; 3]; 3],
     }
 
-    fn report_descriptor(&self) -> &'static [u8] {
-        REPORT_DESCRIPTOR
+    struct MockKeyboard {
+        state: Rc<RefCell<MatrixState>>,
     }
 
-    async fn scan(&mut self) -> Result<super::HidReportSlice<'_>, super::KeyboardError> {
-        // Wait until we are told to power on before scanning
-        if self.power_state == hid::PowerState::Sleep {
-            self.scan_signal.wait().await;
-        }
-
-        // Determine the idle rate
-        let idle = if let hid::ReportFreq::Msecs(ms) = self.report_freq {
-            Timer::after_millis(ms as u64)
-        } else {
-            // If set to 'infinite', set a timer very far in the future (effectively infinite)
-            Timer::after_secs(1_000_000)
-        };
-
-        // Polling scan loop
-        let scan = async {
-            loop {
-                // Scan for keys currently pressed
-                if let Ok(pressed) = self.kb_cfg.matrix.get_with_delay(&mut self.kb_cfg.delay) {
-                    // If ghosting detected, break and report error
-                    if self.kb_cfg.deghost && has_ghost(&pressed) {
-                        warn!("Key ghosting detected");
-                        break Err(super::KeyboardError::Ghosting);
-                    }
-
-                    // Run the scan through the debouncer, applying a coordinate transform if provided
-                    // Note: Keyberon expects cols as input and rows as output, but we are the opposite so swap them for proper coordinate
-                    let events = self
-                        .kb_cfg
-                        .debouncer
-                        .events(pressed)
-                        .map(|e| e.transform(|x, y| (y, x)));
-
-                    // Processes each event, notifiying the layout of state change
-                    // If there was any event, we know we have a new report to produce
-                    let mut changed = false;
-                    for event in events {
-                        self.kb_cfg.layout.event(event);
-                        self.kb_cfg.layout.tick();
-                        changed = true;
-                    }
-
-                    // We only want to send a report once on press, and once on release
-                    // No need to continuously send reports while the key is held down
-                    if changed {
-                        // Keyberon layout will convert event coordinates to HID usage codes
-                        // But keyberon's format follows boot/usb protocol, so we convert it
-                        // to a contiguous modifer byte + usage codes array
-                        self.report = self.kb_cfg.layout.keycodes().collect::<KbHidReport>().into();
-                        break Ok(());
-                    }
-                } else {
-                    error!("Failed to scan keyboard!");
-                    break Err(super::KeyboardError::Scan);
-                }
-
-                // If no events, sleep then scan again
-                // Revisit: Instead of periodic polling which could waste power, could wait for interrupt
-                // from any row input.
-                Timer::after_millis(self.kb_cfg.poll_ms).await;
+    impl MockKeyboard {
+        fn new() -> Self {
+            Self {
+                state: Rc::new(RefCell::new(MatrixState::default())),
             }
-        };
+        }
 
-        match embassy_futures::select::select(idle, scan).await {
-            // Hit the idle limit? Return the most recent report
-            embassy_futures::select::Either::First(_) => Ok(self.report.as_slice()),
+        fn rows(&self) -> [MockInputPin; 3] {
+            core::array::from_fn(|row| MockInputPin {
+                row,
+                state: Rc::clone(&self.state),
+            })
+        }
 
-            // Have a fresh report? Return it
-            // Note: We don't return report slice in the loop above as this causes lifetime issues
-            embassy_futures::select::Either::Second(Ok(())) => Ok(self.report.as_slice()),
+        fn cols(&self) -> [MockOutputPin; 3] {
+            core::array::from_fn(|col| MockOutputPin {
+                col,
+                state: Rc::clone(&self.state),
+            })
+        }
 
-            // Error? Let the HID backend convert it to report for us
-            embassy_futures::select::Either::Second(Err(e)) => Err(e),
+        fn press(&self, key: KeyCode) {
+            self.set_pressed(key, true);
+        }
+
+        fn release(&self, key: KeyCode) {
+            self.set_pressed(key, false);
+        }
+
+        fn release_all(&self) {
+            self.state.borrow_mut().pressed = [[false; 3]; 3];
+        }
+
+        fn set_pressed(&self, key: KeyCode, pressed: bool) {
+            let (row, col) = match key {
+                KeyCode::A => (0, 0),
+                KeyCode::B => (0, 1),
+                KeyCode::C => (0, 2),
+                KeyCode::D => (1, 0),
+                KeyCode::E => (1, 1),
+                KeyCode::F => (1, 2),
+                KeyCode::G => (2, 0),
+                KeyCode::H => (2, 1),
+                KeyCode::I => (2, 2),
+                _ => panic!("key is not present in the mock 3x3 layout"),
+            };
+
+            *self
+                .state
+                .borrow_mut()
+                .pressed
+                .get_mut(row)
+                .and_then(|matrix_row| matrix_row.get_mut(col))
+                .expect("mock key coordinates must be within the 3x3 matrix") = pressed;
         }
     }
 
-    async fn reset(&mut self) -> Result<(), super::KeyboardError> {
-        self.report_freq = hid::ReportFreq::Infinite;
-        Ok(())
+    struct MockInputPin {
+        row: usize,
+        state: Rc<RefCell<MatrixState>>,
     }
 
-    async fn set_power_state(&mut self, power_state: hid::PowerState) -> Result<(), super::KeyboardError> {
-        self.power_state = power_state;
+    impl ErrorType for MockInputPin {
+        type Error = Infallible;
+    }
 
-        // Signal to scanner it can start now
-        if power_state == hid::PowerState::On {
-            self.scan_signal.signal(());
+    impl InputPin for MockInputPin {
+        fn is_high(&mut self) -> Result<bool, Self::Error> {
+            self.is_low().map(|low| !low)
         }
 
-        Ok(())
+        fn is_low(&mut self) -> Result<bool, Self::Error> {
+            let state = self.state.borrow();
+            Ok(state.active_col.is_some_and(|col| {
+                state
+                    .pressed
+                    .get(self.row)
+                    .and_then(|row| row.get(col))
+                    .copied()
+                    .unwrap_or(false)
+            }))
+        }
     }
 
-    async fn set_idle(
-        &mut self,
-        _report_id: hid::ReportId,
-        report_freq: hid::ReportFreq,
-    ) -> Result<(), super::KeyboardError> {
-        self.report_freq = report_freq;
-        Ok(())
+    struct MockOutputPin {
+        col: usize,
+        state: Rc<RefCell<MatrixState>>,
     }
 
-    fn get_idle(&self, _report_id: hid::ReportId) -> hid::ReportFreq {
-        self.report_freq
+    impl ErrorType for MockOutputPin {
+        type Error = Infallible;
     }
 
-    async fn set_protocol(&mut self, _protocol: hid::Protocol) -> Result<(), super::KeyboardError> {
-        // NOP
-        // Only support Report protocol
-        Ok(())
-    }
+    impl OutputPin for MockOutputPin {
+        fn set_low(&mut self) -> Result<(), Self::Error> {
+            self.state.borrow_mut().active_col = Some(self.col);
+            Ok(())
+        }
 
-    fn get_protocol(&self) -> hid::Protocol {
-        hid::Protocol::Report
-    }
-
-    async fn vendor_cmd(&mut self) -> Result<(), super::KeyboardError> {
-        // NOP
-        // No vendor-defined commands for this implementation
-        Ok(())
-    }
-
-    async fn set_report(
-        &mut self,
-        report_type: hid::ReportType,
-        report_id: hid::ReportId,
-        buf: &embedded_services::buffer::SharedRef<'static, u8>,
-    ) -> Result<(), super::KeyboardError> {
-        match report_type {
-            // Received a set output report for LEDs
-            hid::ReportType::Output if report_id.0 == REPORT_ID => {
-                let buf = buf.borrow().map_err(super::KeyboardError::Buffer)?;
-                let leds: &[u8] = buf.borrow();
-                let flags = LedFlags::from_bits_retain(leds[0]);
-
-                set_led(&mut self.led_cfg.num_lock, flags.contains(LedFlags::NumLock))?;
-                set_led(&mut self.led_cfg.caps_lock, flags.contains(LedFlags::CapsLock))?;
-                set_led(&mut self.led_cfg.scroll_lock, flags.contains(LedFlags::ScrollLock))?;
+        fn set_high(&mut self) -> Result<(), Self::Error> {
+            let mut state = self.state.borrow_mut();
+            if state.active_col == Some(self.col) {
+                state.active_col = None;
             }
-            // Not currently supported so treat as NOP
-            hid::ReportType::Feature => (),
-            // Should never receive a set input report command
-            hid::ReportType::Input => Err(super::KeyboardError::Command)?,
-            // Received set output for unknown report ID, also treat as NOP
-            _ => (),
+            Ok(())
         }
-
-        Ok(())
     }
 
-    fn get_report(&self, report_type: hid::ReportType, _report_id: hid::ReportId) -> super::HidReportSlice<'_> {
-        match report_type {
-            hid::ReportType::Input => self.report.as_slice(),
-            // We don't currently support feature reports
-            _ => super::HidReportSlice(&[0x00]),
-        }
+    async fn assert_next_report(sub: &mut DynSubscriber<'_, KeyboardInputReport>, expected: [u8; 8]) {
+        let report = embassy_time::with_timeout(embassy_time::Duration::from_millis(100), sub.next_message_pure())
+            .await
+            .expect("timed out waiting for next report");
+
+        assert_eq!(report.as_bytes(), &expected);
+    }
+
+    #[test]
+    fn scan_keys_on_3x3() {
+        const KEYS: [KeyCode; 9] = [
+            KeyCode::A,
+            KeyCode::B,
+            KeyCode::C,
+            KeyCode::D,
+            KeyCode::E,
+            KeyCode::F,
+            KeyCode::G,
+            KeyCode::H,
+            KeyCode::I,
+        ];
+
+        let keyboard = MockKeyboard::new();
+        let mut resources = Resources::<1>::default();
+
+        embassy_futures::block_on(async {
+            let (mut service, runner) = Service::new(
+                &mut resources,
+                KeyboardConfig {
+                    rows: keyboard.rows(),
+                    cols: keyboard.cols(),
+                    layers: &LAYERS,
+                    poll_ms: 1,
+                    nb_bounce: 0,
+                    delay: || {},
+                    deghost: false,
+                },
+                LedConfig::<MockOutputPin> {
+                    num_lock: None,
+                    caps_lock: None,
+                    scroll_lock: None,
+                },
+            )
+            .await
+            .expect("keyboard service initialization failed");
+
+            embassy_futures::select::select(
+                async {
+                    let mut sub = service.subscriber().expect("failed to create subscriber");
+                    service.set_power_state(KeyboardPowerState::On);
+
+                    for key in KEYS {
+                        keyboard.press(key);
+                        assert_next_report(&mut sub, [0, 0, key as u8, 0, 0, 0, 0, 0]).await;
+
+                        keyboard.release(key);
+                        assert_next_report(&mut sub, KeyboardInputReport::default().0).await;
+                    }
+
+                    keyboard.press(KeyCode::A);
+                    keyboard.press(KeyCode::E);
+                    keyboard.press(KeyCode::I);
+                    assert_next_report(
+                        &mut sub,
+                        [0, 0, KeyCode::A as u8, KeyCode::E as u8, KeyCode::I as u8, 0, 0, 0],
+                    )
+                    .await;
+
+                    keyboard.release_all();
+                    assert_next_report(&mut sub, KeyboardInputReport::default().0).await;
+                },
+                runner.run(),
+            )
+            .await;
+        });
     }
 }
