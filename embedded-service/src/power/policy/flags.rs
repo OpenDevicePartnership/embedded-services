@@ -131,63 +131,79 @@ bitfield! {
     /// Flags for disconnect events
     #[derive(Copy, Clone, PartialEq, Eq)]
     #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-    struct ConsumerDisconnectRaw(u32);
+    struct DisconnectRaw(u32);
     impl Debug;
-    /// Renegotiation
-    ///
-    /// When set this flag indicates that the current consumer is attempting to negotiate a new power capability.
-    pub bool, renegotiation, set_renegotiation: 0;
-    /// Switching
-    ///
-    /// When set this flag indicates that the service is switching to a different PSU.
-    pub bool, switching, set_switching: 1;
+    /// Disconnect reason
+    pub u8, reason, set_reason: 3, 0;
 }
 
-/// Type safe wrapper for consumer disconnect flags
+/// Disconnect reason
+#[derive(Copy, Clone, Debug, PartialEq, Eq, IntoPrimitive, TryFromPrimitive)]
+#[num_enum(error_type(name = InvalidDisconnectReason, constructor = InvalidDisconnectReason))]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[repr(u8)]
+#[non_exhaustive]
+pub enum DisconnectReason {
+    /// The device is no longer capable of providing or consuming power, no further information is available
+    NoLongerCapable,
+    /// The device has been physically detached
+    Detached,
+    /// Switching to a different PSU
+    Switching,
+    /// Renegotiation triggered by device
+    AutoRenegotiation,
+    /// Renegotiation triggered by code
+    ManualRenegotiation,
+    /// The device has changed its role
+    RoleSwap,
+    /// The device experienced a reset
+    Reset,
+}
+
+impl DisconnectReason {
+    /// Check if the reason is a renegotiation
+    pub fn is_renegotiation(&self) -> bool {
+        matches!(
+            self,
+            DisconnectReason::AutoRenegotiation | DisconnectReason::ManualRenegotiation
+        )
+    }
+}
+
+/// Conversion error for [`PsuType`]
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct ConsumerDisconnect(ConsumerDisconnectRaw);
+pub struct InvalidDisconnectReason(pub u8);
 
-impl ConsumerDisconnect {
-    /// Create new consumer disconnect flags with no flags set
+/// Type safe wrapper for disconnect flags
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct Disconnect(DisconnectRaw);
+
+impl Disconnect {
+    /// Create new disconnect flags with no flags set
     pub const fn none() -> Self {
-        Self(ConsumerDisconnectRaw(0))
+        Self(DisconnectRaw(0))
     }
 
-    /// Builder method to set the renegotiation flag
-    pub fn with_renegotiation(mut self, value: bool) -> Self {
-        self.set_renegotiation(value);
+    /// Builder method to set the disconnect reason
+    pub fn with_reason(mut self, reason: DisconnectReason) -> Self {
+        self.set_reason(reason);
         self
     }
 
-    /// Set the value of the renegotiation flag
-    pub fn set_renegotiation(&mut self, value: bool) {
-        self.0.set_renegotiation(value);
+    /// Set the disconnect reason
+    pub fn set_reason(&mut self, reason: DisconnectReason) {
+        self.0.set_reason(reason.into());
     }
 
-    /// Get the value of the renegotiation flag
-    pub fn renegotiation(&self) -> bool {
-        self.0.renegotiation()
-    }
-
-    /// Builder method to set the switching flag
-    pub fn with_switching(mut self, value: bool) -> Self {
-        self.set_switching(value);
-        self
-    }
-
-    /// Set the value of the switching flag
-    pub fn set_switching(&mut self, value: bool) {
-        self.0.set_switching(value);
-    }
-
-    /// Get the value of the switching flag
-    pub fn switching(&self) -> bool {
-        self.0.switching()
+    /// Get the disconnect reason
+    pub fn reason(&self) -> DisconnectReason {
+        DisconnectReason::try_from(self.0.reason()).unwrap_or(DisconnectReason::NoLongerCapable)
     }
 }
 
-impl Default for ConsumerDisconnect {
+impl Default for Disconnect {
     fn default() -> Self {
         Self::none()
     }
@@ -224,6 +240,43 @@ mod tests {
     }
 
     #[test]
+    fn test_disconnect_reason_conversion() {
+        // Test valid conversions
+        assert_eq!(
+            DisconnectReason::try_from(u8::from(DisconnectReason::NoLongerCapable)),
+            Ok(DisconnectReason::NoLongerCapable)
+        );
+        assert_eq!(
+            DisconnectReason::try_from(u8::from(DisconnectReason::Detached)),
+            Ok(DisconnectReason::Detached)
+        );
+        assert_eq!(
+            DisconnectReason::try_from(u8::from(DisconnectReason::Switching)),
+            Ok(DisconnectReason::Switching)
+        );
+        assert_eq!(
+            DisconnectReason::try_from(u8::from(DisconnectReason::AutoRenegotiation)),
+            Ok(DisconnectReason::AutoRenegotiation)
+        );
+        assert_eq!(
+            DisconnectReason::try_from(u8::from(DisconnectReason::ManualRenegotiation)),
+            Ok(DisconnectReason::ManualRenegotiation)
+        );
+        assert_eq!(
+            DisconnectReason::try_from(u8::from(DisconnectReason::RoleSwap)),
+            Ok(DisconnectReason::RoleSwap)
+        );
+        assert_eq!(
+            DisconnectReason::try_from(u8::from(DisconnectReason::Reset)),
+            Ok(DisconnectReason::Reset)
+        );
+
+        for i in 7..=255 {
+            assert_eq!(DisconnectReason::try_from(i), Err(InvalidDisconnectReason(i)));
+        }
+    }
+
+    #[test]
     fn test_consumer_unconstrained() {
         let mut consumer = Consumer::none().with_unconstrained_power();
         assert_eq!(consumer.0.0, 0x1);
@@ -248,18 +301,56 @@ mod tests {
     }
 
     #[test]
-    fn test_consumer_disconnect_renegotiation() {
-        let mut disconnect = ConsumerDisconnect::none().with_renegotiation(true);
-        assert_eq!(disconnect.0.0, 0x1);
-        disconnect.set_renegotiation(false);
+    fn test_disconnect_no_longer_capable() {
+        let disconnect = Disconnect::none().with_reason(DisconnectReason::NoLongerCapable);
         assert_eq!(disconnect.0.0, 0x0);
     }
 
     #[test]
-    fn test_consumer_disconnect_switching() {
-        let mut disconnect = ConsumerDisconnect::none().with_switching(true);
+    fn test_disconnect_detached() {
+        let mut disconnect = Disconnect::none().with_reason(DisconnectReason::Detached);
+        assert_eq!(disconnect.0.0, 0x1);
+        disconnect.set_reason(DisconnectReason::NoLongerCapable);
+        assert_eq!(disconnect.0.0, 0x0);
+    }
+
+    #[test]
+    fn test_disconnect_switching() {
+        let mut disconnect = Disconnect::none().with_reason(DisconnectReason::Switching);
         assert_eq!(disconnect.0.0, 0x2);
-        disconnect.set_switching(false);
+        disconnect.set_reason(DisconnectReason::NoLongerCapable);
+        assert_eq!(disconnect.0.0, 0x0);
+    }
+
+    #[test]
+    fn test_disconnect_auto_renegotiation() {
+        let mut disconnect = Disconnect::none().with_reason(DisconnectReason::AutoRenegotiation);
+        assert_eq!(disconnect.0.0, 0x3);
+        disconnect.set_reason(DisconnectReason::NoLongerCapable);
+        assert_eq!(disconnect.0.0, 0x0);
+    }
+
+    #[test]
+    fn test_disconnect_manual_renegotiation() {
+        let mut disconnect = Disconnect::none().with_reason(DisconnectReason::ManualRenegotiation);
+        assert_eq!(disconnect.0.0, 0x4);
+        disconnect.set_reason(DisconnectReason::NoLongerCapable);
+        assert_eq!(disconnect.0.0, 0x0);
+    }
+
+    #[test]
+    fn test_disconnect_role_swap() {
+        let mut disconnect = Disconnect::none().with_reason(DisconnectReason::RoleSwap);
+        assert_eq!(disconnect.0.0, 0x5);
+        disconnect.set_reason(DisconnectReason::NoLongerCapable);
+        assert_eq!(disconnect.0.0, 0x0);
+    }
+
+    #[test]
+    fn test_disconnect_reset() {
+        let mut disconnect = Disconnect::none().with_reason(DisconnectReason::Reset);
+        assert_eq!(disconnect.0.0, 0x6);
+        disconnect.set_reason(DisconnectReason::NoLongerCapable);
         assert_eq!(disconnect.0.0, 0x0);
     }
 }

@@ -77,11 +77,7 @@ impl PowerPolicy {
         Ok(())
     }
 
-    async fn process_notify_disconnect(
-        &self,
-        device: &device::Device,
-        flags: flags::ConsumerDisconnect,
-    ) -> Result<(), Error> {
+    async fn process_notify_disconnect(&self, device: &device::Device, flags: flags::Disconnect) -> Result<(), Error> {
         self.context.send_response(Ok(policy::ResponseData::Complete)).await;
 
         self.remove_connected_provider(device.id()).await;

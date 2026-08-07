@@ -55,7 +55,7 @@ impl<'a, S: Kind> Device<'a, S> {
     }
 
     /// Disconnect this device
-    async fn disconnect_internal(&self, flags: flags::ConsumerDisconnect) -> Result<(), Error> {
+    async fn disconnect_internal(&self, flags: flags::Disconnect) -> Result<(), Error> {
         info!("Device {} disconnecting", self.device.id().0);
         self.device.update_consumer_capability(None).await;
         self.device.update_requested_provider_capability(None).await;
@@ -136,7 +136,7 @@ impl Device<'_, Idle> {
 
 impl<'a> Device<'a, ConnectedConsumer> {
     /// Disconnect this device
-    pub async fn disconnect(self, flags: flags::ConsumerDisconnect) -> Result<Device<'a, Idle>, Error> {
+    pub async fn disconnect(self, flags: flags::Disconnect) -> Result<Device<'a, Idle>, Error> {
         self.disconnect_internal(flags).await?;
         Ok(Device::new(self.device))
     }
@@ -152,7 +152,7 @@ impl<'a> Device<'a, ConnectedConsumer> {
 
 impl<'a> Device<'a, ConnectedProvider> {
     /// Disconnect this device
-    pub async fn disconnect(self, flags: flags::ConsumerDisconnect) -> Result<Device<'a, Idle>, Error> {
+    pub async fn disconnect(self, flags: flags::Disconnect) -> Result<Device<'a, Idle>, Error> {
         self.disconnect_internal(flags).await?;
         Ok(Device::new(self.device))
     }

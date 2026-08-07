@@ -2,6 +2,8 @@ use core::cmp::Ordering;
 use embedded_services::debug;
 use embedded_services::power::policy::charger::Device as ChargerDevice;
 use embedded_services::power::policy::charger::PolicyEvent;
+use embedded_services::power::policy::flags::Disconnect;
+use embedded_services::power::policy::flags::DisconnectReason;
 use embedded_services::power::policy::policy::check_chargers_ready;
 use embedded_services::power::policy::policy::init_chargers;
 
@@ -188,9 +190,9 @@ impl PowerPolicy {
     ) -> Result<(), Error> {
         // Handle our current consumer
         if let Some(current_consumer) = state.current_consumer_state {
-            if new_consumer.device_id == current_consumer.device_id
-                && new_consumer.consumer_power_capability == current_consumer.consumer_power_capability
-            {
+            let is_same_psu = new_consumer.device_id == current_consumer.device_id;
+
+            if is_same_psu && new_consumer.consumer_power_capability == current_consumer.consumer_power_capability {
                 // If the consumer is the same device, capability, and is still available, we don't need to do anything
                 info!("Best consumer is the same, not switching");
                 return Ok(());
@@ -220,7 +222,11 @@ impl PowerPolicy {
             self.comms_notify(CommsMessage {
                 data: CommsData::ConsumerDisconnected(
                     current_consumer.device_id,
-                    flags::ConsumerDisconnect::default().with_switching(true),
+                    if is_same_psu {
+                        Disconnect::default().with_reason(DisconnectReason::AutoRenegotiation)
+                    } else {
+                        Disconnect::default().with_reason(DisconnectReason::Switching)
+                    },
                 ),
             })
             .await;
@@ -273,7 +279,7 @@ impl PowerPolicy {
                 self.comms_notify(CommsMessage {
                     data: CommsData::ConsumerDisconnected(
                         consumer_state.device_id,
-                        flags::ConsumerDisconnect::default(),
+                        Disconnect::default().with_reason(DisconnectReason::Detached),
                     ),
                 })
                 .await;

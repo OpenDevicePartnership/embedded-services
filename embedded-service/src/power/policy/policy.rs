@@ -26,7 +26,7 @@ pub enum RequestData {
     /// Request the given amount of power to provider
     RequestProviderCapability(ProviderPowerCapability),
     /// Notify that a device cannot consume or provide power anymore
-    NotifyDisconnect(flags::ConsumerDisconnect),
+    NotifyDisconnect(flags::Disconnect),
     /// Notify that a device has detached
     NotifyDetached,
 }
