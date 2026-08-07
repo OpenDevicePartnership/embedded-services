@@ -366,7 +366,19 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
                         return Err(PdError::InvalidParams.into());
                     }
 
-                    let source::Pdo::Fixed(fixed_source_pdo) = source_pdos[0] else {
+                    let source::Pdo::Fixed(source::FixedData {
+                        dual_role_power,
+                        unconstrained_power,
+                        epr_capable,
+                        usb_comms_capable,
+                        dual_role_data,
+                        usb_suspend_supported: _,
+                        unchunked_extended_messages_support: _,
+                        peak_current: _,
+                        voltage_mv: _,
+                        current_ma: _,
+                    }) = source_pdos[0]
+                    else {
                         error!("Port{}: First rx source PDO is not fixed", port.0);
                         return Err(PdError::InvalidParams.into());
                     };
@@ -376,9 +388,11 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
                     debug!("PDO: {:#?}", pdo);
                     debug!("RDO: {:#?}", rdo);
                     port_status.available_sink_contract = Contract::from_sink(pdo, rdo).try_into().ok();
-                    port_status.dual_power = fixed_source_pdo.dual_role_power;
-                    port_status.unconstrained_power = fixed_source_pdo.unconstrained_power;
-                    port_status.epr = fixed_source_pdo.epr_capable;
+                    port_status.dual_power = dual_role_power;
+                    port_status.dual_data = dual_role_data;
+                    port_status.unconstrained_power = unconstrained_power;
+                    port_status.epr = epr_capable;
+                    port_status.usb_comms_capable = usb_comms_capable;
                 }
             } else if status.port_role() {
                 // port_role is true for source
