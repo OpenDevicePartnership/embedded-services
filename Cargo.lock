@@ -1200,16 +1200,17 @@ name = "keyboard-service"
 version = "0.1.0"
 dependencies = [
  "bitflags 2.11.1",
+ "critical-section",
  "defmt 0.3.100",
  "embassy-futures",
  "embassy-sync",
  "embassy-time",
  "embedded-hal 1.0.0",
  "embedded-services",
- "hid-service",
  "keyberon",
  "log",
- "static_cell",
+ "odp-service-common",
+ "typenum",
 ]
 
 [[package]]
