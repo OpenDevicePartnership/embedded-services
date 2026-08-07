@@ -42,13 +42,17 @@ pub struct PortStatus {
     pub plug_orientation: PlugOrientation,
     /// power role
     pub power_role: PowerRole,
+    /// Port partner supports dual-data roles
+    pub dual_data: bool,
     /// data role
     pub data_role: DataRole,
+    /// Port partner is USB comms capable
+    pub usb_comms_capable: bool,
     /// Active alt-modes
     pub alt_mode: AltMode,
     /// Power path status
     pub power_path: PowerPathStatus,
-    /// EPR mode active
+    /// Port partner is EPR capable
     pub epr: bool,
     /// Port partner is unconstrained
     pub unconstrained_power: bool,
@@ -65,7 +69,9 @@ impl PortStatus {
             dual_power: false,
             plug_orientation: PlugOrientation::CC1,
             power_role: PowerRole::Sink,
+            dual_data: false,
             data_role: DataRole::Dfp,
+            usb_comms_capable: false,
             alt_mode: AltMode::none(),
             power_path: PowerPathStatus::none(),
             epr: false,

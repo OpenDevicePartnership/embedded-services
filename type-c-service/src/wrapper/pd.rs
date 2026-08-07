@@ -41,9 +41,9 @@ where
     }
 
     /// Returns the timeout duration for the sink ready check.
-    fn check_sink_ready_timeout_duration(is_epr: bool) -> Duration {
+    fn check_sink_ready_timeout_duration(epr_capable: bool) -> Duration {
         Duration::from_millis(
-            (if is_epr {
+            (if epr_capable {
                 T_PS_TRANSITION_EPR_MS
             } else {
                 T_PS_TRANSITION_SPR_MS
