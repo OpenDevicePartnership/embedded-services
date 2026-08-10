@@ -1,7 +1,7 @@
 //! HID sevices
 //! See spec at <http://msdn.microsoft.com/en-us/library/windows/hardware/hh852380.aspx>
 #![deprecated(
-    note = "this interface has been superseded by the relay::hid::HidDevice trait, which is transport-independent, doesn't depend on the comms service or require 'static lifetime on devices."
+    note = "This interface has been superseded by the relay::hid::HidDevice trait, which is transport-independent, doesn't depend on the comms service, and doesn't require a 'static lifetime on devices."
 )]
 use core::convert::Infallible;
 

@@ -3,7 +3,7 @@
 #![no_std]
 #![warn(missing_docs)]
 // The deprecated `hid` module has `#[test]` functions that we want to preserve, but it looks like
-// because the tests are in the `hid`` module, `allow(deprecated)` annotations on the test functions
+// because the tests are in the `hid` module, `allow(deprecated)` annotations on the test functions
 // aren't sufficient to suppress the warnings - the tests themselves get hoisted to the crate root and
 // fail the build.
 // Therefore, we need to allow deprecated code in tests if we want to preserve those tests.  This only

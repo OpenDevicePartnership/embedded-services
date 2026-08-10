@@ -197,6 +197,7 @@ impl<'s, S: KeyboardService<'s>> HidDevice for KeyboardHidRelay<'s, S> {
 
     async fn reset(&mut self) {
         self.pending_input_report = None;
+        self.last_report = KeyboardInputReport::default();
         self.subscriber.clear();
     }
 }

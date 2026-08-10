@@ -23,10 +23,6 @@ use crate::interface::{KeyboardInputReport, KeyboardPowerState, KeyboardService,
 // Depth of the channel carrying input reports from the scan `Runner` to subscribers.
 const REPORT_QUEUE_DEPTH: usize = 8;
 
-// HID keyboard error codes placed in the key slots of an input report to signal an error condition.
-const ERROR_ROLL_OVER: u8 = 0x01;
-const ERROR_UNDEFINED: u8 = 0x03;
-
 /// Keyboard service error.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
@@ -191,8 +187,8 @@ fn has_ghost<const NROWS: usize, const NCOLS: usize>(pressed: &[[bool; NROWS]; N
     // Chose u128 as it's the largest primitive and it's very unlikely a keyboard will have more than 128 rows
     let mut pressed_bits = [0u128; NCOLS];
     let mut count = 0;
-    for (row, pressed_bits_col) in pressed.iter().zip(pressed_bits.iter_mut()) {
-        for (r, &key) in row.iter().enumerate() {
+    for (col, pressed_bits_col) in pressed.iter().zip(pressed_bits.iter_mut()) {
+        for (r, &key) in col.iter().enumerate() {
             if key {
                 count += 1;
                 *pressed_bits_col |= 1 << r;
@@ -248,12 +244,23 @@ impl<const SUBS: usize> Default for Resources<SUBS> {
     }
 }
 
+#[repr(u8)]
+enum ScanError {
+    /// Keyboard rollover was detected
+    RollOver = 0x01,
+    /// An unspecified error occurred during the scan
+    Undefined = 0x03,
+}
+
 /// The outcome of a single scan cycle in the [`Runner`].
 enum ScanOutcome {
     /// A fresh input report is ready to be sent to the host.
     Report(KeyboardInputReport),
     /// The keyboard was powered down mid-cycle; the runner should re-gate on power.
     Unpowered,
+
+    /// The scan failed
+    ScanFailed(ScanError),
 }
 
 /// Scanning runner for a GPIO keyboard [`Service`].
@@ -302,7 +309,7 @@ impl<
                     // If ghosting detected, report a rollover error.
                     if self.kb.deghost && has_ghost(&pressed) {
                         warn!("Key ghosting detected");
-                        return ScanOutcome::Report(KeyboardInputReport::error(ERROR_ROLL_OVER));
+                        return ScanOutcome::ScanFailed(ScanError::RollOver);
                     }
 
                     // Run the scan through the debouncer, applying a coordinate transform.
@@ -326,7 +333,7 @@ impl<
                 }
                 Err(_) => {
                     error!("Failed to scan keyboard!");
-                    return ScanOutcome::Report(KeyboardInputReport::error(ERROR_UNDEFINED));
+                    return ScanOutcome::ScanFailed(ScanError::Undefined);
                 }
             }
 
@@ -362,6 +369,14 @@ impl<
                 ScanOutcome::Report(report) => self.publisher.publish(report).await,
                 // Powered off mid-cycle; loop back around to re-gate on power.
                 ScanOutcome::Unpowered => {}
+
+                ScanOutcome::ScanFailed(error) => {
+                    let report = KeyboardInputReport::error(error as u8);
+                    self.publisher.publish(report).await;
+
+                    // Wait for a polling cycle to avoid busy-spinning when the keyboard is in a rollover/ghosted state
+                    Timer::after_millis(self.kb.poll_ms).await;
+                }
             }
         }
     }
