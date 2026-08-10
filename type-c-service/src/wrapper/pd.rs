@@ -89,7 +89,12 @@ where
         if new_contract && !sink_ready && contract_changed {
             // Start the timeout
             // Double the spec maximum transition time to provide a safety margin for hardware/controller delays or out-of-spec controllers.
-            let timeout = Self::check_sink_ready_timeout_duration(status.epr);
+            let timeout = Self::check_sink_ready_timeout_duration(
+                status
+                    .available_sink_contract
+                    .map(|sink_contract| sink_contract.epr_capable())
+                    .unwrap_or(false),
+            );
             debug!("Port{}: Sink ready timeout started for {:?}", port.0, timeout);
             *deadline = Some(Instant::now() + timeout);
         } else if deadline.is_some()
@@ -188,8 +193,16 @@ where
                 // Enable the sink ready timeout as a recovery mechanism. If there's no renegotiation, then the timeout
                 // will result in us broadcasting the existing contract back to the power policy.
                 if port_state.sink_ready_deadline.is_none() {
-                    port_state.sink_ready_deadline =
-                        Some(Instant::now() + Self::check_sink_ready_timeout_duration(port_state.status.epr));
+                    port_state.sink_ready_deadline = Some(
+                        Instant::now()
+                            + Self::check_sink_ready_timeout_duration(
+                                port_state
+                                    .status
+                                    .available_sink_contract
+                                    .map(|c| c.epr_capable())
+                                    .unwrap_or(false),
+                            ),
+                    );
                 }
 
                 let _ = connected_consumer

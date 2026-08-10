@@ -40,10 +40,10 @@ where
             return Ok(());
         }
 
-        let available_sink_contract = status.available_sink_contract.map(|c| {
-            let mut c: ConsumerPowerCapability = c.into();
+        let available_sink_contract = status.available_sink_contract.map(|contract| {
+            let mut c: ConsumerPowerCapability = contract.capability.into();
             let unconstrained = match self.config.unconstrained_sink {
-                UnconstrainedSink::Auto => status.unconstrained_power,
+                UnconstrainedSink::Auto => contract.unconstrained_power(),
                 UnconstrainedSink::PowerThresholdMilliwatts(threshold) => c.capability.max_power_mw() >= threshold,
                 UnconstrainedSink::Never => false,
             };
@@ -109,7 +109,7 @@ where
         info!("current power state: {:?}", current_state);
 
         let contract = status.available_source_contract.map(|c| {
-            let mut c: ProviderPowerCapability = c.into();
+            let mut c: ProviderPowerCapability = c.capability.into();
             c.flags.set_psu_type(PsuType::TypeC);
             c
         });

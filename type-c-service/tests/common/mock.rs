@@ -10,13 +10,14 @@ use embedded_services::{
     power::policy::PowerCapability,
     type_c::{
         controller::{
-            AttnVdm, ControllerStatus, DiscoveredSvids, DpConfig, DpStatus, OtherVdm, PdStateMachineConfig, PortStatus,
-            RetimerFwUpdateState, SendVdm, SystemPowerState, TbtConfig, TypeCStateMachineState, UsbControlConfig,
+            AttnVdm, ControllerStatus, DiscoveredSvids, DpConfig, DpStatus, OtherVdm, PdSinkInfo, PdSourceInfo,
+            PdStateMachineConfig, PortStatus, RetimerFwUpdateState, SendVdm, SinkContract, SourceContract,
+            SystemPowerState, TbtConfig, TypeCStateMachineState, UsbControlConfig,
         },
         event::PortEvent,
     },
 };
-use embedded_usb_pd::{Error, ado::Ado};
+use embedded_usb_pd::{Error, ado::Ado, pdo};
 use embedded_usb_pd::{LocalPortId, PdError};
 use embedded_usb_pd::{PowerRole, type_c::Current};
 use embedded_usb_pd::{type_c::ConnectionState, ucsi::lpm};
@@ -203,12 +204,50 @@ impl<'a> ControllerState<'a> {
         });
         match role {
             PowerRole::Source => {
-                status.available_source_contract = Some(capability);
-                status.unconstrained_power = unconstrained;
+                status.available_source_contract = Some(SourceContract {
+                    capability,
+                    pd: Some(PdSourceInfo {
+                        pdo: pdo::source::Pdo::Fixed(pdo::source::FixedData {
+                            voltage_mv: capability.voltage_mv,
+                            current_ma: capability.current_ma,
+                            unconstrained_power: unconstrained,
+                            ..Default::default()
+                        }),
+                        rdo: pdo::Rdo::Fixed(pdo::rdo::FixedVarData {
+                            operating_current_ma: capability.current_ma,
+                            max_operating_current_ma: capability.current_ma,
+                            ..Default::default()
+                        }),
+                        rx_fixed_5v_data: pdo::sink::FixedData {
+                            voltage_mv: capability.voltage_mv,
+                            operational_current_ma: capability.current_ma,
+                            ..Default::default()
+                        },
+                    }),
+                });
             }
             PowerRole::Sink => {
-                status.available_sink_contract = Some(capability);
-                status.unconstrained_power = unconstrained;
+                status.available_sink_contract = Some(SinkContract {
+                    capability,
+                    pd: Some(PdSinkInfo {
+                        pdo: pdo::sink::Pdo::Fixed(pdo::sink::FixedData {
+                            voltage_mv: capability.voltage_mv,
+                            operational_current_ma: capability.current_ma,
+                            ..Default::default()
+                        }),
+                        rdo: pdo::Rdo::Fixed(pdo::rdo::FixedVarData {
+                            operating_current_ma: capability.current_ma,
+                            max_operating_current_ma: capability.current_ma,
+                            ..Default::default()
+                        }),
+                        rx_fixed_5v_data: pdo::source::FixedData {
+                            voltage_mv: capability.voltage_mv,
+                            current_ma: capability.current_ma,
+                            unconstrained_power: unconstrained,
+                            ..Default::default()
+                        },
+                    }),
+                });
             }
         }
         self.next_result_get_port_status.push_back(Ok(status));

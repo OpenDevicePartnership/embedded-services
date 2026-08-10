@@ -58,11 +58,12 @@ impl<'a> Service<'a> {
             } else {
                 // Only one unconstrained device is present, see if that's one of our ports
                 let num_ports = self.context.get_num_ports();
-                let unconstrained_port = state
-                    .port_status
-                    .iter()
-                    .take(num_ports)
-                    .position(|status| status.available_sink_contract.is_some() && status.unconstrained_power);
+                let unconstrained_port = state.port_status.iter().take(num_ports).position(|status| {
+                    status
+                        .available_sink_contract
+                        .map(|sink_contract| sink_contract.unconstrained_power())
+                        .unwrap_or(false)
+                });
 
                 if let Some(unconstrained_index) = unconstrained_port {
                     // One of our ports is the unconstrained consumer

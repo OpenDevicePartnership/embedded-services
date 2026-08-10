@@ -79,7 +79,7 @@ impl<'a> Service<'a> {
                 // when new type-C PSUs are attached
                 let power_mw = port_status
                     .available_sink_contract
-                    .map(|contract| contract.max_power_mw())
+                    .map(|contract| contract.capability.max_power_mw())
                     .unwrap_or(0);
 
                 Some(self.config.ucsi_battery_charging_config.status_of(power_mw))
