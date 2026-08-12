@@ -35,7 +35,7 @@ pub struct PdSourceInfo {
     /// Received 5V sink PDO data from port partner
     ///
     /// Contains various flags that aren't present in other PDOs
-    pub rx_fixed_5v_data: pdo::sink::FixedData,
+    pub rx_fixed_5v_data: Option<pdo::sink::FixedData>,
     /// PDO associated with this contract
     pub pdo: pdo::source::Pdo,
     /// RDO associated with this contract
@@ -55,34 +55,43 @@ pub struct SourceContract {
 impl SourceContract {
     /// Returns true if the port partner has dual role power capability
     pub fn dual_role_power(&self) -> bool {
-        self.pd.map(|pd| pd.rx_fixed_5v_data.dual_role_power).unwrap_or(false)
+        self.pd
+            .and_then(|pd| pd.rx_fixed_5v_data.map(|data| data.dual_role_power))
+            .unwrap_or(false)
     }
 
     /// Returns true if the port partner has higher capability
     pub fn higher_capability(&self) -> bool {
-        self.pd.map(|pd| pd.rx_fixed_5v_data.higher_capability).unwrap_or(false)
+        self.pd
+            .and_then(|pd| pd.rx_fixed_5v_data.map(|data| data.higher_capability))
+            .unwrap_or(false)
     }
 
     /// Returns true if the port partner has unconstrained power
     pub fn unconstrained_power(&self) -> bool {
         self.pd
-            .map(|pd| pd.rx_fixed_5v_data.unconstrained_power)
+            .and_then(|pd| pd.rx_fixed_5v_data.map(|data| data.unconstrained_power))
             .unwrap_or(false)
     }
 
     /// Returns true if the port partner is USB comms capable
     pub fn usb_comms_capable(&self) -> bool {
-        self.pd.map(|pd| pd.rx_fixed_5v_data.usb_comms_capable).unwrap_or(false)
+        self.pd
+            .and_then(|pd| pd.rx_fixed_5v_data.map(|data| data.usb_comms_capable))
+            .unwrap_or(false)
     }
 
     /// Returns true if the port partner has dual role data capability
     pub fn dual_role_data(&self) -> bool {
-        self.pd.map(|pd| pd.rx_fixed_5v_data.dual_role_data).unwrap_or(false)
+        self.pd
+            .and_then(|pd| pd.rx_fixed_5v_data.map(|data| data.dual_role_data))
+            .unwrap_or(false)
     }
 
     /// Returns required FRS current for the port partner, if supported
     pub fn frs_required_current(&self) -> Option<FrsRequiredCurrent> {
-        self.pd.map(|pd| pd.rx_fixed_5v_data.frs_required_current)
+        self.pd
+            .and_then(|pd| pd.rx_fixed_5v_data.map(|data| data.frs_required_current))
     }
 }
 

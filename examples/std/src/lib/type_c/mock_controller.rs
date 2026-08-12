@@ -59,11 +59,11 @@ impl ControllerState {
                             max_operating_current_ma: capability.current_ma,
                             ..Default::default()
                         }),
-                        rx_fixed_5v_data: pdo::sink::FixedData {
+                        rx_fixed_5v_data: Some(pdo::sink::FixedData {
                             voltage_mv: capability.voltage_mv,
                             operational_current_ma: capability.current_ma,
                             ..Default::default()
-                        },
+                        }),
                     }),
                 });
             }

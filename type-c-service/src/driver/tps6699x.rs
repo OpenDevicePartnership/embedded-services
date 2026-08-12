@@ -353,15 +353,18 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
                         .get_rx_snk_caps(port, &mut sink_pdos[..], &mut [])
                         .await?;
 
-                    if num_sprs == 0 {
-                        // USB PD spec requires at least one sink PDO be present, something is really wrong
-                        error!("Port{} no source PDOs found", port.0);
-                        return Err(PdError::InvalidParams.into());
-                    }
-
-                    let sink::Pdo::Fixed(rx_fixed_5v_data) = sink_pdos[0] else {
-                        error!("Port{}: First rx sink PDO is not fixed", port.0);
-                        return Err(PdError::InvalidParams.into());
+                    // Might not have received sink PDOs yet, but we can still report the contract.
+                    // Our fixed 5V flags will just be set to none until we receive the sink PDOs.
+                    let rx_fixed_5v_data = if num_sprs > 0 {
+                        if let sink::Pdo::Fixed(data) = sink_pdos[0] {
+                            Some(data)
+                        } else {
+                            error!("Port{}: First rx sink PDO is not fixed", port.0);
+                            return Err(PdError::InvalidParams.into());
+                        }
+                    } else {
+                        debug!("Port{}: No rx sink PDOs received yet", port.0);
+                        None
                     };
 
                     let pdo = source::Pdo::try_from(pdo_raw).map_err(|_| Error::from(PdError::InvalidParams))?;
@@ -391,9 +394,10 @@ impl<M: RawMutex, B: I2c> Controller for Tps6699x<'_, M, B> {
                         .get_rx_src_caps(port, &mut source_pdos[..], &mut [])
                         .await?;
 
+                    // We have received source PDOs at this point because otherwise we wouldn't have been able to negotiate a contract.
                     if num_sprs == 0 {
                         // USB PD spec requires at least one source PDO be present, something is really wrong
-                        error!("Port{} no source PDOs found", port.0);
+                        error!("Port{} no source PDOs received", port.0);
                         return Err(PdError::InvalidParams.into());
                     }
 
