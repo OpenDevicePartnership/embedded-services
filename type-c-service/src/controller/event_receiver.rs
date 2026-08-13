@@ -1,7 +1,7 @@
 //! This module contains event receiver types for the controller wrapper.
 use core::array;
 use core::future::pending;
-use embassy_futures::select::{Either, select};
+use embassy_futures::select::{Either3, select3};
 use embassy_time::Timer;
 use embedded_services::error;
 use embedded_services::event::{NonBlockingSender, Receiver};
@@ -40,49 +40,6 @@ impl<const N: usize, S: NonBlockingSender<PortEventBitfield>> PortEventSplitter<
     }
 }
 
-/// Struct to receive and stream port events from the controller.
-pub struct PortEventReceiver<R: Receiver<PortEventBitfield>, LoopbackReceiver: Receiver<Loopback>> {
-    /// Receiver for the controller's interrupt events
-    receiver: R,
-    /// Port event streaming state
-    streaming_state: Option<PortEventStreamer<array::IntoIter<PortEventBitfield, 1>>>,
-    /// Loopback receiver for software-generated events
-    loopback_receiver: LoopbackReceiver,
-}
-
-impl<R: Receiver<PortEventBitfield>, LoopbackReceiver: Receiver<Loopback>> PortEventReceiver<R, LoopbackReceiver> {
-    /// Create a new instance
-    pub fn new(receiver: R, loopback_receiver: LoopbackReceiver) -> Self {
-        Self {
-            receiver,
-            streaming_state: None,
-            loopback_receiver,
-        }
-    }
-
-    /// Wait for the next port event
-    pub async fn wait_next(&mut self) -> type_c_interface::port::event::PortEvent {
-        loop {
-            let streaming_state = if let Some(streaming_state) = &mut self.streaming_state {
-                // Yield to ensure we don't monopolize the executor
-                embassy_futures::yield_now().await;
-                streaming_state
-            } else {
-                let (Either::First(Loopback::PortEvent(events)) | Either::Second(events)) =
-                    select(self.loopback_receiver.wait_next(), self.receiver.wait_next()).await;
-                self.streaming_state
-                    .insert(PortEventStreamer::new([events].into_iter()))
-            };
-
-            if let Some((_, event)) = streaming_state.next() {
-                return event;
-            } else {
-                self.streaming_state = None;
-            }
-        }
-    }
-}
-
 /// Struct used for containing controller event receivers.
 pub struct EventReceiver<
     'a,
@@ -91,7 +48,11 @@ pub struct EventReceiver<
     LoopbackReceiver: Receiver<Loopback>,
 > {
     /// Port event receiver
-    port_event_receiver: PortEventReceiver<InterruptReceiver, LoopbackReceiver>,
+    port_event_receiver: InterruptReceiver,
+    /// Port event streaming state
+    streaming_state: Option<PortEventStreamer<array::IntoIter<PortEventBitfield, 1>>>,
+    /// Loopback event receiver
+    loopback_receiver: LoopbackReceiver,
     /// Shared state
     shared_state: &'a State,
 }
@@ -111,30 +72,62 @@ impl<
     ) -> Self {
         Self {
             shared_state,
-            port_event_receiver: PortEventReceiver::new(port_event_receiver, loopback_receiver),
+            port_event_receiver,
+            streaming_state: None,
+            loopback_receiver,
         }
     }
 
-    /// Wait for the next port event from any port.
-    ///
-    /// Returns the local port ID and the event bitfield.
+    /// Wait for the next port event from a single port.
     pub async fn wait_event(&mut self) -> Event {
-        let timeout = self.shared_state.lock().await.sink_ready_deadline;
-        match select(self.port_event_receiver.wait_next(), async move {
-            if let Some(timeout) = timeout {
-                Timer::at(timeout).await;
+        loop {
+            if let Some(streaming_state) = &mut self.streaming_state {
+                // If we have a streaming state, prioritize processing it before waiting for new events. This
+                // ensures that any pending events stay buffered in the receiver.
+
+                // Yield to ensure we don't monopolize the executor
+                embassy_futures::yield_now().await;
+
+                if let Some((_, event)) = streaming_state.next() {
+                    return Event::PortEvent(event);
+                }
+
+                // Done streaming, clear the state and continue to wait for new events.
+                self.streaming_state = None;
             } else {
-                pending::<()>().await;
-            }
-        })
-        .await
-        {
-            Either::First(event) => Event::PortEvent(event),
-            Either::Second(_) => {
-                let mut status_event = PortStatusEventBitfield::none();
-                status_event.set_sink_ready(true);
-                self.shared_state.lock().await.sink_ready_deadline = None;
-                Event::PortEvent(PortEvent::StatusChanged(status_event))
+                let timeout = self.shared_state.lock().await.sink_ready_deadline;
+                match select3(
+                    self.port_event_receiver.wait_next(),
+                    async move {
+                        if let Some(timeout) = timeout {
+                            Timer::at(timeout).await;
+                        } else {
+                            pending::<()>().await;
+                        }
+                    },
+                    self.loopback_receiver.wait_next(),
+                )
+                .await
+                {
+                    Either3::First(events) => {
+                        self.streaming_state = Some(PortEventStreamer::new([events].into_iter()));
+                    }
+                    Either3::Second(_) => {
+                        let mut status_event = PortStatusEventBitfield::none();
+                        status_event.set_sink_ready(true);
+                        self.shared_state.lock().await.sink_ready_deadline = None;
+                        return Event::PortEvent(PortEvent::StatusChanged(status_event));
+                    }
+                    Either3::Third(event) => match event {
+                        Loopback::PortEvent(events) => {
+                            self.streaming_state = Some(PortEventStreamer::new([events].into_iter()));
+                            // Continue, the next iteration will handle streaming the port events.
+                        }
+                        Loopback::SinkReadyDeadlineInvalidated => {
+                            // Continue, the next iteration will wait for the update sink ready deadline.
+                        }
+                    },
+                }
             }
         }
     }

@@ -19,4 +19,6 @@ pub enum Event {
 pub enum Loopback {
     /// Port event
     PortEvent(PortEventBitfield),
+    /// Sink ready deadline invalidated
+    SinkReadyDeadlineInvalidated,
 }

@@ -46,6 +46,17 @@ impl<
                     shared_state.sink_ready_deadline =
                         Some(Instant::now() + Self::check_sink_ready_timeout_duration(self.status.epr));
                 }
+
+                if self
+                    .loopback_sender
+                    .try_send(event::Loopback::SinkReadyDeadlineInvalidated)
+                    .is_none()
+                {
+                    error!(
+                        "({}): Failed to send SinkReadyDeadlineInvalidated loopback event, channel full",
+                        self.name
+                    );
+                }
             }
 
             // Move our local state out of the consumer state and notify the power policy so it stops
