@@ -8,7 +8,7 @@ use crate::controller::{event_receiver::EventReceiver, state};
 
 pub const DEFAULT_POWER_POLICY_CHANNEL_SIZE: usize = 2;
 pub const DEFAULT_TYPE_C_CHANNEL_SIZE: usize = 2;
-pub const DEFAULT_LOOPBACK_CHANNEL_SIZE: usize = 1;
+pub const DEFAULT_LOOPBACK_CHANNEL_SIZE: usize = 4;
 pub const DEFAULT_INTERRUPT_CHANNEL_SIZE: usize = 4;
 
 /// Components returned from port creation
