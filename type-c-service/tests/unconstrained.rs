@@ -6,14 +6,14 @@
 
 use embassy_time::{Duration, Timer, with_timeout};
 use embedded_services::named::Named;
-use embedded_usb_pd::{PowerRole, type_c::ConnectionState};
+use embedded_usb_pd::{PowerRole, pdo, type_c::ConnectionState};
 use log::info;
 use power_policy_interface::{
     capability::PowerCapability,
     service::{UnconstrainedState, event::Event as PowerPolicyEvent},
 };
 use type_c_interface::{
-    control::pd::PortStatus,
+    control::pd::{PdSinkInfo, PortStatus, SinkContract},
     port::event::{PortEvent, PortStatusEventBitfield},
 };
 use type_c_interface_test_mocks::controller::{FnCall as ControllerFnCall, pd::FnCall as PdFnCall};
@@ -53,11 +53,27 @@ const DETACHED: PortStatus = PortStatus::new();
 
 /// Port status of an attached sink offering [`CAPABILITY`].
 fn sink_status(unconstrained: bool) -> PortStatus {
+    let pdo = pdo::sink::Pdo::Fixed(pdo::sink::FixedData {
+        voltage_mv: CAPABILITY.voltage_mv,
+        operational_current_ma: CAPABILITY.current_ma,
+        ..Default::default()
+    });
     PortStatus {
-        available_sink_contract: Some(CAPABILITY),
+        available_sink_contract: Some(SinkContract {
+            capability: CAPABILITY,
+            pd: pdo::Rdo::for_pdo(0, pdo).map(|rdo| PdSinkInfo {
+                rx_fixed_5v_data: pdo::source::FixedData {
+                    voltage_mv: CAPABILITY.voltage_mv,
+                    current_ma: CAPABILITY.current_ma,
+                    unconstrained_power: unconstrained,
+                    ..Default::default()
+                },
+                pdo,
+                rdo,
+            }),
+        }),
         connection_state: Some(ConnectionState::Attached),
         power_role: PowerRole::Sink,
-        unconstrained_power: unconstrained,
         ..PortStatus::new()
     }
 }
