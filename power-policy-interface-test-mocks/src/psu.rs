@@ -4,9 +4,7 @@ use std::collections::VecDeque;
 
 use embedded_services::named::Named;
 use power_policy_interface::{
-    capability::{
-        ConsumerDisconnect, ConsumerPowerCapability, PowerCapability, ProviderFlags, ProviderPowerCapability,
-    },
+    capability::{ConsumerPowerCapability, DisconnectFlags, PowerCapability, ProviderFlags, ProviderPowerCapability},
     psu::{self, Error, Psu, State},
 };
 
@@ -90,7 +88,7 @@ impl<Notifier: psu::notification::Notifier> Mock<Notifier> {
     pub async fn simulate_disconnect(&mut self) {
         self.state.disconnect(true).unwrap();
         self.notifier
-            .notify_disconnected(ConsumerDisconnect::default())
+            .notify_disconnected(DisconnectFlags::default())
             .await
             .unwrap();
     }

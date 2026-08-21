@@ -6,7 +6,7 @@ use embedded_services::{
 };
 
 use crate::{
-    capability::{ConsumerDisconnect, ConsumerPowerCapability, ProviderPowerCapability},
+    capability::{ConsumerPowerCapability, DisconnectFlags, ProviderPowerCapability},
     psu::Psu,
     service::UnconstrainedState,
 };
@@ -21,7 +21,7 @@ use crate::{
 #[non_exhaustive]
 pub enum EventData {
     /// Consumer disconnected
-    ConsumerDisconnected(ConsumerDisconnect),
+    ConsumerDisconnected(DisconnectFlags),
     /// Consumer connected
     ConsumerConnected(ConsumerPowerCapability),
     /// Provider disconnected
@@ -38,7 +38,7 @@ where
 {
     fn from(value: Event<'device, PSU>) -> Self {
         match value {
-            Event::ConsumerDisconnected(_, flags) => EventData::ConsumerDisconnected(flags),
+            Event::ConsumerDisconnected(_, disconnect) => EventData::ConsumerDisconnected(disconnect),
             Event::ConsumerConnected(_, capability) => EventData::ConsumerConnected(capability),
             Event::ProviderDisconnected(_) => EventData::ProviderDisconnected,
             Event::ProviderConnected(_, capability) => EventData::ProviderConnected(capability),
@@ -56,7 +56,7 @@ where
     PSU::Inner: Psu,
 {
     /// Consumer disconnected
-    ConsumerDisconnected(&'device PSU, ConsumerDisconnect),
+    ConsumerDisconnected(&'device PSU, DisconnectFlags),
     /// Consumer connected
     ConsumerConnected(&'device PSU, ConsumerPowerCapability),
     /// Provider disconnected
@@ -116,11 +116,11 @@ impl<'device, PSU: Lockable<Inner: Psu>, S: NonBlockingSender<Event<'device, PSU
     fn notify_consumer_disconnected(
         &mut self,
         psu: &'device Self::Psu,
-        flags: ConsumerDisconnect,
+        disconnect: DisconnectFlags,
     ) -> impl Future<Output = Result<(), crate::service::notification::Error>> {
         ready(
             self.sender
-                .try_send(Event::ConsumerDisconnected(psu, flags))
+                .try_send(Event::ConsumerDisconnected(psu, disconnect))
                 .ok_or(crate::service::notification::Error::WouldBlock),
         )
     }
@@ -209,9 +209,9 @@ impl<'device, PSU: Lockable<Inner: Psu> + 'device, S: Sender<Event<'device, PSU>
     async fn notify_consumer_disconnected(
         &mut self,
         psu: &'device Self::Psu,
-        flags: ConsumerDisconnect,
+        disconnect: DisconnectFlags,
     ) -> Result<(), crate::service::notification::Error> {
-        self.sender.send(Event::ConsumerDisconnected(psu, flags)).await;
+        self.sender.send(Event::ConsumerDisconnected(psu, disconnect)).await;
         Ok(())
     }
 

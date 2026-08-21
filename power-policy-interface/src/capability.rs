@@ -116,11 +116,35 @@ pub struct ProviderFlags {
 }
 
 /// Consumer disconnect flags
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[non_exhaustive]
+pub enum DisconnectReason {
+    /// The device has been physically detached
+    Detached,
+    /// Switching to a different PSU
+    Switching,
+    /// Renegotiation triggered by the device
+    AutoRenegotiation,
+    /// Renegotiation triggered by code
+    ManualRenegotiation,
+    /// The device has changed its role
+    RoleSwap,
+    /// The device experienced a reset
+    Reset,
+}
+
+impl DisconnectReason {
+    /// Check if the reason is a renegotiation
+    pub fn is_renegotiation(&self) -> bool {
+        matches!(self, Self::AutoRenegotiation | Self::ManualRenegotiation)
+    }
+}
+
+/// Disconnection flags
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct ConsumerDisconnect {
-    /// Whether the consumer is renegotiating a power capability
-    pub renegotiation: bool,
-    /// Whether the service is switching to a different PSU
-    pub switching: bool,
+pub struct DisconnectFlags {
+    /// Reason for the disconnect, if given
+    pub reason: Option<DisconnectReason>,
 }

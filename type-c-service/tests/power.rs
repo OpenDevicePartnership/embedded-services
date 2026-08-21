@@ -12,7 +12,8 @@ use embedded_usb_pd::{
 };
 use power_policy_interface::{
     capability::{
-        ConsumerDisconnect, ConsumerFlags, ConsumerPowerCapability, ProviderFlags, ProviderPowerCapability, PsuType,
+        ConsumerFlags, ConsumerPowerCapability, DisconnectFlags, DisconnectReason, ProviderFlags,
+        ProviderPowerCapability, PsuType,
     },
     psu::{Psu, PsuState},
     service::event::Event as PowerPolicyEvent,
@@ -135,8 +136,15 @@ impl Test for TestBasicConsumerFlow {
         assert_eq!(type_c_result.err(), Some(TimeoutError));
         // Power policy service should broadcast a consumer disconnect event
         match power_policy_result {
-            Ok(PowerPolicyEvent::ConsumerDisconnected(psu, _)) => {
+            Ok(PowerPolicyEvent::ConsumerDisconnected(psu, disconnect)) => {
                 assert!(ptr::eq(psu, port0.port));
+                assert_eq!(
+                    disconnect,
+                    DisconnectFlags {
+                        reason: Some(DisconnectReason::Detached),
+                        ..Default::default()
+                    }
+                );
             }
             _ => panic!("Did not receive consumer disconnected event"),
         }
@@ -401,8 +409,15 @@ impl Test for TestConsumerFlowTimerSinkReady {
 
         // The power policy should broadcast a consumer disconnect event.
         match with_timeout(DEFAULT_PER_CALL_TIMEOUT, power_policy_receiver.receive()).await {
-            Ok(PowerPolicyEvent::ConsumerDisconnected(psu, _)) => {
+            Ok(PowerPolicyEvent::ConsumerDisconnected(psu, disconnect)) => {
                 assert!(ptr::eq(psu, port));
+                assert_eq!(
+                    disconnect,
+                    DisconnectFlags {
+                        reason: Some(DisconnectReason::Detached),
+                        ..Default::default()
+                    }
+                );
             }
             _ => panic!("Did not receive consumer disconnected event"),
         }
@@ -414,8 +429,8 @@ impl Test for TestConsumerFlowTimerSinkReady {
 }
 
 /// Test that changing the max sink voltage while a consumer is connected disables the sink path and
-/// notifies the power policy, which broadcasts a `ConsumerDisconnected` event with the renegotiation
-/// flag set. Setting the same voltage should do neither.
+/// notifies the power policy, which broadcasts a `ConsumerDisconnected` event with the manual
+/// renegotiation reason. Setting the same voltage should do neither.
 struct TestSinkDisableOnVoltageChange;
 
 impl Test for TestSinkDisableOnVoltageChange {
@@ -499,14 +514,14 @@ impl Test for TestSinkDisableOnVoltageChange {
         }
         port0.port.lock().await.set_max_sink_voltage(Some(9000)).await.unwrap();
 
-        // The power policy should broadcast a consumer disconnect with the renegotiation flag set.
+        // The power policy should broadcast a consumer disconnect with the manual renegotiation reason.
         match with_timeout(DEFAULT_PER_CALL_TIMEOUT, power_policy_receiver.receive()).await {
-            Ok(PowerPolicyEvent::ConsumerDisconnected(psu, flags)) => {
+            Ok(PowerPolicyEvent::ConsumerDisconnected(psu, disconnect)) => {
                 assert!(ptr::eq(psu, port0.port));
                 assert_eq!(
-                    flags,
-                    ConsumerDisconnect {
-                        renegotiation: true,
+                    disconnect,
+                    DisconnectFlags {
+                        reason: Some(DisconnectReason::ManualRenegotiation),
                         ..Default::default()
                     }
                 );
@@ -719,11 +734,11 @@ impl Test for TestSetMaxSinkVoltageRecovery {
 
         // Power policy service should broadcast a consumer disconnected event
         match power_policy_result {
-            Ok(PowerPolicyEvent::ConsumerDisconnected(psu, flags)) => {
+            Ok(PowerPolicyEvent::ConsumerDisconnected(psu, disconnect)) => {
                 assert_eq!(
-                    flags,
-                    ConsumerDisconnect {
-                        renegotiation: true,
+                    disconnect,
+                    DisconnectFlags {
+                        reason: Some(DisconnectReason::ManualRenegotiation),
                         ..Default::default()
                     }
                 );
@@ -877,8 +892,15 @@ impl Test for TestConsumerToProviderRoleSwap {
 
         // The consumer should disconnect as soon as the swap completes.
         match with_timeout(DEFAULT_PER_CALL_TIMEOUT, power_policy_receiver.receive()).await {
-            Ok(PowerPolicyEvent::ConsumerDisconnected(psu, _)) => {
+            Ok(PowerPolicyEvent::ConsumerDisconnected(psu, disconnect)) => {
                 assert!(ptr::eq(psu, port0.port));
+                assert_eq!(
+                    disconnect,
+                    DisconnectFlags {
+                        reason: Some(DisconnectReason::RoleSwap),
+                        ..Default::default()
+                    }
+                );
             }
             _ => panic!("Did not receive consumer disconnected event on role swap"),
         }
@@ -1091,6 +1113,80 @@ impl Test for TestProviderToConsumerRoleSwap {
     }
 }
 
+/// Test that a PD hard reset tears down the active contract with the reset reason.
+struct TestHardResetDisconnect;
+
+impl Test for TestHardResetDisconnect {
+    async fn run<'port, 'ch>(
+        &mut self,
+        _type_c_receiver: TypeCServiceReceiver<'port, 'ch>,
+        power_policy_receiver: PowerPolicyServiceReceiver<'port, 'ch>,
+        port0: TestPort<'port, 'ch>,
+        _port1: TestPort<'port, 'ch>,
+        _port2: TestPort<'port, 'ch>,
+    ) {
+        let connected_status = PortStatus {
+            available_sink_contract: Some(POWER_CAPABILITY_5V_1A5),
+            connection_state: Some(ConnectionState::Attached),
+            power_role: PowerRole::Sink,
+            ..Default::default()
+        };
+        {
+            let mut mock0 = port0.mock.lock().await;
+            mock0.next_result_get_port_status.push_back(Ok(connected_status));
+            mock0.next_result_enable_sink_path.push_back(Ok(()));
+        }
+
+        let mut port_event = PortStatusEventBitfield::none();
+        port_event.set_plug_inserted_or_removed(true);
+        port_event.set_new_power_contract_as_consumer(true);
+        port_event.set_sink_ready(true);
+        port0
+            .port
+            .lock()
+            .await
+            .process_event(Event::PortEvent(PortEvent::StatusChanged(port_event)))
+            .await
+            .unwrap();
+
+        match with_timeout(DEFAULT_PER_CALL_TIMEOUT, power_policy_receiver.receive()).await {
+            Ok(PowerPolicyEvent::ConsumerConnected(psu, _)) => assert!(ptr::eq(psu, port0.port)),
+            _ => panic!("Did not receive consumer connected event"),
+        }
+
+        port0
+            .mock
+            .lock()
+            .await
+            .next_result_get_port_status
+            .push_back(Ok(connected_status));
+        let mut port_event = PortStatusEventBitfield::none();
+        port_event.set_pd_hard_reset(true);
+        port0
+            .port
+            .lock()
+            .await
+            .process_event(Event::PortEvent(PortEvent::StatusChanged(port_event)))
+            .await
+            .unwrap();
+
+        match with_timeout(DEFAULT_PER_CALL_TIMEOUT, power_policy_receiver.receive()).await {
+            Ok(PowerPolicyEvent::ConsumerDisconnected(psu, disconnect)) => {
+                assert!(ptr::eq(psu, port0.port));
+                assert_eq!(
+                    disconnect,
+                    DisconnectFlags {
+                        reason: Some(DisconnectReason::Reset),
+                        ..Default::default()
+                    }
+                );
+            }
+            _ => panic!("Did not receive consumer disconnected event after hard reset"),
+        }
+        assert_eq!(port0.port.lock().await.state().psu_state, PsuState::Idle);
+    }
+}
+
 #[tokio::test]
 async fn test_basic_consumer_flow() {
     common::run_test(
@@ -1175,6 +1271,17 @@ async fn test_provider_to_consumer_role_swap() {
         Default::default(),
         Default::default(),
         TestProviderToConsumerRoleSwap,
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn test_hard_reset_disconnect() {
+    common::run_test(
+        DEFAULT_TEST_DURATION,
+        Default::default(),
+        Default::default(),
+        TestHardResetDisconnect,
     )
     .await;
 }

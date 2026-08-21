@@ -7,7 +7,7 @@ use embedded_services::{
 };
 
 use crate::{
-    capability::{ConsumerDisconnect, ConsumerPowerCapability, ProviderPowerCapability},
+    capability::{ConsumerPowerCapability, DisconnectFlags, ProviderPowerCapability},
     psu,
 };
 
@@ -23,7 +23,7 @@ pub enum EventData {
     /// Request the given amount of power to provider
     RequestedProviderCapability(Option<ProviderPowerCapability>),
     /// Notify that a device cannot consume or provide power anymore
-    Disconnected(ConsumerDisconnect),
+    Disconnected(DisconnectFlags),
     /// Notify that a device has detached
     Detached,
 }
@@ -79,11 +79,11 @@ impl<S: NonBlockingSender<EventData>> crate::psu::notification::Notifier for Non
 
     fn notify_disconnected(
         &mut self,
-        flags: ConsumerDisconnect,
+        disconnect: DisconnectFlags,
     ) -> impl Future<Output = Result<(), crate::psu::notification::Error>> {
         ready(
             self.0
-                .try_send(EventData::Disconnected(flags))
+                .try_send(EventData::Disconnected(disconnect))
                 .ok_or(crate::psu::notification::Error::WouldBlock),
         )
     }
@@ -130,8 +130,11 @@ impl<S: Sender<EventData>> crate::psu::notification::Notifier for SenderNotifier
         Ok(())
     }
 
-    async fn notify_disconnected(&mut self, flags: ConsumerDisconnect) -> Result<(), crate::psu::notification::Error> {
-        self.0.send(EventData::Disconnected(flags)).await;
+    async fn notify_disconnected(
+        &mut self,
+        disconnect: DisconnectFlags,
+    ) -> Result<(), crate::psu::notification::Error> {
+        self.0.send(EventData::Disconnected(disconnect)).await;
         Ok(())
     }
 

@@ -2,7 +2,7 @@
 
 use embedded_services::sync::Lockable;
 
-use crate::capability::{ConsumerDisconnect, ConsumerPowerCapability, ProviderPowerCapability};
+use crate::capability::{ConsumerPowerCapability, DisconnectFlags, ProviderPowerCapability};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
@@ -27,7 +27,7 @@ pub trait Notifier {
         capability: Option<ProviderPowerCapability>,
     ) -> impl Future<Output = Result<(), Error>>;
     /// Notify that a PSU has disconnected
-    fn notify_disconnected(&mut self, flags: ConsumerDisconnect) -> impl Future<Output = Result<(), Error>>;
+    fn notify_disconnected(&mut self, disconnect: DisconnectFlags) -> impl Future<Output = Result<(), Error>>;
     /// Notify that a PSU has detached
     fn notify_detached(&mut self) -> impl Future<Output = Result<(), Error>>;
 }
@@ -54,7 +54,7 @@ pub trait NotificationHandler<'device> {
     fn process_notify_disconnected(
         &mut self,
         psu: &'device Self::Psu,
-        flags: ConsumerDisconnect,
+        disconnect: DisconnectFlags,
     ) -> impl Future<Output = Result<(), super::Error>>;
     /// Handle a notification that a PSU has detached
     fn process_notify_detached(&mut self, psu: &'device Self::Psu) -> impl Future<Output = Result<(), super::Error>>;

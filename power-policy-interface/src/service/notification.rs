@@ -2,7 +2,7 @@
 use embedded_services::sync::Lockable;
 
 use crate::{
-    capability::{ConsumerDisconnect, ConsumerPowerCapability, ProviderPowerCapability},
+    capability::{ConsumerPowerCapability, DisconnectFlags, ProviderPowerCapability},
     service::UnconstrainedState,
 };
 
@@ -22,7 +22,7 @@ pub trait Notifier<'device> {
     fn notify_consumer_disconnected(
         &mut self,
         psu: &'device Self::Psu,
-        flags: ConsumerDisconnect,
+        disconnect: DisconnectFlags,
     ) -> impl Future<Output = Result<(), Error>>;
     /// Notify that a consumer has been connected
     fn notify_consumer_connected(

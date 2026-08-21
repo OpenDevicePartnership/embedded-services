@@ -2,7 +2,7 @@
 use embassy_time::Instant;
 use embedded_services::{event::NonBlockingSender, sync::Lockable};
 use embedded_usb_pd::PdError;
-use power_policy_interface::capability::ConsumerDisconnect;
+use power_policy_interface::capability::{DisconnectFlags, DisconnectReason};
 use type_c_interface::controller::max_sink_voltage::MaxSinkVoltage;
 
 use super::*;
@@ -61,15 +61,15 @@ impl<
 
             // Move our local state out of the consumer state and notify the power policy so it stops
             // tracking us as the active consumer and broadcasts a ConsumerDisconnected event. The
-            // renegotiation flag marks this as a temporary disconnect for a recontract.
+            // disconnect reason marks this as a temporary disconnect for a recontract.
             if let Err(e) = self.psu_state.disconnect(true) {
                 error!("({}): Error updating PSU state on disconnect: {:?}", self.name, e);
             }
 
             if let Err(e) = self
                 .power_policy_notifier
-                .notify_disconnected(ConsumerDisconnect {
-                    renegotiation: true,
+                .notify_disconnected(DisconnectFlags {
+                    reason: Some(DisconnectReason::ManualRenegotiation),
                     ..Default::default()
                 })
                 .await

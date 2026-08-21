@@ -127,6 +127,10 @@ impl<
             self.process_plug_event(&new_status).await?;
         }
 
+        if status_event.pd_hard_reset() {
+            self.process_hard_reset().await?;
+        }
+
         // Tear down the previous contract on a power role swap before establishing the new one
         if status_event.power_swap_completed() {
             self.process_power_role_swap(&new_status).await?;

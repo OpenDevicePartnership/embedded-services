@@ -6,7 +6,7 @@ use embedded_usb_pd::{
     constants::{T_PS_TRANSITION_EPR_MS, T_PS_TRANSITION_SPR_MS},
 };
 use power_policy_interface::{
-    capability::{ConsumerDisconnect, ConsumerPowerCapability, ProviderPowerCapability, PsuType},
+    capability::{ConsumerPowerCapability, DisconnectFlags, DisconnectReason, ProviderPowerCapability, PsuType},
     psu::{Error as PsuError, Psu, State},
 };
 use type_c_interface::controller::power::SystemPowerStateStatus;
@@ -129,11 +129,44 @@ impl<
         }
         if let Err(e) = self
             .power_policy_notifier
-            .notify_disconnected(ConsumerDisconnect::default())
+            .notify_disconnected(DisconnectFlags {
+                reason: Some(DisconnectReason::RoleSwap),
+                ..Default::default()
+            })
             .await
         {
             error!(
                 "({}): Failed to notify power policy of role swap disconnect: {:#?}",
+                self.name, e
+            );
+        }
+
+        Ok(())
+    }
+
+    /// Tear down the active power contract after a PD hard reset.
+    pub(super) async fn process_hard_reset(&mut self) -> Result<(), PdError> {
+        if !matches!(
+            self.psu_state.psu_state,
+            PsuState::ConnectedConsumer(_) | PsuState::ConnectedProvider(_)
+        ) {
+            return Ok(());
+        }
+
+        info!("({}): PD hard reset, tearing down power contract", self.name);
+        if let Err(e) = self.psu_state.disconnect(true) {
+            error!("({}): Error updating PSU state after hard reset: {:?}", self.name, e);
+        }
+        if let Err(e) = self
+            .power_policy_notifier
+            .notify_disconnected(DisconnectFlags {
+                reason: Some(DisconnectReason::Reset),
+                ..Default::default()
+            })
+            .await
+        {
+            error!(
+                "({}): Failed to notify power policy of hard reset disconnect: {:#?}",
                 self.name, e
             );
         }
