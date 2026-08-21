@@ -220,7 +220,7 @@ impl<'device, Reg: Registration<'device>, Customization: customization::Customiz
     async fn process_notify_detached(&mut self, device: &'device Reg::Psu) -> Result<(), Error> {
         info!("({}): Received notify detached", device.lock().await.name());
         self.post_provider_removed(device).await;
-        self.update_current_consumer(ConsumerDisconnect::none()).await?;
+        self.update_current_consumer(ConsumerDisconnect::default()).await?;
         Ok(())
     }
 
@@ -235,7 +235,7 @@ impl<'device, Reg: Registration<'device>, Customization: customization::Customiz
             capability,
         );
 
-        self.update_current_consumer(ConsumerDisconnect::none()).await
+        self.update_current_consumer(ConsumerDisconnect::default()).await
     }
 
     async fn process_notify_requested_provider_capability(

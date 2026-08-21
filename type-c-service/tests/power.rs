@@ -89,7 +89,10 @@ impl Test for TestBasicConsumerFlow {
                     capability,
                     ConsumerPowerCapability {
                         capability: POWER_CAPABILITY_5V_1A5,
-                        flags: ConsumerFlags::none().with_psu_type(PsuType::TypeC),
+                        flags: ConsumerFlags {
+                            psu_type: Some(PsuType::TypeC),
+                            ..Default::default()
+                        },
                     }
                 );
                 assert!(ptr::eq(psu, port0.port));
@@ -203,7 +206,10 @@ impl Test for TestBasicProviderFlow {
                     capability,
                     ProviderPowerCapability {
                         capability: POWER_CAPABILITY_5V_1A5,
-                        flags: ProviderFlags::none().with_psu_type(PsuType::TypeC),
+                        flags: ProviderFlags {
+                            psu_type: Some(PsuType::TypeC),
+                            ..Default::default()
+                        },
                     }
                 );
                 assert!(ptr::eq(psu, port0.port));
@@ -367,7 +373,10 @@ impl Test for TestConsumerFlowTimerSinkReady {
                     capability,
                     ConsumerPowerCapability {
                         capability: POWER_CAPABILITY_5V_1A5,
-                        flags: ConsumerFlags::none().with_psu_type(PsuType::TypeC),
+                        flags: ConsumerFlags {
+                            psu_type: Some(PsuType::TypeC),
+                            ..Default::default()
+                        },
                     }
                 );
                 assert!(ptr::eq(psu, port));
@@ -494,7 +503,13 @@ impl Test for TestSinkDisableOnVoltageChange {
         match with_timeout(DEFAULT_PER_CALL_TIMEOUT, power_policy_receiver.receive()).await {
             Ok(PowerPolicyEvent::ConsumerDisconnected(psu, flags)) => {
                 assert!(ptr::eq(psu, port0.port));
-                assert_eq!(flags, ConsumerDisconnect::none().with_renegotiation(true));
+                assert_eq!(
+                    flags,
+                    ConsumerDisconnect {
+                        renegotiation: true,
+                        ..Default::default()
+                    }
+                );
             }
             _ => panic!("Did not receive consumer disconnected event"),
         }
@@ -581,7 +596,10 @@ impl Test for TestSetMaxVoltageSinkReadyDeadlineInvalidation {
                     capability,
                     ConsumerPowerCapability {
                         capability: POWER_CAPABILITY_5V_1A5,
-                        flags: ConsumerFlags::none().with_psu_type(PsuType::TypeC),
+                        flags: ConsumerFlags {
+                            psu_type: Some(PsuType::TypeC),
+                            ..Default::default()
+                        },
                     }
                 );
                 assert!(ptr::eq(psu, port));
@@ -670,7 +688,10 @@ impl Test for TestSetMaxSinkVoltageRecovery {
                     capability,
                     ConsumerPowerCapability {
                         capability: POWER_CAPABILITY_5V_1A5,
-                        flags: ConsumerFlags::none().with_psu_type(PsuType::TypeC),
+                        flags: ConsumerFlags {
+                            psu_type: Some(PsuType::TypeC),
+                            ..Default::default()
+                        },
                     }
                 );
                 assert!(ptr::eq(psu, port));
@@ -699,7 +720,13 @@ impl Test for TestSetMaxSinkVoltageRecovery {
         // Power policy service should broadcast a consumer disconnected event
         match power_policy_result {
             Ok(PowerPolicyEvent::ConsumerDisconnected(psu, flags)) => {
-                assert_eq!(flags, ConsumerDisconnect::none().with_renegotiation(true));
+                assert_eq!(
+                    flags,
+                    ConsumerDisconnect {
+                        renegotiation: true,
+                        ..Default::default()
+                    }
+                );
                 assert!(ptr::eq(psu, port));
             }
             _ => panic!("Did not receive consumer disconnected event"),
@@ -743,7 +770,10 @@ impl Test for TestSetMaxSinkVoltageRecovery {
                     capability,
                     ConsumerPowerCapability {
                         capability: POWER_CAPABILITY_5V_1A5,
-                        flags: ConsumerFlags::none().with_psu_type(PsuType::TypeC),
+                        flags: ConsumerFlags {
+                            psu_type: Some(PsuType::TypeC),
+                            ..Default::default()
+                        },
                     }
                 );
                 assert!(ptr::eq(psu, port));
@@ -808,7 +838,10 @@ impl Test for TestConsumerToProviderRoleSwap {
                     capability,
                     ConsumerPowerCapability {
                         capability: POWER_CAPABILITY_5V_1A5,
-                        flags: ConsumerFlags::none().with_psu_type(PsuType::TypeC),
+                        flags: ConsumerFlags {
+                            psu_type: Some(PsuType::TypeC),
+                            ..Default::default()
+                        },
                     }
                 );
                 assert!(ptr::eq(psu, port0.port));
@@ -893,7 +926,10 @@ impl Test for TestConsumerToProviderRoleSwap {
                     capability,
                     ProviderPowerCapability {
                         capability: POWER_CAPABILITY_5V_1A5,
-                        flags: ProviderFlags::none().with_psu_type(PsuType::TypeC),
+                        flags: ProviderFlags {
+                            psu_type: Some(PsuType::TypeC),
+                            ..Default::default()
+                        },
                     }
                 );
                 assert!(ptr::eq(psu, port0.port));
@@ -959,7 +995,10 @@ impl Test for TestProviderToConsumerRoleSwap {
                     capability,
                     ProviderPowerCapability {
                         capability: POWER_CAPABILITY_5V_1A5,
-                        flags: ProviderFlags::none().with_psu_type(PsuType::TypeC),
+                        flags: ProviderFlags {
+                            psu_type: Some(PsuType::TypeC),
+                            ..Default::default()
+                        },
                     }
                 );
                 assert!(ptr::eq(psu, port0.port));
@@ -1033,7 +1072,10 @@ impl Test for TestProviderToConsumerRoleSwap {
                     capability,
                     ConsumerPowerCapability {
                         capability: POWER_CAPABILITY_5V_1A5,
-                        flags: ConsumerFlags::none().with_psu_type(PsuType::TypeC),
+                        flags: ConsumerFlags {
+                            psu_type: Some(PsuType::TypeC),
+                            ..Default::default()
+                        },
                     }
                 );
                 assert!(ptr::eq(psu, port0.port));

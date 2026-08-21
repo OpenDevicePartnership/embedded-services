@@ -116,7 +116,7 @@ impl<'device, Reg: Registration<'device>, Customization: customization::Customiz
         let mut unconstrained_new = UnconstrainedState::default();
         for psu in self.registration.psus() {
             if let Some(capability) = psu.lock().await.state().consumer_capability
-                && capability.flags.unconstrained_power()
+                && capability.flags.unconstrained_power
             {
                 unconstrained_new.available += 1;
             }
@@ -127,7 +127,7 @@ impl<'device, Reg: Registration<'device>, Customization: customization::Customiz
             .state
             .current_consumer_state
             .as_ref()
-            .is_some_and(|current| current.consumer_power_capability.flags.unconstrained_power());
+            .is_some_and(|current| current.consumer_power_capability.flags.unconstrained_power);
 
         if unconstrained_new != self.state.unconstrained {
             info!("Unconstrained state changed: {:?}", unconstrained_new);
@@ -220,9 +220,15 @@ impl<'device, Reg: Registration<'device>, Customization: customization::Customiz
             // the same device, it is renegotiating a new power capability. Otherwise, the service
             // is switching to a different PSU.
             let flags = if ptr::eq(current_consumer.psu, new_consumer.psu) {
-                ConsumerDisconnect::none().with_renegotiation(true)
+                ConsumerDisconnect {
+                    renegotiation: true,
+                    ..Default::default()
+                }
             } else {
-                ConsumerDisconnect::none().with_switching(true)
+                ConsumerDisconnect {
+                    switching: true,
+                    ..Default::default()
+                }
             };
             self.notify_consumer_disconnected(current_consumer.psu, flags).await;
 

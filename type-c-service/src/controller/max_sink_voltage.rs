@@ -68,7 +68,10 @@ impl<
 
             if let Err(e) = self
                 .power_policy_notifier
-                .notify_disconnected(ConsumerDisconnect::none().with_renegotiation(true))
+                .notify_disconnected(ConsumerDisconnect {
+                    renegotiation: true,
+                    ..Default::default()
+                })
                 .await
             {
                 error!("({}): Failed to notify power policy of disconnect: {:#?}", self.name, e);

@@ -44,8 +44,8 @@ impl<
         let unconstrained = self.is_unconstrained_sink(new_status);
         let available_sink_contract = new_status.available_sink_contract.map(|c| {
             let mut c: ConsumerPowerCapability = c.into();
-            c.flags.set_unconstrained_power(unconstrained);
-            c.flags.set_psu_type(PsuType::TypeC);
+            c.flags.unconstrained_power = unconstrained;
+            c.flags.psu_type = Some(PsuType::TypeC);
             c
         });
 
@@ -72,7 +72,7 @@ impl<
         info!("Process New provider contract");
         let capability = new_status.available_source_contract.map(|caps| {
             let mut caps = ProviderPowerCapability::from(caps);
-            caps.flags.set_psu_type(PsuType::TypeC);
+            caps.flags.psu_type = Some(PsuType::TypeC);
             caps
         });
         if let Err(e) = self.psu_state.update_requested_provider_power_capability(capability) {
@@ -129,7 +129,7 @@ impl<
         }
         if let Err(e) = self
             .power_policy_notifier
-            .notify_disconnected(ConsumerDisconnect::none())
+            .notify_disconnected(ConsumerDisconnect::default())
             .await
         {
             error!(

@@ -46,7 +46,7 @@ impl Test for TestUnconstrained {
                 device0,
                 ConsumerPowerCapability {
                     capability: LOW_POWER,
-                    flags: ConsumerFlags::none(),
+                    flags: ConsumerFlags::default(),
                 },
             )
             .await;
@@ -56,7 +56,7 @@ impl Test for TestUnconstrained {
                 device.fn_calls.pop_front().unwrap(),
                 FnCall::ConnectConsumer(ConsumerPowerCapability {
                     capability: LOW_POWER,
-                    flags: ConsumerFlags::none(),
+                    flags: ConsumerFlags::default(),
                 })
             );
             assert!(device.fn_calls.is_empty());
@@ -74,7 +74,10 @@ impl Test for TestUnconstrained {
                 .await
                 .simulate_consumer_connection(ConsumerPowerCapability {
                     capability: HIGH_POWER,
-                    flags: ConsumerFlags::none().with_unconstrained_power(),
+                    flags: ConsumerFlags {
+                        unconstrained_power: true,
+                        ..Default::default()
+                    },
                 })
                 .await;
 
@@ -86,7 +89,10 @@ impl Test for TestUnconstrained {
                 device1,
                 ConsumerPowerCapability {
                     capability: HIGH_POWER,
-                    flags: ConsumerFlags::none().with_unconstrained_power(),
+                    flags: ConsumerFlags {
+                        unconstrained_power: true,
+                        ..Default::default()
+                    },
                 },
             )
             .await;
@@ -111,7 +117,10 @@ impl Test for TestUnconstrained {
                     device1.fn_calls.pop_front().unwrap(),
                     FnCall::ConnectConsumer(ConsumerPowerCapability {
                         capability: HIGH_POWER,
-                        flags: ConsumerFlags::none().with_unconstrained_power(),
+                        flags: ConsumerFlags {
+                            unconstrained_power: true,
+                            ..Default::default()
+                        },
                     })
                 );
                 assert!(device1.fn_calls.is_empty());
@@ -131,7 +140,7 @@ impl Test for TestUnconstrained {
                 device0,
                 ConsumerPowerCapability {
                     capability: LOW_POWER,
-                    flags: ConsumerFlags::none(),
+                    flags: ConsumerFlags::default(),
                 },
             )
             .await;
@@ -153,7 +162,7 @@ impl Test for TestUnconstrained {
                 device0.fn_calls.pop_front().unwrap(),
                 FnCall::ConnectConsumer(ConsumerPowerCapability {
                     capability: LOW_POWER,
-                    flags: ConsumerFlags::none(),
+                    flags: ConsumerFlags::default(),
                 })
             );
             assert!(device0.fn_calls.is_empty());

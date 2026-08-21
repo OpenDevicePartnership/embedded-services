@@ -308,7 +308,10 @@ async fn run(spawner: Spawner) {
         dev0.simulate_attach().await;
         dev0.simulate_update_consumer_power_capability(Some(ConsumerPowerCapability {
             capability: LOW_POWER,
-            flags: ConsumerFlags::none().with_unconstrained_power(),
+            flags: ConsumerFlags {
+                unconstrained_power: true,
+                ..Default::default()
+            },
         }))
         .await;
     }
@@ -322,7 +325,10 @@ async fn run(spawner: Spawner) {
             charger::InternalState::Powered(charger::PoweredSubstate::PsuAttached),
             Some(ConsumerPowerCapability {
                 capability: LOW_POWER,
-                flags: ConsumerFlags::none().with_unconstrained_power(),
+                flags: ConsumerFlags {
+                    unconstrained_power: true,
+                    ..Default::default()
+                },
             }),
         );
     }

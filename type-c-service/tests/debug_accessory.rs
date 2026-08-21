@@ -126,7 +126,10 @@ impl Test for TestDebugAccessorySource {
                     capability,
                     ProviderPowerCapability {
                         capability: POWER_CAPABILITY_USB_DEFAULT_USB2,
-                        flags: ProviderFlags::none().with_psu_type(PsuType::TypeC),
+                        flags: ProviderFlags {
+                            psu_type: Some(PsuType::TypeC),
+                            ..Default::default()
+                        },
                     }
                 );
                 assert!(ptr::eq(psu, port0.port));

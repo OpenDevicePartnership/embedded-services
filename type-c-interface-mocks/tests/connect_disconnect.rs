@@ -59,7 +59,10 @@ async fn test_plug_sink_broadcasts_events() {
     // But the consumer capability should have been recorded
     let expected_capability = ConsumerPowerCapability {
         capability: TEST_CAPABILITY,
-        flags: ConsumerFlags::none().with_psu_type(PsuType::TypeC),
+        flags: ConsumerFlags {
+            psu_type: Some(PsuType::TypeC),
+            ..Default::default()
+        },
     };
     assert_eq!(mock.state().consumer_capability, Some(expected_capability));
     assert_eq!(mock.state().psu_state, PsuState::Idle);
@@ -94,7 +97,10 @@ async fn test_plug_source_broadcasts_events() {
     // But the requested provider capability should have been recorded
     let expected_capability = ProviderPowerCapability {
         capability: TEST_CAPABILITY,
-        flags: ProviderFlags::none().with_psu_type(PsuType::TypeC),
+        flags: ProviderFlags {
+            psu_type: Some(PsuType::TypeC),
+            ..Default::default()
+        },
     };
     assert_eq!(mock.state().requested_provider_capability, Some(expected_capability));
     assert_eq!(mock.state().psu_state, PsuState::Idle);

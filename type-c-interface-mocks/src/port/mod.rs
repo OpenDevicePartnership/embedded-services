@@ -125,7 +125,10 @@ where
                 self.psu_state
                     .update_consumer_power_capability(Some(ConsumerPowerCapability {
                         capability,
-                        flags: ConsumerFlags::none().with_psu_type(PsuType::TypeC),
+                        flags: ConsumerFlags {
+                            psu_type: Some(PsuType::TypeC),
+                            ..Default::default()
+                        },
                     }))?;
             }
             PowerRole::Source => {
@@ -134,7 +137,10 @@ where
                 self.psu_state
                     .update_requested_provider_power_capability(Some(ProviderPowerCapability {
                         capability,
-                        flags: ProviderFlags::none().with_psu_type(PsuType::TypeC),
+                        flags: ProviderFlags {
+                            psu_type: Some(PsuType::TypeC),
+                            ..Default::default()
+                        },
                     }))?;
             }
         }

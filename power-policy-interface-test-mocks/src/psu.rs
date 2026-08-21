@@ -76,7 +76,7 @@ impl<Notifier: psu::notification::Notifier> Mock<Notifier> {
 
         let capability = Some(ProviderPowerCapability {
             capability,
-            flags: ProviderFlags::none(),
+            flags: ProviderFlags::default(),
         });
         self.state
             .update_requested_provider_power_capability(capability)
@@ -90,7 +90,7 @@ impl<Notifier: psu::notification::Notifier> Mock<Notifier> {
     pub async fn simulate_disconnect(&mut self) {
         self.state.disconnect(true).unwrap();
         self.notifier
-            .notify_disconnected(ConsumerDisconnect::none())
+            .notify_disconnected(ConsumerDisconnect::default())
             .await
             .unwrap();
     }
