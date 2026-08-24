@@ -142,7 +142,6 @@ impl Test for TestBasicConsumerFlow {
                     disconnect,
                     DisconnectFlags {
                         reason: Some(DisconnectReason::Detached),
-                        ..Default::default()
                     }
                 );
             }
@@ -216,7 +215,6 @@ impl Test for TestBasicProviderFlow {
                         capability: POWER_CAPABILITY_5V_1A5,
                         flags: ProviderFlags {
                             psu_type: Some(PsuType::TypeC),
-                            ..Default::default()
                         },
                     }
                 );
@@ -415,7 +413,6 @@ impl Test for TestConsumerFlowTimerSinkReady {
                     disconnect,
                     DisconnectFlags {
                         reason: Some(DisconnectReason::Detached),
-                        ..Default::default()
                     }
                 );
             }
@@ -522,7 +519,6 @@ impl Test for TestSinkDisableOnVoltageChange {
                     disconnect,
                     DisconnectFlags {
                         reason: Some(DisconnectReason::ManualRenegotiation),
-                        ..Default::default()
                     }
                 );
             }
@@ -739,7 +735,6 @@ impl Test for TestSetMaxSinkVoltageRecovery {
                     disconnect,
                     DisconnectFlags {
                         reason: Some(DisconnectReason::ManualRenegotiation),
-                        ..Default::default()
                     }
                 );
                 assert!(ptr::eq(psu, port));
@@ -898,7 +893,6 @@ impl Test for TestConsumerToProviderRoleSwap {
                     disconnect,
                     DisconnectFlags {
                         reason: Some(DisconnectReason::RoleSwap),
-                        ..Default::default()
                     }
                 );
             }
@@ -950,7 +944,6 @@ impl Test for TestConsumerToProviderRoleSwap {
                         capability: POWER_CAPABILITY_5V_1A5,
                         flags: ProviderFlags {
                             psu_type: Some(PsuType::TypeC),
-                            ..Default::default()
                         },
                     }
                 );
@@ -1019,7 +1012,6 @@ impl Test for TestProviderToConsumerRoleSwap {
                         capability: POWER_CAPABILITY_5V_1A5,
                         flags: ProviderFlags {
                             psu_type: Some(PsuType::TypeC),
-                            ..Default::default()
                         },
                     }
                 );
@@ -1177,7 +1169,6 @@ impl Test for TestHardResetDisconnect {
                     disconnect,
                     DisconnectFlags {
                         reason: Some(DisconnectReason::Reset),
-                        ..Default::default()
                     }
                 );
             }

@@ -92,7 +92,6 @@ impl Test for TestSingle {
                 device0,
                 DisconnectFlags {
                     reason: Some(DisconnectReason::Detached),
-                    ..Default::default()
                 },
             )
             .await;
@@ -210,7 +209,6 @@ impl Test for TestSwapHigher {
                 device1,
                 DisconnectFlags {
                     reason: Some(DisconnectReason::Detached),
-                    ..Default::default()
                 },
             )
             .await;
@@ -841,7 +839,6 @@ impl Test for TestConsumerDisconnectSwitchingReason {
             device0,
             DisconnectFlags {
                 reason: Some(DisconnectReason::Switching),
-                ..Default::default()
             },
         )
         .await;
@@ -936,7 +933,6 @@ impl Test for TestConsumerDisconnectRenegotiationReason {
             device0,
             DisconnectFlags {
                 reason: Some(DisconnectReason::AutoRenegotiation),
-                ..Default::default()
             },
         )
         .await;

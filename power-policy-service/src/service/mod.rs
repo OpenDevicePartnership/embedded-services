@@ -222,7 +222,6 @@ impl<'device, Reg: Registration<'device>, Customization: customization::Customiz
         self.post_provider_removed(device).await;
         self.update_current_consumer(DisconnectFlags {
             reason: Some(DisconnectReason::Detached),
-            ..Default::default()
         })
         .await?;
         Ok(())

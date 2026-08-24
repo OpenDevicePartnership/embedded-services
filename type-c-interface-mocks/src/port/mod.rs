@@ -139,7 +139,6 @@ where
                         capability,
                         flags: ProviderFlags {
                             psu_type: Some(PsuType::TypeC),
-                            ..Default::default()
                         },
                     }))?;
             }

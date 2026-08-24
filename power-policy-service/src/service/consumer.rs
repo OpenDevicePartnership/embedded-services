@@ -231,14 +231,8 @@ impl<'device, Reg: Registration<'device>, Customization: customization::Customiz
                 DisconnectReason::Switching
             };
 
-            self.notify_consumer_disconnected(
-                current_consumer.psu,
-                DisconnectFlags {
-                    reason: Some(reason),
-                    ..Default::default()
-                },
-            )
-            .await;
+            self.notify_consumer_disconnected(current_consumer.psu, DisconnectFlags { reason: Some(reason) })
+                .await;
 
             // Don't update the unconstrained here because this is a transitional state
         }
@@ -261,10 +255,7 @@ impl<'device, Reg: Registration<'device>, Customization: customization::Customiz
 
     /// Determines and connects the best external power
     ///
-    /// `disconnect` describes the reason for a disconnect and is applied to the
-    /// [`ServiceEvent::ConsumerDisconnected`] event when the current consumer is removed and not
-    /// replaced by another one. When switching between consumers the flags are derived from the
-    /// switch itself (see [`Self::connect_new_consumer`]).
+    /// Disconnect reason will be propagated if it's present.
     pub(super) async fn update_current_consumer(&mut self, disconnect: DisconnectFlags) -> Result<(), Error> {
         let current_consumer_name = if let Some(current_consumer) = self.state.current_consumer_state {
             current_consumer.psu.lock().await.name()

@@ -128,7 +128,6 @@ impl Test for TestDebugAccessorySource {
                         capability: POWER_CAPABILITY_USB_DEFAULT_USB2,
                         flags: ProviderFlags {
                             psu_type: Some(PsuType::TypeC),
-                            ..Default::default()
                         },
                     }
                 );

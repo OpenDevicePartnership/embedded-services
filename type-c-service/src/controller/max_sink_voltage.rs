@@ -70,7 +70,6 @@ impl<
                 .power_policy_notifier
                 .notify_disconnected(DisconnectFlags {
                     reason: Some(DisconnectReason::ManualRenegotiation),
-                    ..Default::default()
                 })
                 .await
             {

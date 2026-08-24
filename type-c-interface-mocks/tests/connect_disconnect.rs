@@ -99,7 +99,6 @@ async fn test_plug_source_broadcasts_events() {
         capability: TEST_CAPABILITY,
         flags: ProviderFlags {
             psu_type: Some(PsuType::TypeC),
-            ..Default::default()
         },
     };
     assert_eq!(mock.state().requested_provider_capability, Some(expected_capability));

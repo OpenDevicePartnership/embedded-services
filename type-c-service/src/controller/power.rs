@@ -131,7 +131,6 @@ impl<
             .power_policy_notifier
             .notify_disconnected(DisconnectFlags {
                 reason: Some(DisconnectReason::RoleSwap),
-                ..Default::default()
             })
             .await
         {
@@ -161,7 +160,6 @@ impl<
             .power_policy_notifier
             .notify_disconnected(DisconnectFlags {
                 reason: Some(DisconnectReason::Reset),
-                ..Default::default()
             })
             .await
         {
