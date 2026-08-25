@@ -145,6 +145,7 @@ impl<
 
     /// Tear down the active power contract after a PD hard reset.
     pub(super) async fn process_hard_reset(&mut self) -> Result<(), PdError> {
+        self.shared_state.lock().await.sink_ready_deadline = None;
         if !matches!(
             self.psu_state.psu_state,
             PsuState::ConnectedConsumer(_) | PsuState::ConnectedProvider(_)

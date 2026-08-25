@@ -1178,6 +1178,66 @@ impl Test for TestHardResetDisconnect {
     }
 }
 
+/// Test that a PD hard reset cancels the sink ready deadline.
+struct TestHardResetSinkReady;
+
+impl Test for TestHardResetSinkReady {
+    async fn run<'port, 'ch>(
+        &mut self,
+        _type_c_receiver: TypeCServiceReceiver<'port, 'ch>,
+        _power_policy_receiver: PowerPolicyServiceReceiver<'port, 'ch>,
+        mut port0: TestPort<'port, 'ch>,
+        _port1: TestPort<'port, 'ch>,
+        _port2: TestPort<'port, 'ch>,
+    ) {
+        let connected_status = PortStatus {
+            available_sink_contract: Some(POWER_CAPABILITY_5V_1A5),
+            connection_state: Some(ConnectionState::Attached),
+            power_role: PowerRole::Sink,
+            ..Default::default()
+        };
+        {
+            let mut mock0 = port0.mock.lock().await;
+            mock0.next_result_get_port_status.push_back(Ok(connected_status));
+        }
+
+        // Connect and trigger the sink ready deadline
+        let mut port_event = PortStatusEventBitfield::none();
+        port_event.set_plug_inserted_or_removed(true);
+        port_event.set_new_power_contract_as_consumer(true);
+        port0
+            .port
+            .lock()
+            .await
+            .process_event(Event::PortEvent(PortEvent::StatusChanged(port_event)))
+            .await
+            .unwrap();
+
+        // Trigger a hard reset
+        port0
+            .mock
+            .lock()
+            .await
+            .next_result_get_port_status
+            .push_back(Ok(connected_status));
+        let mut port_event = PortStatusEventBitfield::none();
+        port_event.set_pd_hard_reset(true);
+        port0
+            .port
+            .lock()
+            .await
+            .process_event(Event::PortEvent(PortEvent::StatusChanged(port_event)))
+            .await
+            .unwrap();
+
+        // We should timeout because the hard reset cancels the sink ready deadline.
+        assert!(matches!(
+            with_timeout(Duration::from_secs(3), port0.event_receiver.wait_event()).await,
+            Err(TimeoutError)
+        ));
+    }
+}
+
 #[tokio::test]
 async fn test_basic_consumer_flow() {
     common::run_test(
@@ -1273,6 +1333,17 @@ async fn test_hard_reset_disconnect() {
         Default::default(),
         Default::default(),
         TestHardResetDisconnect,
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn test_hard_reset_sink_ready() {
+    common::run_test(
+        DEFAULT_TEST_DURATION,
+        Default::default(),
+        Default::default(),
+        TestHardResetSinkReady,
     )
     .await;
 }
