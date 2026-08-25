@@ -1186,7 +1186,7 @@ impl Test for TestHardResetSinkReady {
         &mut self,
         _type_c_receiver: TypeCServiceReceiver<'port, 'ch>,
         _power_policy_receiver: PowerPolicyServiceReceiver<'port, 'ch>,
-        mut port0: TestPort<'port, 'ch>,
+        port0: TestPort<'port, 'ch>,
         _port1: TestPort<'port, 'ch>,
         _port2: TestPort<'port, 'ch>,
     ) {
@@ -1230,11 +1230,88 @@ impl Test for TestHardResetSinkReady {
             .await
             .unwrap();
 
-        // We should timeout because the hard reset cancels the sink ready deadline.
+        assert!(
+            port0.shared_state.lock().await.sink_ready_deadline().is_none(),
+            "Sink ready deadline not cleared after hard reset"
+        );
+    }
+}
+
+/// Test that a provider can renegotiate the same contract after a PD hard reset.
+struct TestProviderRecontractAfterHardReset;
+
+impl Test for TestProviderRecontractAfterHardReset {
+    async fn run<'port, 'ch>(
+        &mut self,
+        _type_c_receiver: TypeCServiceReceiver<'port, 'ch>,
+        power_policy_receiver: PowerPolicyServiceReceiver<'port, 'ch>,
+        port0: TestPort<'port, 'ch>,
+        _port1: TestPort<'port, 'ch>,
+        _port2: TestPort<'port, 'ch>,
+    ) {
+        let connected_status = PortStatus {
+            available_source_contract: Some(POWER_CAPABILITY_5V_1A5),
+            connection_state: Some(ConnectionState::Attached),
+            power_role: PowerRole::Source,
+            ..Default::default()
+        };
+        {
+            let mut mock0 = port0.mock.lock().await;
+            // Queue the initial connection, hard-reset status, and same-capability recontract.
+            mock0.next_result_get_port_status.push_back(Ok(connected_status));
+            mock0.next_result_get_port_status.push_back(Ok(connected_status));
+            mock0.next_result_get_port_status.push_back(Ok(connected_status));
+        }
+
+        // Establish the original provider contract.
+        let mut port_event = PortStatusEventBitfield::none();
+        port_event.set_plug_inserted_or_removed(true);
+        port_event.set_new_power_contract_as_provider(true);
+        port0
+            .port
+            .lock()
+            .await
+            .process_event(Event::PortEvent(PortEvent::StatusChanged(port_event)))
+            .await
+            .unwrap();
         assert!(matches!(
-            with_timeout(Duration::from_secs(3), port0.event_receiver.wait_event()).await,
-            Err(TimeoutError)
+            with_timeout(DEFAULT_PER_CALL_TIMEOUT, power_policy_receiver.receive()).await,
+            Ok(PowerPolicyEvent::ProviderConnected(_, _))
         ));
+
+        // Tear down the provider while the controller continues to report its capability.
+        let mut port_event = PortStatusEventBitfield::none();
+        port_event.set_pd_hard_reset(true);
+        port0
+            .port
+            .lock()
+            .await
+            .process_event(Event::PortEvent(PortEvent::StatusChanged(port_event)))
+            .await
+            .unwrap();
+        assert!(matches!(
+            with_timeout(DEFAULT_PER_CALL_TIMEOUT, power_policy_receiver.receive()).await,
+            Ok(PowerPolicyEvent::ProviderDisconnected(_))
+        ));
+
+        // Reannounce the same capability and require it to be published as a new contract.
+        let mut port_event = PortStatusEventBitfield::none();
+        port_event.set_new_power_contract_as_provider(true);
+        port0
+            .port
+            .lock()
+            .await
+            .process_event(Event::PortEvent(PortEvent::StatusChanged(port_event)))
+            .await
+            .unwrap();
+
+        assert!(
+            matches!(
+                with_timeout(DEFAULT_PER_CALL_TIMEOUT, power_policy_receiver.receive()).await,
+                Ok(PowerPolicyEvent::ProviderConnected(_, _))
+            ),
+            "same-capability provider contract was not published after hard reset"
+        );
     }
 }
 
@@ -1344,6 +1421,17 @@ async fn test_hard_reset_sink_ready() {
         Default::default(),
         Default::default(),
         TestHardResetSinkReady,
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn test_hard_reset_reconnect_provider() {
+    common::run_test(
+        DEFAULT_TEST_DURATION,
+        Default::default(),
+        Default::default(),
+        TestProviderRecontractAfterHardReset,
     )
     .await;
 }
