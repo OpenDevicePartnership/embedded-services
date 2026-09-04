@@ -612,7 +612,13 @@ impl<
                 //        but as soon as the aggregation / HID library goes in, look into leveraging it for filtering out invalid report
                 //        IDs here.
 
-                bus.listen_for_response().await?;
+                match bus.listen_for_response().await? {
+                    Request::Read(_address) => {}
+                    other => {
+                        error!("Expected read request after get report command, got {:?}", other);
+                        return Err(Error::Protocol(ProtocolError::InvalidCommand));
+                    }
+                }
 
                 hid_device
                     .process_get_report(report_type.try_into()?, report_id, async |report| {
