@@ -6,18 +6,18 @@
 
 use embassy_time::with_timeout;
 use embedded_usb_pd::type_c::ConnectionState;
-use embedded_usb_pd::ucsi::cci::GlobalCci;
-use embedded_usb_pd::ucsi::lpm::get_connector_capability::{
+use embedded_usb_pd::ucsi::v1_2::cci::GlobalCci;
+use embedded_usb_pd::ucsi::v1_2::lpm::get_connector_capability::{
     OperationModeFlags, ResponseData as UcsiConnectorCapability,
 };
-use embedded_usb_pd::ucsi::lpm::get_connector_status::{
+use embedded_usb_pd::ucsi::v1_2::lpm::get_connector_status::{
     BatteryChargingCapabilityStatus, ConnectedStatus, ConnectorStatusChange,
 };
-use embedded_usb_pd::ucsi::lpm::{self, ResponseData as LpmResponseData};
-use embedded_usb_pd::ucsi::ppm::{
+use embedded_usb_pd::ucsi::v1_2::lpm::{self, ResponseData as LpmResponseData};
+use embedded_usb_pd::ucsi::v1_2::ppm::{
     self, ack_cc_ci::Ack, get_capability::ResponseData as PpmCapabilities, set_notification_enable::NotificationEnable,
 };
-use embedded_usb_pd::ucsi::{GlobalCommand, ResponseData as UcsiResponseData};
+use embedded_usb_pd::ucsi::v1_2::{GlobalCommand, ResponseData as UcsiResponseData};
 use embedded_usb_pd::{GlobalPortId, PdError, PowerRole};
 use log::info;
 use type_c_interface::control::pd::PortStatus;

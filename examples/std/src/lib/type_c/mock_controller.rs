@@ -7,7 +7,7 @@ use embedded_usb_pd::ado::Ado;
 use embedded_usb_pd::vdm::structured::command::discover_identity::{sop, sop_prime};
 use embedded_usb_pd::{LocalPortId, PdError};
 use embedded_usb_pd::{PowerRole, type_c::Current};
-use embedded_usb_pd::{type_c::ConnectionState, ucsi::lpm};
+use embedded_usb_pd::{type_c::ConnectionState, ucsi::v1_2::lpm};
 use log::{debug, info};
 
 use power_policy_interface::capability::PowerCapability;

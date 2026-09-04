@@ -1,6 +1,6 @@
 //! UCSI LPM port trait implementation
 use embedded_services::{event::NonBlockingSender, sync::Lockable};
-use embedded_usb_pd::{PdError, ucsi::lpm};
+use embedded_usb_pd::{PdError, ucsi::v1_2::lpm};
 use type_c_interface::ucsi::Lpm as UcsiLpm;
 
 use super::*;

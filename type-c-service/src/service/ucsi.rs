@@ -1,12 +1,12 @@
 use embedded_services::sync::Lockable;
 use embedded_services::warn;
-use embedded_usb_pd::ucsi::cci::{Cci, GlobalCci};
-use embedded_usb_pd::ucsi::lpm::get_connector_status::{BatteryChargingCapabilityStatus, ConnectorStatusChange};
-use embedded_usb_pd::ucsi::ppm::set_notification_enable::NotificationEnable;
-use embedded_usb_pd::ucsi::ppm::state_machine::{
+use embedded_usb_pd::ucsi::v1_2::cci::{Cci, GlobalCci};
+use embedded_usb_pd::ucsi::v1_2::lpm::get_connector_status::{BatteryChargingCapabilityStatus, ConnectorStatusChange};
+use embedded_usb_pd::ucsi::v1_2::ppm::set_notification_enable::NotificationEnable;
+use embedded_usb_pd::ucsi::v1_2::ppm::state_machine::{
     GlobalInput as PpmInput, GlobalOutput as PpmOutput, GlobalStateMachine as StateMachine, InvalidTransition,
 };
-use embedded_usb_pd::ucsi::{GlobalCommand, ResponseData, lpm, ppm};
+use embedded_usb_pd::ucsi::v1_2::{GlobalCommand, ResponseData, lpm, ppm};
 use embedded_usb_pd::{PdError, PowerRole};
 use type_c_interface::ucsi::Lpm as _;
 
