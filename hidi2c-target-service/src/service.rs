@@ -647,7 +647,7 @@ impl<
                     1
                 };
                 let report_data = data
-                    .get(data_start_index..report_size)
+                    .get(data_start_index..data_start_index + report_size)
                     .ok_or(Error::Protocol(ProtocolError::InvalidSize))?;
 
                 let set_report = match report_type {
