@@ -612,6 +612,14 @@ impl<
                 //        but as soon as the aggregation / HID library goes in, look into leveraging it for filtering out invalid report
                 //        IDs here.
 
+                match bus.listen_for_response().await? {
+                    Request::Read(_address) => {}
+                    other => {
+                        error!("Expected read request after get report command, got {:?}", other);
+                        return Err(Error::Protocol(ProtocolError::InvalidCommand));
+                    }
+                }
+
                 hid_device
                     .process_get_report(report_type.try_into()?, report_id, async |report| {
                         // Note: per HID spec, the length field needs to include its own length (2 bytes)
@@ -639,8 +647,13 @@ impl<
                     .checked_sub(device_descriptor::HID_REPORT_HEADER_SIZE_BYTES))
                 .ok_or(Error::Protocol(ProtocolError::InvalidSize))? as usize;
 
+                let data_start_index = if hid_device.report_descriptor().report_ids_implicit() {
+                    0
+                } else {
+                    1
+                };
                 let report_data = data
-                    .get(..report_size)
+                    .get(data_start_index..data_start_index + report_size)
                     .ok_or(Error::Protocol(ProtocolError::InvalidSize))?;
 
                 let set_report = match report_type {
