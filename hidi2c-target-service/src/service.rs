@@ -641,7 +641,11 @@ impl<
                     .checked_sub(device_descriptor::HID_REPORT_HEADER_SIZE_BYTES))
                 .ok_or(Error::Protocol(ProtocolError::InvalidSize))? as usize;
 
-                let data_start_index = if hid_device.report_descriptor().report_ids_implicit() { 0 } else { 1 };
+                let data_start_index = if hid_device.report_descriptor().report_ids_implicit() {
+                    0
+                } else {
+                    1
+                };
                 let report_data = data
                     .get(data_start_index..report_size)
                     .ok_or(Error::Protocol(ProtocolError::InvalidSize))?;
