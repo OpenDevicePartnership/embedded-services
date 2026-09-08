@@ -1380,7 +1380,7 @@ dependencies = [
 [[package]]
 name = "tps6699x"
 version = "0.1.0"
-source = "git+https://github.com/OpenDevicePartnership/tps6699x?rev=cd7f91ff97326d34f8fb00bf5fbd2429575f4deb#cd7f91ff97326d34f8fb00bf5fbd2429575f4deb"
+source = "git+https://github.com/OpenDevicePartnership/tps6699x?tag=v0.1.2#cd7f91ff97326d34f8fb00bf5fbd2429575f4deb"
 dependencies = [
  "bincode",
  "bitfield 0.19.2",
