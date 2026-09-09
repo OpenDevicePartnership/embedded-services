@@ -312,9 +312,10 @@ mod tests {
         assert!(started.iter().all(|e| matches!(e, Event::Started(_))));
         assert!(completed.iter().all(|e| matches!(e, Event::Completed(_))));
         for item in input {
-            assert!(started.iter().any(|e| *e == Event::Started(item)));
-            assert!(completed.iter().any(|e| *e == Event::Completed(item)));
+            assert!(started.contains(&Event::Started(item)));
+            assert!(completed.contains(&Event::Completed(item)));
         }
+    }
 
     #[test]
     fn two_items_run_sequentially() {
