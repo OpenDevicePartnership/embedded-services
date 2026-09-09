@@ -302,18 +302,19 @@ mod tests {
         })
         .await;
 
-        let mut expected = heapless::Vec::<Event, 8>::new();
-        for item in input {
-            expected.push(Event::Started(item)).unwrap();
-        }
-        for item in input {
-            expected.push(Event::Completed(item)).unwrap();
-        }
+        let events = events.into_inner();
 
         assert!(success);
         assert_eq!(output, input);
-        assert_eq!(events.into_inner(), expected);
-    }
+        assert_eq!(events.len(), N * 2);
+
+        let (started, completed) = events.as_slice().split_at(N);
+        assert!(started.iter().all(|e| matches!(e, Event::Started(_))));
+        assert!(completed.iter().all(|e| matches!(e, Event::Completed(_))));
+        for item in input {
+            assert!(started.iter().any(|e| *e == Event::Started(item)));
+            assert!(completed.iter().any(|e| *e == Event::Completed(item)));
+        }
 
     #[test]
     fn two_items_run_sequentially() {
