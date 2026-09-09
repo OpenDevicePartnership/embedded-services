@@ -3,7 +3,7 @@
 
 use core::{future::Future, iter::zip};
 
-use embassy_futures::join::{join, join3, join4};
+use embassy_futures::join::{join3, join4};
 use embedded_cfu_protocol::protocol_definitions::*;
 use embedded_services::{
     cfu::{
@@ -197,9 +197,8 @@ impl<'a, C: Customization> Splitter<'a, C> {
 
 /// Map items in an input slice to an output slice using an async closure.
 ///
-/// This function will execute the closure concurrently in groups up to four items at a time.
-/// Four is an arbitrary but is a balance between two (easy to implement, but not very concurrent) and eight (more implementation work).
-/// This will exit early and return false if any item results in `None`.
+/// This function executes one item directly, two items sequentially, and three or four items concurrently.
+/// It returns false if any item results in `None`.
 async fn map_slice_join<'i, 'o, I, O, F: Future<Output = Option<O>>>(
     input: &'i [I],
     output: &'o mut [O],
@@ -222,8 +221,9 @@ async fn map_slice_join<'i, 'o, I, O, F: Future<Output = Option<O>>>(
                 }
             }
             (Some((i0, o0)), Some((i1, o1)), None, None) => {
-                let results = join(f(i0), f(i1)).await;
-                if let (Some(r0), Some(r1)) = results {
+                let result_0 = f(i0).await;
+                let result_1 = f(i1).await;
+                if let (Some(r0), Some(r1)) = (result_0, result_1) {
                     *o0 = r0;
                     *o1 = r1;
                 } else {
@@ -255,5 +255,137 @@ async fn map_slice_join<'i, 'o, I, O, F: Future<Output = Option<O>>>(
                 unreachable!()
             }
         }
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::panic)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use core::{cell::RefCell, future::poll_fn, task::Poll};
+
+    use super::map_slice_join;
+
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    enum Event {
+        Started(u8),
+        Completed(u8),
+    }
+
+    async fn yield_once() {
+        let mut yielded = false;
+        poll_fn(|cx| {
+            if yielded {
+                Poll::Ready(())
+            } else {
+                yielded = true;
+                cx.waker().wake_by_ref();
+                Poll::Pending
+            }
+        })
+        .await;
+    }
+
+    async fn assert_items_remain_concurrent<const N: usize>() {
+        let input = core::array::from_fn(|item| item as u8);
+        let mut output = [u8::MAX; N];
+        let events = RefCell::new(heapless::Vec::<Event, 8>::new());
+
+        let success = map_slice_join(&input, &mut output, |item| {
+            let events = &events;
+            async move {
+                events.borrow_mut().push(Event::Started(*item)).unwrap();
+                yield_once().await;
+                events.borrow_mut().push(Event::Completed(*item)).unwrap();
+                Some(*item)
+            }
+        })
+        .await;
+
+        let events = events.into_inner();
+
+        assert!(success);
+        assert_eq!(output, input);
+        assert_eq!(events.len(), N * 2);
+
+        let (started, completed) = events.as_slice().split_at(N);
+        assert!(started.iter().all(|e| matches!(e, Event::Started(_))));
+        assert!(completed.iter().all(|e| matches!(e, Event::Completed(_))));
+        for item in input {
+            assert!(started.contains(&Event::Started(item)));
+            assert!(completed.contains(&Event::Completed(item)));
+        }
+    }
+
+    #[test]
+    fn two_items_run_sequentially() {
+        embassy_futures::block_on(async {
+            let input = [0, 1];
+            let mut output = [0; 2];
+            let events = RefCell::new(heapless::Vec::<Event, 4>::new());
+
+            let success = map_slice_join(&input, &mut output, |item| {
+                let events = &events;
+                async move {
+                    events.borrow_mut().push(Event::Started(*item)).unwrap();
+                    yield_once().await;
+                    events.borrow_mut().push(Event::Completed(*item)).unwrap();
+                    Some(*item)
+                }
+            })
+            .await;
+
+            assert!(success);
+            assert_eq!(output, input);
+            assert_eq!(
+                events.into_inner().as_slice(),
+                [
+                    Event::Started(0),
+                    Event::Completed(0),
+                    Event::Started(1),
+                    Event::Completed(1),
+                ]
+            );
+        });
+    }
+
+    #[test]
+    fn second_item_runs_after_first_returns_none() {
+        embassy_futures::block_on(async {
+            let input = [0, 1];
+            let mut output = [2; 2];
+            let events = RefCell::new(heapless::Vec::<Event, 4>::new());
+
+            let success = map_slice_join(&input, &mut output, |item| {
+                let events = &events;
+                async move {
+                    events.borrow_mut().push(Event::Started(*item)).unwrap();
+                    yield_once().await;
+                    events.borrow_mut().push(Event::Completed(*item)).unwrap();
+                    (*item != 0).then_some(*item)
+                }
+            })
+            .await;
+
+            assert!(!success);
+            assert_eq!(output, [2; 2]);
+            assert_eq!(
+                events.into_inner().as_slice(),
+                [
+                    Event::Started(0),
+                    Event::Completed(0),
+                    Event::Started(1),
+                    Event::Completed(1),
+                ]
+            );
+        });
+    }
+
+    #[test]
+    fn three_and_four_items_remain_concurrent() {
+        embassy_futures::block_on(async {
+            assert_items_remain_concurrent::<3>().await;
+            assert_items_remain_concurrent::<4>().await;
+        });
     }
 }

@@ -36,3 +36,8 @@ log = [
     "embassy-sync/log",
     "embedded-cfu-protocol/log",
 ]
+
+[dev-dependencies]
+critical-section = { workspace = true, features = ["std"] }
+embassy-sync = { workspace = true, features = ["std"] }
+embassy-time = { workspace = true, features = ["std", "generic-queue-8"] }
