@@ -13,7 +13,7 @@ use power_policy_interface::{
     service::event::Event as PowerPolicyEvent,
 };
 use type_c_interface::{
-    control::pd::PortStatus,
+    control::pd::{PortStatus, SourceContract},
     port::event::{PortEventBitfield, PortStatusEventBitfield},
     service::event::{DebugAccessoryData, EventData as TypeCEventData},
     util::POWER_CAPABILITY_USB_DEFAULT_USB2,
@@ -81,7 +81,7 @@ async fn simulate_interrupt(port: &mut TestPort<'_, '_>, status: PortStatus, sta
 
 /// Port status of a debug accessory sourcing USB default current.
 const DEBUG_ACCESSORY_SOURCE_STATUS: PortStatus = PortStatus {
-    available_source_contract: Some(POWER_CAPABILITY_USB_DEFAULT_USB2),
+    available_source_contract: Some(SourceContract::from_capability(POWER_CAPABILITY_USB_DEFAULT_USB2)),
     connection_state: Some(ConnectionState::DebugAccessory),
     power_role: PowerRole::Source,
     ..PortStatus::new()

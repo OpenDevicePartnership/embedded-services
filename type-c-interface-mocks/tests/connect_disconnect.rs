@@ -49,9 +49,18 @@ async fn test_plug_sink_broadcasts_events() {
     assert!(!data.previous_status.is_connected());
     assert!(data.current_status.is_connected());
     assert_eq!(data.current_status.connection_state, Some(ConnectionState::Attached));
-    assert_eq!(data.current_status.available_sink_contract, Some(TEST_CAPABILITY));
+    assert_eq!(
+        data.current_status
+            .available_sink_contract
+            .map(|contract| contract.capability),
+        Some(TEST_CAPABILITY)
+    );
     assert_eq!(data.current_status.power_role, PowerRole::Sink);
-    assert!(data.current_status.dual_power);
+    assert!(
+        data.current_status
+            .available_sink_contract
+            .is_some_and(|contract| contract.dual_role_power())
+    );
     assert_eq!(data.current_status.plug_orientation, PlugOrientation::CC2);
     assert!(type_c_channel.try_receive().is_err());
 
@@ -90,7 +99,12 @@ async fn test_plug_source_broadcasts_events() {
     };
     assert!(data.status_event.plug_inserted_or_removed());
     assert!(data.status_event.new_power_contract_as_provider());
-    assert_eq!(data.current_status.available_source_contract, Some(TEST_CAPABILITY));
+    assert_eq!(
+        data.current_status
+            .available_source_contract
+            .map(|contract| contract.capability),
+        Some(TEST_CAPABILITY)
+    );
     assert_eq!(data.current_status.power_role, PowerRole::Source);
 
     // State should be Idle since power policy hasn't directed us to connect yet

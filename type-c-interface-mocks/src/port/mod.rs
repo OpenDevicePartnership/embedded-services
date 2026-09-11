@@ -7,14 +7,14 @@ use embedded_services::error;
 use embedded_services::event::NonBlockingSender;
 use embedded_services::named::Named;
 use embedded_usb_pd::vdm::structured::command::discover_identity::{sop, sop_prime};
-use embedded_usb_pd::{PdError, PlugOrientation, PowerRole, ado::Ado, type_c::ConnectionState};
+use embedded_usb_pd::{PdError, PlugOrientation, PowerRole, ado::Ado, pdo, type_c::ConnectionState};
 use power_policy_interface::capability::{
     ConsumerFlags, ConsumerPowerCapability, PowerCapability, ProviderFlags, ProviderPowerCapability, PsuType,
 };
 use power_policy_interface::psu::{Error as PsuError, Psu, State};
 use type_c_interface::control::{
     dp::{DpConfig, DpStatus},
-    pd::PortStatus,
+    pd::{PdSinkInfo, PdSourceInfo, PortStatus, SinkContract, SourceContract},
     svid::DiscoveredSvids,
     tbt::TbtConfig,
     usb::UsbControlConfig,
@@ -100,7 +100,6 @@ where
     ) -> Result<(), PsuError> {
         let mut status = PortStatus::new();
         status.connection_state = Some(ConnectionState::Attached);
-        status.dual_power = config.dual_power;
         status.plug_orientation = config.plug_orientation;
         status.power_role = role;
         self.psu_state.attach()?;
@@ -121,7 +120,24 @@ where
             PowerRole::Sink => {
                 status_event.set_new_power_contract_as_consumer(true);
                 status_event.set_sink_ready(true);
-                status.available_sink_contract = Some(capability);
+                let pdo = pdo::sink::Pdo::Fixed(pdo::sink::FixedData {
+                    voltage_mv: capability.voltage_mv,
+                    operational_current_ma: capability.current_ma,
+                    ..Default::default()
+                });
+                status.available_sink_contract = Some(SinkContract {
+                    capability,
+                    pd: pdo::Rdo::for_pdo(0, pdo).map(|rdo| PdSinkInfo {
+                        rx_fixed_5v_data: pdo::source::FixedData {
+                            dual_role_power: config.dual_power,
+                            voltage_mv: capability.voltage_mv,
+                            current_ma: capability.current_ma,
+                            ..Default::default()
+                        },
+                        pdo,
+                        rdo,
+                    }),
+                });
                 self.psu_state
                     .update_consumer_power_capability(Some(ConsumerPowerCapability {
                         capability,
@@ -133,7 +149,24 @@ where
             }
             PowerRole::Source => {
                 status_event.set_new_power_contract_as_provider(true);
-                status.available_source_contract = Some(capability);
+                let pdo = pdo::source::Pdo::Fixed(pdo::source::FixedData {
+                    voltage_mv: capability.voltage_mv,
+                    current_ma: capability.current_ma,
+                    ..Default::default()
+                });
+                status.available_source_contract = Some(SourceContract {
+                    capability,
+                    pd: pdo::Rdo::for_pdo(0, pdo).map(|rdo| PdSourceInfo {
+                        rx_fixed_5v_data: Some(pdo::sink::FixedData {
+                            dual_role_power: config.dual_power,
+                            voltage_mv: capability.voltage_mv,
+                            operational_current_ma: capability.current_ma,
+                            ..Default::default()
+                        }),
+                        pdo,
+                        rdo,
+                    }),
+                });
                 self.psu_state
                     .update_requested_provider_power_capability(Some(ProviderPowerCapability {
                         capability,
@@ -240,7 +273,9 @@ where
     }
 
     fn reports_unconstrained_power(&self) -> bool {
-        self.status.available_sink_contract.is_some() && self.status.unconstrained_power
+        self.status
+            .available_sink_contract
+            .is_some_and(|contract| contract.unconstrained_power())
     }
 
     async fn get_other_vdm(&mut self) -> Result<OtherVdm, PdError> {

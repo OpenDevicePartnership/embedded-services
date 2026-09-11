@@ -31,7 +31,7 @@ pub trait Pd: Named {
     /// Returns whether this port reports unconstrained power to the system.
     ///
     /// This is the port's own determination and can differ from
-    /// [`PortStatus::unconstrained_power`], which is what the partner reports in its PDO.
+    /// [`PortStatus`], which is what the partner reports in its PDO.
     fn reports_unconstrained_power(&self) -> bool;
 
     /// Get the Rx Other VDM data for this port

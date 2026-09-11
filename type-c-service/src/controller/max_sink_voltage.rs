@@ -43,8 +43,12 @@ impl<
             {
                 let mut shared_state = self.shared_state.lock().await;
                 if shared_state.sink_ready_deadline.is_none() {
+                    let epr_capable = self
+                        .status
+                        .available_sink_contract
+                        .is_some_and(|contract| contract.epr_capable());
                     shared_state.sink_ready_deadline =
-                        Some(Instant::now() + Self::check_sink_ready_timeout_duration(self.status.epr));
+                        Some(Instant::now() + Self::check_sink_ready_timeout_duration(epr_capable));
                 }
 
                 if self

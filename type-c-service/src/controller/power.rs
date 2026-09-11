@@ -32,8 +32,8 @@ impl<
         };
 
         match self.config.unconstrained_sink {
-            UnconstrainedSink::Auto => status.unconstrained_power,
-            UnconstrainedSink::PowerThresholdMilliwatts(threshold) => contract.max_power_mw() >= threshold,
+            UnconstrainedSink::Auto => contract.unconstrained_power(),
+            UnconstrainedSink::PowerThresholdMilliwatts(threshold) => contract.capability.max_power_mw() >= threshold,
             UnconstrainedSink::Never => false,
         }
     }
@@ -42,8 +42,8 @@ impl<
     pub(super) async fn process_new_consumer_contract(&mut self, new_status: &PortStatus) -> Result<(), PdError> {
         info!("Process new consumer contract");
         let unconstrained = self.is_unconstrained_sink(new_status);
-        let available_sink_contract = new_status.available_sink_contract.map(|c| {
-            let mut c: ConsumerPowerCapability = c.into();
+        let available_sink_contract = new_status.available_sink_contract.map(|contract| {
+            let mut c: ConsumerPowerCapability = contract.capability.into();
             c.flags.unconstrained_power = unconstrained;
             c.flags.psu_type = Some(PsuType::TypeC);
             c
@@ -70,8 +70,8 @@ impl<
     /// Handle a new contract as provider
     pub(super) async fn process_new_provider_contract(&mut self, new_status: &PortStatus) -> Result<(), PdError> {
         info!("Process New provider contract");
-        let capability = new_status.available_source_contract.map(|caps| {
-            let mut caps = ProviderPowerCapability::from(caps);
+        let capability = new_status.available_source_contract.map(|contract| {
+            let mut caps = ProviderPowerCapability::from(contract.capability);
             caps.flags.psu_type = Some(PsuType::TypeC);
             caps
         });
@@ -178,9 +178,9 @@ impl<
     }
 
     /// Returns the timeout duration for the sink ready check.
-    pub(super) fn check_sink_ready_timeout_duration(is_epr: bool) -> Duration {
+    pub(super) fn check_sink_ready_timeout_duration(epr_capable: bool) -> Duration {
         Duration::from_millis(
-            (if is_epr {
+            (if epr_capable {
                 T_PS_TRANSITION_EPR_MS
             } else {
                 T_PS_TRANSITION_SPR_MS
@@ -215,9 +215,13 @@ impl<
         if new_contract && !sink_ready && contract_changed {
             // Start the timeout
             // Double the spec maximum transition time to provide a safety margin for hardware/controller delays or out-of-spec controllers.
-            let timeout = Self::check_sink_ready_timeout_duration(new_status.epr);
+            let timeout = Self::check_sink_ready_timeout_duration(
+                new_status
+                    .available_sink_contract
+                    .is_some_and(|contract| contract.epr_capable()),
+            );
 
-            debug!("({}): Sink ready timeout started for {}ms", self.name, timeout);
+            debug!("({}): Sink ready timeout started for {:?}", self.name, timeout);
             *deadline = Some(Instant::now() + timeout);
         } else if deadline.is_some()
             && (!new_status.is_connected() || new_status.available_sink_contract.is_none() || sink_ready)
