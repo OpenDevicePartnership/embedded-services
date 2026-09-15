@@ -56,6 +56,7 @@ struct TestPdAlert;
 impl Test for TestPdAlert {
     async fn run<'port, 'ch>(
         &mut self,
+        _service: &common::TypeCServiceMutexType<'port, 'ch>,
         type_c_receiver: TypeCServiceReceiver<'port, 'ch>,
         power_policy_receiver: PowerPolicyServiceReceiver<'port, 'ch>,
         port0: TestPort<'port, 'ch>,
@@ -140,6 +141,7 @@ struct TestVdm;
 impl Test for TestVdm {
     async fn run<'port, 'ch>(
         &mut self,
+        _service: &common::TypeCServiceMutexType<'port, 'ch>,
         type_c_receiver: TypeCServiceReceiver<'port, 'ch>,
         power_policy_receiver: PowerPolicyServiceReceiver<'port, 'ch>,
         port0: TestPort<'port, 'ch>,
@@ -272,6 +274,7 @@ struct TestDpStatus;
 impl Test for TestDpStatus {
     async fn run<'port, 'ch>(
         &mut self,
+        _service: &common::TypeCServiceMutexType<'port, 'ch>,
         type_c_receiver: TypeCServiceReceiver<'port, 'ch>,
         power_policy_receiver: PowerPolicyServiceReceiver<'port, 'ch>,
         port0: TestPort<'port, 'ch>,
@@ -330,6 +333,7 @@ struct TestHardReset;
 impl Test for TestHardReset {
     async fn run<'port, 'ch>(
         &mut self,
+        _service: &common::TypeCServiceMutexType<'port, 'ch>,
         type_c_receiver: TypeCServiceReceiver<'port, 'ch>,
         power_policy_receiver: PowerPolicyServiceReceiver<'port, 'ch>,
         port0: TestPort<'port, 'ch>,

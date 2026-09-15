@@ -4,7 +4,7 @@ use crate::capability::{ConsumerFlags, PowerCapability};
 fn cap(voltage_mv: u16, current_ma: u16) -> ConsumerPowerCapability {
     ConsumerPowerCapability {
         capability: PowerCapability { voltage_mv, current_ma },
-        flags: ConsumerFlags::none(),
+        flags: ConsumerFlags::default(),
     }
 }
 

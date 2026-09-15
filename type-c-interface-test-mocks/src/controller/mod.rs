@@ -55,7 +55,8 @@ pub struct Mock {
     /// Next results to return for [`type_c_interface::controller::pd::Pd::set_usb_control`]
     pub next_result_set_usb_control: VecDeque<Result<(), PdError>>,
     /// Next results to return for [`type_c_interface::ucsi::Lpm::execute_lpm_command`]
-    pub next_result_execute_lpm_command: VecDeque<Result<Option<embedded_usb_pd::ucsi::lpm::ResponseData>, PdError>>,
+    pub next_result_execute_lpm_command:
+        VecDeque<Result<Option<embedded_usb_pd::ucsi::v1_2::lpm::ResponseData>, PdError>>,
     /// Next results to return for [`type_c_interface::controller::pd::Pd::hard_reset`]
     pub next_result_hard_reset: VecDeque<Result<(), PdError>>,
     /// Next results to return for [`type_c_interface::controller::pd::Pd::get_discovered_svids`]

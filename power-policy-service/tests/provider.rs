@@ -41,7 +41,7 @@ impl Test for TestSingle {
                 device0,
                 ProviderPowerCapability {
                     capability: LOW_POWER,
-                    flags: ProviderFlags::none(),
+                    flags: ProviderFlags::default(),
                 },
             )
             .await;
@@ -52,7 +52,7 @@ impl Test for TestSingle {
                     device.fn_calls.pop_front().unwrap(),
                     FnCall::ConnectProvider(ProviderPowerCapability {
                         capability: LOW_POWER,
-                        flags: ProviderFlags::none(),
+                        flags: ProviderFlags::default(),
                     })
                 );
                 assert!(device.fn_calls.is_empty());
@@ -96,7 +96,7 @@ impl Test for TestUpgrade {
                 device0,
                 ProviderPowerCapability {
                     capability: HIGH_POWER,
-                    flags: ProviderFlags::none(),
+                    flags: ProviderFlags::default(),
                 },
             )
             .await;
@@ -107,7 +107,7 @@ impl Test for TestUpgrade {
                     device.fn_calls.pop_front().unwrap(),
                     FnCall::ConnectProvider(ProviderPowerCapability {
                         capability: HIGH_POWER,
-                        flags: ProviderFlags::none(),
+                        flags: ProviderFlags::default(),
                     })
                 );
                 assert!(device.fn_calls.is_empty());
@@ -126,7 +126,7 @@ impl Test for TestUpgrade {
                 device1,
                 ProviderPowerCapability {
                     capability: LOW_POWER,
-                    flags: ProviderFlags::none(),
+                    flags: ProviderFlags::default(),
                 },
             )
             .await;
@@ -137,7 +137,7 @@ impl Test for TestUpgrade {
                     device.fn_calls.pop_front().unwrap(),
                     FnCall::ConnectProvider(ProviderPowerCapability {
                         capability: LOW_POWER,
-                        flags: ProviderFlags::none(),
+                        flags: ProviderFlags::default(),
                     })
                 );
                 assert!(device.fn_calls.is_empty());
@@ -161,7 +161,7 @@ impl Test for TestUpgrade {
                 device1,
                 ProviderPowerCapability {
                     capability: LOW_POWER,
-                    flags: ProviderFlags::none(),
+                    flags: ProviderFlags::default(),
                 },
             )
             .await;
@@ -172,7 +172,7 @@ impl Test for TestUpgrade {
                     device.fn_calls.pop_front().unwrap(),
                     FnCall::ConnectProvider(ProviderPowerCapability {
                         capability: LOW_POWER,
-                        flags: ProviderFlags::none(),
+                        flags: ProviderFlags::default(),
                     })
                 );
                 assert!(device.fn_calls.is_empty());
@@ -207,7 +207,7 @@ impl Test for TestUpgrade {
                 device1,
                 ProviderPowerCapability {
                     capability: HIGH_POWER,
-                    flags: ProviderFlags::none(),
+                    flags: ProviderFlags::default(),
                 },
             )
             .await;
@@ -218,7 +218,7 @@ impl Test for TestUpgrade {
                     device.fn_calls.pop_front().unwrap(),
                     FnCall::ConnectProvider(ProviderPowerCapability {
                         capability: HIGH_POWER,
-                        flags: ProviderFlags::none(),
+                        flags: ProviderFlags::default(),
                     })
                 );
                 assert!(device.fn_calls.is_empty());
@@ -255,7 +255,7 @@ impl Test for TestDisconnect {
                 device0,
                 ProviderPowerCapability {
                     capability: LOW_POWER,
-                    flags: ProviderFlags::none(),
+                    flags: ProviderFlags::default(),
                 },
             )
             .await;
@@ -266,7 +266,7 @@ impl Test for TestDisconnect {
                     device.fn_calls.pop_front().unwrap(),
                     FnCall::ConnectProvider(ProviderPowerCapability {
                         capability: LOW_POWER,
-                        flags: ProviderFlags::none(),
+                        flags: ProviderFlags::default(),
                     })
                 );
                 assert!(device.fn_calls.is_empty());

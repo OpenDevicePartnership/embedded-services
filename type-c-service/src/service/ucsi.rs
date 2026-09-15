@@ -1,12 +1,12 @@
 use embedded_services::sync::Lockable;
 use embedded_services::warn;
-use embedded_usb_pd::ucsi::cci::{Cci, GlobalCci};
-use embedded_usb_pd::ucsi::lpm::get_connector_status::{BatteryChargingCapabilityStatus, ConnectorStatusChange};
-use embedded_usb_pd::ucsi::ppm::set_notification_enable::NotificationEnable;
-use embedded_usb_pd::ucsi::ppm::state_machine::{
+use embedded_usb_pd::ucsi::v1_2::cci::{Cci, GlobalCci};
+use embedded_usb_pd::ucsi::v1_2::lpm::get_connector_status::{BatteryChargingCapabilityStatus, ConnectorStatusChange};
+use embedded_usb_pd::ucsi::v1_2::ppm::set_notification_enable::NotificationEnable;
+use embedded_usb_pd::ucsi::v1_2::ppm::state_machine::{
     GlobalInput as PpmInput, GlobalOutput as PpmOutput, GlobalStateMachine as StateMachine, InvalidTransition,
 };
-use embedded_usb_pd::ucsi::{GlobalCommand, ResponseData, lpm, ppm};
+use embedded_usb_pd::ucsi::v1_2::{GlobalCommand, ResponseData, lpm, ppm};
 use embedded_usb_pd::{PdError, PowerRole};
 use type_c_interface::ucsi::Lpm as _;
 
@@ -90,7 +90,7 @@ impl<'port, Reg: Registration<'port>> Service<'port, Reg> {
                 // when new type-C PSUs are attached
                 let power_mw = port_status
                     .available_sink_contract
-                    .map(|contract| contract.max_power_mw())
+                    .map(|contract| contract.capability.max_power_mw())
                     .unwrap_or(0);
 
                 Some(self.config.ucsi_battery_charging_config.status_of(power_mw))

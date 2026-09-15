@@ -4,7 +4,7 @@ use embedded_services::info;
 use embedded_services::sync::Lockable;
 use power_policy_interface::capability::ProviderFlags;
 use power_policy_interface::capability::ProviderPowerCapability;
-use power_policy_interface::capability::{ConsumerDisconnect, ConsumerFlags, ConsumerPowerCapability};
+use power_policy_interface::capability::{ConsumerFlags, ConsumerPowerCapability, DisconnectFlags, DisconnectReason};
 
 mod common;
 
@@ -29,7 +29,7 @@ use crate::common::assert_provider_connected;
 use crate::common::assert_provider_disconnected;
 use crate::common::{
     DEFAULT_TIMEOUT, HIGH_POWER, assert_consumer_connected, assert_consumer_disconnected,
-    assert_consumer_disconnected_with_flags, run_test,
+    assert_consumer_disconnected_with_reason, run_test,
 };
 use power_policy_interface_test_mocks::psu::FnCall;
 
@@ -63,7 +63,7 @@ impl Test for TestSingle {
                 device0,
                 ConsumerPowerCapability {
                     capability: LOW_POWER,
-                    flags: ConsumerFlags::none(),
+                    flags: ConsumerFlags::default(),
                 },
             )
             .await;
@@ -74,7 +74,7 @@ impl Test for TestSingle {
                     device.fn_calls.pop_front().unwrap(),
                     FnCall::ConnectConsumer(ConsumerPowerCapability {
                         capability: LOW_POWER,
-                        flags: ConsumerFlags::none(),
+                        flags: ConsumerFlags::default(),
                     })
                 );
                 assert!(device.fn_calls.is_empty());
@@ -87,7 +87,14 @@ impl Test for TestSingle {
         {
             device0.lock().await.simulate_detach().await;
 
-            assert_consumer_disconnected(service_receiver, device0).await;
+            assert_consumer_disconnected_with_reason(
+                service_receiver,
+                device0,
+                DisconnectFlags {
+                    reason: Some(DisconnectReason::Detached),
+                },
+            )
+            .await;
 
             // Power policy shouldn't call any functions on detach
             assert!(device0.lock().await.fn_calls.is_empty());
@@ -128,7 +135,7 @@ impl Test for TestSwapHigher {
                 device0,
                 ConsumerPowerCapability {
                     capability: LOW_POWER,
-                    flags: ConsumerFlags::none(),
+                    flags: ConsumerFlags::default(),
                 },
             )
             .await;
@@ -139,7 +146,7 @@ impl Test for TestSwapHigher {
                     device.fn_calls.pop_front().unwrap(),
                     FnCall::ConnectConsumer(ConsumerPowerCapability {
                         capability: LOW_POWER,
-                        flags: ConsumerFlags::none(),
+                        flags: ConsumerFlags::default(),
                     })
                 );
                 assert!(device.fn_calls.is_empty());
@@ -166,7 +173,7 @@ impl Test for TestSwapHigher {
                 device1,
                 ConsumerPowerCapability {
                     capability: HIGH_POWER,
-                    flags: ConsumerFlags::none(),
+                    flags: ConsumerFlags::default(),
                 },
             )
             .await;
@@ -182,7 +189,7 @@ impl Test for TestSwapHigher {
                     device1.fn_calls.pop_front().unwrap(),
                     FnCall::ConnectConsumer(ConsumerPowerCapability {
                         capability: HIGH_POWER,
-                        flags: ConsumerFlags::none(),
+                        flags: ConsumerFlags::default(),
                     })
                 );
                 assert!(device1.fn_calls.is_empty());
@@ -197,14 +204,21 @@ impl Test for TestSwapHigher {
             device1.lock().await.simulate_detach().await;
 
             // Should receive a disconnect event from device1 first
-            assert_consumer_disconnected(service_receiver, device1).await;
+            assert_consumer_disconnected_with_reason(
+                service_receiver,
+                device1,
+                DisconnectFlags {
+                    reason: Some(DisconnectReason::Detached),
+                },
+            )
+            .await;
 
             assert_consumer_connected(
                 service_receiver,
                 device0,
                 ConsumerPowerCapability {
                     capability: LOW_POWER,
-                    flags: ConsumerFlags::none(),
+                    flags: ConsumerFlags::default(),
                 },
             )
             .await;
@@ -218,7 +232,7 @@ impl Test for TestSwapHigher {
                     device0.fn_calls.pop_front().unwrap(),
                     FnCall::ConnectConsumer(ConsumerPowerCapability {
                         capability: LOW_POWER,
-                        flags: ConsumerFlags::none(),
+                        flags: ConsumerFlags::default(),
                     })
                 );
                 assert!(device0.fn_calls.is_empty());
@@ -260,7 +274,7 @@ impl Test for TestDisconnect {
                 device0,
                 ConsumerPowerCapability {
                     capability: LOW_POWER,
-                    flags: ConsumerFlags::none(),
+                    flags: ConsumerFlags::default(),
                 },
             )
             .await;
@@ -271,7 +285,7 @@ impl Test for TestDisconnect {
                     device.fn_calls.pop_front().unwrap(),
                     FnCall::ConnectConsumer(ConsumerPowerCapability {
                         capability: LOW_POWER,
-                        flags: ConsumerFlags::none(),
+                        flags: ConsumerFlags::default(),
                     })
                 );
                 assert!(device.fn_calls.is_empty());
@@ -298,7 +312,7 @@ impl Test for TestDisconnect {
                 device1,
                 ConsumerPowerCapability {
                     capability: HIGH_POWER,
-                    flags: ConsumerFlags::none(),
+                    flags: ConsumerFlags::default(),
                 },
             )
             .await;
@@ -314,7 +328,7 @@ impl Test for TestDisconnect {
                     device1.fn_calls.pop_front().unwrap(),
                     FnCall::ConnectConsumer(ConsumerPowerCapability {
                         capability: HIGH_POWER,
-                        flags: ConsumerFlags::none(),
+                        flags: ConsumerFlags::default(),
                     })
                 );
                 assert!(device1.fn_calls.is_empty());
@@ -337,7 +351,7 @@ impl Test for TestDisconnect {
                 device0,
                 ConsumerPowerCapability {
                     capability: LOW_POWER,
-                    flags: ConsumerFlags::none(),
+                    flags: ConsumerFlags::default(),
                 },
             )
             .await;
@@ -351,7 +365,7 @@ impl Test for TestDisconnect {
                     device0.fn_calls.pop_front().unwrap(),
                     FnCall::ConnectConsumer(ConsumerPowerCapability {
                         capability: LOW_POWER,
-                        flags: ConsumerFlags::none(),
+                        flags: ConsumerFlags::default(),
                     })
                 );
                 assert!(device0.fn_calls.is_empty());
@@ -393,7 +407,7 @@ impl Test for TestDisconnectOtherConsumer {
                 device0,
                 ConsumerPowerCapability {
                     capability: HIGH_POWER,
-                    flags: ConsumerFlags::none(),
+                    flags: ConsumerFlags::default(),
                 },
             )
             .await;
@@ -404,7 +418,7 @@ impl Test for TestDisconnectOtherConsumer {
                     device.fn_calls.pop_front().unwrap(),
                     FnCall::ConnectConsumer(ConsumerPowerCapability {
                         capability: HIGH_POWER,
-                        flags: ConsumerFlags::none(),
+                        flags: ConsumerFlags::default(),
                     })
                 );
                 assert!(device.fn_calls.is_empty());
@@ -477,7 +491,7 @@ impl Test for TestDisconnectOtherProvider {
                 device0,
                 ConsumerPowerCapability {
                     capability: HIGH_POWER,
-                    flags: ConsumerFlags::none(),
+                    flags: ConsumerFlags::default(),
                 },
             )
             .await;
@@ -488,7 +502,7 @@ impl Test for TestDisconnectOtherProvider {
                     device.fn_calls.pop_front().unwrap(),
                     FnCall::ConnectConsumer(ConsumerPowerCapability {
                         capability: HIGH_POWER,
-                        flags: ConsumerFlags::none(),
+                        flags: ConsumerFlags::default(),
                     })
                 );
                 assert!(device.fn_calls.is_empty());
@@ -507,7 +521,7 @@ impl Test for TestDisconnectOtherProvider {
                 device1,
                 ProviderPowerCapability {
                     capability: LOW_POWER,
-                    flags: ProviderFlags::none(),
+                    flags: ProviderFlags::default(),
                 },
             )
             .await;
@@ -518,7 +532,7 @@ impl Test for TestDisconnectOtherProvider {
                     device.fn_calls.pop_front().unwrap(),
                     FnCall::ConnectProvider(ProviderPowerCapability {
                         capability: LOW_POWER,
-                        flags: ProviderFlags::none(),
+                        flags: ProviderFlags::default(),
                     })
                 );
                 assert!(device.fn_calls.is_empty());
@@ -610,7 +624,7 @@ impl Test for TestNoSwap {
                 device0,
                 ConsumerPowerCapability {
                     capability: LOW_POWER,
-                    flags: ConsumerFlags::none(),
+                    flags: ConsumerFlags::default(),
                 },
             )
             .await;
@@ -621,7 +635,7 @@ impl Test for TestNoSwap {
                     device.fn_calls.pop_front().unwrap(),
                     FnCall::ConnectConsumer(ConsumerPowerCapability {
                         capability: LOW_POWER,
-                        flags: ConsumerFlags::none(),
+                        flags: ConsumerFlags::default(),
                     })
                 );
                 assert!(device.fn_calls.is_empty());
@@ -704,7 +718,7 @@ impl Test for TestFindBestConsumerCustomization {
                 device1,
                 ConsumerPowerCapability {
                     capability: HIGH_POWER,
-                    flags: ConsumerFlags::none(),
+                    flags: ConsumerFlags::default(),
                 },
             )
             .await;
@@ -715,7 +729,7 @@ impl Test for TestFindBestConsumerCustomization {
                     device.fn_calls.pop_front().unwrap(),
                     FnCall::ConnectConsumer(ConsumerPowerCapability {
                         capability: HIGH_POWER,
-                        flags: ConsumerFlags::none(),
+                        flags: ConsumerFlags::default(),
                     })
                 );
                 assert!(device.fn_calls.is_empty());
@@ -741,7 +755,7 @@ impl Test for TestFindBestConsumerCustomization {
                 device0,
                 ConsumerPowerCapability {
                     capability: LOW_POWER,
-                    flags: ConsumerFlags::none(),
+                    flags: ConsumerFlags::default(),
                 },
             )
             .await;
@@ -757,7 +771,7 @@ impl Test for TestFindBestConsumerCustomization {
                     device0.fn_calls.pop_front().unwrap(),
                     FnCall::ConnectConsumer(ConsumerPowerCapability {
                         capability: LOW_POWER,
-                        flags: ConsumerFlags::none(),
+                        flags: ConsumerFlags::default(),
                     })
                 );
                 assert!(device0.fn_calls.is_empty());
@@ -767,10 +781,10 @@ impl Test for TestFindBestConsumerCustomization {
 }
 
 /// Test that disconnecting the current consumer to switch to a different PSU sets the
-/// `switching` flag on the [`ServiceEvent::ConsumerDisconnected`] event.
-struct TestConsumerDisconnectSwitchingFlag;
+/// `Switching` reason on the [`ServiceEvent::ConsumerDisconnected`] event.
+struct TestConsumerDisconnectSwitchingReason;
 
-impl Test for TestConsumerDisconnectSwitchingFlag {
+impl Test for TestConsumerDisconnectSwitchingReason {
     type Customization = DefaultCustomization;
 
     async fn run<'a>(
@@ -780,7 +794,7 @@ impl Test for TestConsumerDisconnectSwitchingFlag {
         device0: &DeviceType<'a>,
         device1: &DeviceType<'a>,
     ) {
-        info!("Running test_consumer_disconnect_switching_flag");
+        info!("Running test_consumer_disconnect_switching_reason");
         // Connect device0 at low power.
         device0.lock().await.next_result_connect_consumer.push_back(Ok(()));
         device0
@@ -793,7 +807,7 @@ impl Test for TestConsumerDisconnectSwitchingFlag {
             device0,
             ConsumerPowerCapability {
                 capability: LOW_POWER,
-                flags: ConsumerFlags::none(),
+                flags: ConsumerFlags::default(),
             },
         )
         .await;
@@ -804,7 +818,7 @@ impl Test for TestConsumerDisconnectSwitchingFlag {
                 device0.fn_calls.pop_front().unwrap(),
                 FnCall::ConnectConsumer(ConsumerPowerCapability {
                     capability: LOW_POWER,
-                    flags: ConsumerFlags::none(),
+                    flags: ConsumerFlags::default(),
                 })
             );
             assert!(device0.fn_calls.is_empty());
@@ -819,11 +833,13 @@ impl Test for TestConsumerDisconnectSwitchingFlag {
             .simulate_consumer_connection(HIGH_POWER.into())
             .await;
 
-        // device0 should be disconnected with the switching flag set since we're switching to device1.
-        assert_consumer_disconnected_with_flags(
+        // device0 should be disconnected with the switching reason since we're switching to device1.
+        assert_consumer_disconnected_with_reason(
             service_receiver,
             device0,
-            ConsumerDisconnect::none().with_switching(true),
+            DisconnectFlags {
+                reason: Some(DisconnectReason::Switching),
+            },
         )
         .await;
         assert_consumer_connected(
@@ -831,7 +847,7 @@ impl Test for TestConsumerDisconnectSwitchingFlag {
             device1,
             ConsumerPowerCapability {
                 capability: HIGH_POWER,
-                flags: ConsumerFlags::none(),
+                flags: ConsumerFlags::default(),
             },
         )
         .await;
@@ -847,7 +863,7 @@ impl Test for TestConsumerDisconnectSwitchingFlag {
                 device1.fn_calls.pop_front().unwrap(),
                 FnCall::ConnectConsumer(ConsumerPowerCapability {
                     capability: HIGH_POWER,
-                    flags: ConsumerFlags::none(),
+                    flags: ConsumerFlags::default(),
                 })
             );
             assert!(device1.fn_calls.is_empty());
@@ -858,10 +874,10 @@ impl Test for TestConsumerDisconnectSwitchingFlag {
 }
 
 /// Test that disconnecting the current consumer because it renegotiated a new power capability
-/// sets the `renegotiation` flag on the [`ServiceEvent::ConsumerDisconnected`] event.
-struct TestConsumerDisconnectRenegotiationFlag;
+/// sets the `AutoRenegotiation` reason on the [`ServiceEvent::ConsumerDisconnected`] event.
+struct TestConsumerDisconnectRenegotiationReason;
 
-impl Test for TestConsumerDisconnectRenegotiationFlag {
+impl Test for TestConsumerDisconnectRenegotiationReason {
     type Customization = DefaultCustomization;
 
     async fn run<'a>(
@@ -871,7 +887,7 @@ impl Test for TestConsumerDisconnectRenegotiationFlag {
         device0: &DeviceType<'a>,
         _device1: &DeviceType<'a>,
     ) {
-        info!("Running test_consumer_disconnect_renegotiation_flag");
+        info!("Running test_consumer_disconnect_renegotiation_reason");
         // Connect device0 at low power.
         device0.lock().await.next_result_connect_consumer.push_back(Ok(()));
         device0
@@ -884,7 +900,7 @@ impl Test for TestConsumerDisconnectRenegotiationFlag {
             device0,
             ConsumerPowerCapability {
                 capability: LOW_POWER,
-                flags: ConsumerFlags::none(),
+                flags: ConsumerFlags::default(),
             },
         )
         .await;
@@ -895,7 +911,7 @@ impl Test for TestConsumerDisconnectRenegotiationFlag {
                 device0.fn_calls.pop_front().unwrap(),
                 FnCall::ConnectConsumer(ConsumerPowerCapability {
                     capability: LOW_POWER,
-                    flags: ConsumerFlags::none(),
+                    flags: ConsumerFlags::default(),
                 })
             );
             assert!(device0.fn_calls.is_empty());
@@ -903,7 +919,7 @@ impl Test for TestConsumerDisconnectRenegotiationFlag {
 
         // The same device renegotiates a new (higher) power capability. Since the best consumer is
         // still the same device but with a different capability, the service disconnects and
-        // reconnects it. The disconnect event should carry the renegotiation flag.
+        // reconnects it. The disconnect event should carry the automatic renegotiation reason.
         device0.lock().await.next_result_disconnect.push_back(Ok(()));
         device0.lock().await.next_result_connect_consumer.push_back(Ok(()));
         device0
@@ -912,10 +928,12 @@ impl Test for TestConsumerDisconnectRenegotiationFlag {
             .simulate_update_consumer_power_capability(Some(HIGH_POWER.into()))
             .await;
 
-        assert_consumer_disconnected_with_flags(
+        assert_consumer_disconnected_with_reason(
             service_receiver,
             device0,
-            ConsumerDisconnect::none().with_renegotiation(true),
+            DisconnectFlags {
+                reason: Some(DisconnectReason::AutoRenegotiation),
+            },
         )
         .await;
         assert_consumer_connected(
@@ -923,7 +941,7 @@ impl Test for TestConsumerDisconnectRenegotiationFlag {
             device0,
             ConsumerPowerCapability {
                 capability: HIGH_POWER,
-                flags: ConsumerFlags::none(),
+                flags: ConsumerFlags::default(),
             },
         )
         .await;
@@ -935,7 +953,7 @@ impl Test for TestConsumerDisconnectRenegotiationFlag {
                 device0.fn_calls.pop_front().unwrap(),
                 FnCall::ConnectConsumer(ConsumerPowerCapability {
                     capability: HIGH_POWER,
-                    flags: ConsumerFlags::none(),
+                    flags: ConsumerFlags::default(),
                 })
             );
             assert!(device0.fn_calls.is_empty());
@@ -1019,10 +1037,10 @@ async fn run_test_find_best_consumer_hook() {
 }
 
 #[tokio::test]
-async fn run_test_consumer_disconnect_switching_flag() {
+async fn run_test_consumer_disconnect_switching_reason() {
     run_test(
         DEFAULT_TIMEOUT,
-        TestConsumerDisconnectSwitchingFlag,
+        TestConsumerDisconnectSwitchingReason,
         Default::default(),
         DefaultCustomization,
     )
@@ -1030,10 +1048,10 @@ async fn run_test_consumer_disconnect_switching_flag() {
 }
 
 #[tokio::test]
-async fn run_test_consumer_disconnect_renegotiation_flag() {
+async fn run_test_consumer_disconnect_renegotiation_reason() {
     run_test(
         DEFAULT_TIMEOUT,
-        TestConsumerDisconnectRenegotiationFlag,
+        TestConsumerDisconnectRenegotiationReason,
         Default::default(),
         DefaultCustomization,
     )

@@ -16,7 +16,7 @@ use power_policy_interface::charger::{Charger, PsuState};
 use power_policy_interface::psu::notification::NotificationHandler as _;
 use power_policy_interface::service::notification::Notifier;
 use power_policy_interface::{
-    capability::{ConsumerDisconnect, ConsumerPowerCapability, ProviderPowerCapability},
+    capability::{ConsumerPowerCapability, DisconnectFlags, DisconnectReason, ProviderPowerCapability},
     charger::{Event as ChargerEvent, EventData as ChargerEventData},
     psu::{
         Error, Psu,
@@ -128,9 +128,9 @@ impl<'device, Reg: Registration<'device>, Customization: customization::Customiz
         }
     }
 
-    async fn notify_consumer_disconnected(&mut self, psu: &'device Reg::Psu, flags: ConsumerDisconnect) {
+    async fn notify_consumer_disconnected(&mut self, psu: &'device Reg::Psu, disconnect: DisconnectFlags) {
         for notifier in self.registration.notifiers() {
-            if let Err(e) = notifier.notify_consumer_disconnected(psu, flags).await {
+            if let Err(e) = notifier.notify_consumer_disconnected(psu, disconnect).await {
                 error!("Failed to notify consumer disconnected: {:#?}", e);
             }
         }
@@ -220,7 +220,10 @@ impl<'device, Reg: Registration<'device>, Customization: customization::Customiz
     async fn process_notify_detached(&mut self, device: &'device Reg::Psu) -> Result<(), Error> {
         info!("({}): Received notify detached", device.lock().await.name());
         self.post_provider_removed(device).await;
-        self.update_current_consumer(ConsumerDisconnect::none()).await?;
+        self.update_current_consumer(DisconnectFlags {
+            reason: Some(DisconnectReason::Detached),
+        })
+        .await?;
         Ok(())
     }
 
@@ -235,7 +238,7 @@ impl<'device, Reg: Registration<'device>, Customization: customization::Customiz
             capability,
         );
 
-        self.update_current_consumer(ConsumerDisconnect::none()).await
+        self.update_current_consumer(DisconnectFlags::default()).await
     }
 
     async fn process_notify_requested_provider_capability(
@@ -255,11 +258,11 @@ impl<'device, Reg: Registration<'device>, Customization: customization::Customiz
     async fn process_notify_disconnected(
         &mut self,
         device: &'device Reg::Psu,
-        flags: ConsumerDisconnect,
+        disconnect: DisconnectFlags,
     ) -> Result<(), Error> {
         info!("({}): Received notify disconnect", device.lock().await.name());
         self.post_provider_removed(device).await;
-        self.update_current_consumer(flags).await?;
+        self.update_current_consumer(disconnect).await?;
         Ok(())
     }
 }

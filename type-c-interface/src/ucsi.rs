@@ -1,5 +1,5 @@
 use embedded_services::named::Named;
-use embedded_usb_pd::{PdError, ucsi::lpm};
+use embedded_usb_pd::{PdError, ucsi::v1_2::lpm};
 
 /// UCSI LPM command execution trait
 pub trait Lpm: Named {

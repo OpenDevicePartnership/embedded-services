@@ -1,4 +1,4 @@
-use embedded_usb_pd::ucsi::{self, lpm::get_connector_status::BatteryChargingCapabilityStatus};
+use embedded_usb_pd::ucsi::{self, v1_2::lpm::get_connector_status::BatteryChargingCapabilityStatus};
 
 /// UCSI battery charging capability status configuration.
 ///
@@ -103,9 +103,9 @@ impl UcsiBatteryChargingThresholdConfig {
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Config {
     /// UCSI capabilities
-    pub ucsi_capabilities: ucsi::ppm::get_capability::ResponseData,
+    pub ucsi_capabilities: ucsi::v1_2::ppm::get_capability::ResponseData,
     /// Optional override for UCSI port capabilities
-    pub ucsi_port_capabilities: Option<ucsi::lpm::get_connector_capability::ResponseData>,
+    pub ucsi_port_capabilities: Option<ucsi::v1_2::lpm::get_connector_capability::ResponseData>,
     /// UCSI battery charging configuration
     pub ucsi_battery_charging_config: UcsiBatteryChargingThresholdConfig,
 }

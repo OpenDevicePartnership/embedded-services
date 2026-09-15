@@ -2,7 +2,7 @@
 use embassy_time::Instant;
 use embedded_services::{event::NonBlockingSender, sync::Lockable};
 use embedded_usb_pd::PdError;
-use power_policy_interface::capability::ConsumerDisconnect;
+use power_policy_interface::capability::{DisconnectFlags, DisconnectReason};
 use type_c_interface::controller::max_sink_voltage::MaxSinkVoltage;
 
 use super::*;
@@ -43,8 +43,12 @@ impl<
             {
                 let mut shared_state = self.shared_state.lock().await;
                 if shared_state.sink_ready_deadline.is_none() {
+                    let epr_capable = self
+                        .status
+                        .available_sink_contract
+                        .is_some_and(|contract| contract.epr_capable());
                     shared_state.sink_ready_deadline =
-                        Some(Instant::now() + Self::check_sink_ready_timeout_duration(self.status.epr));
+                        Some(Instant::now() + Self::check_sink_ready_timeout_duration(epr_capable));
                 }
 
                 if self
@@ -61,14 +65,16 @@ impl<
 
             // Move our local state out of the consumer state and notify the power policy so it stops
             // tracking us as the active consumer and broadcasts a ConsumerDisconnected event. The
-            // renegotiation flag marks this as a temporary disconnect for a recontract.
+            // disconnect reason marks this as a temporary disconnect for a recontract.
             if let Err(e) = self.psu_state.disconnect(true) {
                 error!("({}): Error updating PSU state on disconnect: {:?}", self.name, e);
             }
 
             if let Err(e) = self
                 .power_policy_notifier
-                .notify_disconnected(ConsumerDisconnect::none().with_renegotiation(true))
+                .notify_disconnected(DisconnectFlags {
+                    reason: Some(DisconnectReason::ManualRenegotiation),
+                })
                 .await
             {
                 error!("({}): Failed to notify power policy of disconnect: {:#?}", self.name, e);

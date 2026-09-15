@@ -162,6 +162,7 @@ pub trait Test {
     /// Run the test
     fn run<'port, 'ch>(
         &mut self,
+        service: &TypeCServiceMutexType<'port, 'ch>,
         type_c_receiver: TypeCServiceReceiver<'port, 'ch>,
         power_policy_receiver: PowerPolicyServiceReceiver<'port, 'ch>,
         port0: TestPort<'port, 'ch>,
@@ -435,6 +436,7 @@ pub async fn run_test(
             ),
             async {
                 test.run(
+                    &type_c_service,
                     type_c_service_receiver,
                     power_policy_service_receiver,
                     TestPort {

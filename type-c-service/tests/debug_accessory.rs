@@ -13,7 +13,7 @@ use power_policy_interface::{
     service::event::Event as PowerPolicyEvent,
 };
 use type_c_interface::{
-    control::pd::PortStatus,
+    control::pd::{PortStatus, SourceContract},
     port::event::{PortEventBitfield, PortStatusEventBitfield},
     service::event::{DebugAccessoryData, EventData as TypeCEventData},
     util::POWER_CAPABILITY_USB_DEFAULT_USB2,
@@ -81,7 +81,7 @@ async fn simulate_interrupt(port: &mut TestPort<'_, '_>, status: PortStatus, sta
 
 /// Port status of a debug accessory sourcing USB default current.
 const DEBUG_ACCESSORY_SOURCE_STATUS: PortStatus = PortStatus {
-    available_source_contract: Some(POWER_CAPABILITY_USB_DEFAULT_USB2),
+    available_source_contract: Some(SourceContract::from_capability(POWER_CAPABILITY_USB_DEFAULT_USB2)),
     connection_state: Some(ConnectionState::DebugAccessory),
     power_role: PowerRole::Source,
     ..PortStatus::new()
@@ -98,6 +98,7 @@ struct TestDebugAccessorySource;
 impl Test for TestDebugAccessorySource {
     async fn run<'port, 'ch>(
         &mut self,
+        _service: &common::TypeCServiceMutexType<'port, 'ch>,
         type_c_receiver: TypeCServiceReceiver<'port, 'ch>,
         power_policy_receiver: PowerPolicyServiceReceiver<'port, 'ch>,
         mut port0: TestPort<'port, 'ch>,
@@ -126,7 +127,9 @@ impl Test for TestDebugAccessorySource {
                     capability,
                     ProviderPowerCapability {
                         capability: POWER_CAPABILITY_USB_DEFAULT_USB2,
-                        flags: ProviderFlags::none().with_psu_type(PsuType::TypeC),
+                        flags: ProviderFlags {
+                            psu_type: Some(PsuType::TypeC),
+                        },
                     }
                 );
                 assert!(ptr::eq(psu, port0.port));
@@ -167,6 +170,7 @@ struct TestNonDebugAttach;
 impl Test for TestNonDebugAttach {
     async fn run<'port, 'ch>(
         &mut self,
+        _service: &common::TypeCServiceMutexType<'port, 'ch>,
         type_c_receiver: TypeCServiceReceiver<'port, 'ch>,
         power_policy_receiver: PowerPolicyServiceReceiver<'port, 'ch>,
         mut port0: TestPort<'port, 'ch>,
@@ -206,6 +210,7 @@ struct TestDebugAccessoryNoRenotify;
 impl Test for TestDebugAccessoryNoRenotify {
     async fn run<'port, 'ch>(
         &mut self,
+        _service: &common::TypeCServiceMutexType<'port, 'ch>,
         type_c_receiver: TypeCServiceReceiver<'port, 'ch>,
         power_policy_receiver: PowerPolicyServiceReceiver<'port, 'ch>,
         mut port0: TestPort<'port, 'ch>,

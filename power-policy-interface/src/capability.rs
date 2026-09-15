@@ -1,6 +1,4 @@
 //! Power capability definitions and related flags
-use bitfield::bitfield;
-use num_enum::{IntoPrimitive, TryFromPrimitive};
 
 /// Amount of power that a device can provider or consume
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -45,7 +43,7 @@ impl From<PowerCapability> for ConsumerPowerCapability {
     fn from(capability: PowerCapability) -> Self {
         Self {
             capability,
-            flags: ConsumerFlags::none(),
+            flags: ConsumerFlags::default(),
         }
     }
 }
@@ -64,7 +62,7 @@ impl From<PowerCapability> for ProviderPowerCapability {
     fn from(capability: PowerCapability) -> Self {
         Self {
             capability,
-            flags: ProviderFlags::none(),
+            flags: ProviderFlags::default(),
         }
     }
 }
@@ -80,276 +78,73 @@ pub enum PowerCapabilityFlags {
 }
 
 /// PSU type
-#[derive(Copy, Clone, Debug, PartialEq, Eq, IntoPrimitive, TryFromPrimitive)]
-#[num_enum(error_type(name = InvalidPsuType, constructor = InvalidPsuType))]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-#[repr(u8)]
 #[non_exhaustive]
 pub enum PsuType {
-    /// Unknown/Unspecified
-    Unknown,
     /// Type-C port
     TypeC,
     /// DC barrel jack
     DcJack,
 
     /// Application defined type
-    Custom0 = 12,
+    Custom0,
     /// Application defined type
-    Custom1 = 13,
+    Custom1,
     /// Application defined type
-    Custom2 = 14,
+    Custom2,
     /// Application defined type
-    Custom3 = 15,
-    // End to fit into 4 bits
+    Custom3,
 }
 
-/// Conversion error for [`PsuType`]
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+/// Consumer flags
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct InvalidPsuType(pub u8);
-
-bitfield! {
-    /// Raw consumer flags bit field
-    #[derive(Copy, Clone, PartialEq, Eq)]
-    #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-    struct ConsumerFlagsRaw(u32);
-    impl Debug;
+pub struct ConsumerFlags {
     /// Unconstrained power, indicates that we are drawing power from something like an outlet and not a limited source like a battery
-    pub bool, unconstrained_power, set_unconstrained_power: 0;
+    pub unconstrained_power: bool,
     /// PSU type
-    pub u8, psu_type, set_psu_type: 11, 8;
+    pub psu_type: Option<PsuType>,
 }
 
-/// Type safe wrapper for consumer flags
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+/// Provider flags
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct ConsumerFlags(ConsumerFlagsRaw);
-
-impl ConsumerFlags {
-    /// Create a new consumer with no flags set
-    pub const fn none() -> Self {
-        Self(ConsumerFlagsRaw(0))
-    }
-
-    /// Builder method to set the unconstrained power flag
-    pub fn with_unconstrained_power(mut self) -> Self {
-        self.0.set_unconstrained_power(true);
-        self
-    }
-
-    /// Check if the unconstrained power flag is set
-    pub fn unconstrained_power(&self) -> bool {
-        self.0.unconstrained_power()
-    }
-
-    /// Set the unconstrained power flag
-    pub fn set_unconstrained_power(&mut self, value: bool) {
-        self.0.set_unconstrained_power(value);
-    }
-
-    /// Builder method to set the PSU type
-    pub fn with_psu_type(mut self, value: PsuType) -> Self {
-        self.set_psu_type(value);
-        self
-    }
-
-    /// Return PSU type
-    pub fn psu_type(&self) -> PsuType {
-        PsuType::try_from(self.0.psu_type()).unwrap_or(PsuType::Unknown)
-    }
-
-    /// Set PSU type
-    pub fn set_psu_type(&mut self, value: PsuType) {
-        self.0.set_psu_type(value as u8);
-    }
-}
-
-bitfield! {
-    /// Raw provider flags bit field
-    #[derive(Copy, Clone, PartialEq, Eq)]
-    #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-    struct ProviderRaw(u32);
-    impl Debug;
+pub struct ProviderFlags {
     /// PSU type
-    pub u8, psu_type, set_psu_type: 11, 8;
+    pub psu_type: Option<PsuType>,
 }
 
-/// Type safe wrapper for provider flags
+/// Consumer disconnect flags
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct ProviderFlags(ProviderRaw);
+#[non_exhaustive]
+pub enum DisconnectReason {
+    /// The device has been physically detached
+    Detached,
+    /// Switching to a different PSU
+    Switching,
+    /// Renegotiation triggered by the device
+    AutoRenegotiation,
+    /// Renegotiation triggered by code
+    ManualRenegotiation,
+    /// The device has changed its role
+    RoleSwap,
+    /// The device experienced a reset
+    Reset,
+}
 
-impl ProviderFlags {
-    /// Create a new provider with no flags set
-    pub const fn none() -> Self {
-        Self(ProviderRaw(0))
-    }
-
-    /// Builder method to set the PSU type
-    pub fn with_psu_type(mut self, value: PsuType) -> Self {
-        self.set_psu_type(value);
-        self
-    }
-
-    /// Return PSU type
-    pub fn psu_type(&self) -> PsuType {
-        PsuType::try_from(self.0.psu_type()).unwrap_or(PsuType::Unknown)
-    }
-
-    /// Set PSU type
-    pub fn set_psu_type(&mut self, value: PsuType) {
-        self.0.set_psu_type(value as u8);
+impl DisconnectReason {
+    /// Check if the reason is a renegotiation
+    pub fn is_renegotiation(&self) -> bool {
+        matches!(self, Self::AutoRenegotiation | Self::ManualRenegotiation)
     }
 }
 
-bitfield! {
-    /// Flags for disconnect events
-    #[derive(Copy, Clone, PartialEq, Eq)]
-    #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-    struct ConsumerDisconnectRaw(u32);
-    impl Debug;
-    /// Renegotiation
-    ///
-    /// When set this flag indicates that the current consumer is attempting to negotiate a new power capability.
-    pub bool, renegotiation, set_renegotiation: 0;
-    /// Switching
-    ///
-    /// When set this flag indicates that the service is switching to a different PSU.
-    pub bool, switching, set_switching: 1;
-}
-
-/// Type safe wrapper for consumer disconnect flags
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+/// Disconnection flags
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct ConsumerDisconnect(ConsumerDisconnectRaw);
-
-impl ConsumerDisconnect {
-    /// Create new consumer disconnect flags with no flags set
-    pub const fn none() -> Self {
-        Self(ConsumerDisconnectRaw(0))
-    }
-
-    /// Builder method to set the renegotiation flag
-    pub fn with_renegotiation(mut self, value: bool) -> Self {
-        self.set_renegotiation(value);
-        self
-    }
-
-    /// Set the value of the renegotiation flag
-    pub fn set_renegotiation(&mut self, value: bool) {
-        self.0.set_renegotiation(value);
-    }
-
-    /// Get the value of the renegotiation flag
-    pub fn renegotiation(&self) -> bool {
-        self.0.renegotiation()
-    }
-
-    /// Builder method to set the switching flag
-    pub fn with_switching(mut self, value: bool) -> Self {
-        self.set_switching(value);
-        self
-    }
-
-    /// Set the value of the switching flag
-    pub fn set_switching(&mut self, value: bool) {
-        self.0.set_switching(value);
-    }
-
-    /// Get the value of the switching flag
-    pub fn switching(&self) -> bool {
-        self.0.switching()
-    }
-}
-
-impl Default for ConsumerDisconnect {
-    fn default() -> Self {
-        Self::none()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_psu_type_conversion() {
-        // Test valid conversions
-        assert_eq!(PsuType::try_from(u8::from(PsuType::TypeC)), Ok(PsuType::TypeC));
-        assert_eq!(PsuType::try_from(u8::from(PsuType::DcJack)), Ok(PsuType::DcJack));
-        assert_eq!(PsuType::try_from(u8::from(PsuType::Custom0)), Ok(PsuType::Custom0));
-        assert_eq!(PsuType::try_from(u8::from(PsuType::Custom1)), Ok(PsuType::Custom1));
-        assert_eq!(PsuType::try_from(u8::from(PsuType::Custom2)), Ok(PsuType::Custom2));
-        assert_eq!(PsuType::try_from(u8::from(PsuType::Custom3)), Ok(PsuType::Custom3));
-        assert_eq!(PsuType::try_from(u8::from(PsuType::Unknown)), Ok(PsuType::Unknown));
-
-        assert_eq!(PsuType::try_from(3), Err(InvalidPsuType(3)));
-        assert_eq!(PsuType::try_from(4), Err(InvalidPsuType(4)));
-        assert_eq!(PsuType::try_from(5), Err(InvalidPsuType(5)));
-        assert_eq!(PsuType::try_from(6), Err(InvalidPsuType(6)));
-        assert_eq!(PsuType::try_from(7), Err(InvalidPsuType(7)));
-        assert_eq!(PsuType::try_from(8), Err(InvalidPsuType(8)));
-        assert_eq!(PsuType::try_from(9), Err(InvalidPsuType(9)));
-        assert_eq!(PsuType::try_from(10), Err(InvalidPsuType(10)));
-        assert_eq!(PsuType::try_from(11), Err(InvalidPsuType(11)));
-
-        for i in 16..=255 {
-            assert_eq!(PsuType::try_from(i), Err(InvalidPsuType(i)));
-        }
-    }
-
-    #[test]
-    fn test_consumer_flags_unconstrained() {
-        let mut consumer = ConsumerFlags::none().with_unconstrained_power();
-        assert_eq!(consumer.0.0, 0x1);
-        consumer.set_unconstrained_power(false);
-        assert_eq!(consumer.0.0, 0x0);
-    }
-
-    #[test]
-    fn test_consumer_flags_psu_type() {
-        let mut consumer = ConsumerFlags::none().with_psu_type(PsuType::TypeC);
-        assert_eq!(consumer.0.0, 0x100);
-        consumer.set_psu_type(PsuType::Unknown);
-        assert_eq!(consumer.0.0, 0x0);
-    }
-
-    #[test]
-    fn test_provider_flags_psu_type() {
-        let mut provider = ProviderFlags::none().with_psu_type(PsuType::TypeC);
-        assert_eq!(provider.0.0, 0x100);
-        provider.set_psu_type(PsuType::Unknown);
-        assert_eq!(provider.0.0, 0x0);
-    }
-
-    #[test]
-    fn test_consumer_disconnect_renegotiation() {
-        let mut disconnect = ConsumerDisconnect::none().with_renegotiation(true);
-        assert_eq!(disconnect.0.0, 0x1);
-        assert!(disconnect.renegotiation());
-        assert!(!disconnect.switching());
-        disconnect.set_renegotiation(false);
-        assert_eq!(disconnect.0.0, 0x0);
-        assert!(!disconnect.renegotiation());
-    }
-
-    #[test]
-    fn test_consumer_disconnect_switching() {
-        let mut disconnect = ConsumerDisconnect::none().with_switching(true);
-        assert_eq!(disconnect.0.0, 0x2);
-        assert!(disconnect.switching());
-        assert!(!disconnect.renegotiation());
-        disconnect.set_switching(false);
-        assert_eq!(disconnect.0.0, 0x0);
-        assert!(!disconnect.switching());
-    }
-
-    #[test]
-    fn test_consumer_disconnect_default() {
-        let disconnect = ConsumerDisconnect::default();
-        assert_eq!(disconnect.0.0, 0x0);
-        assert!(!disconnect.renegotiation());
-        assert!(!disconnect.switching());
-    }
+pub struct DisconnectFlags {
+    /// Reason for the disconnect, if given
+    pub reason: Option<DisconnectReason>,
 }

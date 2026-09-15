@@ -6,7 +6,7 @@ use embedded_usb_pd::{
     constants::{T_PS_TRANSITION_EPR_MS, T_PS_TRANSITION_SPR_MS},
 };
 use power_policy_interface::{
-    capability::{ConsumerDisconnect, ConsumerPowerCapability, ProviderPowerCapability, PsuType},
+    capability::{ConsumerPowerCapability, DisconnectFlags, DisconnectReason, ProviderPowerCapability, PsuType},
     psu::{Error as PsuError, Psu, State},
 };
 use type_c_interface::controller::power::SystemPowerStateStatus;
@@ -32,8 +32,8 @@ impl<
         };
 
         match self.config.unconstrained_sink {
-            UnconstrainedSink::Auto => status.unconstrained_power,
-            UnconstrainedSink::PowerThresholdMilliwatts(threshold) => contract.max_power_mw() >= threshold,
+            UnconstrainedSink::Auto => contract.unconstrained_power(),
+            UnconstrainedSink::PowerThresholdMilliwatts(threshold) => contract.capability.max_power_mw() >= threshold,
             UnconstrainedSink::Never => false,
         }
     }
@@ -42,10 +42,10 @@ impl<
     pub(super) async fn process_new_consumer_contract(&mut self, new_status: &PortStatus) -> Result<(), PdError> {
         info!("Process new consumer contract");
         let unconstrained = self.is_unconstrained_sink(new_status);
-        let available_sink_contract = new_status.available_sink_contract.map(|c| {
-            let mut c: ConsumerPowerCapability = c.into();
-            c.flags.set_unconstrained_power(unconstrained);
-            c.flags.set_psu_type(PsuType::TypeC);
+        let available_sink_contract = new_status.available_sink_contract.map(|contract| {
+            let mut c: ConsumerPowerCapability = contract.capability.into();
+            c.flags.unconstrained_power = unconstrained;
+            c.flags.psu_type = Some(PsuType::TypeC);
             c
         });
 
@@ -70,9 +70,9 @@ impl<
     /// Handle a new contract as provider
     pub(super) async fn process_new_provider_contract(&mut self, new_status: &PortStatus) -> Result<(), PdError> {
         info!("Process New provider contract");
-        let capability = new_status.available_source_contract.map(|caps| {
-            let mut caps = ProviderPowerCapability::from(caps);
-            caps.flags.set_psu_type(PsuType::TypeC);
+        let capability = new_status.available_source_contract.map(|contract| {
+            let mut caps = ProviderPowerCapability::from(contract.capability);
+            caps.flags.psu_type = Some(PsuType::TypeC);
             caps
         });
         if let Err(e) = self.psu_state.update_requested_provider_power_capability(capability) {
@@ -129,7 +129,9 @@ impl<
         }
         if let Err(e) = self
             .power_policy_notifier
-            .notify_disconnected(ConsumerDisconnect::none())
+            .notify_disconnected(DisconnectFlags {
+                reason: Some(DisconnectReason::RoleSwap),
+            })
             .await
         {
             error!(
@@ -141,10 +143,44 @@ impl<
         Ok(())
     }
 
+    /// Tear down the active power contract after a PD hard reset.
+    pub(super) async fn process_hard_reset(&mut self) -> Result<(), PdError> {
+        // The PD controller will issue its own sink ready interrupt after the hard reset, so we clear the deadline here.
+        self.shared_state.lock().await.sink_ready_deadline = None;
+        self.status.available_sink_contract = None;
+        self.status.available_source_contract = None;
+
+        if !matches!(
+            self.psu_state.psu_state,
+            PsuState::ConnectedConsumer(_) | PsuState::ConnectedProvider(_)
+        ) {
+            return Ok(());
+        }
+
+        info!("({}): PD hard reset, tearing down power contract", self.name);
+        if let Err(e) = self.psu_state.disconnect(true) {
+            error!("({}): Error updating PSU state after hard reset: {:?}", self.name, e);
+        }
+        if let Err(e) = self
+            .power_policy_notifier
+            .notify_disconnected(DisconnectFlags {
+                reason: Some(DisconnectReason::Reset),
+            })
+            .await
+        {
+            error!(
+                "({}): Failed to notify power policy of hard reset disconnect: {:#?}",
+                self.name, e
+            );
+        }
+
+        Ok(())
+    }
+
     /// Returns the timeout duration for the sink ready check.
-    pub(super) fn check_sink_ready_timeout_duration(is_epr: bool) -> Duration {
+    pub(super) fn check_sink_ready_timeout_duration(epr_capable: bool) -> Duration {
         Duration::from_millis(
-            (if is_epr {
+            (if epr_capable {
                 T_PS_TRANSITION_EPR_MS
             } else {
                 T_PS_TRANSITION_SPR_MS
@@ -179,9 +215,13 @@ impl<
         if new_contract && !sink_ready && contract_changed {
             // Start the timeout
             // Double the spec maximum transition time to provide a safety margin for hardware/controller delays or out-of-spec controllers.
-            let timeout = Self::check_sink_ready_timeout_duration(new_status.epr);
+            let timeout = Self::check_sink_ready_timeout_duration(
+                new_status
+                    .available_sink_contract
+                    .is_some_and(|contract| contract.epr_capable()),
+            );
 
-            debug!("({}): Sink ready timeout started for {}ms", self.name, timeout);
+            debug!("({}): Sink ready timeout started for {:?}", self.name, timeout);
             *deadline = Some(Instant::now() + timeout);
         } else if deadline.is_some()
             && (!new_status.is_connected() || new_status.available_sink_contract.is_none() || sink_ready)
