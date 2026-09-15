@@ -18,6 +18,9 @@ pub use constrained_hid_device::ConstrainedHidDevice;
 mod service;
 pub use service::{Runner, Service, TimeoutSettings};
 
+#[cfg(test)]
+mod test_support;
+
 use embedded_services::{error, info, trace, warn};
 
 /// HID-I2C register addresses as specified in section 5.1 of the HID-I2C spec.

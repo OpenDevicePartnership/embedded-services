@@ -161,3 +161,128 @@ impl DeviceDescriptor {
         })
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use crate::test_support::{descriptor_device, hardware_version_info};
+
+    const IMPLICIT_DESCRIPTOR: &[u8] = &[
+        0x05, 0x01, // Usage Page (Generic Desktop)
+        0x09, 0x02, // Usage (Mouse)
+        0xa1, 0x01, // Collection (Application)
+        0x75, 0x08, // Report Size (8)
+        0x95, 0x01, // Report Count (1)
+        0x81, 0x02, // Input
+        0x91, 0x02, // Output
+        0xb1, 0x02, // Feature
+        0xc0, // End Collection
+    ];
+
+    const EXPLICIT_DESCRIPTOR: &[u8] = &[
+        0x05, 0x01, // Usage Page (Generic Desktop)
+        0x09, 0x02, // Usage (Mouse)
+        0xa1, 0x01, // Collection (Application)
+        0x85, 0x01, // Report ID (1)
+        0x75, 0x08, // Report Size (8)
+        0x95, 0x01, // Report Count (1)
+        0x81, 0x02, // Input
+        0x91, 0x02, // Output
+        0xb1, 0x02, // Feature
+        0xc0, // End Collection
+    ];
+
+    const TWO_BYTE_INPUT_DESCRIPTOR: &[u8] = &[
+        0x05, 0x01, // Usage Page (Generic Desktop)
+        0x09, 0x02, // Usage (Mouse)
+        0xa1, 0x01, // Collection (Application)
+        0x75, 0x08, // Report Size (8)
+        0x95, 0x02, // Report Count (2)
+        0x81, 0x02, // Input
+        0xc0, // End Collection
+    ];
+
+    const TWO_BYTE_OUTPUT_DESCRIPTOR: &[u8] = &[
+        0x05, 0x01, // Usage Page (Generic Desktop)
+        0x09, 0x02, // Usage (Mouse)
+        0xa1, 0x01, // Collection (Application)
+        0x75, 0x08, // Report Size (8)
+        0x95, 0x02, // Report Count (2)
+        0x91, 0x02, // Output
+        0xc0, // End Collection
+    ];
+
+    const TWO_BYTE_FEATURE_DESCRIPTOR: &[u8] = &[
+        0x05, 0x01, // Usage Page (Generic Desktop)
+        0x09, 0x02, // Usage (Mouse)
+        0xa1, 0x01, // Collection (Application)
+        0x75, 0x08, // Report Size (8)
+        0x95, 0x02, // Report Count (2)
+        0xb1, 0x02, // Feature
+        0xc0, // End Collection
+    ];
+
+    #[tokio::test]
+    async fn descriptor_uses_implicit_report_framing() {
+        let descriptor =
+            DeviceDescriptor::new(&descriptor_device(IMPLICIT_DESCRIPTOR), hardware_version_info()).unwrap();
+
+        assert_eq!(
+            descriptor.w_hid_desc_length,
+            core::mem::size_of::<DeviceDescriptor>() as u16
+        );
+        assert_eq!(descriptor.bcd_version, 0x0100);
+        assert_eq!(descriptor.w_report_desc_length, IMPLICIT_DESCRIPTOR.len() as u16);
+        assert_eq!(descriptor.w_max_input_length, 3);
+        assert_eq!(descriptor.w_max_output_length, 3);
+        assert_eq!(descriptor.w_vendor_id, 0x1234);
+        assert_eq!(descriptor.w_product_id, 0x5678);
+        assert_eq!(descriptor.w_version_id, 0x0100);
+    }
+
+    #[tokio::test]
+    async fn descriptor_accounts_for_explicit_report_id() {
+        let descriptor =
+            DeviceDescriptor::new(&descriptor_device(EXPLICIT_DESCRIPTOR), hardware_version_info()).unwrap();
+
+        assert_eq!(descriptor.w_max_input_length, 4);
+        assert_eq!(descriptor.w_max_output_length, 4);
+    }
+
+    #[tokio::test]
+    async fn descriptor_rejects_oversized_input_report() {
+        let result = DeviceDescriptor::new(&descriptor_device(TWO_BYTE_INPUT_DESCRIPTOR), hardware_version_info());
+
+        assert_eq!(
+            result,
+            Err(DeviceDescriptorError::InputReportTooLarge { actual: 2, max: 1 })
+        );
+    }
+
+    #[tokio::test]
+    async fn descriptor_rejects_oversized_output_report() {
+        let result = DeviceDescriptor::new(&descriptor_device(TWO_BYTE_OUTPUT_DESCRIPTOR), hardware_version_info());
+
+        assert_eq!(
+            result,
+            Err(DeviceDescriptorError::OutputReportTooLarge { actual: 2, max: 1 })
+        );
+    }
+
+    #[tokio::test]
+    async fn descriptor_rejects_oversized_feature_report() {
+        let result = DeviceDescriptor::new(&descriptor_device(TWO_BYTE_FEATURE_DESCRIPTOR), hardware_version_info());
+
+        assert_eq!(
+            result,
+            Err(DeviceDescriptorError::FeatureReportTooLarge { actual: 2, max: 1 })
+        );
+    }
+
+    #[tokio::test]
+    async fn vendor_id_rejects_zero() {
+        assert!(VendorId::new(0).is_none());
+        assert_eq!(VendorId::new(1).unwrap().value(), 1);
+    }
+}
