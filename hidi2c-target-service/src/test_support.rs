@@ -50,11 +50,13 @@ pub struct PendingInputReport {
 /// A HID device mock that records the most recent command it received so tests can assert on it,
 /// and which can be told to fail any of its fallible operations.
 ///
-/// Generic only over the three report-size parameters that tests actually vary: the descriptor
-/// tests need 1-byte maxima to reach the oversize-rejection paths, the wire-format tests need
-/// room for multi-byte reports. `MAX_REPORT_COUNT` and `MAX_DESCRIPTOR_LEN` are not consulted by
-/// anything under test, so they are fixed rather than being two more knobs to thread through.
-pub struct MockHidDevice<In, Out, Feat>
+/// Generic only over the parameters that tests actually vary: the three report-size maxima
+/// (the descriptor tests need 1-byte maxima to reach the oversize-rejection paths, the
+/// wire-format tests need room for multi-byte reports) and the declared descriptor-length
+/// bound, which one test drives below the real descriptor length to check that the device is
+/// held to its own contract. `MAX_REPORT_COUNT` is consulted by nothing under test, so it is
+/// fixed rather than being another knob to thread through.
+pub struct MockHidDevice<In, Out, Feat, const DESC_LEN: usize = 64>
 where
     In: ArrayLength,
     Out: ArrayLength,
@@ -83,7 +85,7 @@ where
     _phantom: PhantomData<(In, Out, Feat)>,
 }
 
-impl<In, Out, Feat> MockHidDevice<In, Out, Feat>
+impl<In, Out, Feat, const DESC_LEN: usize> MockHidDevice<In, Out, Feat, DESC_LEN>
 where
     In: ArrayLength,
     Out: ArrayLength,
@@ -123,7 +125,7 @@ where
     }
 }
 
-impl<In, Out, Feat> HidDevice for MockHidDevice<In, Out, Feat>
+impl<In, Out, Feat, const DESC_LEN: usize> HidDevice for MockHidDevice<In, Out, Feat, DESC_LEN>
 where
     In: ArrayLength,
     Out: ArrayLength,
@@ -134,7 +136,7 @@ where
     type FeatureReportMaxSize = Feat;
 
     const MAX_REPORT_COUNT: u8 = 8;
-    const MAX_DESCRIPTOR_LEN: usize = 64;
+    const MAX_DESCRIPTOR_LEN: usize = DESC_LEN;
 
     fn report_descriptor(&self) -> &HidReportDescriptor<'_> {
         &self.descriptor
@@ -213,6 +215,15 @@ pub type RecordingHidDevice = MockHidDevice<typenum::U8, typenum::U8, typenum::U
 
 /// Descriptor-sizing device: single-byte report maxima to exercise the oversize-rejection paths.
 pub type DescriptorHidDevice = MockHidDevice<typenum::U1, typenum::U1, typenum::U1>;
+
+/// A device that under-declares `MAX_DESCRIPTOR_LEN` relative to the descriptor it actually
+/// returns, violating the contract in [`HidDevice::MAX_DESCRIPTOR_LEN`].
+pub type UnderDeclaredDescriptorDevice = MockHidDevice<typenum::U8, typenum::U8, typenum::U8, 4>;
+
+/// Constructs an [`UnderDeclaredDescriptorDevice`] backed by the 19-byte [`MOUSE_DESCRIPTOR`].
+pub fn under_declared_descriptor_device() -> UnderDeclaredDescriptorDevice {
+    MockHidDevice::new(MOUSE_DESCRIPTOR)
+}
 
 /// Constructs a [`RecordingHidDevice`] backed by [`MOUSE_DESCRIPTOR`].
 pub fn recording_device() -> RecordingHidDevice {

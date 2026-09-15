@@ -330,6 +330,37 @@ mod tests {
     const DATA_REG_LOW: u8 = HidI2cRegister::Data as u8;
 
     // -----------------------------------------------------------------------------------
+    // Wire-value to service-value conversions
+    // -----------------------------------------------------------------------------------
+
+    /// Section 7.2.8 defines ON as 0x00 and SLEEP as 0x01; both must reach the device unchanged.
+    #[test]
+    fn power_states_map_onto_the_device_power_states() {
+        assert!(matches!(
+            hid::HidDevicePowerState::from(I2cPowerState::On),
+            hid::HidDevicePowerState::On
+        ));
+        assert!(matches!(
+            hid::HidDevicePowerState::from(I2cPowerState::Sleep),
+            hid::HidDevicePowerState::Sleep
+        ));
+    }
+
+    /// Both GET_REPORT types must survive the hand-off to the device unchanged; getting this
+    /// wrong would silently serve a feature report where an input report was asked for.
+    #[test]
+    fn get_report_types_map_onto_the_device_report_types() {
+        assert!(matches!(
+            GetHidReportType::from(GetReportType::Input),
+            GetHidReportType::Input
+        ));
+        assert!(matches!(
+            GetHidReportType::from(GetReportType::Feature),
+            GetHidReportType::Feature
+        ));
+    }
+
+    // -----------------------------------------------------------------------------------
     // Framing arithmetic
     // -----------------------------------------------------------------------------------
 
@@ -618,6 +649,24 @@ mod tests {
 
             for framing in BOTH_FRAMINGS {
                 let _ = Command::parse(&frame, framing);
+            }
+        }
+    }
+
+    /// Section 7.2.2.4: a report-ID nibble of `0b1111` is a sentinel promising the real report
+    /// ID in a following byte. A frame that ends instead is malformed, not a panic.
+    #[test]
+    fn extended_report_id_sentinel_without_its_byte_is_rejected() {
+        for opcode in [Opcode::GetReport, Opcode::SetReport] {
+            // 0x3f: Feature report type, report-ID nibble 0xF - but nothing follows.
+            let frame = [0x3f, opcode as u8];
+
+            for framing in BOTH_FRAMINGS {
+                assert_eq!(
+                    Command::parse(&frame, framing).err(),
+                    Some(ProtocolError::InvalidSize),
+                    "{opcode:?}, {framing:?}"
+                );
             }
         }
     }
