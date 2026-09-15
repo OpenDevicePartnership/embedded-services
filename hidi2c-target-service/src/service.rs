@@ -1,99 +1,12 @@
 use crate::*;
 
+use crate::wire::{Command, ReportFraming, ReportHeader, SetReportType};
 use core::marker::PhantomData;
 use embassy_time::{Duration, with_timeout};
 use embedded_mcu_hal::i2c::target::asynch::I2c as I2cTargetAsync;
 use embedded_mcu_hal::i2c::target::{ReadStatus, Request, WriteStatus};
-use embedded_services::relay::hid;
-use embedded_services::relay::hid::{GetHidReport, GetHidReportType, HidError, HidReport, SetHidReport};
+use embedded_services::relay::hid::{HidError, SetHidReport};
 use zerocopy::IntoBytes;
-
-/// HID-I2C Command Opcode as specified in section 7.1.1 of the HID-I2C spec
-#[repr(u8)]
-#[derive(num_enum::TryFromPrimitive, num_enum::IntoPrimitive, Debug, Clone, Copy)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-enum Opcode {
-    // Reserved: 0x00
-    Reset = 0x01,
-    GetReport = 0x02,
-    SetReport = 0x03,
-
-    // The following commands are in the i2c spec but are listed as optional and
-    // "not sent by modern hosts", and therefore we do not implement them:
-    //
-    // GetIdle = 0x04,
-    // SetIdle = 0x05,
-    // GetProtocol = 0x06,
-    // SetProtocol = 0x07,
-    SetPower = 0x08,
-    // Reserved: 0x09 - 0x0D
-    // VendorReserved = 0x0E,
-    // Reserved: 0x0F
-}
-
-/// I2C wire format representation for HID power states.
-#[repr(u8)]
-#[derive(num_enum::TryFromPrimitive, num_enum::IntoPrimitive, Debug, Clone, Copy)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-enum I2cPowerState {
-    On = 0x00,
-    Sleep = 0x01,
-}
-
-impl From<I2cPowerState> for hid::HidDevicePowerState {
-    fn from(value: I2cPowerState) -> Self {
-        match value {
-            I2cPowerState::On => hid::HidDevicePowerState::On,
-            I2cPowerState::Sleep => hid::HidDevicePowerState::Sleep,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-enum HidI2cReportType {
-    Input,
-    Output,
-    Feature,
-}
-
-impl TryFrom<HidI2cReportType> for GetHidReportType {
-    type Error = ProtocolError;
-
-    fn try_from(value: HidI2cReportType) -> Result<Self, Self::Error> {
-        match value {
-            HidI2cReportType::Input => Ok(GetHidReportType::Input),
-            HidI2cReportType::Feature => Ok(GetHidReportType::Feature),
-            HidI2cReportType::Output => Err(ProtocolError::InvalidReportType),
-        }
-    }
-}
-
-struct HidI2cReportCommandHeader {
-    /// The report type that this command is targeting
-    report_type: HidI2cReportType,
-
-    /// The report ID that this command is targeting, or None if another byte must be read to get the full report ID (happens if report ID is >= 0xF)
-    report_id: Option<embedded_services::relay::hid::ReportId>,
-}
-
-impl HidI2cReportCommandHeader {
-    fn try_from_command_byte(command_byte: u8) -> Result<Self, ProtocolError> {
-        const HID_I2C_REPORT_TYPE_OFFSET: u8 = 4;
-        let report_type = match command_byte >> HID_I2C_REPORT_TYPE_OFFSET {
-            0x01 => HidI2cReportType::Input,
-            0x02 => HidI2cReportType::Output,
-            0x03 => HidI2cReportType::Feature,
-            _ => return Err(ProtocolError::InvalidReportType),
-        };
-        let report_id = if command_byte & 0x0F == 0x0F {
-            None
-        } else {
-            Some(embedded_services::relay::hid::ReportId(command_byte & 0x0F))
-        };
-        Ok(Self { report_type, report_id })
-    }
-}
 
 /// Resources used by the service
 struct InnerResources {
@@ -424,31 +337,10 @@ impl<
             },
             HidI2cRegister::Input => self.process_input_report_read().await,
             HidI2cRegister::Output => {
-                let (&report_length_bytes, data) = data
-                    .split_first_chunk::<{ core::mem::size_of::<u16>() }>()
-                    .ok_or(Error::Protocol(ProtocolError::InvalidSize))?;
-
-                // NOTE - if we're using implicit report IDs, we present that to HidDevice implementations as report ID 0.
-                let (&report_id, data) = if self.hid_device.report_descriptor().report_ids_implicit() {
-                    (&0, data)
-                } else {
-                    data.split_first().ok_or(Error::Protocol(ProtocolError::InvalidSize))?
-                };
-
-                let header_size_bytes = 2 + if self.hid_device.report_descriptor().report_ids_implicit() {
-                    0
-                } else {
-                    1
-                };
-
-                let length = (u16::from_le_bytes(report_length_bytes) as usize)
-                    .checked_sub(header_size_bytes)
-                    .ok_or(Error::Protocol(ProtocolError::InvalidSize))?; // Note: per HID spec, the length field needs to include its own length (2 bytes) and the report ID (1 byte)
-
-                let output_report = embedded_services::relay::hid::SetHidReport::Output(HidReport::new(
-                    embedded_services::relay::hid::ReportId(report_id),
-                    data.get(..length).ok_or(Error::Protocol(ProtocolError::InvalidSize))?,
-                ));
+                // The Output register carries a report in the same framing as SET_REPORT
+                // (spec sections 6.2.2 and 7.2.3.1), so the same parser handles both.
+                let framing = ReportFraming::of(self.hid_device.report_descriptor());
+                let output_report = SetHidReport::Output(wire::parse_report(data, framing)?);
 
                 self.hid_device.set_report(&output_report).await?;
 
@@ -507,25 +399,12 @@ impl<
             return Ok(());
         }
 
-        let report_ids_implicit = self.hid_device.report_descriptor().report_ids_implicit();
+        let framing = ReportFraming::of(self.hid_device.report_descriptor());
         self.hid_device
             .process_next_input_report(async |report| {
-                let size_bytes = report.data().len() as u16
-                    + device_descriptor::HID_REPORT_HEADER_SIZE_BYTES
-                    + if report_ids_implicit {
-                        0
-                    } else {
-                        device_descriptor::HID_REPORT_ID_SIZE_BYTES
-                    };
-                let [size_low, size_high] = size_bytes.to_le_bytes();
+                let header = ReportHeader::new(report.data().len(), report.id(), framing)?;
 
-                let header_slice: &[u8] = if report_ids_implicit {
-                    &[size_low, size_high]
-                } else {
-                    &[size_low, size_high, report.id().0]
-                };
-
-                self.bus.write_unterminated(header_slice).await?;
+                self.bus.write_unterminated(header.as_bytes()).await?;
                 self.bus.write(report.data()).await?;
                 Ok::<(), Error<Bus::Error>>(())
             })
@@ -540,78 +419,38 @@ impl<
         Ok(())
     }
 
-    /// Attempts to parse the provided command byte as an input / output command header, including consuming any additional
-    /// bytes from the read as needed.
-    /// Returns:
-    /// - The report type (input, output, feature)
-    /// - The report ID
-    /// - A slice over the remaining bytes from data
-    async fn get_io_command_report_header(
-        data: &[u8],
-        command_byte: u8,
-    ) -> Result<(HidI2cReportType, embedded_services::relay::hid::ReportId, &[u8]), Error<Bus::Error>> {
-        let command_header = HidI2cReportCommandHeader::try_from_command_byte(command_byte)?;
-        let (report_id, data) = if let Some(report_id) = command_header.report_id {
-            (report_id, data)
-        } else {
-            let (&report_id, data) = data.split_first().ok_or(Error::Protocol(ProtocolError::InvalidSize))?;
-            (embedded_services::relay::hid::ReportId(report_id), data)
-        };
-
-        let (&data_register_address, data) = data
-            .split_first_chunk::<{ core::mem::size_of::<u16>() }>()
-            .ok_or(Error::Protocol(ProtocolError::InvalidSize))?;
-
-        let data_register_address = u16::from_le_bytes(data_register_address);
-        if data_register_address != HidI2cRegister::Data as u16 {
-            error!(
-                "Expected the host to write the data register address after the header ({:?}) but got {:?}",
-                HidI2cRegister::Data,
-                data_register_address
-            );
-            return Err(Error::Protocol(ProtocolError::InvalidRegisterAddress));
-        }
-
-        Ok((command_header.report_type, report_id, data))
-    }
-
+    /// Handle a command written to the Command register (spec section 7.2).
+    ///
+    /// All parsing happens up front in [`Command::parse`]; everything below the parse operates
+    /// on values that cannot be malformed, so this function contains only I/O and dispatch.
     async fn process_command(
         data: &[u8],
         bus: &mut TimeoutBus<Bus>,
         hid_device: &mut HidDevice,
     ) -> Result<(), Error<Bus::Error>> {
-        let (&command_byte, data) = data
-            .split_first()
-            .ok_or(Error::Protocol(ProtocolError::InvalidCommand))?;
-        let (&opcode_byte, data) = data
-            .split_first()
-            .ok_or(Error::Protocol(ProtocolError::InvalidCommand))?;
+        let framing = ReportFraming::of(hid_device.report_descriptor());
 
-        match Opcode::try_from(opcode_byte).map_err(|_| Error::Protocol(ProtocolError::InvalidCommand))? {
-            Opcode::Reset => {
+        match Command::parse(data, framing)? {
+            Command::Reset => {
                 warn!("HID-I2C: Host requested device reset");
                 Err(Error::Device(HidError::TriggerReset))
             }
 
-            Opcode::SetPower => {
+            Command::SetPower(power_state) => {
                 trace!("Processing set power command");
-                let power_state = I2cPowerState::try_from(command_byte)
-                    .map_err(|_| Error::Protocol(ProtocolError::InvalidCommand))?;
                 hid_device.set_power_state(power_state.into()).await?;
                 Ok(())
             }
 
-            Opcode::GetReport => {
+            Command::GetReport { report_type, report_id } => {
                 trace!("Processing get report command");
 
-                let (report_type, report_id, _data) = Self::get_io_command_report_header(data, command_byte).await?;
-                let report_ids_implicit = hid_device.report_descriptor().report_ids_implicit();
-
-                // TODO - here, if the report ID is invalid, we're supposed to return a zero-length report.  We should know from the
-                //        report descriptor whether the report ID is valid or not, but we don't yet have the report descriptor parsing
-                //        implemented, so we can't do that yet.  For now, that responsibility has to fall on the HidDevice implementation,
-                //        but as soon as the aggregation / HID library goes in, look into leveraging it for filtering out invalid report
-                //        IDs here.
+                // TODO - here, if the report ID is invalid, we're supposed to return a zero-length report
+                //        (spec section 7.2.2.2).  We should know from the report descriptor whether the
+                //        report ID is valid or not, but we don't yet have the report descriptor parsing
+                //        implemented, so we can't do that yet.  For now, that responsibility has to fall
+                //        on the HidDevice implementation, but as soon as the aggregation / HID library
+                //        goes in, look into leveraging it for filtering out invalid report IDs here.
 
                 match bus.listen_for_response().await? {
                     Request::Read(_address) => {}
@@ -622,24 +461,11 @@ impl<
                 }
 
                 hid_device
-                    .process_get_report(report_type.try_into()?, report_id, async |report| {
-                        let (report_id, report_data) = match &report {
-                            GetHidReport::Input(report) | GetHidReport::Feature(report) => (report.id(), report.data()),
-                        };
-                        let len_header = (report.data().len() as u16 + device_descriptor::HID_REPORT_HEADER_SIZE_BYTES)
-                            + if report_ids_implicit {
-                                0
-                            } else {
-                                device_descriptor::HID_REPORT_ID_SIZE_BYTES
-                            };
-                        let [size_low, size_high] = len_header.to_le_bytes();
-                        let header_slice: &[u8] = if report_ids_implicit {
-                            &[size_low, size_high]
-                        } else {
-                            &[size_low, size_high, report_id.0]
-                        };
-                        bus.write_unterminated(header_slice).await?;
-                        bus.write(report_data).await?;
+                    .process_get_report(report_type.into(), report_id, async |report| {
+                        let header = ReportHeader::new(report.data().len(), report_id, framing)?;
+
+                        bus.write_unterminated(header.as_bytes()).await?;
+                        bus.write(report.data()).await?;
                         Ok::<(), Error<Bus::Error>>(())
                     })
                     .await??;
@@ -647,42 +473,12 @@ impl<
                 Ok(())
             }
 
-            Opcode::SetReport => {
+            Command::SetReport { report_type, report } => {
                 trace!("Processing set report command");
-                let (report_type, report_id, data) = Self::get_io_command_report_header(data, command_byte).await?;
-
-                let (&len_header, mut data) = data
-                    .split_first_chunk::<{ core::mem::size_of::<u16>() }>()
-                    .ok_or(Error::Protocol(ProtocolError::InvalidSize))?;
-
-                let report_id_size = if hid_device.report_descriptor().report_ids_implicit() {
-                    0
-                } else {
-                    let (&wire_report_id, remaining) =
-                        data.split_first().ok_or(Error::Protocol(ProtocolError::InvalidSize))?;
-                    if wire_report_id != report_id.0 {
-                        return Err(Error::Protocol(ProtocolError::InvalidData));
-                    }
-                    data = remaining;
-                    device_descriptor::HID_REPORT_ID_SIZE_BYTES
-                };
-
-                // The wire length includes its own field and the report ID, when one is present.
-                let report_size = (u16::from_le_bytes(len_header)
-                    .checked_sub(device_descriptor::HID_REPORT_HEADER_SIZE_BYTES + report_id_size))
-                .ok_or(Error::Protocol(ProtocolError::InvalidSize))? as usize;
-
-                let report_data = data
-                    .get(..report_size)
-                    .ok_or(Error::Protocol(ProtocolError::InvalidSize))?;
 
                 let set_report = match report_type {
-                    HidI2cReportType::Input => {
-                        error!("Host attempted to send us an input report, which is invalid");
-                        return Err(Error::Protocol(ProtocolError::InvalidReportType));
-                    }
-                    HidI2cReportType::Output => SetHidReport::Output(HidReport::new(report_id, report_data)),
-                    HidI2cReportType::Feature => SetHidReport::Feature(HidReport::new(report_id, report_data)),
+                    SetReportType::Output => SetHidReport::Output(report),
+                    SetReportType::Feature => SetHidReport::Feature(report),
                 };
 
                 hid_device.set_report(&set_report).await?;
@@ -788,19 +584,22 @@ impl Default for TimeoutSettings {
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
-    extern crate std;
-
     use super::*;
-    use crate::test_support::{RecordingHidDevice, hardware_version_info, recording_device};
-    use core::convert::Infallible;
-    use embedded_mcu_hal::i2c::target::{ErrorType, ReadStatus, WriteStatus};
+    use crate::test_support::{PinLevel, RecordingHidDevice, RecordingPin, hardware_version_info, recording_device};
+    use crate::wire::Opcode;
+    use embedded_mcu_hal::i2c::target::{ErrorKind, ErrorType, ReadStatus, WriteStatus};
     use embedded_services::relay::hid::{HidDevicePowerState, ReportId};
-    use std::{collections::VecDeque, vec, vec::Vec};
+    use std::collections::VecDeque;
 
+    /// Bus error used by the mocks. Deliberately not `Infallible`: every `Error::Bus` arm in the
+    /// service is unreachable by construction if the mock cannot fail.
+    type MockBusError = ErrorKind;
+
+    /// A bus that never produces an event, so every wait against it hits the caller's timeout.
     struct NoopBus;
 
     impl ErrorType for NoopBus {
-        type Error = Infallible;
+        type Error = MockBusError;
     }
 
     impl I2cTargetAsync for NoopBus {
@@ -821,22 +620,6 @@ mod tests {
         }
     }
 
-    struct NoopPin;
-
-    impl embedded_hal::digital::ErrorType for NoopPin {
-        type Error = Infallible;
-    }
-
-    impl embedded_hal::digital::OutputPin for NoopPin {
-        fn set_low(&mut self) -> Result<(), Self::Error> {
-            Ok(())
-        }
-
-        fn set_high(&mut self) -> Result<(), Self::Error> {
-            Ok(())
-        }
-    }
-
     fn timeout_bus() -> TimeoutBus<NoopBus> {
         TimeoutBus {
             bus: NoopBus,
@@ -851,31 +634,45 @@ mod tests {
 
     #[derive(Default)]
     struct ScriptedBus {
-        requests: VecDeque<Request>,
+        /// Controller-initiated events handed out by `listen()`, in order. When empty, `listen()`
+        /// stays pending so the caller's timeout fires.
+        listen_requests: VecDeque<Request>,
         incoming_writes: VecDeque<IncomingWrite>,
         read_statuses: VecDeque<ReadStatus>,
         outgoing_reads: Vec<Vec<u8>>,
         recover_count: usize,
+        /// When set, the next `respond_to_read` fails with this error.
+        fail_next_read: Option<MockBusError>,
+        /// When set, the next `respond_to_write` fails with this error.
+        fail_next_write: Option<MockBusError>,
+        /// When set, `recover()` fails with this error.
+        fail_recover: Option<MockBusError>,
     }
 
     impl ErrorType for ScriptedBus {
-        type Error = Infallible;
+        type Error = MockBusError;
     }
 
     impl I2cTargetAsync for ScriptedBus {
         async fn recover(&mut self) -> Result<(), Self::Error> {
             self.recover_count += 1;
-            Ok(())
+            match self.fail_recover {
+                Some(error) => Err(error),
+                None => Ok(()),
+            }
         }
 
         async fn listen(&mut self) -> Result<Request, Self::Error> {
-            let Some(request) = self.requests.pop_front() else {
+            let Some(request) = self.listen_requests.pop_front() else {
                 return core::future::pending().await;
             };
             Ok(request)
         }
 
         async fn respond_to_read(&mut self, buf: &[u8]) -> Result<ReadStatus, Self::Error> {
+            if let Some(error) = self.fail_next_read.take() {
+                return Err(error);
+            }
             let Some(status) = self.read_statuses.pop_front() else {
                 return core::future::pending().await;
             };
@@ -884,6 +681,9 @@ mod tests {
         }
 
         async fn respond_to_write(&mut self, buf: &mut [u8]) -> Result<WriteStatus, Self::Error> {
+            if let Some(error) = self.fail_next_write.take() {
+                return Err(error);
+            }
             let Some(write) = self.incoming_writes.pop_front() else {
                 return core::future::pending().await;
             };
@@ -904,39 +704,15 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn command_header_parses_inline_report_id() {
-        // 0x23: report type nibble 0x2 = Output, report ID nibble 0x3 (inline, < 0xF).
-        let header = HidI2cReportCommandHeader::try_from_command_byte(0x23).unwrap();
-
-        assert!(matches!(header.report_type, HidI2cReportType::Output));
-        assert_eq!(header.report_id, Some(hid::ReportId(3)));
-    }
-
-    #[tokio::test]
-    async fn command_header_marks_extended_report_id() {
-        // 0x3f: report type nibble 0x3 = Feature, report ID nibble 0xF = extended (real ID in a following byte).
-        let header = HidI2cReportCommandHeader::try_from_command_byte(0x3f).unwrap();
-
-        assert!(matches!(header.report_type, HidI2cReportType::Feature));
-        assert_eq!(header.report_id, None);
-    }
-
-    #[tokio::test]
-    async fn command_header_rejects_reserved_report_type() {
-        // 0x03: report type nibble 0x0 is reserved/invalid.
-        assert!(matches!(
-            HidI2cReportCommandHeader::try_from_command_byte(0x03),
-            Err(ProtocolError::InvalidReportType)
-        ));
-    }
+    // Command-byte and frame parsing is covered by the pure tests in `crate::wire`, which need
+    // no bus, no pin, no device and no async runtime. The tests here exercise the I/O shell.
 
     #[tokio::test]
     async fn set_power_command_updates_device() {
         let mut bus = timeout_bus();
         let mut device = recording_device();
 
-        Runner::<NoopBus, NoopPin, RecordingHidDevice>::process_command(
+        Runner::<NoopBus, RecordingPin, RecordingHidDevice>::process_command(
             // Command register (little-endian): low byte 0x01 = power state Sleep, high byte = SetPower opcode.
             &[0x01, Opcode::SetPower as u8],
             &mut bus,
@@ -953,7 +729,7 @@ mod tests {
         let mut bus = timeout_bus();
         let mut device = recording_device();
 
-        let result = Runner::<NoopBus, NoopPin, RecordingHidDevice>::process_command(
+        let result = Runner::<NoopBus, RecordingPin, RecordingHidDevice>::process_command(
             // Command register (little-endian): low byte is unused for Reset, high byte = Reset opcode.
             &[0x00, Opcode::Reset as u8],
             &mut bus,
@@ -962,35 +738,6 @@ mod tests {
         .await;
 
         assert!(matches!(result, Err(Error::Device(HidError::TriggerReset))));
-    }
-
-    #[tokio::test]
-    async fn set_output_report_forwards_payload() {
-        let mut bus = timeout_bus();
-        let mut device = recording_device();
-        let command = [
-            0x23,                       // command low byte: report type Output (0x2), inline report ID 3
-            Opcode::SetReport as u8,    // command high byte: SetReport opcode
-            HidI2cRegister::Data as u8, // data register address, low byte (0x06)
-            0x00,                       // data register address, high byte -> 0x0006
-            0x06,                       // length field, low byte
-            0x00,                       // length field, high byte -> 6 total bytes
-            0x03,                       // report ID echoed in the data payload (must match header)
-            0xaa,                       // report payload
-            0xbb,
-            0xcc,
-        ];
-
-        Runner::<NoopBus, NoopPin, RecordingHidDevice>::process_command(&command, &mut bus, &mut device)
-            .await
-            .unwrap();
-
-        assert_eq!(device.report_id, Some(ReportId(3)));
-        assert_eq!(
-            device.report_data.get(..device.report_len),
-            Some(&[0xaa, 0xbb, 0xcc][..])
-        );
-        assert!(!device.feature_report);
     }
 
     #[tokio::test]
@@ -1003,19 +750,43 @@ mod tests {
             0x21,                       // extended report ID (0x21)
             HidI2cRegister::Data as u8, // data register address, low byte (0x06)
             0x00,                       // data register address, high byte -> 0x0006
-            0x04,                       // length field, low byte
-            0x00,                       // length field, high byte -> 4 total bytes
-            0x21,                       // report ID echoed in the data payload (must match header)
+            0x04,                       // wLength low byte: 2 (self) + 1 (report ID) + 1 (payload)
+            0x00,                       // wLength high byte
+            0x21,                       // report ID, repeated in the data payload per spec 7.2.3.1
             0x5a,                       // report payload
         ];
 
-        Runner::<NoopBus, NoopPin, RecordingHidDevice>::process_command(&command, &mut bus, &mut device)
+        Runner::<NoopBus, RecordingPin, RecordingHidDevice>::process_command(&command, &mut bus, &mut device)
             .await
             .unwrap();
 
         assert_eq!(device.report_id, Some(ReportId(0x21)));
         assert_eq!(device.report_data.get(..device.report_len), Some(&[0x5a][..]));
         assert!(device.feature_report);
+    }
+
+    /// The report ID appears twice in a `SET_REPORT`: in the command header and again in the data
+    /// payload. A host that disagrees with itself is a protocol violation, not a report to apply.
+    #[tokio::test]
+    async fn set_report_rejects_report_id_mismatched_against_command_header() {
+        let mut bus = timeout_bus();
+        let mut device = recording_device();
+        let command = [
+            0x23,                       // command low byte: report type Output (0x2), inline report ID 3
+            Opcode::SetReport as u8,    // command high byte: SetReport opcode
+            HidI2cRegister::Data as u8, // data register address, low byte (0x06)
+            0x00,                       // data register address, high byte -> 0x0006
+            0x04,                       // wLength low byte: 2 (self) + 1 (report ID) + 1 (payload)
+            0x00,                       // wLength high byte
+            0x04,                       // report ID in the payload disagrees with the header's 3
+            0x5a,                       // report payload
+        ];
+
+        let result =
+            Runner::<NoopBus, RecordingPin, RecordingHidDevice>::process_command(&command, &mut bus, &mut device).await;
+
+        assert!(matches!(result, Err(Error::Protocol(ProtocolError::InvalidData))));
+        assert_eq!(device.report_id, None);
     }
 
     #[tokio::test]
@@ -1032,7 +803,7 @@ mod tests {
         ];
 
         let result =
-            Runner::<NoopBus, NoopPin, RecordingHidDevice>::process_command(&command, &mut bus, &mut device).await;
+            Runner::<NoopBus, RecordingPin, RecordingHidDevice>::process_command(&command, &mut bus, &mut device).await;
 
         assert!(matches!(result, Err(Error::Protocol(ProtocolError::InvalidSize))));
     }
@@ -1053,17 +824,14 @@ mod tests {
         ];
 
         let result =
-            Runner::<NoopBus, NoopPin, RecordingHidDevice>::process_command(&command, &mut bus, &mut device).await;
+            Runner::<NoopBus, RecordingPin, RecordingHidDevice>::process_command(&command, &mut bus, &mut device).await;
 
         assert!(matches!(result, Err(Error::Protocol(ProtocolError::InvalidData))));
     }
 
     #[tokio::test]
     async fn get_report_rejects_output_report_type() {
-        let mut bus = scripted_timeout_bus(ScriptedBus {
-            requests: VecDeque::from([Request::Read(0)]),
-            ..Default::default()
-        });
+        let mut bus = timeout_bus();
         let mut device = recording_device();
         let command = [
             0x21,                       // command low byte: report type Output (0x2), report ID 1
@@ -1073,15 +841,15 @@ mod tests {
         ];
 
         let result =
-            Runner::<ScriptedBus, NoopPin, RecordingHidDevice>::process_command(&command, &mut bus, &mut device).await;
+            Runner::<NoopBus, RecordingPin, RecordingHidDevice>::process_command(&command, &mut bus, &mut device).await;
 
         assert!(matches!(result, Err(Error::Protocol(ProtocolError::InvalidReportType))));
     }
 
     #[tokio::test]
-    async fn get_feature_report_includes_explicit_report_id() {
+    async fn get_report_waits_for_the_host_read_before_answering() {
         let mut bus = scripted_timeout_bus(ScriptedBus {
-            requests: VecDeque::from([Request::Read(0)]),
+            // No queued `listen` event, so `listen_for_response` times out.
             read_statuses: VecDeque::from([ReadStatus::Complete(3), ReadStatus::Complete(1)]),
             ..Default::default()
         });
@@ -1094,15 +862,16 @@ mod tests {
             0x00,                       // data register address, high byte -> 0x0006
         ];
 
-        Runner::<ScriptedBus, NoopPin, RecordingHidDevice>::process_command(&command, &mut bus, &mut device)
-            .await
-            .unwrap();
+        let result =
+            Runner::<ScriptedBus, RecordingPin, RecordingHidDevice>::process_command(&command, &mut bus, &mut device)
+                .await;
 
-        assert_eq!(
-            bus.bus.outgoing_reads.first().map(Vec::as_slice),
-            Some(&[0x04, 0x00, 0x21][..])
-        );
-        assert_eq!(bus.bus.outgoing_reads.get(1).map(Vec::as_slice), Some(&[0x5a][..]));
+        assert!(matches!(result, Err(Error::Protocol(ProtocolError::Timeout))));
+        assert!(bus.bus.outgoing_reads.is_empty());
+        // NOTE: unlike `read` and `write_unterminated`, `listen_for_response` propagates its
+        // timeout without recovering the bus. Asserted here so the asymmetry is at least
+        // visible; whether it should recover is a separate question.
+        assert_eq!(bus.bus.recover_count, 0);
     }
 
     #[tokio::test]
@@ -1115,7 +884,7 @@ mod tests {
         let (_service, mut runner) = Service::new(
             &mut resources,
             bus,
-            NoopPin,
+            RecordingPin::new(),
             recording_device(),
             hardware_version_info(),
             TimeoutSettings {
@@ -1132,11 +901,15 @@ mod tests {
         assert!(runner.attn_pin.asserted());
         assert_eq!(runner.hid_device.reset_count, 1);
         assert_eq!(runner.hid_device.power_state, Some(HidDevicePowerState::On));
+        // The pin is driven low to assert; checking the recorded level rather than only the
+        // handler's own bookkeeping is what makes this test able to fail if the GPIO is untouched.
+        assert_eq!(runner.attn_pin.pin().level(), Some(PinLevel::Low));
 
         runner.reply_with_input_report().await.unwrap();
 
         assert!(!runner.pending_reset);
         assert!(!runner.attn_pin.asserted());
+        assert_eq!(runner.attn_pin.pin().level(), Some(PinLevel::High));
         assert_eq!(
             runner.bus.bus.outgoing_reads.first().map(Vec::as_slice),
             Some(&[0x00, 0x00][..])
@@ -1221,5 +994,372 @@ mod tests {
 
         assert!(matches!(result, Err(Error::Protocol(ProtocolError::Timeout))));
         assert_eq!(bus.bus.recover_count, 1);
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Spec-conformance tests.
+    //
+    // Reference for the wire format is the Linux `i2c-hid` host driver, which is the
+    // authoritative consumer of what we emit:
+    //
+    //   i2c_hid_format_report()  - drivers/hid/i2c-hid/i2c-hid-core.c
+    //       size_t length = sizeof(__le16);        /* reserve space to store size */
+    //       if (report_id) buf[length++] = report_id;
+    //       memcpy(buf + length, data, size); length += size;
+    //       put_unaligned_le16(length, buf);
+    //
+    // i.e. a report on the wire is `[wLength(2)][report_id?][payload]`, and `wLength` counts
+    // itself, the report ID (when the descriptor uses explicit report IDs), and the payload.
+    // ---------------------------------------------------------------------------------------
+
+    /// Host address used by the scripted bus; the service ignores it (single-address assumption).
+    const HOST_ADDR: u8 = 0x2c;
+
+    /// A SET_REPORT frame built exactly the way `i2c_hid_format_report` builds it must be accepted.
+    #[tokio::test]
+    async fn set_report_accepts_spec_conformant_frame_with_explicit_report_id() {
+        let mut bus = timeout_bus();
+        let mut device = recording_device();
+        let command = [
+            0x23,                       // command low byte: report type Output (0x2), inline report ID 3
+            Opcode::SetReport as u8,    // command high byte: SetReport opcode
+            HidI2cRegister::Data as u8, // data register address, low byte (0x06)
+            0x00,                       // data register address, high byte -> 0x0006
+            0x06,                       // wLength low byte: 2 (self) + 1 (report ID) + 3 (payload)
+            0x00,                       // wLength high byte
+            0x03,                       // report ID, repeated in the data payload per the spec
+            0xaa,                       // report payload
+            0xbb,
+            0xcc,
+        ];
+
+        Runner::<NoopBus, RecordingPin, RecordingHidDevice>::process_command(&command, &mut bus, &mut device)
+            .await
+            .unwrap();
+
+        assert_eq!(device.report_id, Some(ReportId(3)));
+        assert_eq!(
+            device.report_data.get(..device.report_len),
+            Some(&[0xaa, 0xbb, 0xcc][..])
+        );
+        assert!(!device.feature_report);
+    }
+
+    /// The GET_REPORT response must carry the report ID, and `wLength` must count it.
+    /// The host enforces this: `i2c_hid_get_report` rejects the response with `-EINVAL` when
+    /// the first byte after the length header is not the requested report ID.
+    #[tokio::test]
+    async fn get_report_response_carries_report_id_for_explicit_descriptors() {
+        let mut bus = scripted_timeout_bus(ScriptedBus {
+            listen_requests: VecDeque::from([Request::Read(HOST_ADDR)]),
+            read_statuses: VecDeque::from([ReadStatus::Complete(3), ReadStatus::Complete(1)]),
+            ..Default::default()
+        });
+        let mut device = recording_device();
+        let command = [
+            0x3f,                       // command low byte: report type Feature (0x3), extended report ID
+            Opcode::GetReport as u8,    // command high byte: GetReport opcode
+            0x21,                       // extended report ID (0x21)
+            HidI2cRegister::Data as u8, // data register address, low byte (0x06)
+            0x00,                       // data register address, high byte -> 0x0006
+        ];
+
+        Runner::<ScriptedBus, RecordingPin, RecordingHidDevice>::process_command(&command, &mut bus, &mut device)
+            .await
+            .unwrap();
+
+        // wLength = 2 (self) + 1 (report ID) + 1 (payload) = 4, then the report ID, then the payload.
+        assert_eq!(
+            bus.bus.outgoing_reads.first().map(Vec::as_slice),
+            Some(&[0x04, 0x00, 0x21][..])
+        );
+        assert_eq!(bus.bus.outgoing_reads.get(1).map(Vec::as_slice), Some(&[0x5a][..]));
+    }
+
+    /// The mirror image: a single-collection device's GET_REPORT response carries no report ID.
+    #[tokio::test]
+    async fn get_report_response_omits_report_id_for_implicit_descriptors() {
+        let mut bus = scripted_timeout_bus(ScriptedBus {
+            listen_requests: VecDeque::from([Request::Read(HOST_ADDR)]),
+            read_statuses: VecDeque::from([ReadStatus::Complete(2), ReadStatus::Complete(3)]),
+            ..Default::default()
+        });
+        let mut device = crate::test_support::implicit_id_device().with_get_report_payload(&[0x11, 0x22, 0x33]);
+        let command = [
+            0x30,                       // command low byte: report type Feature (0x3), report ID 0
+            Opcode::GetReport as u8,    // command high byte: GetReport opcode
+            HidI2cRegister::Data as u8, // data register address, low byte (0x06)
+            0x00,                       // data register address, high byte -> 0x0006
+        ];
+
+        Runner::<ScriptedBus, RecordingPin, RecordingHidDevice>::process_command(&command, &mut bus, &mut device)
+            .await
+            .unwrap();
+
+        // wLength = 2 (self) + 3 (payload) = 5, with no report ID byte.
+        assert_eq!(
+            bus.bus.outgoing_reads.first().map(Vec::as_slice),
+            Some(&[0x05, 0x00][..])
+        );
+        assert_eq!(
+            bus.bus.outgoing_reads.get(1).map(Vec::as_slice),
+            Some(&[0x11, 0x22, 0x33][..])
+        );
+    }
+
+    /// The receive buffer must hold the largest SET_REPORT a host can legally send in one
+    /// transaction. Per `i2c_hid_alloc_buffers` that worst case is 2 command register address
+    /// bytes, 1 report type/ID byte, 1 opcode byte, 1 extended report ID byte, 2 data register
+    /// address bytes, 2 wLength bytes, 1 report ID byte and N payload bytes - which is
+    /// `N + 10`, not `N + 9`.
+    #[test]
+    fn write_buffer_holds_worst_case_set_report() {
+        use typenum::Unsigned;
+
+        const FRAMING_OVERHEAD: usize = 10;
+        let payload_max = <RecordingHidDevice as crate::ConstrainedHidDevice>::MaxOutputOrFeatureSize::USIZE;
+
+        assert_eq!(
+            <RecordingHidDevice as crate::ConstrainedHidDevice>::WriteBufferSize::USIZE,
+            payload_max + FRAMING_OVERHEAD
+        );
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Unsolicited input reports.
+    //
+    // None of this was reachable while the device mock reported `has_pending_input_report() ==
+    // false` unconditionally.
+    // ---------------------------------------------------------------------------------------
+
+    async fn runner_with<'hw>(
+        resources: &'hw mut Resources<ScriptedBus, RecordingPin, RecordingHidDevice>,
+        bus: ScriptedBus,
+        device: RecordingHidDevice,
+    ) -> Runner<'hw, ScriptedBus, RecordingPin, RecordingHidDevice> {
+        let (_service, runner) = Service::new(
+            resources,
+            bus,
+            RecordingPin::new(),
+            device,
+            hardware_version_info(),
+            TimeoutSettings {
+                device_response_timeout: Duration::from_millis(20),
+                data_read_timeout: Duration::from_millis(20),
+            },
+        )
+        .await
+        .unwrap();
+        runner
+    }
+
+    /// Section 6.1.2: an input report from a device with explicit report IDs is framed as
+    /// `[length(2)][report ID][report]`, with the length counting all three.
+    #[tokio::test]
+    async fn input_report_is_framed_with_report_id_for_explicit_descriptors() {
+        let bus = ScriptedBus {
+            read_statuses: VecDeque::from([ReadStatus::Complete(3), ReadStatus::Complete(2)]),
+            ..Default::default()
+        };
+        let device = recording_device().with_pending_input(ReportId(3), &[0xde, 0xad]);
+        let mut resources = Resources::default();
+        let mut runner = runner_with(&mut resources, bus, device).await;
+
+        runner.reply_with_input_report().await.unwrap();
+
+        // wLength = 2 (self) + 1 (report ID) + 2 (payload) = 5
+        assert_eq!(
+            runner.bus.bus.outgoing_reads.first().map(Vec::as_slice),
+            Some(&[0x05, 0x00, 0x03][..])
+        );
+        assert_eq!(
+            runner.bus.bus.outgoing_reads.get(1).map(Vec::as_slice),
+            Some(&[0xde, 0xad][..])
+        );
+        // Report consumed, so the interrupt is released.
+        assert!(!runner.attn_pin.asserted());
+    }
+
+    /// The same report from a single-collection device carries no report ID byte.
+    #[tokio::test]
+    async fn input_report_is_framed_without_report_id_for_implicit_descriptors() {
+        let bus = ScriptedBus {
+            read_statuses: VecDeque::from([ReadStatus::Complete(2), ReadStatus::Complete(2)]),
+            ..Default::default()
+        };
+        let device = crate::test_support::implicit_id_device().with_pending_input(ReportId(0), &[0xde, 0xad]);
+        let mut resources = Resources::default();
+        let mut runner = runner_with(&mut resources, bus, device).await;
+
+        runner.reply_with_input_report().await.unwrap();
+
+        // wLength = 2 (self) + 2 (payload) = 4
+        assert_eq!(
+            runner.bus.bus.outgoing_reads.first().map(Vec::as_slice),
+            Some(&[0x04, 0x00][..])
+        );
+        assert_eq!(
+            runner.bus.bus.outgoing_reads.get(1).map(Vec::as_slice),
+            Some(&[0xde, 0xad][..])
+        );
+    }
+
+    /// Section 7.2.1: the host polling with nothing queued gets a zero-length report rather than
+    /// a stalled bus.
+    #[tokio::test]
+    async fn host_polling_with_no_pending_report_gets_a_zero_length_report() {
+        let bus = ScriptedBus {
+            read_statuses: VecDeque::from([ReadStatus::Complete(2)]),
+            ..Default::default()
+        };
+        let mut resources = Resources::default();
+        let mut runner = runner_with(&mut resources, bus, recording_device()).await;
+
+        runner.reply_with_input_report().await.unwrap();
+
+        assert_eq!(
+            runner.bus.bus.outgoing_reads.first().map(Vec::as_slice),
+            Some(&[0x00, 0x00][..])
+        );
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Failure paths.
+    //
+    // All of these were unreachable while the mocks used `Infallible`.
+    // ---------------------------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn bus_error_while_reading_the_host_write_is_reported() {
+        let mut bus = scripted_timeout_bus(ScriptedBus {
+            fail_next_write: Some(ErrorKind::Overrun),
+            ..Default::default()
+        });
+        let mut buffer = [0; 8];
+
+        let result = bus.read(&mut buffer).await;
+
+        assert!(matches!(result, Err(Error::Bus(ErrorKind::Overrun))));
+    }
+
+    #[tokio::test]
+    async fn bus_error_while_answering_the_host_read_is_reported() {
+        let mut bus = scripted_timeout_bus(ScriptedBus {
+            fail_next_read: Some(ErrorKind::ArbitrationLoss),
+            ..Default::default()
+        });
+
+        let result = bus.write(&[0xaa]).await;
+
+        assert!(matches!(result, Err(Error::Bus(ErrorKind::ArbitrationLoss))));
+    }
+
+    /// A bus that cannot even be recovered after a timeout reports the recovery failure, not the
+    /// timeout that triggered it.
+    #[tokio::test]
+    async fn failure_to_recover_after_timeout_is_reported() {
+        let mut bus = scripted_timeout_bus(ScriptedBus {
+            fail_recover: Some(ErrorKind::Bus),
+            ..Default::default()
+        });
+        let mut buffer = [0; 8];
+
+        let result = bus.read(&mut buffer).await;
+
+        assert!(matches!(result, Err(Error::Bus(ErrorKind::Bus))));
+        assert_eq!(bus.bus.recover_count, 1);
+    }
+
+    #[tokio::test]
+    async fn device_failure_during_set_report_is_reported() {
+        let mut bus = timeout_bus();
+        let mut device = recording_device();
+        device.fail_set_report = Some(HidError::TriggerReset);
+        let command = [
+            0x23,
+            Opcode::SetReport as u8,
+            HidI2cRegister::Data as u8,
+            0x00,
+            0x04,
+            0x00,
+            0x03,
+            0x5a,
+        ];
+
+        let result =
+            Runner::<NoopBus, RecordingPin, RecordingHidDevice>::process_command(&command, &mut bus, &mut device).await;
+
+        assert!(matches!(result, Err(Error::Device(HidError::TriggerReset))));
+    }
+
+    #[tokio::test]
+    async fn device_failure_during_set_power_is_reported() {
+        let mut bus = timeout_bus();
+        let mut device = recording_device();
+        device.fail_set_power = Some(HidError::TriggerReset);
+
+        let result = Runner::<NoopBus, RecordingPin, RecordingHidDevice>::process_command(
+            &[0x01, Opcode::SetPower as u8],
+            &mut bus,
+            &mut device,
+        )
+        .await;
+
+        assert!(matches!(result, Err(Error::Device(HidError::TriggerReset))));
+        assert_eq!(device.power_state, None);
+    }
+
+    #[tokio::test]
+    async fn device_failure_during_get_report_is_reported() {
+        let mut bus = scripted_timeout_bus(ScriptedBus {
+            listen_requests: VecDeque::from([Request::Read(HOST_ADDR)]),
+            ..Default::default()
+        });
+        let mut device = recording_device();
+        device.fail_get_report = Some(HidError::TriggerReset);
+        let command = [0x31, Opcode::GetReport as u8, HidI2cRegister::Data as u8, 0x00];
+
+        let result =
+            Runner::<ScriptedBus, RecordingPin, RecordingHidDevice>::process_command(&command, &mut bus, &mut device)
+                .await;
+
+        assert!(matches!(result, Err(Error::Device(HidError::TriggerReset))));
+    }
+
+    /// A GPIO that refuses to move must not take the reset path down with it: the service logs
+    /// and carries on, because a device-initiated reset is the only recovery it has.
+    #[tokio::test]
+    async fn reset_survives_an_attn_pin_that_cannot_be_driven() {
+        let mut resources = Resources::default();
+        let (_service, mut runner) = Service::new(
+            &mut resources,
+            ScriptedBus::default(),
+            // One successful transition for `AttnPinHandler::new`, then failure.
+            RecordingPin::failing_after(1),
+            recording_device(),
+            hardware_version_info(),
+            TimeoutSettings::default(),
+        )
+        .await
+        .unwrap();
+
+        runner.reset().await;
+
+        assert_eq!(runner.hid_device.reset_count, 1);
+        // The assert failed, so the handler never recorded the interrupt as raised.
+        assert!(!runner.attn_pin.asserted());
+        assert!(runner.pending_reset);
+    }
+
+    /// An oversized report cannot be framed in the 16-bit length field, so it is rejected
+    /// instead of being silently truncated by an `as u16` cast.
+    #[test]
+    fn report_header_rejects_a_report_too_large_for_the_length_field() {
+        use crate::wire::{ReportFraming, ReportHeader};
+
+        assert_eq!(
+            ReportHeader::new(usize::from(u16::MAX), ReportId(1), ReportFraming::Explicit),
+            Err(ProtocolError::InvalidSize)
+        );
     }
 }

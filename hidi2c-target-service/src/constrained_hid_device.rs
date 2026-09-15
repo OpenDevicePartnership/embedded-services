@@ -26,7 +26,7 @@ pub trait ConstrainedHidDevice: embedded_services::relay::hid::HidDevice + seale
     type MaxInputOrFeatureSize: ArrayLength;
     /// `max(FeatureReportMaxSize, OutputReportMaxSize)`.
     type MaxOutputOrFeatureSize: ArrayLength;
-    /// `max(FeatureReportMaxSize, OutputReportMaxSize) + 9`.
+    /// `max(FeatureReportMaxSize, OutputReportMaxSize) + 10`.
     type WriteBufferSize: ArrayLength;
 }
 
@@ -37,8 +37,8 @@ where
     T::FeatureReportMaxSize: Max<T::OutputReportMaxSize>,
     <T::FeatureReportMaxSize as Max<T::InputReportMaxSize>>::Output: ArrayLength,
     <T::FeatureReportMaxSize as Max<T::OutputReportMaxSize>>::Output: ArrayLength,
-    <T::FeatureReportMaxSize as Max<T::OutputReportMaxSize>>::Output: core::ops::Add<typenum::U9>,
-    <<T::FeatureReportMaxSize as Max<T::OutputReportMaxSize>>::Output as core::ops::Add<typenum::U9>>::Output:
+    <T::FeatureReportMaxSize as Max<T::OutputReportMaxSize>>::Output: core::ops::Add<typenum::U10>,
+    <<T::FeatureReportMaxSize as Max<T::OutputReportMaxSize>>::Output as core::ops::Add<typenum::U10>>::Output:
         ArrayLength,
 {
     type MaxInputOrFeatureSize = <T::FeatureReportMaxSize as Max<T::InputReportMaxSize>>::Output;
@@ -56,12 +56,17 @@ where
     ///   1 byte: optional report ID extension to command register value for report IDs > 15
     ///   2 bytes: data register address
     ///   2 bytes: data register length header
+    ///   1 byte: report ID, which section 7.2.3.1 repeats inside the data payload whenever the
+    ///           report descriptor defines report IDs ("Report including Report ID if defined in
+    ///           Report Descriptor")
     ///   N bytes: length of the actual report payload
     ///
-    /// Therefore, this buffer needs to be 9 bytes larger than the largest output or feature report
+    /// Therefore, this buffer needs to be 10 bytes larger than the largest output or feature report.
+    /// This matches the worst case the Linux `i2c-hid` host driver allocates for in
+    /// `i2c_hid_alloc_buffers()`.
     ///
     type WriteBufferSize =
-        <<T::FeatureReportMaxSize as Max<T::OutputReportMaxSize>>::Output as core::ops::Add<typenum::U9>>::Output;
+        <<T::FeatureReportMaxSize as Max<T::OutputReportMaxSize>>::Output as core::ops::Add<typenum::U10>>::Output;
 }
 
 impl<T> sealed::Sealed for T where T: embedded_services::relay::hid::HidDevice {}

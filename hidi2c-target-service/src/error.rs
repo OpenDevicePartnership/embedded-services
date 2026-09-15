@@ -2,7 +2,7 @@ use embassy_time::TimeoutError;
 use embedded_services::relay::hid::HidError;
 
 //  HID errors
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub(crate) enum ProtocolError {
     /// Invalid data

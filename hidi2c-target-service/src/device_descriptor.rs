@@ -77,15 +77,6 @@ pub struct ProductId(pub u16);
 /// Version ID, as assigned by the device manufacturer. Recommended to be in BCD format, e.g. 0x0100 for version 1.00.
 pub struct VersionId(pub u16);
 
-/// The number of bytes in a HID report header, which consists of a 2-byte length field.
-pub const HID_REPORT_HEADER_SIZE_BYTES: u16 = 2;
-
-/// The number of bytes in a HID report ID field, which consists of a 1-byte report ID.
-/// This field is only used if more than one report of any type is exposed by the HID device (i.e. you can
-/// have a single input report, a single output report, and a single feature report and not need this, but
-/// as soon as you add a second of any one of those you need this).
-pub const HID_REPORT_ID_SIZE_BYTES: u16 = 1;
-
 /// Errors that can occur while constructing a `DeviceDescriptor` for a HID device.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
@@ -101,6 +92,15 @@ pub enum DeviceDescriptorError {
     /// The HID device returned a feature report descriptor whose largest report (`actual` bytes)
     /// is larger than the device's `FeatureReportMaxSize` (`max` bytes).
     FeatureReportTooLarge { actual: usize, max: usize },
+
+    /// The device declares a maximum report size that cannot be expressed in the descriptor's
+    /// 16-bit `wMaxInputLength`/`wMaxOutputLength` fields once the length and report ID framing
+    /// is added. Section 5.1 caps a report at `2^16 - 4` bytes.
+    ReportTooLargeToFrame { max: usize },
+
+    /// The report descriptor itself is longer than the 16-bit `wReportDescLength` field can
+    /// express.
+    ReportDescriptorTooLarge { actual: usize },
 }
 
 impl DeviceDescriptor {
@@ -136,22 +136,33 @@ impl DeviceDescriptor {
             });
         }
 
-        let report_length_header_size = HID_REPORT_HEADER_SIZE_BYTES
-            + if hid_device.report_descriptor().report_ids_implicit() {
-                0
-            } else {
-                HID_REPORT_ID_SIZE_BYTES
-            };
+        let report_length_header_size = crate::wire::ReportFraming::of(descriptor).header_bytes();
+
+        // Section 5.1 caps a report at 2^16 - 4 bytes, and wMax*Length must also cover the length
+        // field and the report ID. Anything that doesn't fit is a mis-declared device, not a
+        // runtime condition, so it's rejected here rather than silently truncated by an `as` cast.
+        let framed_len = |max: usize| -> Result<u16, DeviceDescriptorError> {
+            u16::try_from(max)
+                .ok()
+                .and_then(|max| max.checked_add(report_length_header_size))
+                .ok_or(DeviceDescriptorError::ReportTooLargeToFrame { max })
+        };
+
+        let report_desc_length = u16::try_from(descriptor.as_bytes().len()).map_err(|_| {
+            DeviceDescriptorError::ReportDescriptorTooLarge {
+                actual: descriptor.as_bytes().len(),
+            }
+        })?;
 
         Ok(Self {
             w_hid_desc_length: core::mem::size_of::<DeviceDescriptor>() as u16,
             bcd_version: HID_I2C_PROTOCOL_VERSION,
-            w_report_desc_length: descriptor.as_bytes().len() as u16,
+            w_report_desc_length: report_desc_length,
             w_report_desc_register: crate::HidI2cRegister::ReportDescriptor as u16,
             w_input_register: crate::HidI2cRegister::Input.into(),
-            w_max_input_length: input_max as u16 + report_length_header_size,
+            w_max_input_length: framed_len(input_max)?,
             w_output_register: crate::HidI2cRegister::Output.into(),
-            w_max_output_length: output_max as u16 + report_length_header_size,
+            w_max_output_length: framed_len(output_max)?,
             w_command_register: crate::HidI2cRegister::Command.into(),
             w_data_register: crate::HidI2cRegister::Data.into(),
             w_vendor_id: hwinfo.vendor_id.value(),
@@ -223,8 +234,8 @@ mod tests {
         0xc0, // End Collection
     ];
 
-    #[tokio::test]
-    async fn descriptor_uses_implicit_report_framing() {
+    #[test]
+    fn descriptor_uses_implicit_report_framing() {
         let descriptor =
             DeviceDescriptor::new(&descriptor_device(IMPLICIT_DESCRIPTOR), hardware_version_info()).unwrap();
 
@@ -241,8 +252,8 @@ mod tests {
         assert_eq!(descriptor.w_version_id, 0x0100);
     }
 
-    #[tokio::test]
-    async fn descriptor_accounts_for_explicit_report_id() {
+    #[test]
+    fn descriptor_accounts_for_explicit_report_id() {
         let descriptor =
             DeviceDescriptor::new(&descriptor_device(EXPLICIT_DESCRIPTOR), hardware_version_info()).unwrap();
 
@@ -250,8 +261,8 @@ mod tests {
         assert_eq!(descriptor.w_max_output_length, 4);
     }
 
-    #[tokio::test]
-    async fn descriptor_rejects_oversized_input_report() {
+    #[test]
+    fn descriptor_rejects_oversized_input_report() {
         let result = DeviceDescriptor::new(&descriptor_device(TWO_BYTE_INPUT_DESCRIPTOR), hardware_version_info());
 
         assert_eq!(
@@ -260,8 +271,8 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn descriptor_rejects_oversized_output_report() {
+    #[test]
+    fn descriptor_rejects_oversized_output_report() {
         let result = DeviceDescriptor::new(&descriptor_device(TWO_BYTE_OUTPUT_DESCRIPTOR), hardware_version_info());
 
         assert_eq!(
@@ -270,8 +281,8 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn descriptor_rejects_oversized_feature_report() {
+    #[test]
+    fn descriptor_rejects_oversized_feature_report() {
         let result = DeviceDescriptor::new(&descriptor_device(TWO_BYTE_FEATURE_DESCRIPTOR), hardware_version_info());
 
         assert_eq!(
@@ -280,8 +291,8 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn vendor_id_rejects_zero() {
+    #[test]
+    fn vendor_id_rejects_zero() {
         assert!(VendorId::new(0).is_none());
         assert_eq!(VendorId::new(1).unwrap().value(), 1);
     }

@@ -1,6 +1,9 @@
 //! This crate contains a service that behaves as a HID target/slave device over I2C.
 
-#![no_std]
+// `std` is pulled in for tests only, so the test modules can use `Vec`, `format!` and friends
+// without `extern crate std` boilerplate. Normal builds - host and embedded alike - are `no_std`,
+// which `cargo build` enforces.
+#![cfg_attr(not(test), no_std)]
 
 mod device_descriptor;
 use device_descriptor::DeviceDescriptor;
@@ -17,6 +20,8 @@ pub use constrained_hid_device::ConstrainedHidDevice;
 
 mod service;
 pub use service::{Runner, Service, TimeoutSettings};
+
+mod wire;
 
 #[cfg(test)]
 mod test_support;

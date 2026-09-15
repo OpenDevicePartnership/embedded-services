@@ -41,4 +41,12 @@ impl<AttnPin: embedded_hal::digital::OutputPin> AttnPinHandler<AttnPin> {
     pub(crate) fn asserted(&self) -> bool {
         self.asserted
     }
+
+    /// Borrow the underlying pin. Exposed so tests can assert on what was actually driven onto
+    /// the GPIO rather than only on the `asserted` bookkeeping above, which would otherwise pass
+    /// even if the pin were never touched.
+    #[cfg(test)]
+    pub(crate) fn pin(&self) -> &AttnPin {
+        &self.attn_pin
+    }
 }
