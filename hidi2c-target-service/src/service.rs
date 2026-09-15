@@ -1863,4 +1863,428 @@ mod tests {
             Err(ProtocolError::InvalidSize)
         );
     }
+
+    // ---------------------------------------------------------------------------------------
+    // Register-dispatch tests (pass A).
+    //
+    // Every test here drives `process_register_access`, i.e. the real entry point the run loop
+    // uses for a host write. Expected bytes are derived from the framing rule in spec sections
+    // 6.2.1/6.2.2 and 7.2.3.1: `[wLength(2, LE)][ReportID?][payload]`, where `wLength` counts
+    // itself, the report ID and the payload. Parser internals live in `crate::wire`.
+    // ---------------------------------------------------------------------------------------
+
+    /// The `0b1111` extended-report-ID sentinel of spec sections 7.2.2.4/7.2.3.4 binds only the
+    /// Command register's 4-bit report-ID *nibble*, and its "Third Byte" is appended to the
+    /// command, never to the data payload. The Output register (section 6.2) has no nibble: its
+    /// report ID is a full byte, so `0x0F` there is the literal report ID 15.
+    #[tokio::test]
+    async fn output_register_treats_0x0f_as_literal_report_id() {
+        let (_request, bus) = Transaction::write(
+            &[
+                0x04, 0x00, // Output register address, little-endian
+                0x04, 0x00, // wLength = 2 (self) + 1 (report ID) + 1 (payload)
+                0x0f, // report ID 15 - a literal full byte, NOT the command-register sentinel
+                0x5a, // report payload
+            ],
+            WriteStatus::Stopped(6),
+        )
+        .finish();
+        let mut resources = Resources::default();
+        let mut runner = runner_with(&mut resources, bus, recording_device()).await;
+
+        watchdog(runner.process_register_access()).await.unwrap();
+
+        assert_eq!(runner.hid_device.report_id, Some(ReportId(0x0f)));
+        // If `0x0f` had been misread as a sentinel, `0x5a` would have been eaten as the real
+        // report ID and the payload would be empty.
+        assert_eq!(
+            runner.hid_device.report_data.get(..runner.hid_device.report_len),
+            Some(&[0x5a][..])
+        );
+        assert!(!runner.hid_device.feature_report);
+        assert_eq!(runner.bus.bus.recover_count, 0);
+        assert_script_consumed(&runner.bus.bus);
+    }
+
+    /// Section 6.2.2: the Output register carries a report in the same framing as SET_REPORT.
+    #[tokio::test]
+    async fn output_register_applies_spec_framed_report() {
+        let (_request, bus) = Transaction::write(
+            &[
+                0x04, 0x00, // Output register address, little-endian
+                0x06, 0x00, // wLength = 2 (self) + 1 (report ID) + 3 (payload)
+                0x03, // report ID 3, explicit per MOUSE_DESCRIPTOR
+                0xaa, 0xbb, 0xcc, // report payload
+            ],
+            WriteStatus::Stopped(8),
+        )
+        .finish();
+        let mut resources = Resources::default();
+        let mut runner = runner_with(&mut resources, bus, recording_device()).await;
+
+        watchdog(runner.process_register_access()).await.unwrap();
+
+        assert_eq!(runner.hid_device.report_id, Some(ReportId(3)));
+        assert_eq!(
+            runner.hid_device.report_data.get(..runner.hid_device.report_len),
+            Some(&[0xaa, 0xbb, 0xcc][..])
+        );
+        assert!(!runner.hid_device.feature_report);
+        assert_eq!(runner.bus.bus.recover_count, 0);
+        assert_script_consumed(&runner.bus.bus);
+    }
+
+    /// End-to-end proof of the `WriteBufferSize = MaxOutputOrFeatureSize + 10` sizing: the
+    /// largest SET_REPORT a host can legally send in one uninterrupted write - extended report
+    /// ID in the command *and* the maximum payload - must fit the real `write_buf` without the
+    /// bus ever reporting `BufferFull`.
+    #[tokio::test]
+    async fn set_report_max_size_with_extended_id_fits_shell_buffer() {
+        let (_request, bus) = Transaction::write(
+            &[
+                0x05,
+                0x00, // Command register address, little-endian
+                0x3f, // report type Feature (0x3), report ID nibble 0xF = extended
+                Opcode::SetReport as u8,
+            ],
+            WriteStatus::Stopped(4),
+        )
+        .append_to_initial_write(&[
+            0x21, // "Third Byte": the extended report ID, appended to the command
+            0x06, 0x00, // Data register address, little-endian
+            0x0b, 0x00, // wLength = 2 (self) + 1 (report ID) + 8 (payload)
+            0x21, // report ID, repeated at the head of the data payload per 7.2.3.1
+            0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, // maximum 8-byte payload
+        ])
+        .finish();
+        let mut resources = Resources::default();
+        let mut runner = runner_with(&mut resources, bus, recording_device()).await;
+
+        watchdog(runner.process_register_access()).await.unwrap();
+
+        assert_eq!(runner.hid_device.report_id, Some(ReportId(0x21)));
+        assert_eq!(
+            runner.hid_device.report_data.get(..runner.hid_device.report_len),
+            Some(&[0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88][..])
+        );
+        assert!(runner.hid_device.feature_report);
+        assert_eq!(runner.bus.bus.recover_count, 0);
+        assert_script_consumed(&runner.bus.bus);
+    }
+
+    /// A GET_REPORT answer is `[wLength(2)][report ID][payload]` with `wLength` counting itself,
+    /// so a 1-byte payload behind an explicit report ID gives `wLength = 4`.
+    #[tokio::test]
+    async fn get_report_writes_header_then_payload() {
+        let (_request, bus) = Transaction::write(
+            &[
+                0x05,
+                0x00, // Command register address
+                0x3f, // report type Feature (0x3), report ID nibble 0xF = extended
+                Opcode::GetReport as u8,
+                0x21, // extended report ID
+                0x06,
+                0x00, // Data register address
+            ],
+            WriteStatus::Stopped(7),
+        )
+        .then_read([
+            // wLength = 2 (self) + 1 (report ID) + 1 (payload) = 4, then the report ID.
+            (&[0x04, 0x00, 0x21][..], ReadStatus::Complete(3)),
+            (&[0x5a][..], ReadStatus::Complete(1)),
+        ])
+        .finish();
+        let mut resources = Resources::default();
+        let device = recording_device().with_get_report_payload(&[0x5a]);
+        let mut runner = runner_with(&mut resources, bus, device).await;
+
+        watchdog(runner.process_register_access()).await.unwrap();
+
+        assert_outgoing_reads(&runner.bus.bus.outgoing_reads, &[&[0x04, 0x00, 0x21], &[0x5a]]);
+        assert_eq!(runner.bus.bus.recover_count, 0);
+        assert_script_consumed(&runner.bus.bus);
+    }
+
+    /// GET_REPORT must be completed by a repeated start into a read. Anything else is a
+    /// malformed command sequence, and nothing may be put on the wire.
+    #[tokio::test]
+    async fn get_report_non_read_followup_is_invalid_command() {
+        let (_request, bus) = Transaction::write(
+            &[
+                0x05,
+                0x00,
+                0x3f,
+                Opcode::GetReport as u8,
+                0x21,
+                HidI2cRegister::Data as u8,
+                0x00,
+            ],
+            WriteStatus::Stopped(7),
+        )
+        .then_request(Request::Stop(HOST_ADDR))
+        .finish();
+        let mut resources = Resources::default();
+        let mut runner = runner_with(&mut resources, bus, recording_device()).await;
+
+        let result = watchdog(runner.process_register_access()).await;
+
+        assert!(matches!(result, Err(Error::Protocol(ProtocolError::InvalidCommand))));
+        assert_outgoing_reads(&runner.bus.bus.outgoing_reads, &[]);
+        assert_script_consumed(&runner.bus.bus);
+    }
+
+    /// The header and the payload are two separate bus writes. A failure on the second leaves
+    /// the first already on the wire - the host sees a truncated response, not nothing at all.
+    #[tokio::test]
+    async fn get_report_payload_bus_error_occurs_after_header() {
+        let (_request, bus) = Transaction::write(
+            &[
+                0x05,
+                0x00,
+                0x3f,
+                Opcode::GetReport as u8,
+                0x21,
+                HidI2cRegister::Data as u8,
+                0x00,
+            ],
+            WriteStatus::Stopped(7),
+        )
+        .then_read([(&[0x04, 0x00, 0x21][..], ReadStatus::Complete(3))])
+        .fail_next(ScriptOp::RespondToRead, ErrorKind::Bus)
+        .finish();
+        let mut resources = Resources::default();
+        let device = recording_device().with_get_report_payload(&[0x5a]);
+        let mut runner = runner_with(&mut resources, bus, device).await;
+
+        let result = watchdog(runner.process_register_access()).await;
+
+        assert!(matches!(result, Err(Error::Bus(ErrorKind::Bus))));
+        assert_outgoing_reads(&runner.bus.bus.outgoing_reads, &[&[0x04, 0x00, 0x21]]);
+        assert_script_consumed(&runner.bus.bus);
+    }
+
+    /// Section 5.1: a read of the device-descriptor register returns the descriptor verbatim.
+    ///
+    /// The expectation is written out literally rather than derived from `DeviceDescriptor::new`.
+    /// Building it with the constructor under test would make the oracle circular: a constructor
+    /// that emitted the wrong bytes would be compared against its own wrong bytes and still pass.
+    ///
+    /// The bytes below are the section 5.1 field layout (each field little-endian `u16`, in the
+    /// order declared by `DeviceDescriptor`) filled in from the fixtures:
+    ///   wHIDDescLength      0x001e  - 13 `u16` fields plus 4 reserved bytes
+    ///   bcdVersion          0x0100  - HID-over-I2C protocol version
+    ///   wReportDescLength   0x0013  - `MOUSE_DESCRIPTOR` is 19 bytes
+    ///   wReportDescRegister 0x0002
+    ///   wInputRegister      0x0003
+    ///   wMaxInputLength     0x000b  - 8-byte max input report + 3 framing bytes (explicit IDs)
+    ///   wOutputRegister     0x0004
+    ///   wMaxOutputLength    0x000b  - 8-byte max output report + 3 framing bytes
+    ///   wCommandRegister    0x0005
+    ///   wDataRegister       0x0006
+    ///   wVendorId           0x1234, wProductId 0x5678, wVersionId 0x0100 - `hardware_version_info()`
+    ///   reserved            four zero bytes
+    #[tokio::test]
+    async fn device_descriptor_register_returns_descriptor() {
+        const EXPECTED_DESCRIPTOR: &[u8] = &[
+            0x1e, 0x00, // wHIDDescLength
+            0x00, 0x01, // bcdVersion
+            0x13, 0x00, // wReportDescLength
+            0x02, 0x00, // wReportDescRegister
+            0x03, 0x00, // wInputRegister
+            0x0b, 0x00, // wMaxInputLength
+            0x04, 0x00, // wOutputRegister
+            0x0b, 0x00, // wMaxOutputLength
+            0x05, 0x00, // wCommandRegister
+            0x06, 0x00, // wDataRegister
+            0x34, 0x12, // wVendorId
+            0x78, 0x56, // wProductId
+            0x00, 0x01, // wVersionId
+            0x00, 0x00, 0x00, 0x00, // reserved
+        ];
+
+        let (_request, bus) = Transaction::write(&[0x01, 0x00], WriteStatus::Stopped(2))
+            .then_read([(EXPECTED_DESCRIPTOR, ReadStatus::Complete(EXPECTED_DESCRIPTOR.len()))])
+            .finish();
+        let mut resources = Resources::default();
+        let mut runner = runner_with(&mut resources, bus, recording_device()).await;
+
+        watchdog(runner.process_register_access()).await.unwrap();
+
+        assert_eq!(runner.device_descriptor.as_bytes(), EXPECTED_DESCRIPTOR);
+        assert_outgoing_reads(&runner.bus.bus.outgoing_reads, &[EXPECTED_DESCRIPTOR]);
+        assert_eq!(runner.bus.bus.recover_count, 0);
+        assert_script_consumed(&runner.bus.bus);
+    }
+
+    #[tokio::test]
+    async fn device_descriptor_rejects_non_read_followup() {
+        let (_request, bus) = Transaction::write(&[0x01, 0x00], WriteStatus::Stopped(2))
+            .then_request(Request::Stop(HOST_ADDR))
+            .finish();
+        let mut resources = Resources::default();
+        let mut runner = runner_with(&mut resources, bus, recording_device()).await;
+
+        let result = watchdog(runner.process_register_access()).await;
+
+        assert!(matches!(
+            result,
+            Err(Error::Protocol(ProtocolError::InvalidRegisterAddress))
+        ));
+        assert_outgoing_reads(&runner.bus.bus.outgoing_reads, &[]);
+        assert_script_consumed(&runner.bus.bus);
+    }
+
+    /// Section 5.2: a read of the report-descriptor register returns the device's own descriptor.
+    #[tokio::test]
+    async fn report_descriptor_register_returns_descriptor() {
+        let expected = crate::test_support::MOUSE_DESCRIPTOR;
+        let (_request, bus) = Transaction::write(&[0x02, 0x00], WriteStatus::Stopped(2))
+            .then_read([(expected, ReadStatus::Complete(expected.len()))])
+            .finish();
+        let mut resources = Resources::default();
+        let mut runner = runner_with(&mut resources, bus, recording_device()).await;
+
+        watchdog(runner.process_register_access()).await.unwrap();
+
+        assert_eq!(expected.len(), 19);
+        assert_outgoing_reads(&runner.bus.bus.outgoing_reads, &[expected]);
+        assert_eq!(runner.bus.bus.recover_count, 0);
+        assert_script_consumed(&runner.bus.bus);
+    }
+
+    #[tokio::test]
+    async fn report_descriptor_rejects_non_read_followup() {
+        let (_request, bus) = Transaction::write(&[0x02, 0x00], WriteStatus::Stopped(2))
+            .then_request(Request::Stop(HOST_ADDR))
+            .finish();
+        let mut resources = Resources::default();
+        let mut runner = runner_with(&mut resources, bus, recording_device()).await;
+
+        let result = watchdog(runner.process_register_access()).await;
+
+        assert!(matches!(
+            result,
+            Err(Error::Protocol(ProtocolError::InvalidRegisterAddress))
+        ));
+        assert_outgoing_reads(&runner.bus.bus.outgoing_reads, &[]);
+        assert_script_consumed(&runner.bus.bus);
+    }
+
+    /// Section 6.1: addressing the Input register and restarting into a read yields the queued
+    /// input report, framed as `[wLength(2)][report ID][payload]`.
+    #[tokio::test]
+    async fn input_register_returns_pending_input_report() {
+        let (_request, bus) = Transaction::write(&[0x03, 0x00], WriteStatus::Stopped(2))
+            .then_read([
+                // wLength = 2 (self) + 1 (report ID) + 2 (payload) = 5
+                (&[0x05, 0x00, 0x03][..], ReadStatus::Complete(3)),
+                (&[0xde, 0xad][..], ReadStatus::Complete(2)),
+            ])
+            .finish();
+        let mut resources = Resources::default();
+        let device = recording_device().with_pending_input(ReportId(3), &[0xde, 0xad]);
+        let mut runner = runner_with(&mut resources, bus, device).await;
+
+        watchdog(runner.process_register_access()).await.unwrap();
+
+        assert_outgoing_reads(&runner.bus.bus.outgoing_reads, &[&[0x05, 0x00, 0x03], &[0xde, 0xad]]);
+        assert!(runner.hid_device.pending_input.is_none());
+        assert_eq!(runner.bus.bus.recover_count, 0);
+        assert_script_consumed(&runner.bus.bus);
+    }
+
+    #[tokio::test]
+    async fn input_register_rejects_non_read_followup() {
+        let (_request, bus) = Transaction::write(&[0x03, 0x00], WriteStatus::Stopped(2))
+            .then_request(Request::Stop(HOST_ADDR))
+            .finish();
+        let mut resources = Resources::default();
+        let device = recording_device().with_pending_input(ReportId(3), &[0xde, 0xad]);
+        let mut runner = runner_with(&mut resources, bus, device).await;
+
+        let result = watchdog(runner.process_register_access()).await;
+
+        assert!(matches!(result, Err(Error::Protocol(ProtocolError::InvalidCommand))));
+        assert_outgoing_reads(&runner.bus.bus.outgoing_reads, &[]);
+        assert_script_consumed(&runner.bus.bus);
+    }
+
+    /// Section 7.1.1: a write to the Command register is dispatched to the command decoder.
+    #[tokio::test]
+    async fn command_register_dispatches_command() {
+        let (_request, bus) = Transaction::write(
+            &[
+                0x05,
+                0x00, // Command register address, little-endian
+                0x01, // command low byte: power state Sleep
+                Opcode::SetPower as u8,
+            ],
+            WriteStatus::Stopped(4),
+        )
+        .finish();
+        let mut resources = Resources::default();
+        let mut runner = runner_with(&mut resources, bus, recording_device()).await;
+
+        watchdog(runner.process_register_access()).await.unwrap();
+
+        assert_eq!(runner.hid_device.power_state, Some(HidDevicePowerState::Sleep));
+        assert_eq!(runner.bus.bus.recover_count, 0);
+        assert_script_consumed(&runner.bus.bus);
+    }
+
+    /// Section 7.1.2: the Data register is only ever addressed as part of a command sequence.
+    /// A bare write to it has no command to belong to.
+    #[tokio::test]
+    async fn data_register_without_preceding_command_is_rejected() {
+        let (_request, bus) =
+            Transaction::write(&[0x06, 0x00, 0x04, 0x00, 0x03, 0x5a], WriteStatus::Stopped(6)).finish();
+        let mut resources = Resources::default();
+        let mut runner = runner_with(&mut resources, bus, recording_device()).await;
+
+        let result = watchdog(runner.process_register_access()).await;
+
+        assert!(matches!(
+            result,
+            Err(Error::Protocol(ProtocolError::InvalidRegisterAddress))
+        ));
+        assert_eq!(runner.hid_device.report_id, None);
+        assert_script_consumed(&runner.bus.bus);
+    }
+
+    /// A register address is two bytes; anything shorter is not addressing anything.
+    #[tokio::test]
+    async fn register_access_rejects_short_address() {
+        let (_request, one_byte) = Transaction::write(&[0x01], WriteStatus::Stopped(1)).finish();
+        let mut resources = Resources::default();
+        let mut runner = runner_with(&mut resources, one_byte, recording_device()).await;
+
+        let result = watchdog(runner.process_register_access()).await;
+
+        assert!(matches!(result, Err(Error::Protocol(ProtocolError::InvalidData))));
+        assert_script_consumed(&runner.bus.bus);
+
+        let (_request, empty) = Transaction::write(&[], WriteStatus::Stopped(0)).finish();
+        let mut empty_resources = Resources::default();
+        let mut empty_runner = runner_with(&mut empty_resources, empty, recording_device()).await;
+
+        let result = watchdog(empty_runner.process_register_access()).await;
+
+        assert!(matches!(result, Err(Error::Protocol(ProtocolError::InvalidData))));
+        assert_script_consumed(&empty_runner.bus.bus);
+    }
+
+    #[tokio::test]
+    async fn register_access_rejects_unknown_register() {
+        let (_request, bus) = Transaction::write(&[0x77, 0x77], WriteStatus::Stopped(2)).finish();
+        let mut resources = Resources::default();
+        let mut runner = runner_with(&mut resources, bus, recording_device()).await;
+
+        let result = watchdog(runner.process_register_access()).await;
+
+        assert!(matches!(
+            result,
+            Err(Error::Protocol(ProtocolError::InvalidRegisterAddress))
+        ));
+        assert_script_consumed(&runner.bus.bus);
+    }
 }
