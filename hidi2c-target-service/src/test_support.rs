@@ -85,11 +85,16 @@ where
 
     async fn process_get_report<R>(
         &mut self,
-        _report_type: GetHidReportType,
+        report_type: GetHidReportType,
         report_id: ReportId,
         process_report: impl AsyncFnOnce(GetHidReport<'_>) -> R,
     ) -> Result<R, HidError> {
-        Ok(process_report(GetHidReport::Feature(HidReport::new(report_id, &[0x5a]))).await)
+        let report = HidReport::new(report_id, &[0x5a]);
+        let report = match report_type {
+            GetHidReportType::Input => GetHidReport::Input(report),
+            GetHidReportType::Feature => GetHidReport::Feature(report),
+        };
+        Ok(process_report(report).await)
     }
 
     async fn set_report(&mut self, report: &SetHidReport<'_>) -> Result<(), HidError> {
