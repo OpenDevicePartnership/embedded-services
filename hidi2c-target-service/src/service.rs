@@ -89,6 +89,11 @@ impl<Bus: I2cTargetAsync> TimeoutBus<Bus> {
                 Err(Error::Protocol(ProtocolError::InvalidData))
             }
             // Some other write status we don't expect while reading.
+            //
+            // `WriteStatus` is `#[non_exhaustive]`, so this fallback is required for forward
+            // compatibility. The crate currently exposes only `Stopped`, `Restarted`, and
+            // `BufferFull`, all handled above; no current value can reach this arm, so it is
+            // intentionally not covered by tests.
             Ok(Ok(status)) => {
                 error!("Unexpected write status: {:?}", status);
                 Err(Error::Protocol(ProtocolError::InvalidData))
@@ -2286,5 +2291,609 @@ mod tests {
             Err(Error::Protocol(ProtocolError::InvalidRegisterAddress))
         ));
         assert_script_consumed(&runner.bus.bus);
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // `process_request` dispatch (pass B).
+    //
+    // `process_request` is the run loop's only entry point for a host-initiated bus event. It
+    // returns `()`, so its entire observable contract is: which sub-handler it routes to, and
+    // what it does with each of the four `Result` arms it can get back. Everything below drives
+    // it directly rather than through `run()`, which never returns.
+    // ---------------------------------------------------------------------------------------
+
+    /// `Request::Write` means the host is addressing a register, so the write must land on the
+    /// device.
+    #[tokio::test]
+    async fn process_request_dispatches_write_to_register_access() {
+        let (request, bus) = Transaction::write(
+            &[
+                0x04, 0x00, // Output register address, little-endian
+                0x04, 0x00, // wLength = 2 (self) + 1 (report ID) + 1 (payload)
+                0x03, // report ID 3, explicit per MOUSE_DESCRIPTOR
+                0x5a, // report payload
+            ],
+            WriteStatus::Stopped(6),
+        )
+        .finish();
+        let mut resources = Resources::default();
+        let mut runner = runner_with(&mut resources, bus, recording_device()).await;
+
+        watchdog(runner.process_request(request)).await;
+
+        assert_eq!(runner.hid_device.report_id, Some(ReportId(3)));
+        assert_eq!(
+            runner.hid_device.report_data.get(..runner.hid_device.report_len),
+            Some(&[0x5a][..])
+        );
+        assert_eq!(runner.hid_device.reset_count, 0);
+        assert_script_consumed(&runner.bus.bus);
+    }
+
+    /// `Request::Read` outside a register sequence is the host polling the input register, so it
+    /// must be answered from the input-report queue.
+    #[tokio::test]
+    async fn process_request_dispatches_read_to_input_report() {
+        let (request, bus) = Transaction::read()
+            .then_read([
+                // wLength = 2 (self) + 1 (report ID) + 2 (payload) = 5
+                (&[0x05, 0x00, 0x03][..], ReadStatus::Complete(3)),
+                (&[0xde, 0xad][..], ReadStatus::Complete(2)),
+            ])
+            .finish();
+        let mut resources = Resources::default();
+        let device = recording_device().with_pending_input(ReportId(3), &[0xde, 0xad]);
+        let mut runner = runner_with(&mut resources, bus, device).await;
+
+        watchdog(runner.process_request(request)).await;
+
+        assert_outgoing_reads(&runner.bus.bus.outgoing_reads, &[&[0x05, 0x00, 0x03], &[0xde, 0xad]]);
+        assert!(runner.hid_device.pending_input.is_none());
+        assert_script_consumed(&runner.bus.bus);
+    }
+
+    /// Asserts that a request type carries no side effects at all: nothing on the wire, nothing
+    /// on the device, nothing on the GPIO, and no scripted step consumed.
+    async fn assert_request_is_ignored(request: Request) {
+        let mut resources = Resources::default();
+        let mut runner = runner_with(&mut resources, ScriptedBus::default(), recording_device()).await;
+
+        watchdog(runner.process_request(request)).await;
+
+        assert_outgoing_reads(&runner.bus.bus.outgoing_reads, &[]);
+        assert_eq!(runner.bus.bus.recover_count, 0);
+        assert_eq!(runner.hid_device.report_id, None);
+        assert_eq!(runner.hid_device.reset_count, 0);
+        assert_eq!(runner.hid_device.power_state, None);
+        assert!(!runner.pending_reset);
+        assert!(!runner.attn_pin.asserted());
+        // Only the deassert `AttnPinHandler::new` performs; the request drove nothing further.
+        assert_pin_levels(&runner.attn_pin.pin().levels, &[PinLevel::High]);
+        assert_script_consumed(&runner.bus.bus);
+    }
+
+    /// A `Stop` closes a transaction we have already fully handled; there is nothing left to do.
+    #[tokio::test]
+    async fn process_request_ignores_stop() {
+        assert_request_is_ignored(Request::Stop(HOST_ADDR)).await;
+    }
+
+    /// A bare `RepeatedStart` only ends the previous sub-transaction - the direction of the new
+    /// one arrives on the next `listen`, so this edge alone is not actionable.
+    #[tokio::test]
+    async fn process_request_ignores_repeated_start() {
+        assert_request_is_ignored(Request::RepeatedStart(HOST_ADDR)).await;
+    }
+
+    /// A general call is addressed to every target on the bus, not to us specifically.
+    #[tokio::test]
+    async fn process_request_ignores_general_call() {
+        assert_request_is_ignored(Request::GeneralCall).await;
+    }
+
+    /// A bus-layer failure is logged and dropped: the run loop must keep servicing the host, and
+    /// a bus error is not grounds for resetting the HID device.
+    #[tokio::test]
+    async fn process_request_swallows_bus_error() {
+        let bus = ScriptedBus {
+            respond_to_write_steps: VecDeque::from([RespondToWriteStep::Error(ErrorKind::Overrun)]),
+            ..Default::default()
+        };
+        let mut resources = Resources::default();
+        let mut runner = runner_with(&mut resources, bus, recording_device()).await;
+
+        watchdog(runner.process_request(Request::Write(HOST_ADDR))).await;
+
+        assert_eq!(runner.hid_device.reset_count, 0);
+        assert_eq!(runner.hid_device.report_id, None);
+        assert!(!runner.pending_reset);
+        assert!(!runner.attn_pin.asserted());
+        assert_script_consumed(&runner.bus.bus);
+    }
+
+    /// A malformed frame from the host is likewise logged and dropped - the host is free to
+    /// retry, and resetting the device would punish it for the host's mistake.
+    #[tokio::test]
+    async fn process_request_swallows_protocol_error() {
+        // A register address is two bytes; one byte cannot address anything.
+        let (request, bus) = Transaction::write(&[0x01], WriteStatus::Stopped(1)).finish();
+        let mut resources = Resources::default();
+        let mut runner = runner_with(&mut resources, bus, recording_device()).await;
+
+        watchdog(runner.process_request(request)).await;
+
+        assert_eq!(runner.hid_device.reset_count, 0);
+        assert_eq!(runner.hid_device.report_id, None);
+        assert!(!runner.pending_reset);
+        assert!(!runner.attn_pin.asserted());
+        assert_script_consumed(&runner.bus.bus);
+    }
+
+    /// The device-initiated reset path: `HidError::TriggerReset` bubbling out of the device is
+    /// the one error arm that is *not* swallowed. It must reset the device, latch the pending
+    /// acknowledgement, and raise ATTN so the host comes back to collect it (spec section 7.2.1).
+    #[tokio::test]
+    async fn process_request_resets_on_device_trigger_reset() {
+        let (request, bus) = Transaction::write(
+            &[
+                0x04, 0x00, // Output register address, little-endian
+                0x04, 0x00, // wLength = 2 (self) + 1 (report ID) + 1 (payload)
+                0x03, // report ID 3
+                0x5a, // report payload
+            ],
+            WriteStatus::Stopped(6),
+        )
+        .finish();
+        let mut resources = Resources::default();
+        let mut device = recording_device();
+        device.fail_set_report = Some(HidError::TriggerReset);
+        let mut runner = runner_with(&mut resources, bus, device).await;
+
+        watchdog(runner.process_request(request)).await;
+
+        assert_eq!(runner.hid_device.reset_count, 1);
+        assert!(runner.pending_reset);
+        assert!(runner.attn_pin.asserted());
+        // Deassert at construction, then the assert the reset performs.
+        assert_pin_levels(&runner.attn_pin.pin().levels, &[PinLevel::High, PinLevel::Low]);
+        assert_script_consumed(&runner.bus.bus);
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Reply paths.
+    // ---------------------------------------------------------------------------------------
+
+    /// Section 7.2.1: the first input read after a reset is answered with a zero-length report,
+    /// which is what tells the host the reset completed. The interrupt is then released.
+    #[tokio::test]
+    async fn reset_read_acknowledges_with_zero_report() {
+        let (request, bus) = Transaction::read()
+            .then_read([(&[0x00, 0x00][..], ReadStatus::Complete(2))])
+            .finish();
+        let mut resources = Resources::default();
+        let mut runner = runner_with(&mut resources, bus, recording_device()).await;
+
+        watchdog(runner.reset()).await;
+        assert!(runner.pending_reset);
+
+        watchdog(runner.process_request(request)).await;
+
+        assert!(!runner.pending_reset);
+        assert!(!runner.attn_pin.asserted());
+        assert_outgoing_reads(&runner.bus.bus.outgoing_reads, &[&[0x00, 0x00]]);
+        // Deassert at construction, assert on reset, deassert once the host has collected it.
+        assert_pin_levels(
+            &runner.attn_pin.pin().levels,
+            &[PinLevel::High, PinLevel::Low, PinLevel::High],
+        );
+        assert_script_consumed(&runner.bus.bus);
+    }
+
+    /// The same zero-length reply, reached by the *other* route: no reset is pending and the
+    /// device simply has nothing queued. `reset_count == 0` and `pending_reset == false`
+    /// throughout are what distinguish this from the reset-acknowledgement path above.
+    #[tokio::test]
+    async fn read_without_pending_input_returns_zero_report() {
+        let (request, bus) = Transaction::read()
+            .then_read([(&[0x00, 0x00][..], ReadStatus::Complete(2))])
+            .finish();
+        let mut resources = Resources::default();
+        let device = recording_device();
+        assert!(device.pending_input.is_none(), "this test needs the no-pending branch");
+        let mut runner = runner_with(&mut resources, bus, device).await;
+
+        assert!(!runner.pending_reset, "this test must not take the reset branch");
+
+        watchdog(runner.process_request(request)).await;
+
+        assert_eq!(runner.hid_device.reset_count, 0);
+        assert!(!runner.pending_reset);
+        assert_outgoing_reads(&runner.bus.bus.outgoing_reads, &[&[0x00, 0x00]]);
+        // The clear is attempted even though the interrupt was never raised.
+        assert_pin_levels(&runner.attn_pin.pin().levels, &[PinLevel::High, PinLevel::High]);
+        assert!(!runner.attn_pin.asserted());
+        assert_script_consumed(&runner.bus.bus);
+    }
+
+    /// An input report is emitted as two separate bus writes. If the host abandons the
+    /// transaction between them, the report has already been taken out of the device's queue by
+    /// `process_next_input_report` and is not put back - so the host sees a truncated frame and
+    /// the report is gone. ATTN also stays asserted, because the clear is only reached on the
+    /// success path.
+    ///
+    /// CHARACTERISATION, not a specification: this test pins current behaviour - silent input
+    /// report loss on a mid-frame failure, with ATTN left asserted - so that a change to it is
+    /// noticed. Whether losing the report is correct is an open design question, not a settled
+    /// requirement.
+    #[tokio::test]
+    async fn input_report_payload_timeout_preserves_failure_state() {
+        let bus = ScriptedBus {
+            // Only the header is scripted. The payload write finds an empty queue and pends,
+            // so the device-response timeout fires mid-frame.
+            respond_to_read_steps: VecDeque::from([RespondToReadStep::Success(ExpectedRead::new(
+                &[0x05, 0x00, 0x03],
+                ReadStatus::Complete(3),
+            ))]),
+            ..Default::default()
+        };
+        let mut resources = Resources::default();
+        let device = recording_device().with_pending_input(ReportId(3), &[0xde, 0xad]);
+        let mut runner = runner_with(&mut resources, bus, device).await;
+
+        runner.attn_pin.assert_interrupt().unwrap();
+        assert!(runner.attn_pin.asserted());
+
+        let result = watchdog(runner.reply_with_input_report()).await;
+
+        assert!(matches!(result, Err(Error::Protocol(ProtocolError::Timeout))));
+        assert_eq!(runner.bus.bus.recover_count, 1);
+        // Only the header reached the host; the payload never did.
+        assert_outgoing_reads(&runner.bus.bus.outgoing_reads, &[&[0x05, 0x00, 0x03]]);
+        // ...and the report is already gone from the device, so it can never be re-sent.
+        assert!(runner.hid_device.pending_input.is_none());
+        // The clear is unreachable on this path, so the host is still being told to read.
+        assert!(runner.attn_pin.asserted());
+        assert_pin_levels(&runner.attn_pin.pin().levels, &[PinLevel::High, PinLevel::Low]);
+        assert_script_consumed(&runner.bus.bus);
+    }
+
+    /// The report reached the host, so the transfer succeeded; a GPIO that then refuses to
+    /// deassert must not turn that success into an error. The handler's `asserted` flag stays
+    /// set, because `clear_interrupt` only clears it after the pin actually moved.
+    #[tokio::test]
+    async fn input_report_clear_attn_failure_is_swallowed() {
+        let bus = ScriptedBus {
+            respond_to_read_steps: VecDeque::from([
+                RespondToReadStep::Success(ExpectedRead::new(&[0x05, 0x00, 0x03], ReadStatus::Complete(3))),
+                RespondToReadStep::Success(ExpectedRead::new(&[0xde, 0xad], ReadStatus::Complete(2))),
+            ]),
+            ..Default::default()
+        };
+        let mut resources = Resources::default();
+        let (_service, mut runner) = Service::new(
+            &mut resources,
+            bus,
+            // Two transitions succeed - the constructor's deassert and the explicit assert
+            // below - and the final deassert fails.
+            RecordingPin::failing_after(2),
+            recording_device().with_pending_input(ReportId(3), &[0xde, 0xad]),
+            hardware_version_info(),
+            TimeoutSettings {
+                device_response_timeout: Duration::from_millis(20),
+                data_read_timeout: Duration::from_millis(20),
+            },
+        )
+        .await
+        .unwrap();
+
+        runner.attn_pin.assert_interrupt().unwrap();
+
+        let result = watchdog(runner.reply_with_input_report()).await;
+
+        assert!(result.is_ok(), "a failed GPIO deassert must not fail the transfer");
+        assert_outgoing_reads(&runner.bus.bus.outgoing_reads, &[&[0x05, 0x00, 0x03], &[0xde, 0xad]]);
+        assert!(runner.hid_device.pending_input.is_none());
+        // The deassert never happened, so the handler still believes it is asserting.
+        assert!(runner.attn_pin.asserted());
+        assert_pin_levels(&runner.attn_pin.pin().levels, &[PinLevel::High, PinLevel::Low]);
+        assert_script_consumed(&runner.bus.bus);
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // `discard_remaining_bytes_from_host` and recovery precedence.
+    //
+    // The discard loop runs when the host has written more than our buffer can hold. It has to
+    // drain the rest of the transaction without stalling the bus, and its error handling has a
+    // precedence rule: a failing `recover()` outranks the timeout that provoked it, because the
+    // caller can retry after a timeout but not after an unrecoverable bus.
+    // ---------------------------------------------------------------------------------------
+
+    /// A bus error during the drain is reported as-is; nothing is recovered, because the
+    /// peripheral answered rather than went silent.
+    #[tokio::test]
+    async fn discard_remaining_bytes_propagates_bus_error() {
+        let mut bus = scripted_timeout_bus(ScriptedBus {
+            respond_to_write_steps: VecDeque::from([RespondToWriteStep::Error(ErrorKind::Bus)]),
+            ..Default::default()
+        });
+
+        let result = watchdog(bus.discard_remaining_bytes_from_host()).await;
+
+        assert!(matches!(result, Err(Error::Bus(ErrorKind::Bus))));
+        assert_eq!(bus.bus.recover_count, 0);
+        assert_script_consumed(&bus.bus);
+    }
+
+    /// A host that stops driving mid-drain leaves the bus hung, so it is recovered and the
+    /// timeout reported. This reaches both statements of the timeout arm.
+    #[tokio::test]
+    async fn discard_timeout_recovers_then_reports_protocol_timeout() {
+        let mut bus = scripted_timeout_bus(ScriptedBus {
+            // One full buffer keeps the loop going; the next iteration finds an empty queue.
+            respond_to_write_steps: VecDeque::from([RespondToWriteStep::Success(IncomingWrite {
+                data: Vec::new(),
+                status: WriteStatus::BufferFull(0),
+            })]),
+            ..Default::default()
+        });
+
+        let result = watchdog(bus.discard_remaining_bytes_from_host()).await;
+
+        assert!(matches!(result, Err(Error::Protocol(ProtocolError::Timeout))));
+        assert_eq!(bus.bus.recover_count, 1);
+        assert_script_consumed(&bus.bus);
+    }
+
+    /// When recovery itself fails, the recovery error is what the caller sees: the `?` on
+    /// `recover()` returns before the `Timeout` line is ever reached.
+    #[tokio::test]
+    async fn discard_timeout_recovery_failure_takes_precedence() {
+        let mut bus = scripted_timeout_bus(ScriptedBus {
+            respond_to_write_steps: VecDeque::from([RespondToWriteStep::Success(IncomingWrite {
+                data: Vec::new(),
+                status: WriteStatus::BufferFull(0),
+            })]),
+            fail_recover: Some(ErrorKind::Bus),
+            ..Default::default()
+        });
+
+        let result = watchdog(bus.discard_remaining_bytes_from_host()).await;
+
+        assert!(
+            matches!(result, Err(Error::Bus(ErrorKind::Bus))),
+            "the recovery failure must outrank the timeout that provoked it"
+        );
+        assert_eq!(bus.bus.recover_count, 1);
+        assert_script_consumed(&bus.bus);
+    }
+
+    /// The drain loops until the host actually terminates the transaction, however many buffers
+    /// that takes. A terminating status is not an error, so nothing is recovered.
+    #[tokio::test]
+    async fn discard_drains_multiple_full_buffers() {
+        let mut bus = scripted_timeout_bus(ScriptedBus {
+            respond_to_write_steps: VecDeque::from([
+                RespondToWriteStep::Success(IncomingWrite {
+                    data: vec![0x11, 0x22],
+                    status: WriteStatus::BufferFull(2),
+                }),
+                RespondToWriteStep::Success(IncomingWrite {
+                    data: vec![0x33, 0x44],
+                    status: WriteStatus::BufferFull(2),
+                }),
+                RespondToWriteStep::Success(IncomingWrite {
+                    data: vec![0x55],
+                    status: WriteStatus::Stopped(1),
+                }),
+            ]),
+            ..Default::default()
+        });
+
+        watchdog(bus.discard_remaining_bytes_from_host()).await.unwrap();
+
+        assert_script_consumed(&bus.bus);
+        assert_eq!(bus.bus.recover_count, 0);
+    }
+
+    /// The same drain reached the way production reaches it - through an oversized host write
+    /// into `read` - so the `?` that propagates the drain's failure out of `read` is covered too.
+    #[tokio::test]
+    async fn read_oversize_discard_timeout_recovers() {
+        let mut bus = scripted_timeout_bus(ScriptedBus {
+            respond_to_write_steps: VecDeque::from([
+                // The initial read overflows our buffer...
+                RespondToWriteStep::Success(IncomingWrite {
+                    data: vec![0x10, 0x20],
+                    status: WriteStatus::BufferFull(2),
+                }),
+                // ...the first drain iteration overflows too, and then the host goes silent.
+                RespondToWriteStep::Success(IncomingWrite {
+                    data: vec![0x30, 0x40],
+                    status: WriteStatus::BufferFull(2),
+                }),
+            ]),
+            ..Default::default()
+        });
+        let mut buffer = [0; 2];
+
+        let result = watchdog(bus.read(&mut buffer)).await;
+
+        assert!(matches!(result, Err(Error::Protocol(ProtocolError::Timeout))));
+        assert_eq!(bus.bus.recover_count, 1);
+        assert_script_consumed(&bus.bus);
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // `listen_for_response`, `listen_indefinitely`, `TimeoutBus::read`, `write_unterminated`.
+    // ---------------------------------------------------------------------------------------
+
+    /// A repeated start only ends the previous sub-transaction; the direction we are waiting for
+    /// arrives on the following `listen`, so the edge must be skipped rather than returned.
+    #[tokio::test]
+    async fn listen_for_response_skips_repeated_start() {
+        let mut bus = scripted_timeout_bus(ScriptedBus {
+            listen_steps: VecDeque::from([
+                ListenStep::Success(Request::RepeatedStart(HOST_ADDR)),
+                ListenStep::Success(Request::Read(HOST_ADDR)),
+            ]),
+            ..Default::default()
+        });
+
+        let result = watchdog(bus.listen_for_response()).await;
+
+        assert!(matches!(result, Ok(Request::Read(address)) if address == HOST_ADDR));
+        assert_script_consumed(&bus.bus);
+        assert_eq!(bus.bus.recover_count, 0);
+    }
+
+    #[tokio::test]
+    async fn listen_for_response_propagates_bus_error() {
+        let mut bus = scripted_timeout_bus(ScriptedBus {
+            listen_steps: VecDeque::from([ListenStep::Error(ErrorKind::Bus)]),
+            ..Default::default()
+        });
+
+        let result = watchdog(bus.listen_for_response()).await;
+
+        assert!(matches!(result, Err(Error::Bus(ErrorKind::Bus))));
+        assert_script_consumed(&bus.bus);
+    }
+
+    /// The idle wait has no deadline: between transactions there is nothing to time out, so a
+    /// request that arrives is simply returned.
+    #[tokio::test]
+    async fn listen_indefinitely_returns_next_request() {
+        let mut bus = scripted_timeout_bus(ScriptedBus {
+            listen_steps: VecDeque::from([ListenStep::Success(Request::Write(HOST_ADDR))]),
+            ..Default::default()
+        });
+
+        let result = watchdog(bus.listen_indefinitely()).await;
+
+        assert!(matches!(result, Ok(Request::Write(address)) if address == HOST_ADDR));
+        assert_script_consumed(&bus.bus);
+        assert_eq!(bus.bus.recover_count, 0);
+    }
+
+    /// A host that restarts instead of stopping has still finished writing, so the bytes it
+    /// delivered are handed back exactly as they are for a `Stopped` transfer.
+    #[tokio::test]
+    async fn timeout_bus_read_accepts_restarted_write() {
+        let mut bus = scripted_timeout_bus(ScriptedBus {
+            respond_to_write_steps: VecDeque::from([RespondToWriteStep::Success(IncomingWrite {
+                data: vec![0x10, 0x20, 0x30],
+                status: WriteStatus::Restarted(3),
+            })]),
+            ..Default::default()
+        });
+        let mut buffer = [0; 4];
+
+        let payload = watchdog(bus.read(&mut buffer)).await.unwrap();
+
+        assert_eq!(payload, &[0x10, 0x20, 0x30]);
+        assert_eq!(bus.bus.recover_count, 0);
+    }
+
+    /// A HAL that reports more bytes than the buffer could possibly hold is lying. The service
+    /// must reject the claim rather than slice past the end of its own buffer.
+    #[tokio::test]
+    async fn timeout_bus_rejects_impossible_byte_count() {
+        let mut bus = scripted_timeout_bus(ScriptedBus {
+            respond_to_write_steps: VecDeque::from([RespondToWriteStep::Success(IncomingWrite {
+                data: vec![0x10, 0x20],
+                // 999 bytes into a 2-byte buffer is not physically possible.
+                status: WriteStatus::Stopped(999),
+            })]),
+            ..Default::default()
+        });
+        let mut buffer = [0; 2];
+
+        let result = watchdog(bus.read(&mut buffer)).await;
+
+        assert!(matches!(result, Err(Error::Protocol(ProtocolError::InvalidData))));
+        assert_eq!(bus.bus.recover_count, 0);
+        assert_script_consumed(&bus.bus);
+    }
+
+    /// The write path applies the same precedence rule as the drain: a failing `recover()`
+    /// replaces the timeout that triggered it.
+    #[tokio::test]
+    async fn write_unterminated_reports_recovery_failure() {
+        let mut bus = scripted_timeout_bus(ScriptedBus {
+            // Empty read queue, so the host never takes the bytes and the deadline fires.
+            fail_recover: Some(ErrorKind::Bus),
+            ..Default::default()
+        });
+
+        let result = watchdog(bus.write_unterminated(&[0xaa])).await;
+
+        assert!(matches!(result, Err(Error::Bus(ErrorKind::Bus))));
+        assert_eq!(bus.bus.recover_count, 1);
+        assert_outgoing_reads(&bus.bus.outgoing_reads, &[]);
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Construction and reset.
+    // ---------------------------------------------------------------------------------------
+
+    /// The `Service` handle and the `Runner` are separate objects; `Service::reset` is the only
+    /// way a caller can ask for a device-initiated reset, and it reaches the runner through the
+    /// shared signal the run loop selects on.
+    #[tokio::test]
+    async fn service_reset_signals_runner_resource() {
+        let mut resources = Resources::default();
+        let (mut service, runner) = Service::new(
+            &mut resources,
+            ScriptedBus::default(),
+            RecordingPin::new(),
+            recording_device(),
+            hardware_version_info(),
+            TimeoutSettings::default(),
+        )
+        .await
+        .unwrap();
+
+        service.reset();
+
+        // `Signal` is single-slot and latched, so signalling before waiting cannot lose the
+        // wakeup; the watchdog turns a regression here into a failure rather than a hang.
+        watchdog(runner.resources.reset_signal.wait()).await;
+    }
+
+    /// `DeviceDescriptor::new` holds the device to its own `MAX_DESCRIPTOR_LEN` contract, and
+    /// `Service::new` must surface that failure rather than construct a runner that would
+    /// advertise a `wReportDescLength` it cannot honour.
+    #[tokio::test]
+    async fn service_new_propagates_descriptor_error() {
+        let mut resources: Resources<ScriptedBus, RecordingPin, crate::test_support::UnderDeclaredDescriptorDevice> =
+            Resources::default();
+
+        let result = Service::new(
+            &mut resources,
+            ScriptedBus::default(),
+            RecordingPin::new(),
+            crate::test_support::under_declared_descriptor_device(),
+            hardware_version_info(),
+            TimeoutSettings::default(),
+        )
+        .await;
+
+        // MOUSE_DESCRIPTOR is 19 bytes; the device declares a 4-byte upper bound.
+        assert_eq!(
+            result.err(),
+            Some(crate::DeviceDescriptorError::ReportDescriptorTooLarge { actual: 19, max: 4 })
+        );
+    }
+
+    /// The constructor deasserts the pin on a best-effort basis. A GPIO that cannot be driven at
+    /// all must not make the handler unconstructible - there would be no way to bring the service
+    /// up, and no way to log the problem.
+    #[test]
+    fn attn_constructor_tolerates_initial_clear_failure() {
+        let handler = AttnPinHandler::new(RecordingPin::failing_after(0));
+
+        assert!(!handler.asserted());
+        // The drive was attempted and refused, so nothing was recorded.
+        assert_pin_levels(&handler.pin().levels, &[]);
     }
 }
