@@ -627,25 +627,95 @@ mod tests {
         }
     }
 
+    /// Upper bound on how many steps a single [`Transaction`] may queue. A script longer than this
+    /// is a sign the test is describing a whole session rather than one transaction.
+    const MAX_SCRIPT_STEPS: usize = 16;
+
+    #[derive(Debug)]
     struct IncomingWrite {
         data: Vec<u8>,
         status: WriteStatus,
     }
 
+    /// One scripted answer for `listen()`. Position in the queue is meaningful: the Nth `listen()`
+    /// consumes the Nth step.
+    #[derive(Debug)]
+    enum ListenStep {
+        Success(Request),
+        Error(MockBusError),
+        /// Pop the step, then never complete, so the caller's timeout fires. Steps queued behind
+        /// this one survive the cancellation.
+        Pending,
+    }
+
+    /// One scripted answer for `respond_to_write()`.
+    #[derive(Debug)]
+    enum RespondToWriteStep {
+        Success(IncomingWrite),
+        Error(MockBusError),
+        Pending,
+    }
+
+    /// The bytes a `respond_to_read()` step expects to be offered, and the status it answers with.
+    #[derive(Debug)]
+    struct ExpectedRead {
+        expected: Vec<u8>,
+        status: ReadStatus,
+        /// False for steps migrated from tests that never asserted the offered bytes: the offer is
+        /// still recorded into `outgoing_reads`, but not compared.
+        assert_contents: bool,
+    }
+
+    impl ExpectedRead {
+        fn new(expected: &[u8], status: ReadStatus) -> Self {
+            Self {
+                expected: expected.to_vec(),
+                status,
+                assert_contents: true,
+            }
+        }
+
+        /// Records the offered bytes without asserting on them. Use only where the test under
+        /// migration made no claim about what was offered.
+        fn unchecked(status: ReadStatus) -> Self {
+            Self {
+                expected: Vec::new(),
+                status,
+                assert_contents: false,
+            }
+        }
+    }
+
+    /// One scripted answer for `respond_to_read()`.
+    #[derive(Debug)]
+    enum RespondToReadStep {
+        Success(ExpectedRead),
+        Error(MockBusError),
+        Pending,
+    }
+
+    /// Selects which per-operation step queue a builder call targets.
+    #[derive(Debug, Clone, Copy)]
+    enum ScriptOp {
+        Listen,
+        RespondToWrite,
+        RespondToRead,
+    }
+
+    /// A bus driven by three independent, ordered step queues - one per transaction primitive.
+    ///
+    /// Each call pops exactly one step from its own queue, so "succeed, succeed, then fail" and
+    /// "succeed, then hang" are both expressible. An empty queue stays pending forever, which is
+    /// what the timeout tests rely on.
     #[derive(Default)]
     struct ScriptedBus {
-        /// Controller-initiated events handed out by `listen()`, in order. When empty, `listen()`
-        /// stays pending so the caller's timeout fires.
-        listen_requests: VecDeque<Request>,
-        incoming_writes: VecDeque<IncomingWrite>,
-        read_statuses: VecDeque<ReadStatus>,
+        listen_steps: VecDeque<ListenStep>,
+        respond_to_write_steps: VecDeque<RespondToWriteStep>,
+        respond_to_read_steps: VecDeque<RespondToReadStep>,
         outgoing_reads: Vec<Vec<u8>>,
         recover_count: usize,
-        /// When set, the next `respond_to_read` fails with this error.
-        fail_next_read: Option<MockBusError>,
-        /// When set, the next `respond_to_write` fails with this error.
-        fail_next_write: Option<MockBusError>,
-        /// When set, `recover()` fails with this error.
+        /// When set, `recover()` fails with this error. Recovery is not one of the three
+        /// transaction queues, so it keeps its latching behaviour.
         fail_recover: Option<MockBusError>,
     }
 
@@ -663,35 +733,301 @@ mod tests {
         }
 
         async fn listen(&mut self) -> Result<Request, Self::Error> {
-            let Some(request) = self.listen_requests.pop_front() else {
+            let Some(step) = self.listen_steps.pop_front() else {
                 return core::future::pending().await;
             };
-            Ok(request)
+            match step {
+                ListenStep::Pending => core::future::pending().await,
+                ListenStep::Error(error) => Err(error),
+                ListenStep::Success(request) => Ok(request),
+            }
         }
 
         async fn respond_to_read(&mut self, buf: &[u8]) -> Result<ReadStatus, Self::Error> {
-            if let Some(error) = self.fail_next_read.take() {
-                return Err(error);
-            }
-            let Some(status) = self.read_statuses.pop_front() else {
+            let Some(step) = self.respond_to_read_steps.pop_front() else {
                 return core::future::pending().await;
             };
-            self.outgoing_reads.push(buf.to_vec());
-            Ok(status)
+            match step {
+                RespondToReadStep::Pending => core::future::pending().await,
+                RespondToReadStep::Error(error) => Err(error),
+                RespondToReadStep::Success(read) => {
+                    self.outgoing_reads.push(buf.to_vec());
+                    if read.assert_contents {
+                        assert_eq!(
+                            buf,
+                            read.expected.as_slice(),
+                            "respond_to_read was offered bytes the script did not expect"
+                        );
+                    }
+                    Ok(read.status)
+                }
+            }
         }
 
         async fn respond_to_write(&mut self, buf: &mut [u8]) -> Result<WriteStatus, Self::Error> {
-            if let Some(error) = self.fail_next_write.take() {
-                return Err(error);
-            }
-            let Some(write) = self.incoming_writes.pop_front() else {
+            let Some(step) = self.respond_to_write_steps.pop_front() else {
                 return core::future::pending().await;
             };
-            for (destination, source) in buf.iter_mut().zip(write.data.iter()) {
-                *destination = *source;
+            match step {
+                RespondToWriteStep::Pending => core::future::pending().await,
+                RespondToWriteStep::Error(error) => Err(error),
+                RespondToWriteStep::Success(write) => {
+                    for (destination, source) in buf.iter_mut().zip(write.data.iter()) {
+                        *destination = *source;
+                    }
+                    Ok(write.status)
+                }
             }
-            Ok(write.status)
         }
+    }
+
+    /// Number of bytes a write status claims to have transferred.
+    fn write_status_count(status: WriteStatus) -> usize {
+        match status {
+            WriteStatus::Stopped(bytes) | WriteStatus::Restarted(bytes) | WriteStatus::BufferFull(bytes) => bytes,
+            _ => 0,
+        }
+    }
+
+    /// Rebuilds `status` with a new byte count, preserving the variant.
+    fn write_status_with_count(status: WriteStatus, count: usize) -> WriteStatus {
+        match status {
+            WriteStatus::Stopped(_) => WriteStatus::Stopped(count),
+            WriteStatus::Restarted(_) => WriteStatus::Restarted(count),
+            WriteStatus::BufferFull(_) => WriteStatus::BufferFull(count),
+            other => other,
+        }
+    }
+
+    /// Builds the script for one host transaction, including any follow-on sub-transactions.
+    ///
+    /// The builder validates at construction time: statuses must agree with the data they
+    /// describe, `then_read` must carry at least one chunk, appends are only legal while the
+    /// initial write is still open, and the total step count is capped at [`MAX_SCRIPT_STEPS`].
+    struct Transaction {
+        initial_request: Request,
+        bus: ScriptedBus,
+        scripted_steps: usize,
+        /// True while `append_to_initial_write` may still extend the initial `IncomingWrite`.
+        initial_write_open: bool,
+        /// True while the initial `Request::Read` has no `respond_to_read` script yet, so the
+        /// first `then_read` must not queue a duplicate listen step for it.
+        initial_read_response_unscripted: bool,
+    }
+
+    impl Transaction {
+        /// A transaction the host opens by writing `data` to us.
+        fn write(data: &[u8], status: WriteStatus) -> Self {
+            assert!(
+                write_status_count(status) <= data.len(),
+                "write status claims more bytes than the script provides"
+            );
+            let mut transaction = Self {
+                initial_request: Request::Write(HOST_ADDR),
+                bus: ScriptedBus::default(),
+                scripted_steps: 0,
+                initial_write_open: true,
+                initial_read_response_unscripted: false,
+            };
+            transaction.reserve_steps(1);
+            transaction
+                .bus
+                .respond_to_write_steps
+                .push_back(RespondToWriteStep::Success(IncomingWrite {
+                    data: data.to_vec(),
+                    status,
+                }));
+            transaction
+        }
+
+        /// A transaction the host opens by reading from us. No listen step is queued: the initial
+        /// request is returned by `finish()` and fed to the service directly.
+        fn read() -> Self {
+            Self {
+                initial_request: Request::Read(HOST_ADDR),
+                bus: ScriptedBus::default(),
+                scripted_steps: 0,
+                initial_write_open: false,
+                initial_read_response_unscripted: true,
+            }
+        }
+
+        /// Rejects scripts longer than [`MAX_SCRIPT_STEPS`], counted cumulatively.
+        fn reserve_steps(&mut self, additional: usize) {
+            let total = self.scripted_steps.checked_add(additional);
+            assert!(
+                !total.is_none_or(|total| total > MAX_SCRIPT_STEPS),
+                "transaction script exceeds {MAX_SCRIPT_STEPS} steps"
+            );
+            self.scripted_steps = total.unwrap_or(MAX_SCRIPT_STEPS);
+        }
+
+        /// Extends the initial host write with more bytes, keeping its original status variant and
+        /// growing its count. Consumes no step. Legal only before any other builder call.
+        fn append_to_initial_write(mut self, data: &[u8]) -> Self {
+            assert!(
+                self.initial_write_open,
+                "append_to_initial_write is only legal immediately after Transaction::write"
+            );
+            let mut appended = false;
+            if let Some(RespondToWriteStep::Success(write)) = self.bus.respond_to_write_steps.front_mut() {
+                write.data.extend_from_slice(data);
+                write.status = write_status_with_count(write.status, write_status_count(write.status) + data.len());
+                appended = true;
+            }
+            assert!(appended, "the initial write step is always a success step");
+            self
+        }
+
+        /// The host restarts into another write to us.
+        fn then_write(mut self, data: &[u8], status: WriteStatus) -> Self {
+            assert!(
+                write_status_count(status) <= data.len(),
+                "write status claims more bytes than the script provides"
+            );
+            self.close_initial();
+            self.reserve_steps(2);
+            self.bus
+                .listen_steps
+                .push_back(ListenStep::Success(Request::Write(HOST_ADDR)));
+            self.bus
+                .respond_to_write_steps
+                .push_back(RespondToWriteStep::Success(IncomingWrite {
+                    data: data.to_vec(),
+                    status,
+                }));
+            self
+        }
+
+        /// The host reads from us, taking the response in `chunks`. Each chunk is one
+        /// `respond_to_read` call: the bytes we must offer and the status the host answers with.
+        fn then_read<const N: usize>(mut self, chunks: [(&[u8], ReadStatus); N]) -> Self {
+            assert!(N >= 1, "then_read requires at least one chunk");
+            let needs_listen = !self.initial_read_response_unscripted;
+            self.close_initial();
+            self.reserve_steps(if needs_listen { N + 1 } else { N });
+            if needs_listen {
+                self.bus
+                    .listen_steps
+                    .push_back(ListenStep::Success(Request::Read(HOST_ADDR)));
+            }
+            for (expected, status) in chunks {
+                assert_read_status(status, expected.len());
+                self.bus
+                    .respond_to_read_steps
+                    .push_back(RespondToReadStep::Success(ExpectedRead::new(expected, status)));
+            }
+            self
+        }
+
+        /// Queues a bare listen step - for `Stop`, `RepeatedStart`, or a deliberately malformed
+        /// direction sequence.
+        fn then_request(mut self, request: Request) -> Self {
+            self.close_initial();
+            self.reserve_steps(1);
+            self.bus.listen_steps.push_back(ListenStep::Success(request));
+            self
+        }
+
+        /// Fails the next call to `operation`, at the current position in that operation's queue.
+        fn fail_next(mut self, operation: ScriptOp, error: MockBusError) -> Self {
+            self.initial_write_open = false;
+            self.reserve_steps(1);
+            match operation {
+                ScriptOp::Listen => self.bus.listen_steps.push_back(ListenStep::Error(error)),
+                ScriptOp::RespondToWrite => self
+                    .bus
+                    .respond_to_write_steps
+                    .push_back(RespondToWriteStep::Error(error)),
+                ScriptOp::RespondToRead => self
+                    .bus
+                    .respond_to_read_steps
+                    .push_back(RespondToReadStep::Error(error)),
+            }
+            self
+        }
+
+        /// Hangs the next call to `operation` so the caller's timeout fires. Later steps in that
+        /// queue survive the cancellation.
+        fn timeout_next(mut self, operation: ScriptOp) -> Self {
+            self.initial_write_open = false;
+            self.reserve_steps(1);
+            match operation {
+                ScriptOp::Listen => self.bus.listen_steps.push_back(ListenStep::Pending),
+                ScriptOp::RespondToWrite => self.bus.respond_to_write_steps.push_back(RespondToWriteStep::Pending),
+                ScriptOp::RespondToRead => self.bus.respond_to_read_steps.push_back(RespondToReadStep::Pending),
+            }
+            self
+        }
+
+        /// Makes bus recovery fail. Consumes no step.
+        fn recover_fails_with(mut self, error: MockBusError) -> Self {
+            self.initial_write_open = false;
+            self.bus.fail_recover = Some(error);
+            self
+        }
+
+        fn finish(self) -> (Request, ScriptedBus) {
+            (self.initial_request, self.bus)
+        }
+
+        fn close_initial(&mut self) {
+            self.initial_write_open = false;
+            self.initial_read_response_unscripted = false;
+        }
+    }
+
+    /// Builder-time check that a read status agrees with the chunk it describes.
+    fn assert_read_status(status: ReadStatus, len: usize) {
+        match status {
+            ReadStatus::Complete(bytes) | ReadStatus::NeedMore(bytes) => assert_eq!(
+                bytes, len,
+                "Complete/NeedMore must report the full length of the offered chunk"
+            ),
+            ReadStatus::EarlyStop(bytes) => assert!(
+                bytes <= len,
+                "EarlyStop cannot report more bytes than the offered chunk holds"
+            ),
+            _ => {}
+        }
+    }
+
+    /// Compares recorded host reads without indexing (`clippy::indexing_slicing` is denied).
+    fn assert_outgoing_reads(actual: &[Vec<u8>], expected: &[&[u8]]) {
+        assert_eq!(actual.len(), expected.len(), "unexpected number of host reads");
+        for (index, (actual, expected)) in actual.iter().zip(expected.iter()).enumerate() {
+            assert_eq!(actual.as_slice(), *expected, "host read {index} differs");
+        }
+    }
+
+    /// Every scripted step must have been consumed; leftovers mean the test under-drove the bus.
+    fn assert_script_consumed(bus: &ScriptedBus) {
+        assert!(bus.listen_steps.is_empty(), "unconsumed listen steps remain");
+        assert!(
+            bus.respond_to_write_steps.is_empty(),
+            "unconsumed respond_to_write steps remain"
+        );
+        assert!(
+            bus.respond_to_read_steps.is_empty(),
+            "unconsumed respond_to_read steps remain"
+        );
+    }
+
+    /// Compares recorded GPIO transitions without indexing.
+    fn assert_pin_levels(actual: &[PinLevel], expected: &[PinLevel]) {
+        assert_eq!(actual.len(), expected.len(), "unexpected number of pin transitions");
+        for (index, (actual, expected)) in actual.iter().zip(expected.iter()).enumerate() {
+            assert_eq!(actual, expected, "pin transition {index} differs");
+        }
+    }
+
+    /// Fails the test rather than hanging the suite if a future never settles. The bus deadline
+    /// stays at 20 ms; this is the outer backstop.
+    #[allow(clippy::expect_used)]
+    async fn watchdog<F: core::future::Future>(future: F) -> F::Output {
+        tokio::time::timeout(std::time::Duration::from_millis(500), future)
+            .await
+            .expect("test exceeded 500 ms watchdog")
     }
 
     fn scripted_timeout_bus(bus: ScriptedBus) -> TimeoutBus<ScriptedBus> {
@@ -849,8 +1185,12 @@ mod tests {
     #[tokio::test]
     async fn get_report_waits_for_the_host_read_before_answering() {
         let mut bus = scripted_timeout_bus(ScriptedBus {
-            // No queued `listen` event, so `listen_for_response` times out.
-            read_statuses: VecDeque::from([ReadStatus::Complete(3), ReadStatus::Complete(1)]),
+            // No queued `listen` event, so `listen_for_response` times out. These read steps are
+            // deliberately never reached; the original test made no claim about offered bytes.
+            respond_to_read_steps: VecDeque::from([
+                RespondToReadStep::Success(ExpectedRead::unchecked(ReadStatus::Complete(3))),
+                RespondToReadStep::Success(ExpectedRead::unchecked(ReadStatus::Complete(1))),
+            ]),
             ..Default::default()
         });
         let mut device = recording_device();
@@ -868,16 +1208,20 @@ mod tests {
 
         assert!(matches!(result, Err(Error::Protocol(ProtocolError::Timeout))));
         assert!(bus.bus.outgoing_reads.is_empty());
-        // NOTE: unlike `read` and `write_unterminated`, `listen_for_response` propagates its
-        // timeout without recovering the bus. Asserted here so the asymmetry is at least
-        // visible; whether it should recover is a separate question.
+        // CHARACTERISATION, not a specification: `listen_for_response` propagates its
+        // timeout WITHOUT attempting `recover()`, unlike `read` and `write_unterminated`.
+        // This assertion pins the behaviour as it exists today so a change is noticed; whether
+        // this asymmetry is correct is an open design question, not a settled requirement.
         assert_eq!(bus.bus.recover_count, 0);
     }
 
     #[tokio::test]
     async fn reset_asserts_interrupt_and_first_read_acknowledges_completion() {
         let bus = ScriptedBus {
-            read_statuses: VecDeque::from([ReadStatus::Complete(2)]),
+            respond_to_read_steps: VecDeque::from([RespondToReadStep::Success(ExpectedRead::new(
+                &[0x00, 0x00],
+                ReadStatus::Complete(2),
+            ))]),
             ..Default::default()
         };
         let mut resources = Resources::default();
@@ -910,6 +1254,12 @@ mod tests {
         assert!(!runner.pending_reset);
         assert!(!runner.attn_pin.asserted());
         assert_eq!(runner.attn_pin.pin().level(), Some(PinLevel::High));
+        // The full transition history, not just the final level: deassert at construction,
+        // assert on reset, deassert once the host has read the acknowledgement.
+        assert_pin_levels(
+            &runner.attn_pin.pin().levels,
+            &[PinLevel::High, PinLevel::Low, PinLevel::High],
+        );
         assert_eq!(
             runner.bus.bus.outgoing_reads.first().map(Vec::as_slice),
             Some(&[0x00, 0x00][..])
@@ -919,10 +1269,10 @@ mod tests {
     #[tokio::test]
     async fn timeout_bus_reads_host_payload() {
         let mut bus = scripted_timeout_bus(ScriptedBus {
-            incoming_writes: VecDeque::from([IncomingWrite {
+            respond_to_write_steps: VecDeque::from([RespondToWriteStep::Success(IncomingWrite {
                 data: vec![0x10, 0x20, 0x30],
                 status: WriteStatus::Stopped(3),
-            }]),
+            })]),
             ..Default::default()
         });
         let mut buffer = [0; 4];
@@ -936,15 +1286,15 @@ mod tests {
     #[tokio::test]
     async fn timeout_bus_drains_oversized_host_write() {
         let mut bus = scripted_timeout_bus(ScriptedBus {
-            incoming_writes: VecDeque::from([
-                IncomingWrite {
+            respond_to_write_steps: VecDeque::from([
+                RespondToWriteStep::Success(IncomingWrite {
                     data: vec![0x10, 0x20],
                     status: WriteStatus::BufferFull(2),
-                },
-                IncomingWrite {
+                }),
+                RespondToWriteStep::Success(IncomingWrite {
                     data: vec![0x30, 0x40],
                     status: WriteStatus::Stopped(2),
-                },
+                }),
             ]),
             ..Default::default()
         });
@@ -953,25 +1303,24 @@ mod tests {
         let result = bus.read(&mut buffer).await;
 
         assert!(matches!(result, Err(Error::Protocol(ProtocolError::InvalidData))));
-        assert!(bus.bus.incoming_writes.is_empty());
+        assert!(bus.bus.respond_to_write_steps.is_empty());
         assert_eq!(bus.bus.recover_count, 0);
     }
 
     #[tokio::test]
     async fn timeout_bus_uses_zeroes_when_host_reads_past_response() {
         let mut bus = scripted_timeout_bus(ScriptedBus {
-            read_statuses: VecDeque::from([ReadStatus::NeedMore(2), ReadStatus::Complete(3)]),
+            respond_to_read_steps: VecDeque::from([
+                RespondToReadStep::Success(ExpectedRead::new(&[0xaa, 0xbb], ReadStatus::NeedMore(2))),
+                // The padding offer is the service's 8-byte zero buffer; the host takes 3 of it.
+                RespondToReadStep::Success(ExpectedRead::new(&[0; 8], ReadStatus::Complete(3))),
+            ]),
             ..Default::default()
         });
 
         bus.write(&[0xaa, 0xbb]).await.unwrap();
 
-        assert_eq!(bus.bus.outgoing_reads.len(), 2);
-        assert_eq!(
-            bus.bus.outgoing_reads.first().map(Vec::as_slice),
-            Some(&[0xaa, 0xbb][..])
-        );
-        assert_eq!(bus.bus.outgoing_reads.get(1).map(Vec::as_slice), Some(&[0; 8][..]));
+        assert_outgoing_reads(&bus.bus.outgoing_reads, &[&[0xaa, 0xbb], &[0; 8]]);
         assert_eq!(bus.bus.recover_count, 0);
     }
 
@@ -1051,8 +1400,11 @@ mod tests {
     #[tokio::test]
     async fn get_report_response_carries_report_id_for_explicit_descriptors() {
         let mut bus = scripted_timeout_bus(ScriptedBus {
-            listen_requests: VecDeque::from([Request::Read(HOST_ADDR)]),
-            read_statuses: VecDeque::from([ReadStatus::Complete(3), ReadStatus::Complete(1)]),
+            listen_steps: VecDeque::from([ListenStep::Success(Request::Read(HOST_ADDR))]),
+            respond_to_read_steps: VecDeque::from([
+                RespondToReadStep::Success(ExpectedRead::new(&[0x04, 0x00, 0x21], ReadStatus::Complete(3))),
+                RespondToReadStep::Success(ExpectedRead::new(&[0x5a], ReadStatus::Complete(1))),
+            ]),
             ..Default::default()
         });
         let mut device = recording_device();
@@ -1080,8 +1432,11 @@ mod tests {
     #[tokio::test]
     async fn get_report_response_omits_report_id_for_implicit_descriptors() {
         let mut bus = scripted_timeout_bus(ScriptedBus {
-            listen_requests: VecDeque::from([Request::Read(HOST_ADDR)]),
-            read_statuses: VecDeque::from([ReadStatus::Complete(2), ReadStatus::Complete(3)]),
+            listen_steps: VecDeque::from([ListenStep::Success(Request::Read(HOST_ADDR))]),
+            respond_to_read_steps: VecDeque::from([
+                RespondToReadStep::Success(ExpectedRead::new(&[0x05, 0x00], ReadStatus::Complete(2))),
+                RespondToReadStep::Success(ExpectedRead::new(&[0x11, 0x22, 0x33], ReadStatus::Complete(3))),
+            ]),
             ..Default::default()
         });
         let mut device = crate::test_support::implicit_id_device().with_get_report_payload(&[0x11, 0x22, 0x33]);
@@ -1158,7 +1513,10 @@ mod tests {
     #[tokio::test]
     async fn input_report_is_framed_with_report_id_for_explicit_descriptors() {
         let bus = ScriptedBus {
-            read_statuses: VecDeque::from([ReadStatus::Complete(3), ReadStatus::Complete(2)]),
+            respond_to_read_steps: VecDeque::from([
+                RespondToReadStep::Success(ExpectedRead::new(&[0x05, 0x00, 0x03], ReadStatus::Complete(3))),
+                RespondToReadStep::Success(ExpectedRead::new(&[0xde, 0xad], ReadStatus::Complete(2))),
+            ]),
             ..Default::default()
         };
         let device = recording_device().with_pending_input(ReportId(3), &[0xde, 0xad]);
@@ -1184,7 +1542,10 @@ mod tests {
     #[tokio::test]
     async fn input_report_is_framed_without_report_id_for_implicit_descriptors() {
         let bus = ScriptedBus {
-            read_statuses: VecDeque::from([ReadStatus::Complete(2), ReadStatus::Complete(2)]),
+            respond_to_read_steps: VecDeque::from([
+                RespondToReadStep::Success(ExpectedRead::new(&[0x04, 0x00], ReadStatus::Complete(2))),
+                RespondToReadStep::Success(ExpectedRead::new(&[0xde, 0xad], ReadStatus::Complete(2))),
+            ]),
             ..Default::default()
         };
         let device = crate::test_support::implicit_id_device().with_pending_input(ReportId(0), &[0xde, 0xad]);
@@ -1209,7 +1570,10 @@ mod tests {
     #[tokio::test]
     async fn host_polling_with_no_pending_report_gets_a_zero_length_report() {
         let bus = ScriptedBus {
-            read_statuses: VecDeque::from([ReadStatus::Complete(2)]),
+            respond_to_read_steps: VecDeque::from([RespondToReadStep::Success(ExpectedRead::new(
+                &[0x00, 0x00],
+                ReadStatus::Complete(2),
+            ))]),
             ..Default::default()
         };
         let mut resources = Resources::default();
@@ -1232,7 +1596,7 @@ mod tests {
     #[tokio::test]
     async fn bus_error_while_reading_the_host_write_is_reported() {
         let mut bus = scripted_timeout_bus(ScriptedBus {
-            fail_next_write: Some(ErrorKind::Overrun),
+            respond_to_write_steps: VecDeque::from([RespondToWriteStep::Error(ErrorKind::Overrun)]),
             ..Default::default()
         });
         let mut buffer = [0; 8];
@@ -1245,7 +1609,7 @@ mod tests {
     #[tokio::test]
     async fn bus_error_while_answering_the_host_read_is_reported() {
         let mut bus = scripted_timeout_bus(ScriptedBus {
-            fail_next_read: Some(ErrorKind::ArbitrationLoss),
+            respond_to_read_steps: VecDeque::from([RespondToReadStep::Error(ErrorKind::ArbitrationLoss)]),
             ..Default::default()
         });
 
@@ -1312,7 +1676,7 @@ mod tests {
     #[tokio::test]
     async fn device_failure_during_get_report_is_reported() {
         let mut bus = scripted_timeout_bus(ScriptedBus {
-            listen_requests: VecDeque::from([Request::Read(HOST_ADDR)]),
+            listen_steps: VecDeque::from([ListenStep::Success(Request::Read(HOST_ADDR))]),
             ..Default::default()
         });
         let mut device = recording_device();
@@ -1349,6 +1713,143 @@ mod tests {
         // The assert failed, so the handler never recorded the interrupt as raised.
         assert!(!runner.attn_pin.asserted());
         assert!(runner.pending_reset);
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Harness self-tests.
+    //
+    // The mock is now load-bearing: if its step queues stop being positional, or the builder
+    // stops rejecting nonsense scripts, every test above silently gets weaker. These lock that
+    // behaviour down.
+    // ---------------------------------------------------------------------------------------
+
+    /// The old `fail_next_read` flag failed whichever read came next, so "succeed, then fail" was
+    /// inexpressible. Position in the queue now decides.
+    #[tokio::test]
+    async fn mid_transaction_error_is_positional() {
+        let mut bus = scripted_timeout_bus(ScriptedBus {
+            respond_to_read_steps: VecDeque::from([
+                RespondToReadStep::Success(ExpectedRead::new(&[0xaa], ReadStatus::Complete(1))),
+                RespondToReadStep::Error(ErrorKind::Bus),
+            ]),
+            ..Default::default()
+        });
+
+        watchdog(async {
+            bus.write(&[0xaa]).await.unwrap();
+            let result = bus.write(&[0xbb]).await;
+            assert!(matches!(result, Err(Error::Bus(ErrorKind::Bus))));
+        })
+        .await;
+
+        // The failing step recorded nothing, so only the first offer is visible.
+        assert_outgoing_reads(&bus.bus.outgoing_reads, &[&[0xaa]]);
+        assert_script_consumed(&bus.bus);
+    }
+
+    /// A `Pending` step hangs exactly one call; steps queued behind it survive the timeout
+    /// cancelling that call's future.
+    #[tokio::test]
+    async fn mid_transaction_pending_is_positional() {
+        let mut bus = scripted_timeout_bus(ScriptedBus {
+            respond_to_read_steps: VecDeque::from([
+                RespondToReadStep::Success(ExpectedRead::new(&[0xaa], ReadStatus::Complete(1))),
+                RespondToReadStep::Pending,
+                RespondToReadStep::Success(ExpectedRead::new(&[0xcc], ReadStatus::Complete(1))),
+            ]),
+            ..Default::default()
+        });
+
+        watchdog(bus.write(&[0xaa])).await.unwrap();
+        let result = watchdog(bus.write(&[0xbb])).await;
+
+        assert!(matches!(result, Err(Error::Protocol(ProtocolError::Timeout))));
+        assert_eq!(bus.bus.recover_count, 1);
+        // The step queued behind the pending one is still there.
+        assert_eq!(bus.bus.respond_to_read_steps.len(), 1);
+
+        watchdog(bus.write(&[0xcc])).await.unwrap();
+
+        assert_outgoing_reads(&bus.bus.outgoing_reads, &[&[0xaa], &[0xcc]]);
+        assert_script_consumed(&bus.bus);
+    }
+
+    #[test]
+    #[should_panic(expected = "then_read requires at least one chunk")]
+    fn builder_rejects_empty_then_read() {
+        let _rejected = Transaction::write(&[0x01], WriteStatus::Stopped(1)).then_read::<0>([]);
+    }
+
+    #[test]
+    #[should_panic(expected = "append_to_initial_write is only legal")]
+    fn builder_rejects_append_after_other_step() {
+        let _rejected = Transaction::write(&[0x01], WriteStatus::Restarted(1))
+            .then_request(Request::Stop(HOST_ADDR))
+            .append_to_initial_write(&[0x02]);
+    }
+
+    #[test]
+    #[should_panic(expected = "exceeds 16 steps")]
+    fn builder_enforces_cumulative_step_limit() {
+        // 1 step for the initial write, then 2 per `then_read`: the eighth crosses the cap.
+        let mut transaction = Transaction::write(&[0x01], WriteStatus::Restarted(1));
+        for _ in 0..8 {
+            transaction = transaction.then_read([(&[0xaa][..], ReadStatus::Complete(1))]);
+        }
+    }
+
+    /// A transaction the host opened with a read already has its request; the first `then_read`
+    /// scripts the response to *that* request rather than inventing a second one.
+    #[test]
+    fn initial_read_then_read_chunks_does_not_duplicate_request() {
+        let (request, bus) = Transaction::read()
+            .then_read([(&[0x00, 0x00][..], ReadStatus::Complete(2))])
+            .finish();
+
+        assert_eq!(request, Request::Read(HOST_ADDR));
+        assert!(bus.listen_steps.is_empty());
+        assert_eq!(bus.respond_to_read_steps.len(), 1);
+    }
+
+    /// Covers the rest of the builder surface, including that appends keep the original status
+    /// variant and only grow its count.
+    #[test]
+    fn builder_scripts_each_operation_into_its_own_queue() {
+        let (request, bus) = Transaction::write(&[0x04, 0x00], WriteStatus::Restarted(2))
+            .append_to_initial_write(&[0x31])
+            .then_read([
+                (&[0x05, 0x00][..], ReadStatus::NeedMore(2)),
+                (&[0x11][..], ReadStatus::Complete(1)),
+            ])
+            .then_write(&[0x06, 0x00], WriteStatus::Stopped(2))
+            .then_request(Request::Stop(HOST_ADDR))
+            .fail_next(ScriptOp::Listen, ErrorKind::Bus)
+            .fail_next(ScriptOp::RespondToWrite, ErrorKind::Overrun)
+            .fail_next(ScriptOp::RespondToRead, ErrorKind::ArbitrationLoss)
+            .timeout_next(ScriptOp::Listen)
+            .timeout_next(ScriptOp::RespondToWrite)
+            .timeout_next(ScriptOp::RespondToRead)
+            .recover_fails_with(ErrorKind::Bus)
+            .finish();
+
+        assert_eq!(request, Request::Write(HOST_ADDR));
+        // then_read's listen, then_write's listen, the Stop, the failing listen, the hung listen.
+        assert_eq!(bus.listen_steps.len(), 5);
+        // Initial write, then_write's write, the failing write, the hung write.
+        assert_eq!(bus.respond_to_write_steps.len(), 4);
+        // Two chunks, the failing read, the hung read.
+        assert_eq!(bus.respond_to_read_steps.len(), 4);
+        assert_eq!(bus.fail_recover, Some(ErrorKind::Bus));
+
+        let initial = bus.respond_to_write_steps.front();
+        let Some(RespondToWriteStep::Success(initial)) = initial else {
+            let described = format!("{initial:?}");
+            assert_eq!(described, "the initial write step", "initial write step was replaced");
+            return;
+        };
+        assert_eq!(initial.data, vec![0x04, 0x00, 0x31]);
+        // Restarted stays Restarted; only the count grows by the appended length.
+        assert_eq!(initial.status, WriteStatus::Restarted(3));
     }
 
     /// An oversized report cannot be framed in the 16-bit length field, so it is rejected
