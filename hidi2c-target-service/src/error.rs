@@ -43,12 +43,6 @@ impl<BusError> From<HidError> for Error<BusError> {
     }
 }
 
-impl<BusError> From<generic_array::LengthError> for Error<BusError> {
-    fn from(_: generic_array::LengthError) -> Self {
-        Error::Protocol(ProtocolError::InvalidSize)
-    }
-}
-
 impl<BusError> From<TimeoutError> for Error<BusError> {
     fn from(_: TimeoutError) -> Self {
         Error::Protocol(ProtocolError::Timeout)
