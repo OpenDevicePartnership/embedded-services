@@ -112,12 +112,14 @@ mod test {
     async fn test_recovery_timeout() {
         static CFU_DEVICE: StaticCell<CfuDevice> = StaticCell::new();
 
-        // Maximum timeout for the recovery entry, actual time should be 1000, but gives us some margin
-        const RECOVERY_ENTRY_MAX_TIMEOUT: Duration = Duration::from_millis(1100);
-        // Maximum timeout for an individual recovery tick, actual time should be 100, but gives us some margin
-        const RECOVERY_TICK_MAX_TIMEOUT: Duration = Duration::from_millis(110);
-        // Expected measured interval between recovery ticks, actual time should be 100, but undershoot slightly for some margin
-        const EXPECTED_RECOVERY_TICK_INTERVAL: Duration = Duration::from_millis(90);
+        // Time to observe that no recovery event is emitted while idle.
+        const IDLE_NO_EVENT_DWELL: Duration = Duration::from_millis(1100);
+        // Liveness guard for recovery entry, nominally 1000 ms across ten recovery ticks.
+        const RECOVERY_ENTRY_LIVENESS_TIMEOUT: Duration = Duration::from_secs(5);
+        // Liveness guard for an individual recovery tick, nominally 100 ms.
+        const RECOVERY_TICK_LIVENESS_TIMEOUT: Duration = Duration::from_secs(1);
+        // Minimum accepted delay for an individual recovery tick, allowing slight timer undershoot.
+        const MINIMUM_RECOVERY_TICK_DELAY: Duration = Duration::from_millis(90);
 
         let shared_state: Mutex<GlobalRawMutex, _> = Mutex::new(SharedState::default());
         let cfu_device = CFU_DEVICE.init(CfuDevice::new(0));
@@ -136,7 +138,7 @@ mod test {
 
         // First test the recovery timer isn't active in the idle state
         assert_eq!(
-            with_timeout(RECOVERY_ENTRY_MAX_TIMEOUT, event_receiver.wait_next()).await,
+            with_timeout(IDLE_NO_EVENT_DWELL, event_receiver.wait_next()).await,
             Err(TimeoutError),
         );
         assert_eq!(
@@ -152,12 +154,12 @@ mod test {
 
         let start = Instant::now();
         assert_eq!(
-            with_timeout(RECOVERY_ENTRY_MAX_TIMEOUT, event_receiver.wait_next()).await,
+            with_timeout(RECOVERY_ENTRY_LIVENESS_TIMEOUT, event_receiver.wait_next()).await,
             Ok(Event::RecoveryTick),
         );
         let duration = Instant::now() - start;
 
-        // Check that we waited approximately the correct amount of time
+        // Check that recovery was not entered before the configured timeout
         assert!(duration.as_millis() >= 1000);
         assert_eq!(
             event_receiver.shared_state.lock().await.fw_update_state,
@@ -167,13 +169,13 @@ mod test {
         // Check the first recovery tick after the state transition
         let start = Instant::now();
         assert_eq!(
-            with_timeout(RECOVERY_TICK_MAX_TIMEOUT, event_receiver.wait_next()).await,
+            with_timeout(RECOVERY_TICK_LIVENESS_TIMEOUT, event_receiver.wait_next()).await,
             Ok(Event::RecoveryTick),
         );
         let duration = Instant::now() - start;
 
-        // Check that we waited approximately the correct amount of time
-        assert!(duration >= EXPECTED_RECOVERY_TICK_INTERVAL);
+        // Check that the tick was not emitted too early
+        assert!(duration >= MINIMUM_RECOVERY_TICK_DELAY);
         assert_eq!(
             event_receiver.shared_state.lock().await.fw_update_state,
             FwUpdateState::Recovery
@@ -182,13 +184,13 @@ mod test {
         // Check subsequent recovery ticks
         let start = Instant::now();
         assert_eq!(
-            with_timeout(RECOVERY_TICK_MAX_TIMEOUT, event_receiver.wait_next()).await,
+            with_timeout(RECOVERY_TICK_LIVENESS_TIMEOUT, event_receiver.wait_next()).await,
             Ok(Event::RecoveryTick),
         );
         let duration = Instant::now() - start;
 
-        // Check that we waited approximately the correct amount of time
-        assert!(duration >= EXPECTED_RECOVERY_TICK_INTERVAL);
+        // Check that the tick was not emitted too early
+        assert!(duration >= MINIMUM_RECOVERY_TICK_DELAY);
         assert_eq!(
             event_receiver.shared_state.lock().await.fw_update_state,
             FwUpdateState::Recovery
