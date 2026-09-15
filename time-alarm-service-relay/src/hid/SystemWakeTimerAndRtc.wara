@@ -1,0 +1,321 @@
+[[usagePage]]
+id = 0x01
+name = "Generic Desktop"
+
+    [[usagePage.usage]]
+    id = 0x14
+    name = "System Wake Timer and Real Time Clock"
+    types = ['CA']
+
+    [[usagePage.usage]]
+    id = 0xF0
+    name = "Timer Expiration: External Power"
+    types = ['DV']
+
+    [[usagePage.usage]]
+    id = 0xF1
+    name = "Timer Expiration: Internal Power"
+    types = ['DV']
+
+    [[usagePage.usage]]
+    id = 0xF2
+    name = "Power Source Change Minimum Expiration"
+    types = ['DV']
+
+    [[usagePage.usage]]
+    id = 0xF3
+    name = "Lowest System Wakeable Power State"
+    types = ['NAry']
+
+    [[usagePage.usage]]
+    id = 0xF4
+    name = "S1"
+    types = ['Sel']
+
+    [[usagePage.usage]]
+    id = 0xF5
+    name = "S2"
+    types = ['Sel']
+
+    [[usagePage.usage]]
+    id = 0xF6
+    name = "S3"
+    types = ['Sel']
+
+    [[usagePage.usage]]
+    id = 0xF7
+    name = "S4"
+    types = ['Sel']
+
+    [[usagePage.usage]]
+    id = 0xF8
+    name = "S5"
+    types = ['Sel']
+
+[[usagePage]]
+id = 0x06
+name = "Generic Device Controls"
+
+    [[usagePage.usage]]
+    id = 0x50
+    name = "Vendor Current State"
+    types = ['DV']
+
+    [[usagePage.usage]]
+    id = 0x51
+    name = "Current State"
+    types = ['NAry']
+
+    [[usagePage.usage]]
+    id = 0x52
+    name = "Cleared"
+    types = ['Sel']
+
+    [[usagePage.usage]]
+    id = 0x53
+    name = "Failed"
+    types = ['Sel']
+
+    [[usagePage.usage]]
+    id = 0x54
+    name = "Running"
+    types = ['Sel']
+
+    [[usagePage.usage]]
+    id = 0x55
+    name = "Expired"
+    types = ['Sel']
+
+    [[usagePage.usage]]
+    id = 0x56
+    name = "Signaled"
+    types = ['Sel']
+
+[[usagePage]]
+id = 0x13
+name = "Time and Date"
+
+    [[usagePage.usage]]
+    id = 0x1
+    name = "Year"
+    types = ['DV']
+
+    [[usagePage.usage]]
+    id = 0x2
+    name = "Month"
+    types = ['DV']
+
+    [[usagePage.usage]]
+    id = 0x3
+    name = "Day"
+    types = ['DV']
+
+    [[usagePage.usage]]
+    id = 0x4
+    name = "Hour"
+    types = ['DV']
+
+    [[usagePage.usage]]
+    id = 0x5
+    name = "Minute"
+    types = ['DV']
+
+    [[usagePage.usage]]
+    id = 0x6
+    name = "Second"
+    types = ['DV']
+
+    [[usagePage.usage]]
+    id = 0x7
+    name = "Millisecond"
+    types = ['DV']
+
+    [[usagePage.usage]]
+    id = 0x10
+    name = "Time Zone Offset From UTC"
+    types = ['DV']
+
+    [[usagePage.usage]]
+    id = 0x11
+    name = "Daylight Savings Time Observed"
+    types = ['DF']
+
+    [[usagePage.usage]]
+    id = 0x12
+    name = "Daylight Savings Time Active"
+    types = ['DF']
+
+[[applicationCollection]]
+usage = ['Generic Desktop', 'System Wake Timer and Real Time Clock']
+
+    [[applicationCollection.featureReport]]
+
+        # Indicate the lowest power-state of the system that this timer may trigger a wake.
+        # If system goes to a lower power-state, regardless of timer settings, will NOT trigger a wake.
+        [[applicationCollection.featureReport.logicalCollection]]
+        usage = ['Generic Desktop', 'Lowest System Wakeable Power State']
+
+            [[applicationCollection.featureReport.logicalCollection.arrayItem]]
+            usageRange = ['Generic Desktop', 'S3', 'S5']
+
+    [[applicationCollection.outputReport]]
+
+        # Configures the Wake-Timer.
+        # Null values (e.g. 0) clears the timer configuration.
+
+        [[applicationCollection.outputReport.variableItem]]
+        usage = ['Generic Desktop', 'Timer Expiration: External Power']
+        logicalValueRange = [1, 2147483647]
+        unit = 'second'
+        reportFlags = ['nullstate']
+
+    [[applicationCollection.outputReport]]
+
+        [[applicationCollection.outputReport.variableItem]]
+        usage = ['Generic Desktop', 'Timer Expiration: Internal Power']
+        logicalValueRange = [1, 2147483647]
+        unit = 'second'
+        reportFlags = ['nullstate']
+
+    [[applicationCollection.outputReport]]
+
+        [[applicationCollection.outputReport.variableItem]]
+        usage = ['Generic Desktop', 'Power Source Change Minimum Expiration']
+        logicalValueRange = [1, 60]
+        unit = 'second'
+        reportFlags = ['nullstate']
+
+    [[applicationCollection.inputReport]]
+
+        # Null values (e.g. 0) indicates the configuration has not been set.
+
+        [[applicationCollection.inputReport.variableItem]]
+        usage = ['Generic Desktop', 'Timer Expiration: External Power']
+        logicalValueRange = [1, 2147483647]
+        unit = 'second'
+        reportFlags = ['nullstate']
+
+        [[applicationCollection.inputReport.variableItem]]
+        usage = ['Generic Desktop', 'Timer Expiration: Internal Power']
+        logicalValueRange = [1, 2147483647]
+        unit = 'second'
+        reportFlags = ['nullstate']
+
+        [[applicationCollection.inputReport.variableItem]]
+        usage = ['Generic Desktop', 'Power Source Change Minimum Expiration']
+        logicalValueRange = [1, 60]
+        unit = 'second'
+        reportFlags = ['nullstate']
+
+        [[applicationCollection.inputReport.logicalCollection]]
+        usage = ['Generic Device Controls', 'Current State']
+
+            [[applicationCollection.inputReport.logicalCollection.arrayItem]]
+            usages = [ ['Generic Device Controls', 'Cleared'], 
+                ['Generic Device Controls', 'Failed'], 
+                ['Generic Device Controls', 'Running'],
+                ['Generic Device Controls', 'Expired'], 
+                ['Generic Device Controls', 'Signaled']]
+
+        [[applicationCollection.inputReport.variableItem]]
+        usage = ['Generic Device Controls', 'Vendor Current State']
+        sizeInBits = 4
+        logicalValueRange = 'maxUnsignedSizeRange'
+
+    [[applicationCollection.outputReport]]
+
+        [[applicationCollection.outputReport.variableItem]]
+        usage = ['Time and Date', 'Year']
+        logicalValueRange = [1900,9999]
+
+        [[applicationCollection.outputReport.variableItem]]
+        usage = ['Time and Date', 'Month']
+        logicalValueRange = [1,12]
+
+        [[applicationCollection.outputReport.variableItem]]
+        usage = ['Time and Date', 'Day']
+        logicalValueRange = [1,31]
+
+        [[applicationCollection.outputReport.variableItem]]
+        usage = ['Time and Date', 'Hour']
+        logicalValueRange = [0,23]
+
+        [[applicationCollection.outputReport.variableItem]]
+        usage = ['Time and Date', 'Minute']
+        logicalValueRange = [0,59]
+
+        [[applicationCollection.outputReport.variableItem]]
+        usage = ['Time and Date', 'Second']
+        logicalValueRange = [0,59]
+
+        [[applicationCollection.outputReport.variableItem]]
+        usage = ['Time and Date', 'Millisecond']
+        logicalValueRange = [0,999]
+
+        [[applicationCollection.outputReport.variableItem]]
+        usage = ['Time and Date', 'Time Zone Offset From UTC']
+        logicalValueRange = [-720, 840]
+        reportFlags = ['nullstate']
+
+        [[applicationCollection.outputReport.variableItem]]
+        usage = ['Time and Date', 'Daylight Savings Time Observed']
+        logicalValueRange = [0,1]
+
+        [[applicationCollection.outputReport.variableItem]]
+        usage = ['Time and Date', 'Daylight Savings Time Active']
+        logicalValueRange = [0,1]
+
+    [[applicationCollection.inputReport]]
+
+        [[applicationCollection.inputReport.variableItem]]
+        usage = ['Time and Date', 'Year']
+        logicalValueRange = [1900,9999]
+
+        [[applicationCollection.inputReport.variableItem]]
+        usage = ['Time and Date', 'Month']
+        logicalValueRange = [1,12]
+
+        [[applicationCollection.inputReport.variableItem]]
+        usage = ['Time and Date', 'Day']
+        logicalValueRange = [1,31]
+
+        [[applicationCollection.inputReport.variableItem]]
+        usage = ['Time and Date', 'Hour']
+        logicalValueRange = [0,23]
+
+        [[applicationCollection.inputReport.variableItem]]
+        usage = ['Time and Date', 'Minute']
+        logicalValueRange = [0,59]
+
+        [[applicationCollection.inputReport.variableItem]]
+        usage = ['Time and Date', 'Second']
+        logicalValueRange = [0,59]
+
+        [[applicationCollection.inputReport.variableItem]]
+        usage = ['Time and Date', 'Millisecond']
+        logicalValueRange = [0,999]
+
+        [[applicationCollection.inputReport.variableItem]]
+        usage = ['Time and Date', 'Time Zone Offset From UTC']
+        logicalValueRange = [-720, 840]
+        reportFlags = ['nullstate']
+
+        [[applicationCollection.inputReport.variableItem]]
+        usage = ['Time and Date', 'Daylight Savings Time Observed']
+        logicalValueRange = [0,1]
+
+        [[applicationCollection.inputReport.variableItem]]
+        usage = ['Time and Date', 'Daylight Savings Time Active']
+        logicalValueRange = [0,1]
+
+        [[applicationCollection.inputReport.logicalCollection]]
+        usage = ['Generic Device Controls', 'Current State']
+
+            [[applicationCollection.inputReport.logicalCollection.arrayItem]]
+            usages = [ ['Generic Device Controls', 'Failed'], 
+                ['Generic Device Controls', 'Running']]
+
+        [[applicationCollection.inputReport.variableItem]]
+        usage = ['Generic Device Controls', 'Vendor Current State']
+        sizeInBits = 4
+        logicalValueRange = 'maxUnsignedSizeRange'

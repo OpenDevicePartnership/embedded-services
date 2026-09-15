@@ -16,7 +16,8 @@ use {defmt_rtt as _, panic_probe as _};
 // This is especially helpful for the relay handler, which has a lot of generic parameters due to the traits it needs to implement.
 //
 type TimeAlarmServiceType = time_alarm_service::Service<'static>;
-type TimeAlarmServiceRelayHandlerType = time_alarm_service_relay::TimeAlarmServiceRelayHandler<TimeAlarmServiceType>;
+type TimeAlarmServiceRelayHandlerType =
+    time_alarm_service_relay::mctp::TimeAlarmServiceRelayHandler<TimeAlarmServiceType>;
 
 #[embassy_executor::main]
 async fn main(spawner: embassy_executor::Spawner) {

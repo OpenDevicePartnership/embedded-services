@@ -2045,6 +2045,7 @@ dependencies = [
  "log",
  "num_enum",
  "time-alarm-service-interface",
+ "typenum",
 ]
 
 [[package]]

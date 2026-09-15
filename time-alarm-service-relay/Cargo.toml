@@ -15,6 +15,7 @@ embedded-services.workspace = true
 embedded-mcu-hal.workspace = true
 num_enum.workspace = true
 time-alarm-service-interface.workspace = true
+typenum.workspace = true
 
 [features]
 defmt = [
