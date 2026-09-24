@@ -1874,6 +1874,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "tcpm-interface"
+version = "0.1.0"
+dependencies = [
+ "bitfield 0.17.0",
+ "defmt 0.3.100",
+ "embedded-services",
+ "embedded-usb-pd",
+ "heapless 0.9.3",
+ "log",
+ "power-policy-interface",
+]
+
+[[package]]
 name = "thermal-service"
 version = "0.1.0"
 dependencies = [
@@ -2133,19 +2146,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "type-c-interface"
-version = "0.1.0"
-dependencies = [
- "bitfield 0.17.0",
- "defmt 0.3.100",
- "embedded-services",
- "embedded-usb-pd",
- "heapless 0.9.3",
- "log",
- "power-policy-interface",
-]
-
-[[package]]
 name = "type-c-interface-mocks"
 version = "0.1.0"
 dependencies = [
@@ -2156,8 +2156,8 @@ dependencies = [
  "embedded-usb-pd",
  "log",
  "power-policy-interface",
+ "tcpm-interface",
  "tokio",
- "type-c-interface",
 ]
 
 [[package]]
@@ -2166,7 +2166,7 @@ version = "0.1.0"
 dependencies = [
  "embedded-services",
  "embedded-usb-pd",
- "type-c-interface",
+ "tcpm-interface",
 ]
 
 [[package]]
@@ -2187,8 +2187,8 @@ dependencies = [
  "paste",
  "power-policy-interface",
  "power-policy-service",
+ "tcpm-interface",
  "tokio",
- "type-c-interface",
  "type-c-interface-test-mocks",
 ]
 

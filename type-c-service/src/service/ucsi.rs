@@ -8,7 +8,7 @@ use embedded_usb_pd::ucsi::v1_2::ppm::state_machine::{
 };
 use embedded_usb_pd::ucsi::v1_2::{GlobalCommand, ResponseData, lpm, ppm};
 use embedded_usb_pd::{PdError, PowerRole};
-use type_c_interface::ucsi::Lpm as _;
+use tcpm_interface::ucsi::Lpm as _;
 
 use super::*;
 

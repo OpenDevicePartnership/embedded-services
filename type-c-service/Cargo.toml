@@ -24,7 +24,7 @@ fw-update-interface.workspace = true
 heapless.workspace = true
 log = { workspace = true, optional = true }
 power-policy-interface.workspace = true
-type-c-interface.workspace = true
+tcpm-interface.workspace = true
 
 [dev-dependencies]
 embassy-time = { workspace = true, features = ["std", "generic-queue-8"] }
@@ -47,7 +47,7 @@ defmt = [
     "embassy-sync/defmt",
     "embedded-usb-pd/defmt",
     "power-policy-interface/defmt",
-    "type-c-interface/defmt",
+    "tcpm-interface/defmt",
     "fw-update-interface/defmt",
     "power-policy-service/defmt",
 ]
@@ -57,7 +57,7 @@ log = [
     "embassy-time/log",
     "embassy-sync/log",
     "power-policy-interface/log",
-    "type-c-interface/log",
+    "tcpm-interface/log",
     "fw-update-interface/log",
     "power-policy-service/log",
     "type-c-interface-test-mocks/log",

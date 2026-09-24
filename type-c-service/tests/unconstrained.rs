@@ -12,7 +12,7 @@ use power_policy_interface::{
     capability::PowerCapability,
     service::{UnconstrainedState, event::Event as PowerPolicyEvent},
 };
-use type_c_interface::{
+use tcpm_interface::{
     control::pd::{PdSinkInfo, PortStatus, SinkContract},
     port::event::{PortEvent, PortStatusEventBitfield},
 };

@@ -10,7 +10,7 @@ use embedded_services::sync::Lockable;
 use crate::PortEventStreamer;
 use crate::controller::event::{Event, Loopback};
 use crate::controller::state::SharedState;
-use type_c_interface::port::event::{PortEvent, PortEventBitfield, PortStatusEventBitfield};
+use tcpm_interface::port::event::{PortEvent, PortEventBitfield, PortStatusEventBitfield};
 
 /// Trait used for receiving interrupt from the controller.
 pub trait InterruptReceiver<const N: usize> {

@@ -4,7 +4,7 @@ use crate::service::Event;
 use embassy_futures::select::{Either, select, select_slice};
 use embedded_services::{event::Receiver, sync::Lockable};
 use power_policy_interface::service::event::EventData as PowerPolicyEventData;
-use type_c_interface::{port::pd::Pd, service::event::PortEvent};
+use tcpm_interface::{port::pd::Pd, service::event::PortEvent};
 
 struct PowerPolicySubscriber<PowerReceiver: Receiver<PowerPolicyEventData>> {
     receiver: PowerReceiver,
@@ -21,7 +21,7 @@ pub struct ArrayPortReceivers<
     'port,
     const N: usize,
     Port: Lockable<Inner: Pd>,
-    PortReceiver: Receiver<type_c_interface::service::event::PortEventData>,
+    PortReceiver: Receiver<tcpm_interface::service::event::PortEventData>,
 > {
     ports: [&'port Port; N],
     port_receivers: [PortReceiver; N],
@@ -31,7 +31,7 @@ impl<
     'port,
     const N: usize,
     Port: Lockable<Inner: Pd>,
-    PortReceiver: Receiver<type_c_interface::service::event::PortEventData>,
+    PortReceiver: Receiver<tcpm_interface::service::event::PortEventData>,
 > ArrayPortReceivers<'port, N, Port, PortReceiver>
 {
     /// Get the next pending PSU event
@@ -57,7 +57,7 @@ pub struct ArrayEventReceiver<
     'a,
     const N: usize,
     Port: Lockable<Inner: Pd>,
-    PortReceiver: Receiver<type_c_interface::service::event::PortEventData>,
+    PortReceiver: Receiver<tcpm_interface::service::event::PortEventData>,
     PowerReceiver: Receiver<PowerPolicyEventData>,
 > {
     /// Power policy event subscriber
@@ -70,7 +70,7 @@ impl<
     'port,
     const N: usize,
     Port: Lockable<Inner: Pd>,
-    PortReceiver: Receiver<type_c_interface::service::event::PortEventData>,
+    PortReceiver: Receiver<tcpm_interface::service::event::PortEventData>,
     PowerReceiver: Receiver<PowerPolicyEventData>,
 > ArrayEventReceiver<'port, N, Port, PortReceiver, PowerReceiver>
 {

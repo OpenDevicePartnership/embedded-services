@@ -1,4 +1,4 @@
-//! Mock implementation of the per-port [`type_c_interface::port::pd::Pd`] and
+//! Mock implementation of the per-port [`tcpm_interface::port::pd::Pd`] and
 //! [`power_policy_interface::psu::Psu`] traits.
 
 use core::future::ready;
@@ -12,7 +12,7 @@ use power_policy_interface::capability::{
     ConsumerFlags, ConsumerPowerCapability, PowerCapability, ProviderFlags, ProviderPowerCapability, PsuType,
 };
 use power_policy_interface::psu::{Error as PsuError, Psu, State};
-use type_c_interface::control::{
+use tcpm_interface::control::{
     dp::{DpConfig, DpStatus},
     pd::{PdSinkInfo, PdSourceInfo, PortStatus, SinkContract, SourceContract},
     svid::DiscoveredSvids,
@@ -20,9 +20,9 @@ use type_c_interface::control::{
     usb::UsbControlConfig,
     vdm::{AttnVdm, OtherVdm, SendVdm},
 };
-use type_c_interface::port::event::PortStatusEventBitfield;
-use type_c_interface::port::pd::Pd;
-use type_c_interface::service::event::StatusChangedData;
+use tcpm_interface::port::event::PortStatusEventBitfield;
+use tcpm_interface::port::pd::Pd;
+use tcpm_interface::service::event::StatusChangedData;
 
 /// Error type for [`PortMock`] control operations
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -53,7 +53,7 @@ impl Default for ConnectionConfig {
 
 /// Mock implementation of a single Type-C port for use in tests
 pub struct PortMock<
-    TypeCSender: NonBlockingSender<type_c_interface::service::event::PortEventData>,
+    TypeCSender: NonBlockingSender<tcpm_interface::service::event::PortEventData>,
     PowerSender: NonBlockingSender<power_policy_interface::psu::event::EventData>,
 > {
     name: &'static str,
@@ -69,7 +69,7 @@ pub struct PortMock<
 
 impl<TypeCSender, PowerSender> PortMock<TypeCSender, PowerSender>
 where
-    TypeCSender: NonBlockingSender<type_c_interface::service::event::PortEventData>,
+    TypeCSender: NonBlockingSender<tcpm_interface::service::event::PortEventData>,
     PowerSender: NonBlockingSender<power_policy_interface::psu::event::EventData>,
 {
     /// Create a new mock with the given name
@@ -182,7 +182,7 @@ where
 
         if self
             .type_c_sender
-            .try_send(type_c_interface::service::event::PortEventData::StatusChanged(
+            .try_send(tcpm_interface::service::event::PortEventData::StatusChanged(
                 StatusChangedData {
                     status_event,
                     previous_status,
@@ -222,7 +222,7 @@ where
 
         if self
             .type_c_sender
-            .try_send(type_c_interface::service::event::PortEventData::StatusChanged(
+            .try_send(tcpm_interface::service::event::PortEventData::StatusChanged(
                 StatusChangedData {
                     status_event,
                     previous_status,
@@ -239,7 +239,7 @@ where
 
 impl<TypeCSender, PowerSender> Named for PortMock<TypeCSender, PowerSender>
 where
-    TypeCSender: NonBlockingSender<type_c_interface::service::event::PortEventData>,
+    TypeCSender: NonBlockingSender<tcpm_interface::service::event::PortEventData>,
     PowerSender: NonBlockingSender<power_policy_interface::psu::event::EventData>,
 {
     fn name(&self) -> &'static str {
@@ -249,7 +249,7 @@ where
 
 impl<TypeCSender, PowerSender> Pd for PortMock<TypeCSender, PowerSender>
 where
-    TypeCSender: NonBlockingSender<type_c_interface::service::event::PortEventData>,
+    TypeCSender: NonBlockingSender<tcpm_interface::service::event::PortEventData>,
     PowerSender: NonBlockingSender<power_policy_interface::psu::event::EventData>,
 {
     async fn get_port_status(&mut self) -> Result<PortStatus, PdError> {
@@ -329,7 +329,7 @@ where
 
 impl<TypeCSender, PowerSender> Psu for PortMock<TypeCSender, PowerSender>
 where
-    TypeCSender: NonBlockingSender<type_c_interface::service::event::PortEventData>,
+    TypeCSender: NonBlockingSender<tcpm_interface::service::event::PortEventData>,
     PowerSender: NonBlockingSender<power_policy_interface::psu::event::EventData>,
 {
     async fn disconnect(&mut self) -> Result<(), PsuError> {

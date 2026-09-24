@@ -3,7 +3,7 @@ use embassy_time::Instant;
 use embedded_services::{event::NonBlockingSender, sync::Lockable};
 use embedded_usb_pd::PdError;
 use power_policy_interface::capability::{DisconnectFlags, DisconnectReason};
-use type_c_interface::controller::max_sink_voltage::MaxSinkVoltage;
+use tcpm_interface::controller::max_sink_voltage::MaxSinkVoltage;
 
 use super::*;
 use crate::controller::state::SharedState;
@@ -12,10 +12,10 @@ impl<
     'device,
     C: Lockable<Inner: Pd + MaxSinkVoltage>,
     Shared: Lockable<Inner = SharedState>,
-    PortNotifier: type_c_interface::port::notification::Notifier,
+    PortNotifier: tcpm_interface::port::notification::Notifier,
     PowerNotifier: power_policy_interface::psu::notification::Notifier,
     LoopbackSender: NonBlockingSender<event::Loopback>,
-> type_c_interface::port::max_sink_voltage::MaxSinkVoltage
+> tcpm_interface::port::max_sink_voltage::MaxSinkVoltage
     for Port<'device, C, Shared, PortNotifier, PowerNotifier, LoopbackSender>
 {
     async fn set_max_sink_voltage(&mut self, voltage_mv: Option<u16>) -> Result<(), PdError> {

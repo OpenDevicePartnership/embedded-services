@@ -3,7 +3,7 @@ use embedded_services::{event::NonBlockingSender, sync::Lockable};
 use embedded_usb_pd::PdError;
 use embedded_usb_pd::ado::Ado;
 use embedded_usb_pd::vdm::structured::command::discover_identity::{sop, sop_prime};
-use type_c_interface::control::{
+use tcpm_interface::control::{
     dp::{DpConfig, DpStatus},
     pd::{PdStateMachineConfig, PortStatus},
     svid::DiscoveredSvids,
@@ -11,9 +11,9 @@ use type_c_interface::control::{
     usb::UsbControlConfig,
     vdm::{AttnVdm, OtherVdm, SendVdm},
 };
-use type_c_interface::controller::pd::StateMachine;
-use type_c_interface::port::event::{VdmData, VdmNotification};
-use type_c_interface::service::event::PortEventData as ServicePortEventData;
+use tcpm_interface::controller::pd::StateMachine;
+use tcpm_interface::port::event::{VdmData, VdmNotification};
+use tcpm_interface::service::event::PortEventData as ServicePortEventData;
 
 use super::*;
 use crate::controller::state::SharedState;
@@ -22,7 +22,7 @@ impl<
     'device,
     C: Lockable<Inner: Pd>,
     Shared: Lockable<Inner = SharedState>,
-    PortNotifier: type_c_interface::port::notification::Notifier,
+    PortNotifier: tcpm_interface::port::notification::Notifier,
     PowerNotifier: power_policy_interface::psu::notification::Notifier,
     LoopbackSender: NonBlockingSender<event::Loopback>,
 > Port<'device, C, Shared, PortNotifier, PowerNotifier, LoopbackSender>
@@ -85,10 +85,10 @@ impl<
     'device,
     C: Lockable<Inner: Pd>,
     Shared: Lockable<Inner = SharedState>,
-    PortNotifier: type_c_interface::port::notification::Notifier,
+    PortNotifier: tcpm_interface::port::notification::Notifier,
     PowerNotifier: power_policy_interface::psu::notification::Notifier,
     LoopbackSender: NonBlockingSender<event::Loopback>,
-> type_c_interface::port::pd::Pd for Port<'device, C, Shared, PortNotifier, PowerNotifier, LoopbackSender>
+> tcpm_interface::port::pd::Pd for Port<'device, C, Shared, PortNotifier, PowerNotifier, LoopbackSender>
 {
     async fn get_port_status(&mut self) -> Result<PortStatus, PdError> {
         self.controller.lock().await.get_port_status(self.port).await
@@ -179,10 +179,10 @@ impl<
     'device,
     C: Lockable<Inner: Pd + StateMachine>,
     Shared: Lockable<Inner = SharedState>,
-    PortNotifier: type_c_interface::port::notification::Notifier,
+    PortNotifier: tcpm_interface::port::notification::Notifier,
     PowerNotifier: power_policy_interface::psu::notification::Notifier,
     LoopbackSender: NonBlockingSender<event::Loopback>,
-> type_c_interface::port::pd::StateMachine for Port<'device, C, Shared, PortNotifier, PowerNotifier, LoopbackSender>
+> tcpm_interface::port::pd::StateMachine for Port<'device, C, Shared, PortNotifier, PowerNotifier, LoopbackSender>
 {
     async fn set_pd_state_machine_config(&mut self, config: PdStateMachineConfig) -> Result<(), PdError> {
         self.controller

@@ -9,10 +9,10 @@ use power_policy_interface::{
     capability::{ConsumerPowerCapability, DisconnectFlags, DisconnectReason, ProviderPowerCapability, PsuType},
     psu::{Error as PsuError, Psu, State},
 };
-use type_c_interface::controller::power::SystemPowerStateStatus;
+use tcpm_interface::controller::power::SystemPowerStateStatus;
 
 use crate::controller::config::UnconstrainedSink;
-use type_c_interface::util::power_policy_error_from_pd_error;
+use tcpm_interface::util::power_policy_error_from_pd_error;
 
 use super::*;
 
@@ -20,7 +20,7 @@ impl<
     'device,
     C: Lockable<Inner: Pd>,
     Shared: Lockable<Inner = SharedState>,
-    PortNotifier: type_c_interface::port::notification::Notifier,
+    PortNotifier: tcpm_interface::port::notification::Notifier,
     PowerNotifier: power_policy_interface::psu::notification::Notifier,
     LoopbackSender: NonBlockingSender<event::Loopback>,
 > Port<'device, C, Shared, PortNotifier, PowerNotifier, LoopbackSender>
@@ -237,7 +237,7 @@ impl<
     'device,
     C: Lockable<Inner: Pd>,
     Shared: Lockable<Inner = SharedState>,
-    PortNotifier: type_c_interface::port::notification::Notifier,
+    PortNotifier: tcpm_interface::port::notification::Notifier,
     PowerNotifier: power_policy_interface::psu::notification::Notifier,
     LoopbackSender: NonBlockingSender<event::Loopback>,
 > Psu for Port<'device, C, Shared, PortNotifier, PowerNotifier, LoopbackSender>
@@ -293,15 +293,15 @@ impl<
     'device,
     C: Lockable<Inner: Pd + SystemPowerStateStatus>,
     Shared: Lockable<Inner = SharedState>,
-    PortNotifier: type_c_interface::port::notification::Notifier,
+    PortNotifier: tcpm_interface::port::notification::Notifier,
     PowerNotifier: power_policy_interface::psu::notification::Notifier,
     LoopbackSender: NonBlockingSender<event::Loopback>,
-> type_c_interface::port::power::SystemPowerStateStatus
+> tcpm_interface::port::power::SystemPowerStateStatus
     for Port<'device, C, Shared, PortNotifier, PowerNotifier, LoopbackSender>
 {
     async fn set_system_power_state_status(
         &mut self,
-        state: type_c_interface::control::power::SystemPowerState,
+        state: tcpm_interface::control::power::SystemPowerState,
     ) -> Result<(), PdError> {
         self.controller
             .lock()

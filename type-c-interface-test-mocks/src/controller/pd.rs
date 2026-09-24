@@ -1,7 +1,7 @@
-//! Mock implementation of [`type_c_interface::controller::pd::Pd`]
+//! Mock implementation of [`tcpm_interface::controller::pd::Pd`]
 
 use embedded_usb_pd::{LocalPortId, PdError, ado::Ado};
-use type_c_interface::{
+use tcpm_interface::{
     control::{
         dp::{DpConfig, DpStatus},
         pd::PortStatus,
@@ -147,7 +147,7 @@ impl Pd for Mock {
     async fn get_discovered_svids(
         &mut self,
         port: LocalPortId,
-    ) -> Result<type_c_interface::control::svid::DiscoveredSvids, PdError> {
+    ) -> Result<tcpm_interface::control::svid::DiscoveredSvids, PdError> {
         self.fn_calls
             .push_back(ControllerFnCall::Pd(FnCall::GetDiscoveredSvids(port)));
         self.next_result_get_discovered_svids

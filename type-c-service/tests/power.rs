@@ -19,7 +19,7 @@ use power_policy_interface::{
     psu::{Psu, PsuState},
     service::event::Event as PowerPolicyEvent,
 };
-use type_c_interface::{
+use tcpm_interface::{
     control::pd::{PdSinkInfo, PortStatus, SinkContract, SourceContract},
     port::{
         event::{PortEvent, PortEventBitfield, PortStatusEventBitfield},

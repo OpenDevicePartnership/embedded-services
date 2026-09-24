@@ -1,6 +1,6 @@
 //! Port event types
 
-use type_c_interface::port::event::PortEventBitfield;
+use tcpm_interface::port::event::PortEventBitfield;
 
 /// Top-level port event type
 #[derive(Copy, Clone, Debug)]
@@ -8,7 +8,7 @@ use type_c_interface::port::event::PortEventBitfield;
 #[non_exhaustive]
 pub enum Event {
     /// Port event
-    PortEvent(type_c_interface::port::event::PortEvent),
+    PortEvent(tcpm_interface::port::event::PortEvent),
 }
 
 /// Loopback event to allow `sync_state` and similar functions

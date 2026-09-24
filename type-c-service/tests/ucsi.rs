@@ -20,9 +20,9 @@ use embedded_usb_pd::ucsi::v1_2::ppm::{
 use embedded_usb_pd::ucsi::v1_2::{GlobalCommand, ResponseData as UcsiResponseData};
 use embedded_usb_pd::{GlobalPortId, PdError, PowerRole};
 use log::info;
-use type_c_interface::control::pd::PortStatus;
-use type_c_interface::port::event::{PortEvent, PortStatusEventBitfield};
-use type_c_interface::service::event::EventData;
+use tcpm_interface::control::pd::PortStatus;
+use tcpm_interface::port::event::{PortEvent, PortStatusEventBitfield};
+use tcpm_interface::service::event::EventData;
 use type_c_service::controller::event::Event;
 
 use crate::common::{

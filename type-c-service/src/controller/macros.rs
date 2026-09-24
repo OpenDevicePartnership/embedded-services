@@ -2,7 +2,7 @@ use embedded_services::{
     event::{NonBlockingSender, Receiver},
     sync::Lockable,
 };
-use type_c_interface::port::event::PortEventBitfield;
+use tcpm_interface::port::event::PortEventBitfield;
 
 use crate::controller::{event_receiver::EventReceiver, state};
 
@@ -16,7 +16,7 @@ pub struct PortComponents<
     'a,
     Port,
     SharedState: Lockable<Inner = state::SharedState>,
-    TypeCReceiver: Receiver<type_c_interface::service::event::PortEventData>,
+    TypeCReceiver: Receiver<tcpm_interface::service::event::PortEventData>,
     PowerPolicyReceveiver: Receiver<power_policy_interface::psu::event::EventData>,
     LoopbackReceiver: Receiver<crate::controller::event::Loopback>,
     InterruptReceiver: Receiver<PortEventBitfield>,
@@ -51,12 +51,12 @@ macro_rules! define_controller_port_static_cell_channel {
                 ::embassy_sync::channel::DynamicReceiver<'static, ::power_policy_interface::psu::event::EventData>;
 
             /// Type alias for the type-c service event sender
-            pub type InnerTypeCSenderType = ::embassy_sync::channel::DynamicSender<'static, ::type_c_interface::service::event::PortEventData>;
+            pub type InnerTypeCSenderType = ::embassy_sync::channel::DynamicSender<'static, ::tcpm_interface::service::event::PortEventData>;
             /// Type alias for the type-c service event notifier
             pub type InnerTypeCNotifierType =
-                ::type_c_interface::port::event::NonBlockingSenderNotifier<InnerTypeCSenderType>;
+                ::tcpm_interface::port::event::NonBlockingSenderNotifier<InnerTypeCSenderType>;
             /// Type alias for the type-c service event receiver
-            pub type InnerTypeCReceiverType = ::embassy_sync::channel::DynamicReceiver<'static, ::type_c_interface::service::event::PortEventData>;
+            pub type InnerTypeCReceiverType = ::embassy_sync::channel::DynamicReceiver<'static, ::tcpm_interface::service::event::PortEventData>;
 
             /// Type alias for the loopback sender
             pub type InnerLoopbackSenderType =
@@ -67,10 +67,10 @@ macro_rules! define_controller_port_static_cell_channel {
 
             /// Type alias for the interrupt sender
             pub type InnerInterruptReceiverType =
-                ::embassy_sync::channel::DynamicReceiver<'static, ::type_c_interface::port::event::PortEventBitfield>;
+                ::embassy_sync::channel::DynamicReceiver<'static, ::tcpm_interface::port::event::PortEventBitfield>;
             /// Type alias for the interrupt receiver
             pub type InnerInterruptSenderType =
-                ::embassy_sync::channel::DynamicSender<'static, ::type_c_interface::port::event::PortEventBitfield>;
+                ::embassy_sync::channel::DynamicSender<'static, ::tcpm_interface::port::event::PortEventBitfield>;
 
             /// Type alias for the shared state mutex
             pub type InnerSharedStateType =
@@ -97,7 +97,7 @@ macro_rules! define_controller_port_static_cell_channel {
             static TYPE_C_CHANNEL: ::static_cell::StaticCell<
                 ::embassy_sync::channel::Channel<
                     $mutex,
-                    ::type_c_interface::service::event::PortEventData,
+                    ::tcpm_interface::service::event::PortEventData,
                     { $crate::controller::macros::DEFAULT_TYPE_C_CHANNEL_SIZE },
                 >,
             > = ::static_cell::StaticCell::new();
@@ -121,7 +121,7 @@ macro_rules! define_controller_port_static_cell_channel {
             static INTERRUPT_CHANNEL: ::static_cell::StaticCell<
                 ::embassy_sync::channel::Channel<
                     $mutex,
-                    ::type_c_interface::port::event::PortEventBitfield,
+                    ::tcpm_interface::port::event::PortEventBitfield,
                     { $crate::controller::macros::DEFAULT_INTERRUPT_CHANNEL_SIZE },
                 >,
             > = ::static_cell::StaticCell::new();

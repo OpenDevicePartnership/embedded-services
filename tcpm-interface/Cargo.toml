@@ -1,5 +1,5 @@
 [package]
-name = "type-c-interface"
+name = "tcpm-interface"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

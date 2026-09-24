@@ -11,8 +11,8 @@ use power_policy_interface::capability::{
 };
 use power_policy_interface::psu::event::EventData as PsuEventData;
 use power_policy_interface::psu::{Psu, PsuState};
-use type_c_interface::service::event::PortEventData;
-use type_c_interface_mocks::port::{ConnectionConfig, PortMock, PortMockError};
+use tcpm_interface::service::event::PortEventData;
+use tcpm_interface_mocks::port::{ConnectionConfig, PortMock, PortMockError};
 
 const CHANNEL_SIZE: usize = 4;
 

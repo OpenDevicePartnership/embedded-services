@@ -2,9 +2,9 @@
 
 use embedded_services::sync::Lockable;
 use embedded_usb_pd::{GlobalPortId, LocalPortId};
-use type_c_interface::port::pd::Pd;
-use type_c_interface::service::notification::Notifier as ServiceNotifierTrait;
-use type_c_interface::ucsi::Lpm as UcsiLpm;
+use tcpm_interface::port::pd::Pd;
+use tcpm_interface::service::notification::Notifier as ServiceNotifierTrait;
+use tcpm_interface::ucsi::Lpm as UcsiLpm;
 
 /// Registration trait that abstracts over various registration details.
 pub trait Registration<'port> {

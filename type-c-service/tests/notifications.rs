@@ -5,7 +5,7 @@
 use embassy_futures::join::join;
 use embassy_time::{TimeoutError, with_timeout};
 use embedded_usb_pd::{ado::Ado, type_c::ConnectionState};
-use type_c_interface::{
+use tcpm_interface::{
     control::dp::{DpPinConfig, DpStatus},
     control::pd::PortStatus,
     control::vdm::{ATTN_VDM_LEN, AttnVdm, OTHER_VDM_LEN, OtherVdm},

@@ -8,15 +8,15 @@ use embedded_usb_pd::GlobalPortId;
 use embedded_usb_pd::PdError as Error;
 use embedded_usb_pd::ado::Ado;
 use power_policy_interface::service::event::EventData as PowerPolicyEventData;
-use type_c_interface::control::dp::DpStatus;
-use type_c_interface::control::pd::PortStatus;
-use type_c_interface::port::event::VdmData;
-use type_c_interface::port::notification::NotificationHandler;
-use type_c_interface::port::pd::Pd;
-use type_c_interface::service::event::{PortEvent, PortEventData};
-use type_c_interface::service::notification::Notifier as _;
+use tcpm_interface::control::dp::DpStatus;
+use tcpm_interface::control::pd::PortStatus;
+use tcpm_interface::port::event::VdmData;
+use tcpm_interface::port::notification::NotificationHandler;
+use tcpm_interface::port::pd::Pd;
+use tcpm_interface::service::event::{PortEvent, PortEventData};
+use tcpm_interface::service::notification::Notifier as _;
 
-use type_c_interface::port::event::PortStatusEventBitfield;
+use tcpm_interface::port::event::PortStatusEventBitfield;
 
 use crate::service::registration::Registration;
 

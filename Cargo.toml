@@ -28,7 +28,7 @@ members = [
     "keyboard-service",
     "power-policy-interface",
     "odp-service-common",
-    "type-c-interface",
+    "tcpm-interface",
     "fw-update-interface",
     "fw-update-interface-test-mocks",
     "mctp-rs",
@@ -121,7 +121,7 @@ thermal-service-interface = { path = "./thermal-service-interface" }
 thermal-service-relay = { path = "./thermal-service-relay" }
 time-alarm-service-interface = { path = "./time-alarm-service-interface" }
 time-alarm-service-relay = { path = "./time-alarm-service-relay" }
-type-c-interface = { path = "./type-c-interface" }
+tcpm-interface = { path = "./tcpm-interface" }
 type-c-interface-mocks = { path = "./type-c-interface-mocks" }
 type-c-interface-test-mocks = { path = "./type-c-interface-test-mocks" }
 typenum = "1.20"

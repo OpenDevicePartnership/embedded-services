@@ -6,7 +6,7 @@ pub mod util;
 
 use core::iter::Enumerate;
 
-use type_c_interface::port::event::{
+use tcpm_interface::port::event::{
     PortEvent, PortEventBitfield, PortNotificationEventBitfield, PortStatusEventBitfield,
 };
 

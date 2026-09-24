@@ -1,7 +1,7 @@
-//! Mock implementation of [`type_c_interface::controller::max_sink_voltage::MaxSinkVoltage`]
+//! Mock implementation of [`tcpm_interface::controller::max_sink_voltage::MaxSinkVoltage`]
 
 use embedded_usb_pd::{LocalPortId, PdError};
-use type_c_interface::controller::max_sink_voltage::MaxSinkVoltage;
+use tcpm_interface::controller::max_sink_voltage::MaxSinkVoltage;
 
 use super::FnCall as ControllerFnCall;
 use super::Mock;

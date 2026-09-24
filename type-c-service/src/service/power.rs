@@ -3,7 +3,7 @@ use core::ptr;
 use embedded_services::sync::Lockable as _;
 use power_policy_interface::service as power_policy;
 use power_policy_interface::service::event::EventData as PowerPolicyEventData;
-use type_c_interface::port::pd::Pd as _;
+use tcpm_interface::port::pd::Pd as _;
 
 use super::*;
 

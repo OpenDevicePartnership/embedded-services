@@ -32,11 +32,11 @@ pub const POWER_POLICY_SENDER_COUNT: usize = 1;
 pub type ControllerMockMutexType = Mutex<GlobalRawMutex, type_c_interface_test_mocks::controller::Mock>;
 
 /// [`type_c_service::controller::Port`] sender to type-C service
-pub type PortTypeCSender<'a> = DynamicSender<'a, type_c_interface::service::event::PortEventData>;
+pub type PortTypeCSender<'a> = DynamicSender<'a, tcpm_interface::service::event::PortEventData>;
 /// Corresponding receiver for [`PortTypeCSender`]
-pub type PortTypeCReceiver<'a> = DynamicReceiver<'a, type_c_interface::service::event::PortEventData>;
+pub type PortTypeCReceiver<'a> = DynamicReceiver<'a, tcpm_interface::service::event::PortEventData>;
 /// Type-C port notification wrapper
-pub type PortTypeCNotifier<'a> = type_c_interface::port::event::NonBlockingSenderNotifier<PortTypeCSender<'a>>;
+pub type PortTypeCNotifier<'a> = tcpm_interface::port::event::NonBlockingSenderNotifier<PortTypeCSender<'a>>;
 /// [`type_c_service::controller::Port`] sender to power policy service
 pub type PortPowerSender<'a> = DynamicSender<'a, power_policy_interface::psu::event::EventData>;
 /// Corresponding receiver for [`PortPowerSender`]
@@ -48,9 +48,9 @@ pub type PortLoopbackSender<'a> = DynamicSender<'a, type_c_service::controller::
 /// Corresponding receiver for [`PortLoopbackSender`]
 pub type PortLoopbackReceiver<'a> = DynamicReceiver<'a, type_c_service::controller::event::Loopback>;
 /// Interrupt sender into a [`type_c_service::controller::Port`]'s event receiver
-pub type PortInterruptSender<'a> = DynamicSender<'a, type_c_interface::port::event::PortEventBitfield>;
+pub type PortInterruptSender<'a> = DynamicSender<'a, tcpm_interface::port::event::PortEventBitfield>;
 /// Corresponding receiver for [`PortInterruptSender`]
-pub type PortInterruptReceiver<'a> = DynamicReceiver<'a, type_c_interface::port::event::PortEventBitfield>;
+pub type PortInterruptReceiver<'a> = DynamicReceiver<'a, tcpm_interface::port::event::PortEventBitfield>;
 /// Shared port state type
 pub type PortSharedState = Mutex<GlobalRawMutex, type_c_service::controller::state::SharedState>;
 /// Port type
@@ -112,12 +112,12 @@ pub type PowerPolicyServiceMutexType<'port, 'ch> =
 
 /// Sender for events broadcast by the type-C service
 pub type TypeCServiceSender<'port, 'ch> =
-    DynamicSender<'ch, type_c_interface::service::event::Event<'port, PortMutexType<'port, 'ch>>>;
+    DynamicSender<'ch, tcpm_interface::service::event::Event<'port, PortMutexType<'port, 'ch>>>;
 /// Receiver for events broadcast by the type-C service
 pub type TypeCServiceReceiver<'port, 'ch> =
-    DynamicReceiver<'ch, type_c_interface::service::event::Event<'port, PortMutexType<'port, 'ch>>>;
+    DynamicReceiver<'ch, tcpm_interface::service::event::Event<'port, PortMutexType<'port, 'ch>>>;
 /// Notifier for events broadcast by the type-C service
-pub type TypeCServiceNotifier<'port, 'ch> = type_c_interface::service::event::NonBlockingSenderNotifier<
+pub type TypeCServiceNotifier<'port, 'ch> = tcpm_interface::service::event::NonBlockingSenderNotifier<
     'port,
     PortMutexType<'port, 'ch>,
     TypeCServiceSender<'port, 'ch>,
@@ -186,7 +186,7 @@ macro_rules! define_port {
     ($name:ident, $mock_name:expr, $port_name:expr, $config:expr, $local_id:expr) => {
         paste! { let [<$name _type_c_channel>]: Channel<
             GlobalRawMutex,
-            type_c_interface::service::event::PortEventData,
+            tcpm_interface::service::event::PortEventData,
             CHANNEL_SIZE,
         > = Channel::new(); }
         paste! { let [<$name _type_c_sender>] = [<$name _type_c_channel>].dyn_sender(); }
@@ -210,7 +210,7 @@ macro_rules! define_port {
 
         paste! { let [<$name _interrupt_channel>]: Channel<
             GlobalRawMutex,
-            type_c_interface::port::event::PortEventBitfield,
+            tcpm_interface::port::event::PortEventBitfield,
             CHANNEL_SIZE,
         > = Channel::new(); }
         paste! { let [<$name _interrupt_sender>] = [<$name _interrupt_channel>].dyn_sender(); }
@@ -291,7 +291,7 @@ async fn type_c_service_task<'port, 'ch, 'service, 'completion>(
         'port,
         TYPE_C_PORT_COUNT,
         PortMutexType<'port, 'ch>,
-        DynamicReceiver<'ch, type_c_interface::service::event::PortEventData>,
+        DynamicReceiver<'ch, tcpm_interface::service::event::PortEventData>,
         DynamicReceiver<'ch, power_policy_interface::service::event::EventData>,
     >,
 ) {
@@ -350,7 +350,7 @@ pub async fn run_test(
 
     // Channel to broadcast events from the type-C service
     let type_c_service_channel: ManuallyDrop<
-        Channel<GlobalRawMutex, type_c_interface::service::event::Event<'_, PortMutexType<'_, '_>>, CHANNEL_SIZE>,
+        Channel<GlobalRawMutex, tcpm_interface::service::event::Event<'_, PortMutexType<'_, '_>>, CHANNEL_SIZE>,
     > = ManuallyDrop::new(Channel::new());
     let type_c_service_sender = type_c_service_channel.dyn_sender();
     let type_c_service_receiver = type_c_service_channel.dyn_receiver();

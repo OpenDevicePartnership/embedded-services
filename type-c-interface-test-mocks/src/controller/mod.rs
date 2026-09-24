@@ -4,7 +4,7 @@ use std::collections::VecDeque;
 
 use embedded_services::named::Named;
 use embedded_usb_pd::{PdError, ado::Ado};
-use type_c_interface::control::{
+use tcpm_interface::control::{
     dp::DpStatus,
     pd::PortStatus,
     vdm::{AttnVdm, OtherVdm},
@@ -26,45 +26,45 @@ pub struct Mock {
     name: &'static str,
     /// Recorded function calls
     pub fn_calls: VecDeque<FnCall>,
-    /// Next results to return for [`type_c_interface::controller::pd::Pd::get_port_status`]
+    /// Next results to return for [`tcpm_interface::controller::pd::Pd::get_port_status`]
     pub next_result_get_port_status: VecDeque<Result<PortStatus, PdError>>,
-    /// Next results to return for [`type_c_interface::controller::pd::Pd::clear_dead_battery_flag`]
+    /// Next results to return for [`tcpm_interface::controller::pd::Pd::clear_dead_battery_flag`]
     pub next_result_clear_dead_battery_flag: VecDeque<Result<(), PdError>>,
-    /// Next results to return for [`type_c_interface::controller::pd::Pd::enable_sink_path`]
+    /// Next results to return for [`tcpm_interface::controller::pd::Pd::enable_sink_path`]
     pub next_result_enable_sink_path: VecDeque<Result<(), PdError>>,
-    /// Next results to return for [`type_c_interface::controller::max_sink_voltage::MaxSinkVoltage::set_max_sink_voltage`]
+    /// Next results to return for [`tcpm_interface::controller::max_sink_voltage::MaxSinkVoltage::set_max_sink_voltage`]
     pub next_result_set_max_sink_voltage: VecDeque<Result<(), PdError>>,
-    /// Next results to return for [`type_c_interface::controller::pd::Pd::get_pd_alert`]
+    /// Next results to return for [`tcpm_interface::controller::pd::Pd::get_pd_alert`]
     pub next_result_get_pd_alert: VecDeque<Result<Option<Ado>, PdError>>,
-    /// Next results to return for [`type_c_interface::controller::pd::Pd::set_unconstrained_power`]
+    /// Next results to return for [`tcpm_interface::controller::pd::Pd::set_unconstrained_power`]
     pub next_result_set_unconstrained_power: VecDeque<Result<(), PdError>>,
-    /// Next results to return for [`type_c_interface::controller::pd::Pd::get_other_vdm`]
+    /// Next results to return for [`tcpm_interface::controller::pd::Pd::get_other_vdm`]
     pub next_result_get_other_vdm: VecDeque<Result<OtherVdm, PdError>>,
-    /// Next results to return for [`type_c_interface::controller::pd::Pd::get_attn_vdm`]
+    /// Next results to return for [`tcpm_interface::controller::pd::Pd::get_attn_vdm`]
     pub next_result_get_attn_vdm: VecDeque<Result<AttnVdm, PdError>>,
-    /// Next results to return for [`type_c_interface::controller::pd::Pd::send_vdm`]
+    /// Next results to return for [`tcpm_interface::controller::pd::Pd::send_vdm`]
     pub next_result_send_vdm: VecDeque<Result<(), PdError>>,
-    /// Next results to return for [`type_c_interface::controller::pd::Pd::execute_drst`]
+    /// Next results to return for [`tcpm_interface::controller::pd::Pd::execute_drst`]
     pub next_result_execute_drst: VecDeque<Result<(), PdError>>,
-    /// Next results to return for [`type_c_interface::controller::pd::Pd::get_dp_status`]
+    /// Next results to return for [`tcpm_interface::controller::pd::Pd::get_dp_status`]
     pub next_result_get_dp_status: VecDeque<Result<DpStatus, PdError>>,
-    /// Next results to return for [`type_c_interface::controller::pd::Pd::set_dp_config`]
+    /// Next results to return for [`tcpm_interface::controller::pd::Pd::set_dp_config`]
     pub next_result_set_dp_config: VecDeque<Result<(), PdError>>,
-    /// Next results to return for [`type_c_interface::controller::pd::Pd::set_tbt_config`]
+    /// Next results to return for [`tcpm_interface::controller::pd::Pd::set_tbt_config`]
     pub next_result_set_tbt_config: VecDeque<Result<(), PdError>>,
-    /// Next results to return for [`type_c_interface::controller::pd::Pd::set_usb_control`]
+    /// Next results to return for [`tcpm_interface::controller::pd::Pd::set_usb_control`]
     pub next_result_set_usb_control: VecDeque<Result<(), PdError>>,
-    /// Next results to return for [`type_c_interface::ucsi::Lpm::execute_lpm_command`]
+    /// Next results to return for [`tcpm_interface::ucsi::Lpm::execute_lpm_command`]
     pub next_result_execute_lpm_command:
         VecDeque<Result<Option<embedded_usb_pd::ucsi::v1_2::lpm::ResponseData>, PdError>>,
-    /// Next results to return for [`type_c_interface::controller::pd::Pd::hard_reset`]
+    /// Next results to return for [`tcpm_interface::controller::pd::Pd::hard_reset`]
     pub next_result_hard_reset: VecDeque<Result<(), PdError>>,
-    /// Next results to return for [`type_c_interface::controller::pd::Pd::get_discovered_svids`]
-    pub next_result_get_discovered_svids: VecDeque<Result<type_c_interface::control::svid::DiscoveredSvids, PdError>>,
-    /// Next results to return for [`type_c_interface::controller::pd::Pd::get_discover_identity_sop_response`]
+    /// Next results to return for [`tcpm_interface::controller::pd::Pd::get_discovered_svids`]
+    pub next_result_get_discovered_svids: VecDeque<Result<tcpm_interface::control::svid::DiscoveredSvids, PdError>>,
+    /// Next results to return for [`tcpm_interface::controller::pd::Pd::get_discover_identity_sop_response`]
     pub next_result_get_discover_identity_sop_response:
         VecDeque<Result<embedded_usb_pd::vdm::structured::command::discover_identity::sop::ResponseVdos, PdError>>,
-    /// Next results to return for [`type_c_interface::controller::pd::Pd::get_discover_identity_sop_prime_response`]
+    /// Next results to return for [`tcpm_interface::controller::pd::Pd::get_discover_identity_sop_prime_response`]
     pub next_result_get_discover_identity_sop_prime_response: VecDeque<
         Result<embedded_usb_pd::vdm::structured::command::discover_identity::sop_prime::ResponseVdos, PdError>,
     >,

@@ -2,11 +2,11 @@
 use embedded_services::{debug, error, event::NonBlockingSender, info, named::Named, sync::Lockable};
 use embedded_usb_pd::{LocalPortId, PdError};
 use power_policy_interface::psu::PsuState;
-use type_c_interface::control::pd::PortStatus;
-use type_c_interface::controller::pd::Pd;
-use type_c_interface::port::event::PortEventBitfield;
-use type_c_interface::port::{event::PortEvent as InterfacePortEvent, event::PortStatusEventBitfield};
-use type_c_interface::service::event::{PortEventData as ServicePortEventData, StatusChangedData};
+use tcpm_interface::control::pd::PortStatus;
+use tcpm_interface::controller::pd::Pd;
+use tcpm_interface::port::event::PortEventBitfield;
+use tcpm_interface::port::{event::PortEvent as InterfacePortEvent, event::PortStatusEventBitfield};
+use tcpm_interface::service::event::{PortEventData as ServicePortEventData, StatusChangedData};
 
 use crate::controller::event::{Event, Loopback};
 use crate::controller::state::SharedState;
@@ -28,7 +28,7 @@ pub struct Port<
     'device,
     C: Lockable<Inner: Pd>,
     Shared: Lockable<Inner = SharedState>,
-    PortNotifier: type_c_interface::port::notification::Notifier,
+    PortNotifier: tcpm_interface::port::notification::Notifier,
     PowerNotifier: power_policy_interface::psu::notification::Notifier,
     LoopbackSender: NonBlockingSender<event::Loopback>,
 > {
@@ -58,7 +58,7 @@ impl<
     'device,
     C: Lockable<Inner: Pd>,
     Shared: Lockable<Inner = SharedState>,
-    PortNotifier: type_c_interface::port::notification::Notifier,
+    PortNotifier: tcpm_interface::port::notification::Notifier,
     PowerNotifier: power_policy_interface::psu::notification::Notifier,
     LoopbackSender: NonBlockingSender<event::Loopback>,
 > Port<'device, C, Shared, PortNotifier, PowerNotifier, LoopbackSender>
@@ -237,7 +237,7 @@ impl<
     'device,
     C: Lockable<Inner: Pd>,
     Shared: Lockable<Inner = SharedState>,
-    PortNotifier: type_c_interface::port::notification::Notifier,
+    PortNotifier: tcpm_interface::port::notification::Notifier,
     PowerNotifier: power_policy_interface::psu::notification::Notifier,
     LoopbackSender: NonBlockingSender<event::Loopback>,
 > Named for Port<'device, C, Shared, PortNotifier, PowerNotifier, LoopbackSender>

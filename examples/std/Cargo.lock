@@ -1225,9 +1225,9 @@ dependencies = [
  "power-policy-interface",
  "power-policy-service",
  "static_cell",
+ "tcpm-interface",
  "thermal-service",
  "thermal-service-interface",
- "type-c-interface",
  "type-c-service",
 ]
 
@@ -1258,6 +1258,18 @@ dependencies = [
  "proc-macro2",
  "quote",
  "unicode-ident",
+]
+
+[[package]]
+name = "tcpm-interface"
+version = "0.1.0"
+dependencies = [
+ "bitfield 0.17.0",
+ "embedded-services",
+ "embedded-usb-pd",
+ "heapless",
+ "log",
+ "power-policy-interface",
 ]
 
 [[package]]
@@ -1376,18 +1388,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "type-c-interface"
-version = "0.1.0"
-dependencies = [
- "bitfield 0.17.0",
- "embedded-services",
- "embedded-usb-pd",
- "heapless",
- "log",
- "power-policy-interface",
-]
-
-[[package]]
 name = "type-c-service"
 version = "0.1.0"
 dependencies = [
@@ -1400,7 +1400,7 @@ dependencies = [
  "heapless",
  "log",
  "power-policy-interface",
- "type-c-interface",
+ "tcpm-interface",
 ]
 
 [[package]]

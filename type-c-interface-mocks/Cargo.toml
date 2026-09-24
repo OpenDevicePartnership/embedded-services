@@ -10,7 +10,7 @@ repository.workspace = true
 embedded-services = { workspace = true }
 embedded-usb-pd = { workspace = true }
 power-policy-interface = { workspace = true }
-type-c-interface = { workspace = true }
+tcpm-interface = { workspace = true }
 defmt = { workspace = true, optional = true }
 log = { workspace = true, optional = true }
 
@@ -21,13 +21,13 @@ defmt = [
     "embedded-services/defmt",
     "embedded-usb-pd/defmt",
     "power-policy-interface/defmt",
-    "type-c-interface/defmt",
+    "tcpm-interface/defmt",
 ]
 log = [
     "dep:log",
     "embedded-services/log",
     "power-policy-interface/log",
-    "type-c-interface/log",
+    "tcpm-interface/log",
 ]
 
 [dev-dependencies]

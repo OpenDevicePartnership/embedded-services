@@ -1,6 +1,6 @@
 use embedded_usb_pd::PdError;
 use embedded_usb_pd::ucsi::v1_2::lpm;
-use type_c_interface::ucsi::Lpm as UcsiLpm;
+use tcpm_interface::ucsi::Lpm as UcsiLpm;
 
 use super::FnCall as ControllerFnCall;
 use super::Mock;

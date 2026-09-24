@@ -12,7 +12,7 @@ use power_policy_interface::{
     psu::{Psu, PsuState},
     service::event::Event as PowerPolicyEvent,
 };
-use type_c_interface::{
+use tcpm_interface::{
     control::pd::{PortStatus, SourceContract},
     port::event::{PortEventBitfield, PortStatusEventBitfield},
     service::event::{DebugAccessoryData, EventData as TypeCEventData},
