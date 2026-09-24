@@ -14,8 +14,7 @@ impl<
     PortNotifier: tcpm_interface::port::notification::Notifier,
     PowerNotifier: power_policy_interface::psu::notification::Notifier,
     LoopbackSender: NonBlockingSender<event::Loopback>,
-> tcpm_interface::port::type_c::StateMachine
-    for Port<'device, C, Shared, PortNotifier, PowerNotifier, LoopbackSender>
+> tcpm_interface::port::type_c::StateMachine for Port<'device, C, Shared, PortNotifier, PowerNotifier, LoopbackSender>
 {
     async fn set_type_c_state_machine_config(&mut self, state: TypeCStateMachineState) -> Result<(), PdError> {
         self.controller
