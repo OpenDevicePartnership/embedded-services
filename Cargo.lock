@@ -1887,6 +1887,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "tcpm-interface-mocks"
+version = "0.1.0"
+dependencies = [
+ "critical-section",
+ "defmt 0.3.100",
+ "embassy-sync",
+ "embedded-services",
+ "embedded-usb-pd",
+ "log",
+ "power-policy-interface",
+ "tcpm-interface",
+ "tokio",
+]
+
+[[package]]
 name = "tcpm-interface-test-mocks"
 version = "0.1.0"
 dependencies = [
@@ -2152,21 +2167,6 @@ dependencies = [
  "tracing",
  "tracing-core",
  "tracing-log",
-]
-
-[[package]]
-name = "type-c-interface-mocks"
-version = "0.1.0"
-dependencies = [
- "critical-section",
- "defmt 0.3.100",
- "embassy-sync",
- "embedded-services",
- "embedded-usb-pd",
- "log",
- "power-policy-interface",
- "tcpm-interface",
- "tokio",
 ]
 
 [[package]]

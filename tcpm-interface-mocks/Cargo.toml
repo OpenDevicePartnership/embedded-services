@@ -1,5 +1,5 @@
 [package]
-name = "type-c-interface-mocks"
+name = "tcpm-interface-mocks"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
