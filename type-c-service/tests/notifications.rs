@@ -12,7 +12,7 @@ use tcpm_interface::{
     port::event::{PortEvent, PortStatusEventBitfield, VdmData, VdmNotification},
     service::event::PortEventData,
 };
-use type_c_interface_test_mocks::controller::{FnCall as ControllerFnCall, pd::FnCall as PdFnCall};
+use tcpm_interface_test_mocks::controller::{FnCall as ControllerFnCall, pd::FnCall as PdFnCall};
 use type_c_service::controller::event::Event;
 
 use crate::common::{

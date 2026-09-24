@@ -1887,6 +1887,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "tcpm-interface-test-mocks"
+version = "0.1.0"
+dependencies = [
+ "embedded-services",
+ "embedded-usb-pd",
+ "tcpm-interface",
+]
+
+[[package]]
 name = "thermal-service"
 version = "0.1.0"
 dependencies = [
@@ -2161,15 +2170,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "type-c-interface-test-mocks"
-version = "0.1.0"
-dependencies = [
- "embedded-services",
- "embedded-usb-pd",
- "tcpm-interface",
-]
-
-[[package]]
 name = "type-c-service"
 version = "0.1.0"
 dependencies = [
@@ -2188,8 +2188,8 @@ dependencies = [
  "power-policy-interface",
  "power-policy-service",
  "tcpm-interface",
+ "tcpm-interface-test-mocks",
  "tokio",
- "type-c-interface-test-mocks",
 ]
 
 [[package]]

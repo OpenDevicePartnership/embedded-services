@@ -33,7 +33,7 @@ members = [
     "fw-update-interface-test-mocks",
     "mctp-rs",
     "type-c-interface-mocks",
-    "type-c-interface-test-mocks",
+    "tcpm-interface-test-mocks",
     "power-policy-interface-test-mocks",
 ]
 exclude = ["examples/*"]
@@ -123,7 +123,7 @@ time-alarm-service-interface = { path = "./time-alarm-service-interface" }
 time-alarm-service-relay = { path = "./time-alarm-service-relay" }
 tcpm-interface = { path = "./tcpm-interface" }
 type-c-interface-mocks = { path = "./type-c-interface-mocks" }
-type-c-interface-test-mocks = { path = "./type-c-interface-test-mocks" }
+tcpm-interface-test-mocks = { path = "./tcpm-interface-test-mocks" }
 typenum = "1.20"
 syn = "2.0"
 tokio = { version = "1.42.0" }

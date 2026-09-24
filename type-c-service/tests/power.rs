@@ -27,7 +27,7 @@ use tcpm_interface::{
     },
     util::POWER_CAPABILITY_5V_1A5,
 };
-use type_c_interface_test_mocks::controller::{
+use tcpm_interface_test_mocks::controller::{
     FnCall as ControllerFnCall, max_sink_voltage::FnCall as MaxSinkVoltageFnCall, pd::FnCall as PdFnCall,
 };
 use type_c_service::controller::event::Event;
