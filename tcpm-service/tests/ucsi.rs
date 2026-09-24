@@ -23,7 +23,7 @@ use log::info;
 use tcpm_interface::control::pd::PortStatus;
 use tcpm_interface::port::event::{PortEvent, PortStatusEventBitfield};
 use tcpm_interface::service::event::EventData;
-use type_c_service::controller::event::Event;
+use tcpm_service::controller::event::Event;
 
 use crate::common::{
     DEFAULT_PER_CALL_TIMEOUT, DEFAULT_TEST_DURATION, PowerPolicyServiceReceiver, Test, TestPort, TypeCServiceMutexType,
@@ -315,7 +315,7 @@ impl Test for TestUcsi {
 async fn ucsi() {
     common::run_test(
         DEFAULT_TEST_DURATION,
-        type_c_service::service::config::Config {
+        tcpm_service::service::config::Config {
             ucsi_capabilities: PpmCapabilities {
                 num_connectors: 3,
                 bcd_usb_pd_spec: 0x0300,

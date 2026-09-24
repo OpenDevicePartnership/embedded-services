@@ -30,7 +30,7 @@ use tcpm_interface::{
 use tcpm_interface_test_mocks::controller::{
     FnCall as ControllerFnCall, max_sink_voltage::FnCall as MaxSinkVoltageFnCall, pd::FnCall as PdFnCall,
 };
-use type_c_service::controller::event::Event;
+use tcpm_service::controller::event::Event;
 
 use crate::common::{
     DEFAULT_PER_CALL_TIMEOUT, DEFAULT_TEST_DURATION, PowerPolicyServiceReceiver, Test, TestPort, TypeCServiceReceiver,
@@ -278,7 +278,7 @@ impl Test for TestBasicProviderFlow {
 /// exercises every internal state transition along with the power-policy broadcasts.
 ///
 /// The controller never raises a hardware sink-ready event, so a real `embassy_time::Timer` inside
-/// a live [`type_c_service::controller::event_receiver::EventReceiver`] must elapse and synthesize
+/// a live [`tcpm_service::controller::event_receiver::EventReceiver`] must elapse and synthesize
 /// the sink-ready event that completes the consumer contract. The event receiver is driven
 /// manually, one event at a time, so the port's internal state can be asserted deterministically
 /// between transitions:

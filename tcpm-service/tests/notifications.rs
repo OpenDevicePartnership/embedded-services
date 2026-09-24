@@ -13,7 +13,7 @@ use tcpm_interface::{
     service::event::PortEventData,
 };
 use tcpm_interface_test_mocks::controller::{FnCall as ControllerFnCall, pd::FnCall as PdFnCall};
-use type_c_service::controller::event::Event;
+use tcpm_service::controller::event::Event;
 
 use crate::common::{
     DEFAULT_PER_CALL_TIMEOUT, DEFAULT_TEST_DURATION, PowerPolicyServiceReceiver, Test, TestPort, TypeCServiceReceiver,

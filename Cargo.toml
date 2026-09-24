@@ -22,7 +22,7 @@ members = [
     "time-alarm-service",
     "time-alarm-service-interface",
     "time-alarm-service-relay",
-    "type-c-service",
+    "tcpm-service",
     "debug-service",
     "debug-service-messages",
     "keyboard-service",

@@ -15,7 +15,7 @@ use embedded_services::{GlobalRawMutex, event::NonBlockingSender};
 use embedded_usb_pd::LocalPortId;
 use paste::paste;
 use power_policy_interface::charger::mock::NoopCharger;
-use type_c_service::service::registration::PortData;
+use tcpm_service::service::registration::PortData;
 
 pub const DEFAULT_TEST_DURATION: Duration = Duration::from_secs(5);
 
@@ -24,39 +24,39 @@ pub const DEFAULT_PER_CALL_TIMEOUT: Duration = Duration::from_secs(1);
 /// Total number of type-C ports
 pub const TYPE_C_PORT_COUNT: usize = 3;
 /// Number of senders for type-c service events
-pub const TYPE_C_SERVICE_SENDER_COUNT: usize = 1;
+pub const TCPM_SERVICE_SENDER_COUNT: usize = 1;
 /// Number of senders for power policy events
 pub const POWER_POLICY_SENDER_COUNT: usize = 1;
 
 /// Mutex wrapped controller mock
 pub type ControllerMockMutexType = Mutex<GlobalRawMutex, tcpm_interface_test_mocks::controller::Mock>;
 
-/// [`type_c_service::controller::Port`] sender to type-C service
+/// [`tcpm_service::controller::Port`] sender to type-C service
 pub type PortTypeCSender<'a> = DynamicSender<'a, tcpm_interface::service::event::PortEventData>;
 /// Corresponding receiver for [`PortTypeCSender`]
 pub type PortTypeCReceiver<'a> = DynamicReceiver<'a, tcpm_interface::service::event::PortEventData>;
 /// Type-C port notification wrapper
 pub type PortTypeCNotifier<'a> = tcpm_interface::port::event::NonBlockingSenderNotifier<PortTypeCSender<'a>>;
-/// [`type_c_service::controller::Port`] sender to power policy service
+/// [`tcpm_service::controller::Port`] sender to power policy service
 pub type PortPowerSender<'a> = DynamicSender<'a, power_policy_interface::psu::event::EventData>;
 /// Corresponding receiver for [`PortPowerSender`]
 pub type PortPowerReceiver<'a> = DynamicReceiver<'a, power_policy_interface::psu::event::EventData>;
 /// Power policy notification wrapper
 pub type PortPowerNotifier<'a> = power_policy_interface::psu::event::NonBlockingSenderNotifier<PortPowerSender<'a>>;
-/// [`type_c_service::controller::Port`] sender for loopback events
-pub type PortLoopbackSender<'a> = DynamicSender<'a, type_c_service::controller::event::Loopback>;
+/// [`tcpm_service::controller::Port`] sender for loopback events
+pub type PortLoopbackSender<'a> = DynamicSender<'a, tcpm_service::controller::event::Loopback>;
 /// Corresponding receiver for [`PortLoopbackSender`]
-pub type PortLoopbackReceiver<'a> = DynamicReceiver<'a, type_c_service::controller::event::Loopback>;
-/// Interrupt sender into a [`type_c_service::controller::Port`]'s event receiver
+pub type PortLoopbackReceiver<'a> = DynamicReceiver<'a, tcpm_service::controller::event::Loopback>;
+/// Interrupt sender into a [`tcpm_service::controller::Port`]'s event receiver
 pub type PortInterruptSender<'a> = DynamicSender<'a, tcpm_interface::port::event::PortEventBitfield>;
 /// Corresponding receiver for [`PortInterruptSender`]
 pub type PortInterruptReceiver<'a> = DynamicReceiver<'a, tcpm_interface::port::event::PortEventBitfield>;
 /// Shared port state type
-pub type PortSharedState = Mutex<GlobalRawMutex, type_c_service::controller::state::SharedState>;
+pub type PortSharedState = Mutex<GlobalRawMutex, tcpm_service::controller::state::SharedState>;
 /// Port type
 pub type PortMutexType<'port, 'ch> = Mutex<
     GlobalRawMutex,
-    type_c_service::controller::Port<
+    tcpm_service::controller::Port<
         'port,
         // Underlying controller
         ControllerMockMutexType,
@@ -72,7 +72,7 @@ pub type PortMutexType<'port, 'ch> = Mutex<
 >;
 
 /// Controller-side event receiver that drives software sink-ready timeouts
-pub type PortEventReceiverType<'port, 'ch> = type_c_service::controller::event_receiver::EventReceiver<
+pub type PortEventReceiverType<'port, 'ch> = tcpm_service::controller::event_receiver::EventReceiver<
     'port,
     PortSharedState,
     PortInterruptReceiver<'ch>,
@@ -123,7 +123,7 @@ pub type TypeCServiceNotifier<'port, 'ch> = tcpm_interface::service::event::NonB
     TypeCServiceSender<'port, 'ch>,
 >;
 /// Type-C service registration type
-pub type TypeCRegistrationType<'port, 'ch> = type_c_service::service::registration::ArrayRegistration<
+pub type TypeCRegistrationType<'port, 'ch> = tcpm_service::service::registration::ArrayRegistration<
     'port,
     // Port type
     PortMutexType<'port, 'ch>,
@@ -132,11 +132,11 @@ pub type TypeCRegistrationType<'port, 'ch> = type_c_service::service::registrati
     // Notifiers for events broadcast by the service
     TypeCServiceNotifier<'port, 'ch>,
     // Number of registered service event notifiers
-    TYPE_C_SERVICE_SENDER_COUNT,
+    TCPM_SERVICE_SENDER_COUNT,
 >;
 /// Type-C service type
 pub type TypeCServiceMutexType<'port, 'ch> =
-    Mutex<GlobalRawMutex, type_c_service::service::Service<'port, TypeCRegistrationType<'port, 'ch>>>;
+    Mutex<GlobalRawMutex, tcpm_service::service::Service<'port, TypeCRegistrationType<'port, 'ch>>>;
 
 /// Default channel size to use
 pub const CHANNEL_SIZE: usize = 4;
@@ -202,7 +202,7 @@ macro_rules! define_port {
 
         paste! { let [<$name _loopback_channel>]: Channel<
             GlobalRawMutex,
-            type_c_service::controller::event::Loopback,
+            tcpm_service::controller::event::Loopback,
             CHANNEL_SIZE,
         > = Channel::new(); }
         paste! { let [<$name _loopback_sender>] = [<$name _loopback_channel>].dyn_sender(); }
@@ -218,14 +218,14 @@ macro_rules! define_port {
 
         paste! { let [<$name _mock>] = Mutex::new(tcpm_interface_test_mocks::controller::Mock::new($mock_name)); }
         paste! { let [<$name _shared_state>] =
-        PortSharedState::new(type_c_service::controller::state::SharedState::new()); }
-        paste! { let [<$name _event_receiver>] = type_c_service::controller::event_receiver::EventReceiver::new(
+        PortSharedState::new(tcpm_service::controller::state::SharedState::new()); }
+        paste! { let [<$name _event_receiver>] = tcpm_service::controller::event_receiver::EventReceiver::new(
             &[<$name _shared_state>],
             [<$name _interrupt_receiver>],
             [<$name _loopback_receiver>],
         ); }
         paste! { let $name = PortComponents {
-                port: Mutex::new(type_c_service::controller::Port::new(
+                port: Mutex::new(tcpm_service::controller::Port::new(
                     $port_name,
                     $config,
                     $local_id,
@@ -284,10 +284,10 @@ async fn power_policy_task<'psu, 'ch, 'service, 'completion>(
 }
 
 /// Type-C service event loop task
-async fn type_c_service_task<'port, 'ch, 'service, 'completion>(
+async fn tcpm_service_task<'port, 'ch, 'service, 'completion>(
     mut completion_signal: watch::DynReceiver<'completion, ()>,
     service: &'service TypeCServiceMutexType<'port, 'ch>,
-    mut event_receiver: type_c_service::service::event_receiver::ArrayEventReceiver<
+    mut event_receiver: tcpm_service::service::event_receiver::ArrayEventReceiver<
         'port,
         TYPE_C_PORT_COUNT,
         PortMutexType<'port, 'ch>,
@@ -303,8 +303,8 @@ async fn type_c_service_task<'port, 'ch, 'service, 'completion>(
 /// Initialize services and run an integration test
 pub async fn run_test(
     duration: Duration,
-    type_c_service_config: type_c_service::service::config::Config,
-    port_config: [type_c_service::controller::config::Config; TYPE_C_PORT_COUNT],
+    tcpm_service_config: tcpm_service::service::config::Config,
+    port_config: [tcpm_service::controller::config::Config; TYPE_C_PORT_COUNT],
     mut test: impl Test,
 ) {
     // Tokio runs tests in parallel, but logging is global so we need to run tests sequentially to avoid interleaved logs.
@@ -349,14 +349,14 @@ pub async fn run_test(
     } = port2;
 
     // Channel to broadcast events from the type-C service
-    let type_c_service_channel: ManuallyDrop<
+    let tcpm_service_channel: ManuallyDrop<
         Channel<GlobalRawMutex, tcpm_interface::service::event::Event<'_, PortMutexType<'_, '_>>, CHANNEL_SIZE>,
     > = ManuallyDrop::new(Channel::new());
-    let type_c_service_sender = type_c_service_channel.dyn_sender();
-    let type_c_service_receiver = type_c_service_channel.dyn_receiver();
+    let tcpm_service_sender = tcpm_service_channel.dyn_sender();
+    let tcpm_service_receiver = tcpm_service_channel.dyn_receiver();
 
-    let type_c_service = Mutex::new(type_c_service::service::Service::new(
-        type_c_service_config,
+    let tcpm_service = Mutex::new(tcpm_service::service::Service::new(
+        tcpm_service_config,
         TypeCRegistrationType {
             ports: [&port0, &port1, &port2],
             port_data: [
@@ -370,7 +370,7 @@ pub async fn run_test(
                     local_port: Some(LocalPortId(0)),
                 },
             ],
-            service_notifiers: [type_c_service_sender.into()],
+            service_notifiers: [tcpm_service_sender.into()],
         },
     ));
 
@@ -381,7 +381,7 @@ pub async fn run_test(
     let type_c_power_policy_sender = type_c_power_policy_events.dyn_sender();
     let type_c_power_policy_receiver = type_c_power_policy_events.dyn_receiver();
 
-    let type_c_service_event_receivers = type_c_service::service::event_receiver::ArrayEventReceiver::new(
+    let tcpm_service_event_receivers = tcpm_service::service::event_receiver::ArrayEventReceiver::new(
         [&port0, &port1, &port2],
         [port0_type_c_receiver, port1_type_c_receiver, port2_type_c_receiver],
         type_c_power_policy_receiver,
@@ -429,15 +429,15 @@ pub async fn run_test(
                 &power_policy_service,
                 power_policy_event_receiver,
             ),
-            type_c_service_task(
+            tcpm_service_task(
                 completion_signal.dyn_receiver().unwrap(),
-                &type_c_service,
-                type_c_service_event_receivers,
+                &tcpm_service,
+                tcpm_service_event_receivers,
             ),
             async {
                 test.run(
-                    &type_c_service,
-                    type_c_service_receiver,
+                    &tcpm_service,
+                    tcpm_service_receiver,
                     power_policy_service_receiver,
                     TestPort {
                         port: &port0,

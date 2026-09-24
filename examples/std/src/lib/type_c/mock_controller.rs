@@ -24,7 +24,7 @@ use tcpm_interface::control::usb::UsbControlConfig;
 use tcpm_interface::control::vdm::{AttnVdm, OtherVdm, SendVdm};
 use tcpm_interface::port::event::PortEventBitfield;
 use tcpm_interface::util::power_capability_from_current;
-use type_c_service::controller::state::SharedState;
+use tcpm_service::controller::state::SharedState;
 
 pub struct ControllerState {
     events: Signal<GlobalRawMutex, PortEventBitfield>,
@@ -162,7 +162,7 @@ pub struct InterruptReceiver<'a> {
     events: &'a Signal<GlobalRawMutex, PortEventBitfield>,
 }
 
-impl<const N: usize> type_c_service::controller::event_receiver::InterruptReceiver<N> for InterruptReceiver<'_> {
+impl<const N: usize> tcpm_service::controller::event_receiver::InterruptReceiver<N> for InterruptReceiver<'_> {
     async fn wait_interrupt(&mut self) -> [PortEventBitfield; N] {
         let events = self.events.wait().await;
         let mut result = [PortEventBitfield::none(); N];
@@ -382,7 +382,7 @@ impl tcpm_interface::controller::retimer::Retimer for Controller<'_> {
 pub type PowerNotifier<'a> = power_policy_interface::psu::event::NonBlockingSenderNotifier<
     channel::DynamicSender<'a, power_policy_interface::psu::event::EventData>,
 >;
-pub type Port<'a> = type_c_service::controller::Port<
+pub type Port<'a> = tcpm_service::controller::Port<
     'a,
     Mutex<GlobalRawMutex, Controller<'a>>,
     Mutex<GlobalRawMutex, SharedState>,
@@ -390,5 +390,5 @@ pub type Port<'a> = type_c_service::controller::Port<
         channel::DynamicSender<'a, tcpm_interface::service::event::PortEventData>,
     >,
     PowerNotifier<'a>,
-    channel::DynamicSender<'a, type_c_service::controller::event::Loopback>,
+    channel::DynamicSender<'a, tcpm_service::controller::event::Loopback>,
 >;

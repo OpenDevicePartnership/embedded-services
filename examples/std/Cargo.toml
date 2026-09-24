@@ -40,7 +40,7 @@ cfu-service = { path = "../../cfu-service", features = ["log"] }
 embedded-cfu-protocol = { git = "https://github.com/OpenDevicePartnership/embedded-cfu" }
 
 battery-service = { path = "../../battery-service", features = ["log", "mock"] }
-type-c-service = { path = "../../type-c-service", features = ["log"] }
+tcpm-service = { path = "../../tcpm-service", features = ["log"] }
 tcpm-interface = { path = "../../tcpm-interface", features = ["log"] }
 
 thermal-service = { path = "../../thermal-service", features = ["log", "mock"] }

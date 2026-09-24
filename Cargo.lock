@@ -1911,6 +1911,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "tcpm-service"
+version = "0.1.0"
+dependencies = [
+ "critical-section",
+ "defmt 0.3.100",
+ "embassy-futures",
+ "embassy-sync",
+ "embassy-time",
+ "embedded-services",
+ "embedded-usb-pd",
+ "env_logger",
+ "fw-update-interface",
+ "heapless 0.9.3",
+ "log",
+ "paste",
+ "power-policy-interface",
+ "power-policy-service",
+ "tcpm-interface",
+ "tcpm-interface-test-mocks",
+ "tokio",
+]
+
+[[package]]
 name = "thermal-service"
 version = "0.1.0"
 dependencies = [
@@ -2167,29 +2190,6 @@ dependencies = [
  "tracing",
  "tracing-core",
  "tracing-log",
-]
-
-[[package]]
-name = "type-c-service"
-version = "0.1.0"
-dependencies = [
- "critical-section",
- "defmt 0.3.100",
- "embassy-futures",
- "embassy-sync",
- "embassy-time",
- "embedded-services",
- "embedded-usb-pd",
- "env_logger",
- "fw-update-interface",
- "heapless 0.9.3",
- "log",
- "paste",
- "power-policy-interface",
- "power-policy-service",
- "tcpm-interface",
- "tcpm-interface-test-mocks",
- "tokio",
 ]
 
 [[package]]

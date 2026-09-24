@@ -17,7 +17,7 @@ use tcpm_interface::{
     port::event::{PortEvent, PortStatusEventBitfield},
 };
 use tcpm_interface_test_mocks::controller::{FnCall as ControllerFnCall, pd::FnCall as PdFnCall};
-use type_c_service::controller::{
+use tcpm_service::controller::{
     config::{Config as PortConfig, UnconstrainedSink},
     event::Event,
 };
