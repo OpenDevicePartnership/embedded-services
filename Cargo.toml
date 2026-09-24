@@ -22,18 +22,18 @@ members = [
     "time-alarm-service",
     "time-alarm-service-interface",
     "time-alarm-service-relay",
-    "type-c-service",
+    "tcpm-service",
     "debug-service",
     "debug-service-messages",
     "keyboard-service",
     "power-policy-interface",
     "odp-service-common",
-    "type-c-interface",
+    "tcpm-interface",
     "fw-update-interface",
     "fw-update-interface-test-mocks",
     "mctp-rs",
-    "type-c-interface-mocks",
-    "type-c-interface-test-mocks",
+    "tcpm-interface-mocks",
+    "tcpm-interface-test-mocks",
     "power-policy-interface-test-mocks",
 ]
 exclude = ["examples/*"]
@@ -121,9 +121,9 @@ thermal-service-interface = { path = "./thermal-service-interface" }
 thermal-service-relay = { path = "./thermal-service-relay" }
 time-alarm-service-interface = { path = "./time-alarm-service-interface" }
 time-alarm-service-relay = { path = "./time-alarm-service-relay" }
-type-c-interface = { path = "./type-c-interface" }
-type-c-interface-mocks = { path = "./type-c-interface-mocks" }
-type-c-interface-test-mocks = { path = "./type-c-interface-test-mocks" }
+tcpm-interface = { path = "./tcpm-interface" }
+tcpm-interface-mocks = { path = "./tcpm-interface-mocks" }
+tcpm-interface-test-mocks = { path = "./tcpm-interface-test-mocks" }
 typenum = "1.20"
 syn = "2.0"
 tokio = { version = "1.42.0" }

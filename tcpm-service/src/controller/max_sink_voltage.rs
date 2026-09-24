@@ -1,0 +1,90 @@
+//! Max sink voltage port trait implementation
+use embassy_time::Instant;
+use embedded_services::{event::NonBlockingSender, sync::Lockable};
+use embedded_usb_pd::PdError;
+use power_policy_interface::capability::{DisconnectFlags, DisconnectReason};
+use tcpm_interface::controller::max_sink_voltage::MaxSinkVoltage;
+
+use super::*;
+use crate::controller::state::SharedState;
+
+impl<
+    'device,
+    C: Lockable<Inner: Pd + MaxSinkVoltage>,
+    Shared: Lockable<Inner = SharedState>,
+    PortNotifier: tcpm_interface::port::notification::Notifier,
+    PowerNotifier: power_policy_interface::psu::notification::Notifier,
+    LoopbackSender: NonBlockingSender<event::Loopback>,
+> tcpm_interface::port::max_sink_voltage::MaxSinkVoltage
+    for Port<'device, C, Shared, PortNotifier, PowerNotifier, LoopbackSender>
+{
+    async fn set_max_sink_voltage(&mut self, voltage_mv: Option<u16>) -> Result<(), PdError> {
+        // A change in the maximum sink voltage can trigger a PD renegotiation. During that transition the
+        // source may briefly output a voltage that does not match the active contract, which can cause an
+        // overcurrent/overvoltage condition on the sink path. If we currently have a connected consumer and
+        // the limit is actually changing (or being removed), disable the sink path and notify the power
+        // policy that we have disconnected before applying the new limit. The power policy re-enables the
+        // sink path when it reconnects the consumer to the renegotiated contract.
+        let disable_sink_path = match self.psu_state.psu_state {
+            PsuState::ConnectedConsumer(capability) => {
+                voltage_mv.is_none() || voltage_mv != Some(capability.capability.voltage_mv)
+            }
+            _ => false,
+        };
+
+        if disable_sink_path {
+            debug!("({}): Disabling sink path before max sink voltage change", self.name);
+            self.controller.lock().await.enable_sink_path(self.port, false).await?;
+
+            // In general it's not possible to know if setting the max sink voltage will trigger a renegotiation
+            // because the logic to select a particular contract is specific to the PD controller.
+            // Enable the sink ready timeout as a recovery mechanism. If there's no renegotiation, then the timeout
+            // will result in us broadcasting the existing contract back to the power policy.
+            {
+                let mut shared_state = self.shared_state.lock().await;
+                if shared_state.sink_ready_deadline.is_none() {
+                    let epr_capable = self
+                        .status
+                        .available_sink_contract
+                        .is_some_and(|contract| contract.epr_capable());
+                    shared_state.sink_ready_deadline =
+                        Some(Instant::now() + Self::check_sink_ready_timeout_duration(epr_capable));
+                }
+
+                if self
+                    .loopback_sender
+                    .try_send(event::Loopback::SinkReadyDeadlineInvalidated)
+                    .is_none()
+                {
+                    error!(
+                        "({}): Failed to send SinkReadyDeadlineInvalidated loopback event, channel full",
+                        self.name
+                    );
+                }
+            }
+
+            // Move our local state out of the consumer state and notify the power policy so it stops
+            // tracking us as the active consumer and broadcasts a ConsumerDisconnected event. The
+            // disconnect reason marks this as a temporary disconnect for a recontract.
+            if let Err(e) = self.psu_state.disconnect(true) {
+                error!("({}): Error updating PSU state on disconnect: {:?}", self.name, e);
+            }
+
+            if let Err(e) = self
+                .power_policy_notifier
+                .notify_disconnected(DisconnectFlags {
+                    reason: Some(DisconnectReason::ManualRenegotiation),
+                })
+                .await
+            {
+                error!("({}): Failed to notify power policy of disconnect: {:#?}", self.name, e);
+            }
+        }
+
+        self.controller
+            .lock()
+            .await
+            .set_max_sink_voltage(self.port, voltage_mv)
+            .await
+    }
+}

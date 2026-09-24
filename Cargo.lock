@@ -1874,6 +1874,66 @@ dependencies = [
 ]
 
 [[package]]
+name = "tcpm-interface"
+version = "0.1.0"
+dependencies = [
+ "bitfield 0.17.0",
+ "defmt 0.3.100",
+ "embedded-services",
+ "embedded-usb-pd",
+ "heapless 0.9.3",
+ "log",
+ "power-policy-interface",
+]
+
+[[package]]
+name = "tcpm-interface-mocks"
+version = "0.1.0"
+dependencies = [
+ "critical-section",
+ "defmt 0.3.100",
+ "embassy-sync",
+ "embedded-services",
+ "embedded-usb-pd",
+ "log",
+ "power-policy-interface",
+ "tcpm-interface",
+ "tokio",
+]
+
+[[package]]
+name = "tcpm-interface-test-mocks"
+version = "0.1.0"
+dependencies = [
+ "embedded-services",
+ "embedded-usb-pd",
+ "tcpm-interface",
+]
+
+[[package]]
+name = "tcpm-service"
+version = "0.1.0"
+dependencies = [
+ "critical-section",
+ "defmt 0.3.100",
+ "embassy-futures",
+ "embassy-sync",
+ "embassy-time",
+ "embedded-services",
+ "embedded-usb-pd",
+ "env_logger",
+ "fw-update-interface",
+ "heapless 0.9.3",
+ "log",
+ "paste",
+ "power-policy-interface",
+ "power-policy-service",
+ "tcpm-interface",
+ "tcpm-interface-test-mocks",
+ "tokio",
+]
+
+[[package]]
 name = "thermal-service"
 version = "0.1.0"
 dependencies = [
@@ -2130,66 +2190,6 @@ dependencies = [
  "tracing",
  "tracing-core",
  "tracing-log",
-]
-
-[[package]]
-name = "type-c-interface"
-version = "0.1.0"
-dependencies = [
- "bitfield 0.17.0",
- "defmt 0.3.100",
- "embedded-services",
- "embedded-usb-pd",
- "heapless 0.9.3",
- "log",
- "power-policy-interface",
-]
-
-[[package]]
-name = "type-c-interface-mocks"
-version = "0.1.0"
-dependencies = [
- "critical-section",
- "defmt 0.3.100",
- "embassy-sync",
- "embedded-services",
- "embedded-usb-pd",
- "log",
- "power-policy-interface",
- "tokio",
- "type-c-interface",
-]
-
-[[package]]
-name = "type-c-interface-test-mocks"
-version = "0.1.0"
-dependencies = [
- "embedded-services",
- "embedded-usb-pd",
- "type-c-interface",
-]
-
-[[package]]
-name = "type-c-service"
-version = "0.1.0"
-dependencies = [
- "critical-section",
- "defmt 0.3.100",
- "embassy-futures",
- "embassy-sync",
- "embassy-time",
- "embedded-services",
- "embedded-usb-pd",
- "env_logger",
- "fw-update-interface",
- "heapless 0.9.3",
- "log",
- "paste",
- "power-policy-interface",
- "power-policy-service",
- "tokio",
- "type-c-interface",
- "type-c-interface-test-mocks",
 ]
 
 [[package]]

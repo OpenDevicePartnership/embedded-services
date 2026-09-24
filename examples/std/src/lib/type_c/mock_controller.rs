@@ -11,20 +11,20 @@ use embedded_usb_pd::{type_c::ConnectionState, ucsi::v1_2::lpm};
 use log::{debug, info};
 
 use power_policy_interface::capability::PowerCapability;
-use type_c_interface::control::dp::{DpConfig, DpPinConfig, DpStatus};
-use type_c_interface::control::pd::{
+use tcpm_interface::control::dp::{DpConfig, DpPinConfig, DpStatus};
+use tcpm_interface::control::pd::{
     PdSinkInfo, PdSourceInfo, PdStateMachineConfig, PortStatus, SinkContract, SourceContract,
 };
-use type_c_interface::control::power::SystemPowerState;
-use type_c_interface::control::retimer::RetimerFwUpdateState;
-use type_c_interface::control::svid::DiscoveredSvids;
-use type_c_interface::control::tbt::TbtConfig;
-use type_c_interface::control::type_c::TypeCStateMachineState;
-use type_c_interface::control::usb::UsbControlConfig;
-use type_c_interface::control::vdm::{AttnVdm, OtherVdm, SendVdm};
-use type_c_interface::port::event::PortEventBitfield;
-use type_c_interface::util::power_capability_from_current;
-use type_c_service::controller::state::SharedState;
+use tcpm_interface::control::power::SystemPowerState;
+use tcpm_interface::control::retimer::RetimerFwUpdateState;
+use tcpm_interface::control::svid::DiscoveredSvids;
+use tcpm_interface::control::tbt::TbtConfig;
+use tcpm_interface::control::type_c::TypeCStateMachineState;
+use tcpm_interface::control::usb::UsbControlConfig;
+use tcpm_interface::control::vdm::{AttnVdm, OtherVdm, SendVdm};
+use tcpm_interface::port::event::PortEventBitfield;
+use tcpm_interface::util::power_capability_from_current;
+use tcpm_service::controller::state::SharedState;
 
 pub struct ControllerState {
     events: Signal<GlobalRawMutex, PortEventBitfield>,
@@ -162,7 +162,7 @@ pub struct InterruptReceiver<'a> {
     events: &'a Signal<GlobalRawMutex, PortEventBitfield>,
 }
 
-impl<const N: usize> type_c_service::controller::event_receiver::InterruptReceiver<N> for InterruptReceiver<'_> {
+impl<const N: usize> tcpm_service::controller::event_receiver::InterruptReceiver<N> for InterruptReceiver<'_> {
     async fn wait_interrupt(&mut self) -> [PortEventBitfield; N] {
         let events = self.events.wait().await;
         let mut result = [PortEventBitfield::none(); N];
@@ -177,14 +177,14 @@ impl Named for Controller<'_> {
     }
 }
 
-impl type_c_interface::controller::Controller for Controller<'_> {
+impl tcpm_interface::controller::Controller for Controller<'_> {
     async fn reset_controller(&mut self) -> Result<(), PdError> {
         debug!("Reset controller");
         Ok(())
     }
 }
 
-impl type_c_interface::controller::pd::Pd for Controller<'_> {
+impl tcpm_interface::controller::pd::Pd for Controller<'_> {
     async fn get_port_status(&mut self, _port: LocalPortId) -> Result<PortStatus, PdError> {
         debug!("Get port status: {:#?}", *self.state.status.lock().await);
         Ok(*self.state.status.lock().await)
@@ -289,14 +289,14 @@ impl type_c_interface::controller::pd::Pd for Controller<'_> {
     }
 }
 
-impl type_c_interface::controller::max_sink_voltage::MaxSinkVoltage for Controller<'_> {
+impl tcpm_interface::controller::max_sink_voltage::MaxSinkVoltage for Controller<'_> {
     async fn set_max_sink_voltage(&mut self, port: LocalPortId, voltage_mv: Option<u16>) -> Result<(), PdError> {
         debug!("Set max sink voltage for port {}: {:?}", port.0, voltage_mv);
         Ok(())
     }
 }
 
-impl type_c_interface::controller::pd::StateMachine for Controller<'_> {
+impl tcpm_interface::controller::pd::StateMachine for Controller<'_> {
     async fn set_pd_state_machine_config(
         &mut self,
         port: LocalPortId,
@@ -307,7 +307,7 @@ impl type_c_interface::controller::pd::StateMachine for Controller<'_> {
     }
 }
 
-impl type_c_interface::controller::type_c::StateMachine for Controller<'_> {
+impl tcpm_interface::controller::type_c::StateMachine for Controller<'_> {
     async fn set_type_c_state_machine_config(
         &mut self,
         port: LocalPortId,
@@ -318,7 +318,7 @@ impl type_c_interface::controller::type_c::StateMachine for Controller<'_> {
     }
 }
 
-impl type_c_interface::ucsi::Lpm for Controller<'_> {
+impl tcpm_interface::ucsi::Lpm for Controller<'_> {
     async fn execute_lpm_command(&mut self, command: lpm::LocalCommand) -> Result<Option<lpm::ResponseData>, PdError> {
         debug!("Execute UCSI command for port {:?}: {command:?}", command.port());
         match command.operation() {
@@ -330,7 +330,7 @@ impl type_c_interface::ucsi::Lpm for Controller<'_> {
     }
 }
 
-impl type_c_interface::controller::electrical_disconnect::ElectricalDisconnect for Controller<'_> {
+impl tcpm_interface::controller::electrical_disconnect::ElectricalDisconnect for Controller<'_> {
     async fn execute_electrical_disconnect(
         &mut self,
         port: LocalPortId,
@@ -341,7 +341,7 @@ impl type_c_interface::controller::electrical_disconnect::ElectricalDisconnect f
     }
 }
 
-impl type_c_interface::controller::power::SystemPowerStateStatus for Controller<'_> {
+impl tcpm_interface::controller::power::SystemPowerStateStatus for Controller<'_> {
     async fn set_system_power_state_status(
         &mut self,
         port: LocalPortId,
@@ -352,7 +352,7 @@ impl type_c_interface::controller::power::SystemPowerStateStatus for Controller<
     }
 }
 
-impl type_c_interface::controller::retimer::Retimer for Controller<'_> {
+impl tcpm_interface::controller::retimer::Retimer for Controller<'_> {
     async fn get_rt_fw_update_status(&mut self, _port: LocalPortId) -> Result<RetimerFwUpdateState, PdError> {
         debug!("Get retimer fw update status");
         Ok(RetimerFwUpdateState::Inactive)
@@ -382,13 +382,13 @@ impl type_c_interface::controller::retimer::Retimer for Controller<'_> {
 pub type PowerNotifier<'a> = power_policy_interface::psu::event::NonBlockingSenderNotifier<
     channel::DynamicSender<'a, power_policy_interface::psu::event::EventData>,
 >;
-pub type Port<'a> = type_c_service::controller::Port<
+pub type Port<'a> = tcpm_service::controller::Port<
     'a,
     Mutex<GlobalRawMutex, Controller<'a>>,
     Mutex<GlobalRawMutex, SharedState>,
-    type_c_interface::port::event::NonBlockingSenderNotifier<
-        channel::DynamicSender<'a, type_c_interface::service::event::PortEventData>,
+    tcpm_interface::port::event::NonBlockingSenderNotifier<
+        channel::DynamicSender<'a, tcpm_interface::service::event::PortEventData>,
     >,
     PowerNotifier<'a>,
-    channel::DynamicSender<'a, type_c_service::controller::event::Loopback>,
+    channel::DynamicSender<'a, tcpm_service::controller::event::Loopback>,
 >;
