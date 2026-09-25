@@ -25,6 +25,11 @@ odp-service-common.workspace = true
 typenum.workspace = true
 zerocopy = { workspace = true, features = ["derive"] }
 
+[dev-dependencies]
+critical-section = { workspace = true, features = ["std"] }
+embassy-time = { workspace = true, features = ["std", "generic-queue-8"] }
+tokio = { workspace = true, features = ["rt", "macros", "time"] }
+
 [features]
 defmt = ["dep:defmt", "embedded-mcu-hal/defmt", "embedded-services/defmt"]
 log = ["dep:log", "embedded-services/log"]
