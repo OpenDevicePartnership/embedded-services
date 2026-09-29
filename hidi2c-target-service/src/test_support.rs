@@ -27,7 +27,7 @@ pub const MOUSE_DESCRIPTOR: &[u8] = &[
     0xc0, // End Collection
 ];
 
-/// Report descriptor with a single top-level collection, so report IDs are implicit.
+/// Report descriptor with no Report ID items, so report IDs are implicit.
 pub const IMPLICIT_ID_DESCRIPTOR: &[u8] = &[
     0x05, 0x01, // Usage Page (Generic Desktop)
     0x09, 0x02, // Usage (Mouse)

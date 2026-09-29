@@ -71,9 +71,10 @@ impl From<I2cPowerState> for hid::HidDevicePowerState {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub(crate) enum ReportFraming {
-    /// A single top-level collection: no report ID appears on the wire.
+    /// The descriptor declares no Report ID items: no report ID appears on the wire.
     Implicit,
-    /// Multiple top-level collections: a mandatory 1-byte report ID follows the length field.
+    /// The descriptor declares at least one Report ID item: a mandatory 1-byte report ID
+    /// follows the length field.
     Explicit,
 }
 
@@ -491,7 +492,7 @@ mod tests {
     }
 
     /// Section 7.2.2.2's worked example: a 4-byte mouse report is advertised as length 0x0006
-    /// for a single-collection (implicit) device.
+    /// for a device whose descriptor declares no report IDs.
     #[test]
     fn report_header_matches_the_spec_worked_example() {
         let header = ReportHeader::new(4, ReportId(0), ReportFraming::Implicit).unwrap();

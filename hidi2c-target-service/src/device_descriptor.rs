@@ -101,7 +101,7 @@ pub enum DeviceDescriptorError {
 /// Largest report body the protocol can describe.
 ///
 /// Section 5.1 caps a report at `2^16 - 4` bytes; the length field must also cover itself and
-/// the optional report ID, which is [`wire::ReportFraming::Explicit`]'s framing.
+/// the optional report ID, which is [`crate::wire::ReportFraming::Explicit`]'s framing.
 const MAX_REPORT_BYTES: usize = u16::MAX as usize - crate::wire::ReportFraming::Explicit.header_bytes() as usize;
 
 /// Compile-time guard on the sizes a [`hid::HidDevice`] declares.

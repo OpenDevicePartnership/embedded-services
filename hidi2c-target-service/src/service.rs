@@ -1433,7 +1433,8 @@ mod tests {
         assert_eq!(bus.bus.outgoing_reads.get(1).map(Vec::as_slice), Some(&[0x5a][..]));
     }
 
-    /// The mirror image: a single-collection device's GET_REPORT response carries no report ID.
+    /// The mirror image: a device with no Report ID items omits the report ID from its
+    /// GET_REPORT response.
     #[tokio::test]
     async fn get_report_response_omits_report_id_for_implicit_descriptors() {
         let mut bus = scripted_timeout_bus(ScriptedBus {
@@ -1543,7 +1544,7 @@ mod tests {
         assert!(!runner.attn_pin.asserted());
     }
 
-    /// The same report from a single-collection device carries no report ID byte.
+    /// The same report from a device with no Report ID items carries no report ID byte.
     #[tokio::test]
     async fn input_report_is_framed_without_report_id_for_implicit_descriptors() {
         let bus = ScriptedBus {
