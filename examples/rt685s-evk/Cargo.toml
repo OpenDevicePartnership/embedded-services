@@ -32,7 +32,6 @@ embassy-imxrt = { git = "https://github.com/OpenDevicePartnership/embassy-imxrt"
     "mimxrt685s",
 ] }
 
-embassy-embedded-hal = { version = "0.6.0", features = ["defmt"] }
 embedded-mcu-hal = { version = "0.3.0", features = ["defmt"] }
 embassy-sync = { version = "0.8", features = ["defmt"] }
 embassy-executor = { version = "0.10.0", features = [
@@ -48,7 +47,6 @@ embassy-time = { version = "0.5.1", features = [
 ] }
 mimxrt600-fcb = "0.1.0"
 
-embedded-cfu-protocol = { git = "https://github.com/OpenDevicePartnership/embedded-cfu" }
 embedded-services = { path = "../../embedded-service", features = ["defmt"] }
 hidi2c-target-service = { path = "../../hidi2c-target-service", features = [
     "defmt",
@@ -59,22 +57,6 @@ odp-service-common = { path = "../../odp-service-common" }
 power-button-service = { path = "../../power-button-service", features = [
     "defmt",
 ] }
-power-policy-interface = { path = "../../power-policy-interface", features = [
-    "defmt",
-] }
-power-policy-service = { path = "../../power-policy-service", features = [
-    "defmt",
-] }
-tps6699x = { git = "https://github.com/OpenDevicePartnership/tps6699x", features = [
-    "defmt",
-    "odp-type-c-service",
-    "odp-fw-update-interface",
-] }
-embedded-usb-pd = { git = "https://github.com/OpenDevicePartnership/embedded-usb-pd", default-features = false, features = [
-    "defmt",
-] }
-type-c-service = { path = "../../type-c-service", features = ["defmt"] }
-type-c-interface = { path = "../../type-c-interface", features = ["defmt"] }
 time-alarm-service = { path = "../../time-alarm-service", features = ["defmt"] }
 time-alarm-service-interface = { path = "../../time-alarm-service-interface", features = [
     "defmt",
@@ -92,13 +74,6 @@ platform-service = { path = "../../platform-service", features = [
 ] }
 zerocopy = "0.8"
 
-cfu-service = { path = "../../cfu-service", features = ["defmt"] }
-
 # Needed otherwise cargo will pull from git
 [patch."https://github.com/OpenDevicePartnership/embedded-services"]
 embedded-services = { path = "../../embedded-service" }
-type-c-service = { path = "../../type-c-service" }
-type-c-interface = { path = "../../type-c-interface" }
-power-policy-service = { path = "../../power-policy-service" }
-power-policy-interface = { path = "../../power-policy-interface" }
-fw-update-interface = { path = "../../fw-update-interface" }
