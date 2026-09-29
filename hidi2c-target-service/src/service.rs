@@ -672,13 +672,8 @@ impl<
                     .checked_sub(device_descriptor::HID_REPORT_HEADER_SIZE_BYTES + report_id_size))
                 .ok_or(Error::Protocol(ProtocolError::InvalidSize))? as usize;
 
-                let data_start_index = if hid_device.report_descriptor().report_ids_implicit() {
-                    0
-                } else {
-                    1
-                };
                 let report_data = data
-                    .get(data_start_index..data_start_index + report_size)
+                    .get(..report_size)
                     .ok_or(Error::Protocol(ProtocolError::InvalidSize))?;
 
                 let set_report = match report_type {
@@ -856,6 +851,7 @@ mod tests {
 
     #[derive(Default)]
     struct ScriptedBus {
+        requests: VecDeque<Request>,
         incoming_writes: VecDeque<IncomingWrite>,
         read_statuses: VecDeque<ReadStatus>,
         outgoing_reads: Vec<Vec<u8>>,
@@ -873,7 +869,10 @@ mod tests {
         }
 
         async fn listen(&mut self) -> Result<Request, Self::Error> {
-            core::future::pending().await
+            let Some(request) = self.requests.pop_front() else {
+                return core::future::pending().await;
+            };
+            Ok(request)
         }
 
         async fn respond_to_read(&mut self, buf: &[u8]) -> Result<ReadStatus, Self::Error> {
@@ -1061,7 +1060,10 @@ mod tests {
 
     #[tokio::test]
     async fn get_report_rejects_output_report_type() {
-        let mut bus = timeout_bus();
+        let mut bus = scripted_timeout_bus(ScriptedBus {
+            requests: VecDeque::from([Request::Read(0)]),
+            ..Default::default()
+        });
         let mut device = recording_device();
         let command = [
             0x21,                       // command low byte: report type Output (0x2), report ID 1
@@ -1071,7 +1073,7 @@ mod tests {
         ];
 
         let result =
-            Runner::<NoopBus, NoopPin, RecordingHidDevice>::process_command(&command, &mut bus, &mut device).await;
+            Runner::<ScriptedBus, NoopPin, RecordingHidDevice>::process_command(&command, &mut bus, &mut device).await;
 
         assert!(matches!(result, Err(Error::Protocol(ProtocolError::InvalidReportType))));
     }
@@ -1079,6 +1081,7 @@ mod tests {
     #[tokio::test]
     async fn get_feature_report_includes_explicit_report_id() {
         let mut bus = scripted_timeout_bus(ScriptedBus {
+            requests: VecDeque::from([Request::Read(0)]),
             read_statuses: VecDeque::from([ReadStatus::Complete(3), ReadStatus::Complete(1)]),
             ..Default::default()
         });
