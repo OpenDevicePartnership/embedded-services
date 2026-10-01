@@ -21,6 +21,7 @@ typenum.workspace = true
 defmt = [
     "dep:defmt",
     "embedded-mcu-hal/defmt",
+    "embedded-services/defmt",
     "time-alarm-service-interface/defmt",
 ]
 log = ["dep:log", "embedded-services/log"]
