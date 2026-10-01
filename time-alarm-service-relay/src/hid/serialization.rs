@@ -2,6 +2,7 @@ use embedded_mcu_hal::time::{Datetime, DatetimeFields};
 use embedded_services::hid_report;
 use embedded_services::relay::hid::ReportId;
 use embedded_services::relay::hid::reports;
+use time_alarm_service_interface::{AcpiTimeZone, AcpiTimeZoneOffset};
 
 #[allow(dead_code)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
@@ -131,13 +132,13 @@ hid_report! {
         second: u8 => 6,
         /// 0 - 999
         millisecond: u16 => 10,
-        /// -720 - 840, minutes from UTC
-        time_zone: i16 => 11,
+        /// -1440 - 1440, minutes from UTC
+        time_zone: i16 => 12,
         dst_observed: bool => 1,
         dst_active: bool => 1,
         current_state: u8 => 2,
         vendor_current_state: u8 => 4,
-        _reserved: u8 => 3
+        _reserved: u8 => 2
     }
 }
 
@@ -155,7 +156,7 @@ impl GetTimeReport {
             minute: ts.datetime.minute(),
             second: ts.datetime.second(),
             millisecond: (ts.datetime.nanoseconds() / 1_000_000) as u16,
-            time_zone: i16::from(ts.time_zone),
+            time_zone: time_zone_to_wire(ts.time_zone),
             dst_observed: matches!(
                 ts.dst_status,
                 time_alarm_service_interface::AcpiDaylightSavingsTimeStatus::NotAdjusted
@@ -278,6 +279,21 @@ pub(crate) fn convert_policy(seconds: u8) -> time_alarm_service_interface::Alarm
     }
 }
 
+const NULL_HID_TIME_ZONE: i16 = 2047;
+fn time_zone_to_wire(time_zone: AcpiTimeZone) -> i16 {
+    match time_zone {
+        AcpiTimeZone::Unknown => NULL_HID_TIME_ZONE,
+        AcpiTimeZone::MinutesFromUtc(offset) => offset.minutes_from_utc(),
+    }
+}
+
+fn time_zone_from_wire(time_zone: i16) -> AcpiTimeZone {
+    match AcpiTimeZoneOffset::new(time_zone) {
+        Ok(offset) => AcpiTimeZone::MinutesFromUtc(offset),
+        Err(_) => AcpiTimeZone::Unknown,
+    }
+}
+
 hid_report! {
     pub(crate) struct SetTimeReport {
         /// 1900 - 9999
@@ -294,11 +310,10 @@ hid_report! {
         pub second: u8 => 6,
         /// 0 - 999
         pub millisecond: u16 => 10,
-        /// -720 - 840, minutes from UTC
-        pub time_zone: i16 => 11,
+        /// -1440 - 1440, minutes from UTC
+        pub time_zone: i16 => 12,
         pub dst_observed: bool => 1,
         pub dst_active: bool => 1,
-        _reserved: u8 => 1,
     }
 }
 
@@ -318,7 +333,7 @@ impl TryFrom<SetTimeReport> for time_alarm_service_interface::AcpiTimestamp {
                 second: report.second,
                 nanosecond: report.millisecond as u32 * 1_000_000,
             })?,
-            time_zone: time_alarm_service_interface::AcpiTimeZone::try_from(report.time_zone)?,
+            time_zone: time_zone_from_wire(report.time_zone),
             dst_status: match (report.dst_observed, report.dst_active) {
                 (false, false) => time_alarm_service_interface::AcpiDaylightSavingsTimeStatus::NotObserved,
                 (true, false) => time_alarm_service_interface::AcpiDaylightSavingsTimeStatus::NotAdjusted,
@@ -477,9 +492,9 @@ pub(crate) const TIME_ALARM_HID_DESCRIPTOR: &[u8] = &[
     0x75, 0x0A,                      //     ReportSize(10)
     0x91, 0x02,                      //     Output(Data, Variable, Absolute, NoWrap, Linear, PreferredState, NoNullPosition, NonVolatile, BitField)
     0x09, 0x10,                      //     UsageId(Time Zone Offset From UTC[0x0010])
-    0x16, 0x30, 0xFD,                //     LogicalMinimum(-720)
-    0x26, 0x48, 0x03,                //     LogicalMaximum(840)
-    0x75, 0x0B,                      //     ReportSize(11)
+    0x16, 0x60, 0xFA,                //     LogicalMinimum(-1,440)
+    0x26, 0xA0, 0x05,                //     LogicalMaximum(1,440)
+    0x75, 0x0C,                      //     ReportSize(12)
     0x91, 0x42,                      //     Output(Data, Variable, Absolute, NoWrap, Linear, PreferredState, NullState, NonVolatile, BitField)
     0x09, 0x11,                      //     UsageId(Daylight Savings Time Observed[0x0011])
     0x09, 0x12,                      //     UsageId(Daylight Savings Time Active[0x0012])
@@ -488,12 +503,11 @@ pub(crate) const TIME_ALARM_HID_DESCRIPTOR: &[u8] = &[
     0x95, 0x02,                      //     ReportCount(2)
     0x75, 0x01,                      //     ReportSize(1)
     0x91, 0x02,                      //     Output(Data, Variable, Absolute, NoWrap, Linear, PreferredState, NoNullPosition, NonVolatile, BitField)
-    0x95, 0x01,                      //     ReportCount(1)
-    0x91, 0x03,                      //     Output(Constant, Variable, Absolute, NoWrap, Linear, PreferredState, NoNullPosition, NonVolatile, BitField)
     0x85, 0x02,                      //     ReportId(2)
     0x09, 0x01,                      //     UsageId(Year[0x0001])
     0x16, 0x6C, 0x07,                //     LogicalMinimum(1,900)
     0x26, 0x0F, 0x27,                //     LogicalMaximum(9,999)
+    0x95, 0x01,                      //     ReportCount(1)
     0x75, 0x0E,                      //     ReportSize(14)
     0x81, 0x02,                      //     Input(Data, Variable, Absolute, NoWrap, Linear, PreferredState, NoNullPosition, BitField)
     0x09, 0x02,                      //     UsageId(Month[0x0002])
@@ -521,9 +535,9 @@ pub(crate) const TIME_ALARM_HID_DESCRIPTOR: &[u8] = &[
     0x75, 0x0A,                      //     ReportSize(10)
     0x81, 0x02,                      //     Input(Data, Variable, Absolute, NoWrap, Linear, PreferredState, NoNullPosition, BitField)
     0x09, 0x10,                      //     UsageId(Time Zone Offset From UTC[0x0010])
-    0x16, 0x30, 0xFD,                //     LogicalMinimum(-720)
-    0x26, 0x48, 0x03,                //     LogicalMaximum(840)
-    0x75, 0x0B,                      //     ReportSize(11)
+    0x16, 0x60, 0xFA,                //     LogicalMinimum(-1,440)
+    0x26, 0xA0, 0x05,                //     LogicalMaximum(1,440)
+    0x75, 0x0C,                      //     ReportSize(12)
     0x81, 0x42,                      //     Input(Data, Variable, Absolute, NoWrap, Linear, PreferredState, NullState, BitField)
     0x09, 0x11,                      //     UsageId(Daylight Savings Time Observed[0x0011])
     0x09, 0x12,                      //     UsageId(Daylight Savings Time Active[0x0012])
@@ -548,7 +562,7 @@ pub(crate) const TIME_ALARM_HID_DESCRIPTOR: &[u8] = &[
     0x25, 0x0F,                      //     LogicalMaximum(15)
     0x75, 0x04,                      //     ReportSize(4)
     0x81, 0x02,                      //     Input(Data, Variable, Absolute, NoWrap, Linear, PreferredState, NoNullPosition, BitField)
-    0x75, 0x03,                      //     ReportSize(3)
+    0x75, 0x02,                      //     ReportSize(2)
     0x81, 0x03,                      //     Input(Constant, Variable, Absolute, NoWrap, Linear, PreferredState, NoNullPosition, BitField)
     0xC0,                            // EndCollection()
 ];

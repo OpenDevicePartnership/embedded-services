@@ -254,7 +254,7 @@ usage = ['Generic Desktop', 'System Wake Timer and Real Time Clock']
 
         [[applicationCollection.outputReport.variableItem]]
         usage = ['Time and Date', 'Time Zone Offset From UTC']
-        logicalValueRange = [-720, 840]
+        logicalValueRange = [-1440, 1440]
         reportFlags = ['nullstate']
 
         [[applicationCollection.outputReport.variableItem]]
@@ -297,7 +297,7 @@ usage = ['Generic Desktop', 'System Wake Timer and Real Time Clock']
 
         [[applicationCollection.inputReport.variableItem]]
         usage = ['Time and Date', 'Time Zone Offset From UTC']
-        logicalValueRange = [-720, 840]
+        logicalValueRange = [-1440, 1440]
         reportFlags = ['nullstate']
 
         [[applicationCollection.inputReport.variableItem]]

@@ -113,7 +113,7 @@ impl<'s, Service: TimeAlarmService> embedded_services::relay::hid::HidDevice for
     type OutputReportMaxSize = typenum::U8;
     type FeatureReportMaxSize = typenum::U1;
 
-    const MAX_REPORT_COUNT: u8 = 2;
+    const MAX_REPORT_COUNT: u8 = 4;
     const MAX_DESCRIPTOR_LEN: usize = serialization::TIME_ALARM_HID_DESCRIPTOR.len();
 
     fn report_descriptor(&self) -> &HidReportDescriptor<'_> {
