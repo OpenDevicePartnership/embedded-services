@@ -8,29 +8,12 @@ use time_alarm_service_interface::{AcpiTimeZone, AcpiTimeZoneOffset};
 pub(crate) enum ReportError {
     InvalidLength,
     ValueOutOfRange,
+    InvalidDatetime,
 }
 
-#[allow(dead_code)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub(crate) enum TimestampConversionError {
-    Report(ReportError),
-    Datetime(embedded_mcu_hal::time::DatetimeError),
-    DatetimeClock(embedded_mcu_hal::time::DatetimeClockError),
-}
-
-impl From<ReportError> for TimestampConversionError {
-    fn from(err: ReportError) -> Self {
-        Self::Report(err)
-    }
-}
-impl From<embedded_mcu_hal::time::DatetimeError> for TimestampConversionError {
-    fn from(err: embedded_mcu_hal::time::DatetimeError) -> Self {
-        Self::Datetime(err)
-    }
-}
-impl From<embedded_mcu_hal::time::DatetimeClockError> for TimestampConversionError {
-    fn from(err: embedded_mcu_hal::time::DatetimeClockError) -> Self {
-        Self::DatetimeClock(err)
+impl From<embedded_mcu_hal::time::DatetimeError> for ReportError {
+    fn from(_: embedded_mcu_hal::time::DatetimeError) -> Self {
+        Self::InvalidDatetime
     }
 }
 
@@ -74,7 +57,7 @@ impl TryFrom<ReportId> for InputReportId {
 bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq)]
     #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-    pub(crate) struct GetAlarmReport([u8]);
+    struct GetAlarmReport([u8]);
     impl Debug;
     u32, ac_timer, set_ac_timer: 30, 0;
     u32, dc_timer, set_dc_timer: 62, 32;
@@ -95,7 +78,7 @@ pub(crate) enum AlarmCurrentState {
 }
 
 impl GetAlarmReport<[u8; 10]> {
-    pub(crate) fn new(
+    fn new(
         ac_timer: time_alarm_service_interface::AlarmTimerSeconds,
         dc_timer: time_alarm_service_interface::AlarmTimerSeconds,
         power_policy: time_alarm_service_interface::AlarmExpiredWakePolicy,
@@ -110,10 +93,16 @@ impl GetAlarmReport<[u8; 10]> {
         report.set_vendor_current_state(vendor_current_state);
         report
     }
+}
 
-    pub(crate) fn pack(self) -> [u8; 10] {
-        self.0
-    }
+pub(crate) fn serialize_get_alarm_report(
+    ac_timer: time_alarm_service_interface::AlarmTimerSeconds,
+    dc_timer: time_alarm_service_interface::AlarmTimerSeconds,
+    power_policy: time_alarm_service_interface::AlarmExpiredWakePolicy,
+    current_state: AlarmCurrentState,
+    vendor_current_state: u8,
+) -> [u8; 10] {
+    GetAlarmReport::new(ac_timer, dc_timer, power_policy, current_state, vendor_current_state).0
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, num_enum::IntoPrimitive, num_enum::TryFromPrimitive)]
@@ -126,7 +115,7 @@ pub(crate) enum TimeCurrentState {
 bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq)]
     #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-    pub(crate) struct GetTimeReport([u8]);
+    struct GetTimeReport([u8]);
     impl Debug;
     u16, year, set_year: 13, 0;
     u8, month, set_month: 17, 14;
@@ -143,11 +132,7 @@ bitfield! {
 }
 
 impl GetTimeReport<[u8; 9]> {
-    pub(crate) fn new(
-        ts: time_alarm_service_interface::AcpiTimestamp,
-        current_state: TimeCurrentState,
-        vendor_state: u8,
-    ) -> Self {
+    fn new(ts: time_alarm_service_interface::AcpiTimestamp, current_state: TimeCurrentState, vendor_state: u8) -> Self {
         let mut report = Self([0; 9]);
         report.set_year(ts.datetime.year());
         report.set_month(ts.datetime.month().into());
@@ -172,16 +157,24 @@ impl GetTimeReport<[u8; 9]> {
     }
 
     /// Report used when the current time is unavailable; the time fields carry no meaning.
-    pub(crate) fn failed(vendor_state: u8) -> Self {
+    fn failed(vendor_state: u8) -> Self {
         let mut report = Self([0; 9]);
         report.set_current_state(TimeCurrentState::Failed.into());
         report.set_vendor_current_state(vendor_state);
         report
     }
+}
 
-    pub(crate) fn pack(self) -> [u8; 9] {
-        self.0
-    }
+pub(crate) fn serialize_get_time_report(
+    timestamp: time_alarm_service_interface::AcpiTimestamp,
+    current_state: TimeCurrentState,
+    vendor_current_state: u8,
+) -> [u8; 9] {
+    GetTimeReport::new(timestamp, current_state, vendor_current_state).0
+}
+
+pub(crate) fn serialize_failed_get_time_report(vendor_current_state: u8) -> [u8; 9] {
+    GetTimeReport::failed(vendor_current_state).0
 }
 
 // -------- OUTPUT REPORTS --------
@@ -207,41 +200,54 @@ impl TryFrom<ReportId> for OutputReportId {
 bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq)]
     #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-    pub(crate) struct SetAlarmReport([u8]);
+    struct SetAlarmReport([u8]);
     impl Debug;
     pub u32, timer_seconds, _: 30, 0;
 }
 
-impl<'a> SetAlarmReport<&'a [u8]> {
-    pub(crate) fn unpack(data: &'a [u8]) -> Result<Self, ReportError> {
-        if data.len() < 4 {
-            return Err(ReportError::InvalidLength);
-        }
+impl<'a> SetAlarmReport<&'a [u8; 4]> {
+    fn unpack(data: &'a [u8]) -> Result<Self, ReportError> {
+        let data = data
+            .get(..4)
+            .and_then(|data| data.try_into().ok())
+            .ok_or(ReportError::InvalidLength)?;
         Ok(Self(data))
     }
+}
+
+pub(crate) fn deserialize_set_alarm_report(
+    data: &[u8],
+) -> Result<time_alarm_service_interface::AlarmTimerSeconds, ReportError> {
+    let report = SetAlarmReport::unpack(data)?;
+    Ok(convert_timer(report.timer_seconds()))
 }
 
 bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq)]
     #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-    pub(crate) struct SetDebounceReport([u8]);
+    struct SetDebounceReport([u8]);
     impl Debug;
     pub u8, power_source_change_debounce_seconds, _: 5, 0;
 }
 
-impl<'a> SetDebounceReport<&'a [u8]> {
-    pub(crate) fn unpack(data: &'a [u8]) -> Result<Self, ReportError> {
-        if data.is_empty() {
-            return Err(ReportError::InvalidLength);
-        }
+impl<'a> SetDebounceReport<&'a [u8; 1]> {
+    fn unpack(data: &'a [u8]) -> Result<Self, ReportError> {
+        let data = data.first_chunk::<1>().ok_or(ReportError::InvalidLength)?;
         Ok(Self(data))
     }
+}
+
+pub(crate) fn deserialize_set_debounce_report(
+    data: &[u8],
+) -> Result<time_alarm_service_interface::AlarmExpiredWakePolicy, ReportError> {
+    let report = SetDebounceReport::unpack(data)?;
+    Ok(convert_policy(report.power_source_change_debounce_seconds()))
 }
 
 /// Converts a timer value in seconds to an `AlarmTimerSeconds` enum, mapping the HID null value to
 /// disabled. See [`TIMER_NULL`]; if we change the supported logical value range, we'll need to
 /// update this too.
-pub(crate) fn convert_timer(seconds: u32) -> time_alarm_service_interface::AlarmTimerSeconds {
+fn convert_timer(seconds: u32) -> time_alarm_service_interface::AlarmTimerSeconds {
     if seconds == TIMER_NULL {
         time_alarm_service_interface::AlarmTimerSeconds::DISABLED
     } else {
@@ -292,7 +298,7 @@ fn convert_policy_to_wire(policy: time_alarm_service_interface::AlarmExpiredWake
 
 /// Inverse of [`convert_policy_to_wire`]. The null value means the host isn't asking for a minimum
 /// expiration, so we wake instantly; NEVER has no wire encoding and so can't be round-tripped.
-pub(crate) fn convert_policy(seconds: u8) -> time_alarm_service_interface::AlarmExpiredWakePolicy {
+fn convert_policy(seconds: u8) -> time_alarm_service_interface::AlarmExpiredWakePolicy {
     match u32::from(seconds) {
         seconds @ DEBOUNCE_LOGICAL_MIN..=DEBOUNCE_LOGICAL_MAX => {
             time_alarm_service_interface::AlarmExpiredWakePolicy(seconds)
@@ -319,7 +325,7 @@ fn time_zone_from_wire(time_zone: i16) -> AcpiTimeZone {
 bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq)]
     #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-    pub(crate) struct SetTimeReport([u8]);
+    struct SetTimeReport([u8]);
     impl Debug;
     pub u16, year, _: 13, 0;
     pub u8, month, _: 17, 14;
@@ -333,25 +339,29 @@ bitfield! {
     pub dst_active, _: 63;
 }
 
-impl<'a> SetTimeReport<&'a [u8]> {
-    pub(crate) fn unpack(data: &'a [u8]) -> Result<Self, ReportError> {
-        if data.len() < 8 {
-            return Err(ReportError::InvalidLength);
-        }
+impl<'a> SetTimeReport<&'a [u8; 8]> {
+    fn unpack(data: &'a [u8]) -> Result<Self, ReportError> {
+        let data = data
+            .get(..8)
+            .and_then(|data| data.try_into().ok())
+            .ok_or(ReportError::InvalidLength)?;
         Ok(Self(data))
     }
 }
 
+pub(crate) fn deserialize_set_time_report(
+    data: &[u8],
+) -> Result<time_alarm_service_interface::AcpiTimestamp, ReportError> {
+    SetTimeReport::unpack(data)?.try_into()
+}
+
 impl<T: AsRef<[u8]>> TryFrom<SetTimeReport<T>> for time_alarm_service_interface::AcpiTimestamp {
-    type Error = TimestampConversionError;
+    type Error = ReportError;
     fn try_from(report: SetTimeReport<T>) -> Result<Self, Self::Error> {
         Ok(Self {
             datetime: Datetime::new(DatetimeFields {
                 year: report.year(),
-                month: report
-                    .month()
-                    .try_into()
-                    .map_err(|_| TimestampConversionError::Datetime(embedded_mcu_hal::time::DatetimeError::Month))?,
+                month: report.month().try_into().map_err(|_| ReportError::InvalidDatetime)?,
                 day: report.day(),
                 hour: report.hour(),
                 minute: report.minute(),
@@ -364,7 +374,7 @@ impl<T: AsRef<[u8]>> TryFrom<SetTimeReport<T>> for time_alarm_service_interface:
                 (true, false) => time_alarm_service_interface::AcpiDaylightSavingsTimeStatus::NotAdjusted,
                 (true, true) => time_alarm_service_interface::AcpiDaylightSavingsTimeStatus::Adjusted,
                 (false, true) => {
-                    return Err(TimestampConversionError::Report(ReportError::ValueOutOfRange));
+                    return Err(ReportError::ValueOutOfRange);
                 }
             },
         })
@@ -398,21 +408,21 @@ pub(crate) enum PowerState {
 bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq)]
     #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-    pub(crate) struct CapabilitiesFeatureReport([u8]);
+    struct CapabilitiesFeatureReport([u8]);
     impl Debug;
     pub u8, power_state, set_power_state: 1, 0;
 }
 
 impl CapabilitiesFeatureReport<[u8; 1]> {
-    pub(crate) fn new(power_state: PowerState) -> Self {
+    fn new(power_state: PowerState) -> Self {
         let mut report = Self([0]);
         report.set_power_state(power_state.into());
         report
     }
+}
 
-    pub(crate) fn pack(self) -> [u8; 1] {
-        self.0
-    }
+pub(crate) fn serialize_capabilities_feature_report(power_state: PowerState) -> [u8; 1] {
+    CapabilitiesFeatureReport::new(power_state).0
 }
 
 // Generated from Waratah - don't hand-edit this. Instead, modify the .wara file and rerun Waratah.
@@ -603,7 +613,7 @@ mod tests {
 
     #[test]
     fn get_alarm_report_matches_hid_bit_layout() {
-        let report = GetAlarmReport::new(
+        let report = serialize_get_alarm_report(
             time_alarm_service_interface::AlarmTimerSeconds(0x1234_5678),
             time_alarm_service_interface::AlarmTimerSeconds(0x2345_6789),
             time_alarm_service_interface::AlarmExpiredWakePolicy(42),
@@ -611,33 +621,54 @@ mod tests {
             10,
         );
 
-        assert_eq!(
-            report.pack(),
-            [0x78, 0x56, 0x34, 0x12, 0x89, 0x67, 0x45, 0x23, 0x75, 0x0A]
-        );
+        assert_eq!(report, [0x78, 0x56, 0x34, 0x12, 0x89, 0x67, 0x45, 0x23, 0x75, 0x0A]);
     }
 
     #[test]
     fn set_time_report_matches_hid_bit_layout() {
         let data = [0xEA, 0x47, 0x86, 0xD6, 0xEE, 0xE7, 0x83, 0x78];
-        let report = SetTimeReport::unpack(&data).unwrap();
+        let timestamp = deserialize_set_time_report(&data).unwrap();
 
-        assert_eq!(report.year(), 2026);
-        assert_eq!(report.month(), 9);
-        assert_eq!(report.day(), 1);
-        assert_eq!(report.hour(), 13);
-        assert_eq!(report.minute(), 45);
-        assert_eq!(report.second(), 59);
-        assert_eq!(report.millisecond(), 999);
-        assert_eq!(report.time_zone(), -480);
-        assert!(report.dst_observed());
-        assert!(!report.dst_active());
+        assert_eq!(timestamp.datetime.year(), 2026);
+        assert_eq!(u8::from(timestamp.datetime.month()), 9);
+        assert_eq!(timestamp.datetime.day(), 1);
+        assert_eq!(timestamp.datetime.hour(), 13);
+        assert_eq!(timestamp.datetime.minute(), 45);
+        assert_eq!(timestamp.datetime.second(), 59);
+        assert_eq!(timestamp.datetime.nanoseconds(), 999_000_000);
+        assert_eq!(
+            timestamp.time_zone,
+            AcpiTimeZone::MinutesFromUtc(AcpiTimeZoneOffset::new(-480).unwrap())
+        );
+        assert_eq!(
+            timestamp.dst_status,
+            time_alarm_service_interface::AcpiDaylightSavingsTimeStatus::NotAdjusted
+        );
+    }
+
+    #[test]
+    fn set_reports_deserialize_to_interface_types() {
+        assert_eq!(
+            deserialize_set_alarm_report(&[42, 0, 0, 0]).unwrap(),
+            time_alarm_service_interface::AlarmTimerSeconds(42)
+        );
+        assert_eq!(
+            deserialize_set_alarm_report(&[0, 0, 0, 0]).unwrap(),
+            time_alarm_service_interface::AlarmTimerSeconds::DISABLED
+        );
+        assert_eq!(
+            deserialize_set_debounce_report(&[42]).unwrap(),
+            time_alarm_service_interface::AlarmExpiredWakePolicy(42)
+        );
     }
 
     #[test]
     fn unpack_rejects_short_reports() {
-        assert_eq!(SetAlarmReport::unpack(&[0; 3]), Err(ReportError::InvalidLength));
-        assert_eq!(SetDebounceReport::unpack(&[]), Err(ReportError::InvalidLength));
-        assert_eq!(SetTimeReport::unpack(&[0; 7]), Err(ReportError::InvalidLength));
+        assert_eq!(deserialize_set_alarm_report(&[0; 3]), Err(ReportError::InvalidLength));
+        assert_eq!(deserialize_set_debounce_report(&[]), Err(ReportError::InvalidLength));
+        assert!(matches!(
+            deserialize_set_time_report(&[0; 7]),
+            Err(ReportError::InvalidLength)
+        ));
     }
 }

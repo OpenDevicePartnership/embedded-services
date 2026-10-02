@@ -11,8 +11,6 @@ mod serialization;
 
 use serialization::{AlarmCurrentState, FeatureReportId, InputReportId, OutputReportId};
 
-use crate::hid::serialization::GetAlarmReport;
-
 /// Anything that can make a Set report fail. The host is told about it through the Failed state of
 /// the matching Get report rather than through the HID transport.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -27,12 +25,6 @@ enum SetReportError {
 
 impl From<serialization::ReportError> for SetReportError {
     fn from(_: serialization::ReportError) -> Self {
-        Self::Malformed
-    }
-}
-
-impl From<serialization::TimestampConversionError> for SetReportError {
-    fn from(_: serialization::TimestampConversionError) -> Self {
         Self::Malformed
     }
 }
@@ -75,20 +67,18 @@ impl<'s, Service: TimeAlarmService> TimeAlarmHidRelay<'s, Service> {
     }
 
     fn apply_set_alarm(&self, timer_id: AcpiTimerId, data: &[u8]) -> Result<(), SetReportError> {
-        let set_alarm = serialization::SetAlarmReport::unpack(data)?;
-        info!("Parsed SetAlarmReport: {:?}", set_alarm);
+        let timer = serialization::deserialize_set_alarm_report(data)?;
+        info!("Parsed alarm timer: {:?}", timer);
 
-        self.service
-            .set_timer_value(timer_id, serialization::convert_timer(set_alarm.timer_seconds()))?;
+        self.service.set_timer_value(timer_id, timer)?;
 
         Ok(())
     }
 
     fn apply_set_policy(&self, data: &[u8]) -> Result<(), SetReportError> {
-        let set_debounce = serialization::SetDebounceReport::unpack(data)?;
-        info!("Parsed SetDebounceReport: {:?}", set_debounce);
+        let wake_policy = serialization::deserialize_set_debounce_report(data)?;
+        info!("Parsed alarm wake policy: {:?}", wake_policy);
 
-        let wake_policy = serialization::convert_policy(set_debounce.power_source_change_debounce_seconds());
         self.service
             .set_expired_timer_policy(AcpiTimerId::AcPower, wake_policy)?;
         self.service
@@ -98,8 +88,7 @@ impl<'s, Service: TimeAlarmService> TimeAlarmHidRelay<'s, Service> {
     }
 
     fn apply_set_time(&self, data: &[u8]) -> Result<(), SetReportError> {
-        let time: time_alarm_service_interface::AcpiTimestamp =
-            serialization::SetTimeReport::unpack(data)?.try_into()?;
+        let time = serialization::deserialize_set_time_report(data)?;
         info!("Setting time to {:?}", time);
         self.service.set_real_time(time)?;
 
@@ -116,7 +105,6 @@ impl<'s, Service: TimeAlarmService> embedded_services::relay::hid::HidDevice for
     const MAX_DESCRIPTOR_LEN: usize = serialization::TIME_ALARM_HID_DESCRIPTOR.len();
 
     fn report_descriptor(&self) -> &HidReportDescriptor<'_> {
-        info!("descriptor len: {}", self.descriptor.as_bytes().len());
         &self.descriptor
     }
 
@@ -160,25 +148,30 @@ impl<'s, Service: TimeAlarmService> embedded_services::relay::hid::HidDevice for
                     };
 
                     let vendor_current_state = 0;
-                    let report_payload =
-                        GetAlarmReport::new(ac_timer, dc_timer, wake_policy, current_state, vendor_current_state);
-                    let report = report_payload.pack();
+                    let report = serialization::serialize_get_alarm_report(
+                        ac_timer,
+                        dc_timer,
+                        wake_policy,
+                        current_state,
+                        vendor_current_state,
+                    );
                     let report = HidReport::new(report_id, &report);
                     Ok(process_report(GetHidReport::Input(report)).await)
                 }
                 InputReportId::GetTime => {
                     info!("Received command to get time report");
-                    let report_payload = match self.service.get_real_time() {
+                    let report = match self.service.get_real_time() {
                         Ok(time) if !self.time_failed => {
-                            serialization::GetTimeReport::new(time, serialization::TimeCurrentState::Running, 0)
+                            serialization::serialize_get_time_report(time, serialization::TimeCurrentState::Running, 0)
                         }
-                        Ok(time) => serialization::GetTimeReport::new(time, serialization::TimeCurrentState::Failed, 0),
+                        Ok(time) => {
+                            serialization::serialize_get_time_report(time, serialization::TimeCurrentState::Failed, 0)
+                        }
                         Err(_) => {
                             error!("Failed to read the current time");
-                            serialization::GetTimeReport::failed(0)
+                            serialization::serialize_failed_get_time_report(0)
                         }
                     };
-                    let report = report_payload.pack();
                     let report = HidReport::new(report_id, &report);
                     Ok(process_report(GetHidReport::Input(report)).await)
                 }
@@ -195,7 +188,7 @@ impl<'s, Service: TimeAlarmService> embedded_services::relay::hid::HidDevice for
                             } else {
                                 serialization::PowerState::S3
                             };
-                        let capabilities = serialization::CapabilitiesFeatureReport::new(deepest_power_state).pack();
+                        let capabilities = serialization::serialize_capabilities_feature_report(deepest_power_state);
                         Ok(process_report(GetHidReport::Feature(HidReport::new(report_id, &capabilities))).await)
                     }
                 }
