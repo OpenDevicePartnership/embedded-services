@@ -226,7 +226,7 @@ usage = ['Generic Desktop', 'System Wake Timer and Real Time Clock']
 
         [[applicationCollection.outputReport.variableItem]]
         usage = ['Time and Date', 'Year']
-        logicalValueRange = [1900,9999]
+        logicalValueRange = [1970,9999]
 
         [[applicationCollection.outputReport.variableItem]]
         usage = ['Time and Date', 'Month']
@@ -269,7 +269,7 @@ usage = ['Generic Desktop', 'System Wake Timer and Real Time Clock']
 
         [[applicationCollection.inputReport.variableItem]]
         usage = ['Time and Date', 'Year']
-        logicalValueRange = [1900,9999]
+        logicalValueRange = [1970,9999]
 
         [[applicationCollection.inputReport.variableItem]]
         usage = ['Time and Date', 'Month']

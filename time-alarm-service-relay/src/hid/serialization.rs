@@ -86,9 +86,9 @@ impl GetAlarmReport<[u8; 10]> {
         vendor_current_state: u8,
     ) -> Self {
         let mut report = Self([0; 10]);
-        report.set_ac_timer(convert_timer_to_wire(ac_timer));
-        report.set_dc_timer(convert_timer_to_wire(dc_timer));
-        report.set_power_source_change_debounce_seconds(convert_policy_to_wire(power_policy));
+        report.set_ac_timer(timer_to_wire(ac_timer));
+        report.set_dc_timer(timer_to_wire(dc_timer));
+        report.set_power_source_change_debounce_seconds(policy_to_wire(power_policy));
         report.set_current_state(current_state.into());
         report.set_vendor_current_state(vendor_current_state);
         report
@@ -219,7 +219,7 @@ pub(crate) fn deserialize_set_alarm_report(
     data: &[u8],
 ) -> Result<time_alarm_service_interface::AlarmTimerSeconds, ReportError> {
     let report = SetAlarmReport::unpack(data)?;
-    Ok(convert_timer(report.timer_seconds()))
+    Ok(timer_from_wire(report.timer_seconds()))
 }
 
 bitfield! {
@@ -241,18 +241,7 @@ pub(crate) fn deserialize_set_debounce_report(
     data: &[u8],
 ) -> Result<time_alarm_service_interface::AlarmExpiredWakePolicy, ReportError> {
     let report = SetDebounceReport::unpack(data)?;
-    Ok(convert_policy(report.power_source_change_debounce_seconds()))
-}
-
-/// Converts a timer value in seconds to an `AlarmTimerSeconds` enum, mapping the HID null value to
-/// disabled. See [`TIMER_NULL`]; if we change the supported logical value range, we'll need to
-/// update this too.
-fn convert_timer(seconds: u32) -> time_alarm_service_interface::AlarmTimerSeconds {
-    if seconds == TIMER_NULL {
-        time_alarm_service_interface::AlarmTimerSeconds::DISABLED
-    } else {
-        time_alarm_service_interface::AlarmTimerSeconds(seconds)
-    }
+    Ok(policy_from_wire(report.power_source_change_debounce_seconds()))
 }
 
 /// A value in the physical range but out of the logical range for our timer. Must agree with report descriptor.
@@ -267,9 +256,9 @@ const TIMER_LOGICAL_MAX: u32 = 0x7FFF_FFFF;
 const DEBOUNCE_LOGICAL_MIN: u32 = 1;
 const DEBOUNCE_LOGICAL_MAX: u32 = 60;
 
-/// Inverse of [`convert_timer`]: a disabled timer is reported as the null value, and values the
+/// Inverse of [`timer_from_wire`]: a disabled timer is reported as the null value, and values the
 /// descriptor can't express are clamped rather than failing the whole report.
-fn convert_timer_to_wire(timer: time_alarm_service_interface::AlarmTimerSeconds) -> u32 {
+fn timer_to_wire(timer: time_alarm_service_interface::AlarmTimerSeconds) -> u32 {
     if timer == time_alarm_service_interface::AlarmTimerSeconds::DISABLED {
         TIMER_NULL
     } else if timer == time_alarm_service_interface::AlarmTimerSeconds(0) {
@@ -284,7 +273,18 @@ fn convert_timer_to_wire(timer: time_alarm_service_interface::AlarmTimerSeconds)
     }
 }
 
-fn convert_policy_to_wire(policy: time_alarm_service_interface::AlarmExpiredWakePolicy) -> u8 {
+/// Converts a timer value in seconds to an `AlarmTimerSeconds` enum, mapping the HID null value to
+/// disabled. See [`TIMER_NULL`]; if we change the supported logical value range, we'll need to
+/// update this too.
+fn timer_from_wire(seconds: u32) -> time_alarm_service_interface::AlarmTimerSeconds {
+    if seconds == TIMER_NULL {
+        time_alarm_service_interface::AlarmTimerSeconds::DISABLED
+    } else {
+        time_alarm_service_interface::AlarmTimerSeconds(seconds)
+    }
+}
+
+fn policy_to_wire(policy: time_alarm_service_interface::AlarmExpiredWakePolicy) -> u8 {
     match policy {
         time_alarm_service_interface::AlarmExpiredWakePolicy::INSTANTLY => 0,
         // TODO "never" isn't expressible with the current HID interface; need to circle back with time and hid folks
@@ -296,9 +296,9 @@ fn convert_policy_to_wire(policy: time_alarm_service_interface::AlarmExpiredWake
     }
 }
 
-/// Inverse of [`convert_policy_to_wire`]. The null value means the host isn't asking for a minimum
+/// Inverse of [`policy_to_wire`]. The null value means the host isn't asking for a minimum
 /// expiration, so we wake instantly; NEVER has no wire encoding and so can't be round-tripped.
-fn convert_policy(seconds: u8) -> time_alarm_service_interface::AlarmExpiredWakePolicy {
+fn policy_from_wire(seconds: u8) -> time_alarm_service_interface::AlarmExpiredWakePolicy {
     match u32::from(seconds) {
         seconds @ DEBOUNCE_LOGICAL_MIN..=DEBOUNCE_LOGICAL_MAX => {
             time_alarm_service_interface::AlarmExpiredWakePolicy(seconds)
@@ -502,7 +502,7 @@ pub(crate) const TIME_ALARM_HID_DESCRIPTOR: &[u8] = &[
     0x85, 0x04,                      //     ReportId(4)
     0x05, 0x13,                      //     UsagePage(Time and Date[0x0013])
     0x09, 0x01,                      //     UsageId(Year[0x0001])
-    0x16, 0x6C, 0x07,                //     LogicalMinimum(1,900)
+    0x16, 0xB2, 0x07,                //     LogicalMinimum(1,970)
     0x26, 0x0F, 0x27,                //     LogicalMaximum(9,999)
     0x75, 0x0E,                      //     ReportSize(14)
     0x91, 0x02,                      //     Output(Data, Variable, Absolute, NoWrap, Linear, PreferredState, NoNullPosition, NonVolatile, BitField)
@@ -544,7 +544,7 @@ pub(crate) const TIME_ALARM_HID_DESCRIPTOR: &[u8] = &[
     0x91, 0x02,                      //     Output(Data, Variable, Absolute, NoWrap, Linear, PreferredState, NoNullPosition, NonVolatile, BitField)
     0x85, 0x02,                      //     ReportId(2)
     0x09, 0x01,                      //     UsageId(Year[0x0001])
-    0x16, 0x6C, 0x07,                //     LogicalMinimum(1,900)
+    0x16, 0xB2, 0x07,                //     LogicalMinimum(1,970)
     0x26, 0x0F, 0x27,                //     LogicalMaximum(9,999)
     0x95, 0x01,                      //     ReportCount(1)
     0x75, 0x0E,                      //     ReportSize(14)
