@@ -109,10 +109,11 @@ impl<'hw> Timers<'hw> {
 struct ServiceInner<'hw> {
     clock_state: Mutex<GlobalRawMutex, RefCell<ClockState<'hw>>>,
 
-    // TODO [POWER_SOURCE] signal this whenever the power source changes
-    power_source_signal: Signal<GlobalRawMutex, AcpiTimerId>,
+    wake_signal: Signal<GlobalRawMutex, bool>,
 
     timers: Timers<'hw>,
+    // Keep both timers' updates and publication of their combined wake level atomic.
+    timer_update_lock: Mutex<GlobalRawMutex, ()>,
 
     capabilities: TimeAlarmDeviceCapabilities,
 }
@@ -126,18 +127,21 @@ impl<'hw> ServiceInner<'hw> {
         dc_expiration_storage: &'hw mut dyn NvramStorage<'hw, u32>,
         dc_policy_storage: &'hw mut dyn NvramStorage<'hw, u32>,
     ) -> Self {
+        let wake_signal = Signal::new();
+        wake_signal.signal(false);
         Self {
             clock_state: Mutex::new(RefCell::new(ClockState {
                 datetime_clock: backing_clock,
                 tz_data: TimeZoneData::new(tz_storage),
             })),
-            power_source_signal: Signal::new(),
+            wake_signal,
             timers: Timers::new(
                 ac_expiration_storage,
                 ac_policy_storage,
                 dc_expiration_storage,
                 dc_policy_storage,
             ),
+            timer_update_lock: Mutex::new(()),
             capabilities: {
                 // TODO [CONFIG] We could consider making some of these user-configurable, e.g. if we want to support devices that don't have a battery
                 let mut caps = TimeAlarmDeviceCapabilities(0);
@@ -191,7 +195,10 @@ impl<'hw> ServiceInner<'hw> {
 
     /// Clear the current wake status.  Analogous to ACPI TAD's _CWS method.
     fn clear_wake_status(&self, timer_id: AcpiTimerId) {
-        self.timers.get_timer(timer_id).clear_wake_status();
+        self.timer_update_lock.lock(|_| {
+            self.timers.get_timer(timer_id).clear_wake_status();
+            self.publish_wake_signal();
+        });
     }
 
     /// Configures behavior when the timer expires while the system is on the other power source.  Analogous to ACPI TAD's _STP method.
@@ -226,10 +233,14 @@ impl<'hw> ServiceInner<'hw> {
             }
         };
 
-        self.timers
-            .get_timer(timer_id)
-            .set_expiration_time(&self.clock_state, new_expiration_time)?;
-        Ok(())
+        self.timer_update_lock.lock(|_| {
+            let result = self
+                .timers
+                .get_timer(timer_id)
+                .set_expiration_time(&self.clock_state, new_expiration_time);
+            self.publish_wake_signal();
+            result
+        })
     }
 
     /// Query the expiry time for the given timer.  Analogous to ACPI TAD's _TIV method.
@@ -251,39 +262,44 @@ impl<'hw> ServiceInner<'hw> {
         }
     }
 
-    async fn handle_power_source_updates(&'hw self) -> ! {
-        loop {
-            let new_power_source = self.power_source_signal.wait().await;
-            info!("[Time/Alarm] Power source changed to {:?}", new_power_source);
-
+    fn set_power_source(&self, new_power_source: AcpiTimerId) {
+        self.timer_update_lock.lock(|_| {
             self.timers
                 .get_timer(new_power_source.get_other_timer_id())
                 .set_active(&self.clock_state, false);
             self.timers
                 .get_timer(new_power_source)
                 .set_active(&self.clock_state, true);
-        }
+        });
+    }
+
+    // Called with timer_update_lock held, after releasing individual TimerState borrows.
+    fn publish_wake_signal(&self) {
+        self.wake_signal.signal(
+            self.timers.ac_timer.get_wake_status().timer_triggered_wake()
+                || self.timers.dc_timer.get_wake_status().timer_triggered_wake(),
+        );
     }
 
     async fn handle_timer(&'hw self, timer_id: AcpiTimerId) -> ! {
         let timer = self.timers.get_timer(timer_id);
         loop {
-            timer.wait_until_wake(&self.clock_state).await;
-            self.timers
-                .get_timer(timer_id.get_other_timer_id())
-                .set_timer_wake_policy(&self.clock_state, AlarmExpiredWakePolicy::NEVER)
-                .unwrap_or_else(|e| {
-                    warn!(
-                        "[Time/Alarm] Failed to update wake policy on timer expiry - this should never happen: {:?}",
-                        e
-                    );
-                });
-
-            warn!(
-                "[Time/Alarm] Timer {:?} expired and would trigger a wake now, but the power service is not yet implemented so will currently do nothing",
-                timer_id
-            );
-            // TODO [COMMS] We can't currently trigger a wake because the power service isn't implemented yet - when it is, we need to notify it here
+            timer.wait_for_expiry().await;
+            self.timer_update_lock.lock(|_| {
+                if timer.process_expired_timer(&self.clock_state) {
+                    self.timers
+                        .get_timer(timer_id.get_other_timer_id())
+                        .set_timer_wake_policy(&self.clock_state, AlarmExpiredWakePolicy::NEVER)
+                        .unwrap_or_else(|e| {
+                            warn!(
+                                "[Time/Alarm] Failed to update wake policy on timer expiry - this should never happen: {:?}",
+                                e
+                            );
+                        });
+                    self.publish_wake_signal();
+                    info!("[Time/Alarm] Timer {:?} requested a wake", timer_id);
+                }
+            });
         }
     }
 }
@@ -303,8 +319,7 @@ impl<'hw> odp_service_common::runnable_service::ServiceRunner<'hw> for Runner<'h
     /// Run the service.
     async fn run(self) -> embedded_services::Never {
         loop {
-            embassy_futures::select::select3(
-                self.service.handle_power_source_updates(),
+            embassy_futures::select::select(
                 self.service.handle_timer(AcpiTimerId::AcPower),
                 self.service.handle_timer(AcpiTimerId::DcPower),
             )
@@ -375,7 +390,21 @@ impl<'hw> odp_service_common::runnable_service::Service<'hw> for Service<'hw> {
 }
 
 impl<'hw> Service<'hw> {
+    /// Selects the active power source synchronously, preserving every transition.
+    /// Boards with source information should call this before running the runner.
+    pub fn set_power_source(&self, power_source: AcpiTimerId) {
+        self.inner.set_power_source(power_source);
+    }
+
+    /// Waits for the latest wake-request level, initially false, for one board consumer.
+    /// The level is the OR of both triggered-wake latches; pending updates coalesce.
+    /// Consuming a level neither clears status nor acknowledges a physical host resume.
+    pub async fn wait_for_wake_signal(&self) -> bool {
+        self.inner.wake_signal.wait().await
+    }
+
     /// Initializes an instance of the time-alarm service.
+    /// AC is initially active; use [`Self::set_power_source`] to select another source.
     pub async fn new(
         service_storage: &'hw mut Resources<'hw>,
         backing_clock: &'hw mut dyn DatetimeClock,
@@ -394,8 +423,6 @@ impl<'hw> Service<'hw> {
             dc_policy_storage,
         ));
 
-        // TODO [POWER_SOURCE] we need to subscribe to messages that tell us if we're on AC or DC power so we can decide which alarms to trigger, but those notifications are not yet implemented - revisit when they are.
-        // TODO [POWER_SOURCE] if it's possible to learn which power source is active at init time, we should set that one active rather than defaulting to the AC timer.
         service.timers.ac_timer.start(&service.clock_state, true)?;
         service.timers.dc_timer.start(&service.clock_state, false)?;
 
