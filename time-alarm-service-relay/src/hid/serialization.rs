@@ -1,7 +1,7 @@
 use bitfield::bitfield;
 use embedded_mcu_hal::time::{Datetime, DatetimeFields};
 use embedded_services::relay::hid::ReportId;
-use time_alarm_service_interface::{AcpiTimeZone, AcpiTimeZoneOffset};
+use time_alarm_service_interface::AcpiTimeZone;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
@@ -54,14 +54,109 @@ impl TryFrom<ReportId> for InputReportId {
     }
 }
 
+/// A value in the physical range but out of the logical range for our timer. Must agree with report descriptor.
+const TIMER_NULL: u32 = 0;
+
+/// LogicalMaximum of the alarm timer items in our report descriptor; also the widest value the
+/// 31-bit timer fields can hold.
+const TIMER_LOGICAL_MIN: u32 = 1;
+const TIMER_LOGICAL_MAX: u32 = 0x7FFF_FFFF;
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct HidTimerSeconds(u32);
+
+impl From<u32> for HidTimerSeconds {
+    fn from(value: u32) -> Self {
+        Self(value)
+    }
+}
+
+impl From<time_alarm_service_interface::AlarmTimerSeconds> for HidTimerSeconds {
+    fn from(value: time_alarm_service_interface::AlarmTimerSeconds) -> Self {
+        Self(match value {
+            time_alarm_service_interface::AlarmTimerSeconds::DISABLED => TIMER_NULL,
+
+            // TODO - there's currently a disagreement between HID and ACPI on what a logical value of "0" means.
+            //        ACPI says it means "this timer is expired" but HID says it's not a valid value, which in
+            //        effect means "this timer is disabled".
+            //        For now, we treat it as disabled, but there may be a case to be made that it should mean
+            //        the same thing as in ACPI.
+            time_alarm_service_interface::AlarmTimerSeconds(0) => TIMER_NULL,
+            time_alarm_service_interface::AlarmTimerSeconds(seconds) => {
+                seconds.clamp(TIMER_LOGICAL_MIN, TIMER_LOGICAL_MAX)
+            }
+        })
+    }
+}
+
+impl From<HidTimerSeconds> for u32 {
+    fn from(value: HidTimerSeconds) -> Self {
+        value.0
+    }
+}
+
+impl From<HidTimerSeconds> for time_alarm_service_interface::AlarmTimerSeconds {
+    fn from(value: HidTimerSeconds) -> Self {
+        if value.0 == TIMER_NULL {
+            Self::DISABLED
+        } else {
+            Self(value.0)
+        }
+    }
+}
+
+/// LogicalMaximum of the power source change debounce items in our report descriptor.
+const DEBOUNCE_LOGICAL_MIN: u32 = 1;
+const DEBOUNCE_LOGICAL_MAX: u32 = 60;
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct HidWakePolicy(u8);
+
+impl From<u8> for HidWakePolicy {
+    fn from(value: u8) -> Self {
+        Self(value)
+    }
+}
+
+impl From<time_alarm_service_interface::AlarmExpiredWakePolicy> for HidWakePolicy {
+    fn from(value: time_alarm_service_interface::AlarmExpiredWakePolicy) -> Self {
+        Self(match value {
+            time_alarm_service_interface::AlarmExpiredWakePolicy::INSTANTLY => 0,
+            // TODO "never" isn't expressible with the current HID interface; need to circle back with time and hid folks
+            //      on if this was a deliberate design decision or an oversight.  For now, report it as our logical max.
+            time_alarm_service_interface::AlarmExpiredWakePolicy::NEVER => DEBOUNCE_LOGICAL_MAX as u8,
+            time_alarm_service_interface::AlarmExpiredWakePolicy(seconds) => {
+                seconds.clamp(DEBOUNCE_LOGICAL_MIN, DEBOUNCE_LOGICAL_MAX) as u8
+            }
+        })
+    }
+}
+
+impl From<HidWakePolicy> for u8 {
+    fn from(value: HidWakePolicy) -> Self {
+        value.0
+    }
+}
+
+impl From<HidWakePolicy> for time_alarm_service_interface::AlarmExpiredWakePolicy {
+    fn from(value: HidWakePolicy) -> Self {
+        // The HID null value means no minimum delay; other values outside the logical range are
+        // treated the same way because they carry no valid policy.
+        match u32::from(value.0) {
+            seconds @ DEBOUNCE_LOGICAL_MIN..=DEBOUNCE_LOGICAL_MAX => Self(seconds),
+            _ => Self::INSTANTLY,
+        }
+    }
+}
+
 bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq)]
     #[cfg_attr(feature = "defmt", derive(defmt::Format))]
     struct GetAlarmReport([u8]);
     impl Debug;
-    u32, ac_timer, set_ac_timer: 30, 0;
-    u32, dc_timer, set_dc_timer: 62, 32;
-    u8, power_source_change_debounce_seconds, set_power_source_change_debounce_seconds: 68, 63;
+    u32, from into HidTimerSeconds, ac_timer, set_ac_timer: 30, 0;
+    u32, from into HidTimerSeconds, dc_timer, set_dc_timer: 62, 32;
+    u8, from into HidWakePolicy, power_source_change_debounce, set_power_source_change_debounce: 68, 63;
     u8, current_state, set_current_state: 71, 69;
     u8, vendor_current_state, set_vendor_current_state: 75, 72;
 }
@@ -86,9 +181,9 @@ impl GetAlarmReport<[u8; 10]> {
         vendor_current_state: u8,
     ) -> Self {
         let mut report = Self([0; 10]);
-        report.set_ac_timer(timer_to_wire(ac_timer));
-        report.set_dc_timer(timer_to_wire(dc_timer));
-        report.set_power_source_change_debounce_seconds(policy_to_wire(power_policy));
+        report.set_ac_timer(ac_timer.into());
+        report.set_dc_timer(dc_timer.into());
+        report.set_power_source_change_debounce(power_policy.into());
         report.set_current_state(current_state.into());
         report.set_vendor_current_state(vendor_current_state);
         report
@@ -141,7 +236,7 @@ impl GetTimeReport<[u8; 9]> {
         report.set_minute(ts.datetime.minute());
         report.set_second(ts.datetime.second());
         report.set_millisecond((ts.datetime.nanoseconds() / 1_000_000) as u16);
-        report.set_time_zone(time_zone_to_wire(ts.time_zone));
+        report.set_time_zone(ts.time_zone.into());
         report.set_dst_observed(matches!(
             ts.dst_status,
             time_alarm_service_interface::AcpiDaylightSavingsTimeStatus::NotAdjusted
@@ -202,7 +297,7 @@ bitfield! {
     #[cfg_attr(feature = "defmt", derive(defmt::Format))]
     struct SetAlarmReport([u8]);
     impl Debug;
-    pub u32, timer_seconds, _: 30, 0;
+    pub u32, into HidTimerSeconds, timer_seconds, _: 30, 0;
 }
 
 impl<'a> SetAlarmReport<&'a [u8; 4]> {
@@ -219,7 +314,7 @@ pub(crate) fn deserialize_set_alarm_report(
     data: &[u8],
 ) -> Result<time_alarm_service_interface::AlarmTimerSeconds, ReportError> {
     let report = SetAlarmReport::unpack(data)?;
-    Ok(timer_from_wire(report.timer_seconds()))
+    Ok(report.timer_seconds().into())
 }
 
 bitfield! {
@@ -227,7 +322,7 @@ bitfield! {
     #[cfg_attr(feature = "defmt", derive(defmt::Format))]
     struct SetDebounceReport([u8]);
     impl Debug;
-    pub u8, power_source_change_debounce_seconds, _: 5, 0;
+    pub u8, into HidWakePolicy, power_source_change_debounce, _: 5, 0;
 }
 
 impl<'a> SetDebounceReport<&'a [u8; 1]> {
@@ -241,85 +336,7 @@ pub(crate) fn deserialize_set_debounce_report(
     data: &[u8],
 ) -> Result<time_alarm_service_interface::AlarmExpiredWakePolicy, ReportError> {
     let report = SetDebounceReport::unpack(data)?;
-    Ok(policy_from_wire(report.power_source_change_debounce_seconds()))
-}
-
-/// A value in the physical range but out of the logical range for our timer. Must agree with report descriptor.
-const TIMER_NULL: u32 = 0;
-
-/// LogicalMaximum of the alarm timer items in our report descriptor; also the widest value the
-/// 31-bit timer fields can hold.
-const TIMER_LOGICAL_MIN: u32 = 1;
-const TIMER_LOGICAL_MAX: u32 = 0x7FFF_FFFF;
-
-/// LogicalMaximum of the power source change debounce items in our report descriptor.
-const DEBOUNCE_LOGICAL_MIN: u32 = 1;
-const DEBOUNCE_LOGICAL_MAX: u32 = 60;
-
-/// Inverse of [`timer_from_wire`]: a disabled timer is reported as the null value, and values the
-/// descriptor can't express are clamped rather than failing the whole report.
-fn timer_to_wire(timer: time_alarm_service_interface::AlarmTimerSeconds) -> u32 {
-    if timer == time_alarm_service_interface::AlarmTimerSeconds::DISABLED {
-        TIMER_NULL
-    } else if timer == time_alarm_service_interface::AlarmTimerSeconds(0) {
-        // TODO - there's currently a disagreement between HID and ACPI on what a logical value of "0" means.
-        //        ACPI says it means "this timer is expired" but HID says it's not a valid value, which in
-        //        effect means "this timer is disabled".
-        //        For now, we treat it as disabled, but there may be a case to be made that it should mean
-        //        the same thing as in ACPI.
-        TIMER_NULL
-    } else {
-        timer.0.clamp(TIMER_LOGICAL_MIN, TIMER_LOGICAL_MAX)
-    }
-}
-
-/// Converts a timer value in seconds to an `AlarmTimerSeconds` enum, mapping the HID null value to
-/// disabled. See [`TIMER_NULL`]; if we change the supported logical value range, we'll need to
-/// update this too.
-fn timer_from_wire(seconds: u32) -> time_alarm_service_interface::AlarmTimerSeconds {
-    if seconds == TIMER_NULL {
-        time_alarm_service_interface::AlarmTimerSeconds::DISABLED
-    } else {
-        time_alarm_service_interface::AlarmTimerSeconds(seconds)
-    }
-}
-
-fn policy_to_wire(policy: time_alarm_service_interface::AlarmExpiredWakePolicy) -> u8 {
-    match policy {
-        time_alarm_service_interface::AlarmExpiredWakePolicy::INSTANTLY => 0,
-        // TODO "never" isn't expressible with the current HID interface; need to circle back with time and hid folks
-        //      on if this was a deliberate design decision or an oversight.  For now, report it as our logical max.
-        time_alarm_service_interface::AlarmExpiredWakePolicy::NEVER => DEBOUNCE_LOGICAL_MAX as u8,
-        time_alarm_service_interface::AlarmExpiredWakePolicy(seconds) => {
-            seconds.clamp(DEBOUNCE_LOGICAL_MIN, DEBOUNCE_LOGICAL_MAX) as u8
-        }
-    }
-}
-
-/// Inverse of [`policy_to_wire`]. The null value means the host isn't asking for a minimum
-/// expiration, so we wake instantly; NEVER has no wire encoding and so can't be round-tripped.
-fn policy_from_wire(seconds: u8) -> time_alarm_service_interface::AlarmExpiredWakePolicy {
-    match u32::from(seconds) {
-        seconds @ DEBOUNCE_LOGICAL_MIN..=DEBOUNCE_LOGICAL_MAX => {
-            time_alarm_service_interface::AlarmExpiredWakePolicy(seconds)
-        }
-        _ => time_alarm_service_interface::AlarmExpiredWakePolicy::INSTANTLY,
-    }
-}
-
-const NULL_HID_TIME_ZONE: i16 = 2047;
-fn time_zone_to_wire(time_zone: AcpiTimeZone) -> i16 {
-    match time_zone {
-        AcpiTimeZone::Unknown => NULL_HID_TIME_ZONE,
-        AcpiTimeZone::MinutesFromUtc(offset) => offset.minutes_from_utc(),
-    }
-}
-
-fn time_zone_from_wire(time_zone: i16) -> AcpiTimeZone {
-    match AcpiTimeZoneOffset::new(time_zone) {
-        Ok(offset) => AcpiTimeZone::MinutesFromUtc(offset),
-        Err(_) => AcpiTimeZone::Unknown,
-    }
+    Ok(report.power_source_change_debounce().into())
 }
 
 bitfield! {
@@ -368,7 +385,7 @@ impl<T: AsRef<[u8]>> TryFrom<SetTimeReport<T>> for time_alarm_service_interface:
                 second: report.second(),
                 nanosecond: u32::from(report.millisecond()) * 1_000_000,
             })?,
-            time_zone: time_zone_from_wire(report.time_zone()),
+            time_zone: AcpiTimeZone::try_from(report.time_zone()).unwrap_or(AcpiTimeZone::Unknown),
             dst_status: match (report.dst_observed(), report.dst_active()) {
                 (false, false) => time_alarm_service_interface::AcpiDaylightSavingsTimeStatus::NotObserved,
                 (true, false) => time_alarm_service_interface::AcpiDaylightSavingsTimeStatus::NotAdjusted,
@@ -638,7 +655,7 @@ mod tests {
         assert_eq!(timestamp.datetime.nanoseconds(), 999_000_000);
         assert_eq!(
             timestamp.time_zone,
-            AcpiTimeZone::MinutesFromUtc(AcpiTimeZoneOffset::new(-480).unwrap())
+            AcpiTimeZone::MinutesFromUtc(time_alarm_service_interface::AcpiTimeZoneOffset::new(-480).unwrap())
         );
         assert_eq!(
             timestamp.dst_status,
@@ -659,6 +676,37 @@ mod tests {
         assert_eq!(
             deserialize_set_debounce_report(&[42]).unwrap(),
             time_alarm_service_interface::AlarmExpiredWakePolicy(42)
+        );
+    }
+
+    #[test]
+    fn wire_newtypes_preserve_null_and_clamping_semantics() {
+        assert_eq!(
+            u32::from(HidTimerSeconds::from(
+                time_alarm_service_interface::AlarmTimerSeconds::DISABLED
+            )),
+            TIMER_NULL
+        );
+        assert_eq!(
+            u32::from(HidTimerSeconds::from(time_alarm_service_interface::AlarmTimerSeconds(
+                u32::MAX - 1
+            ))),
+            TIMER_LOGICAL_MAX
+        );
+        assert_eq!(
+            time_alarm_service_interface::AlarmTimerSeconds::from(HidTimerSeconds::from(TIMER_NULL)),
+            time_alarm_service_interface::AlarmTimerSeconds::DISABLED
+        );
+
+        assert_eq!(
+            u8::from(HidWakePolicy::from(
+                time_alarm_service_interface::AlarmExpiredWakePolicy::NEVER
+            )),
+            DEBOUNCE_LOGICAL_MAX as u8
+        );
+        assert_eq!(
+            time_alarm_service_interface::AlarmExpiredWakePolicy::from(HidWakePolicy::from(0)),
+            time_alarm_service_interface::AlarmExpiredWakePolicy::INSTANTLY
         );
     }
 
