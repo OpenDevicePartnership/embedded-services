@@ -3,7 +3,6 @@
 use embedded_services::relay::hid::HidError;
 use embedded_services::relay::hid::{
     GetHidReport, GetHidReportType, HidDevicePowerState, HidReport, HidReportDescriptor, ReportId, SetHidReport,
-    reports,
 };
 use embedded_services::{error, info};
 use time_alarm_service_interface::{AcpiTimerId, AlarmTimerSeconds, TimeAlarmService};
@@ -26,8 +25,8 @@ enum SetReportError {
     Service,
 }
 
-impl From<reports::ReportError> for SetReportError {
-    fn from(_: reports::ReportError) -> Self {
+impl From<serialization::ReportError> for SetReportError {
+    fn from(_: serialization::ReportError) -> Self {
         Self::Malformed
     }
 }
@@ -80,7 +79,7 @@ impl<'s, Service: TimeAlarmService> TimeAlarmHidRelay<'s, Service> {
         info!("Parsed SetAlarmReport: {:?}", set_alarm);
 
         self.service
-            .set_timer_value(timer_id, serialization::convert_timer(set_alarm.timer_seconds))?;
+            .set_timer_value(timer_id, serialization::convert_timer(set_alarm.timer_seconds()))?;
 
         Ok(())
     }
@@ -89,7 +88,7 @@ impl<'s, Service: TimeAlarmService> TimeAlarmHidRelay<'s, Service> {
         let set_debounce = serialization::SetDebounceReport::unpack(data)?;
         info!("Parsed SetDebounceReport: {:?}", set_debounce);
 
-        let wake_policy = serialization::convert_policy(set_debounce.power_source_change_debounce_seconds);
+        let wake_policy = serialization::convert_policy(set_debounce.power_source_change_debounce_seconds());
         self.service
             .set_expired_timer_policy(AcpiTimerId::AcPower, wake_policy)?;
         self.service
@@ -163,7 +162,7 @@ impl<'s, Service: TimeAlarmService> embedded_services::relay::hid::HidDevice for
                     let vendor_current_state = 0;
                     let report_payload =
                         GetAlarmReport::new(ac_timer, dc_timer, wake_policy, current_state, vendor_current_state);
-                    let report = report_payload.pack().map_err(|_| HidError::TriggerReset)?;
+                    let report = report_payload.pack();
                     let report = HidReport::new(report_id, &report);
                     Ok(process_report(GetHidReport::Input(report)).await)
                 }
@@ -179,7 +178,7 @@ impl<'s, Service: TimeAlarmService> embedded_services::relay::hid::HidDevice for
                             serialization::GetTimeReport::failed(0)
                         }
                     };
-                    let report = report_payload.pack().map_err(|_| HidError::TriggerReset)?;
+                    let report = report_payload.pack();
                     let report = HidReport::new(report_id, &report);
                     Ok(process_report(GetHidReport::Input(report)).await)
                 }
@@ -196,9 +195,7 @@ impl<'s, Service: TimeAlarmService> embedded_services::relay::hid::HidDevice for
                             } else {
                                 serialization::PowerState::S3
                             };
-                        let capabilities = serialization::CapabilitiesFeatureReport::new(deepest_power_state)
-                            .pack()
-                            .map_err(|_| HidError::TriggerReset)?;
+                        let capabilities = serialization::CapabilitiesFeatureReport::new(deepest_power_state).pack();
                         Ok(process_report(GetHidReport::Feature(HidReport::new(report_id, &capabilities))).await)
                     }
                 }

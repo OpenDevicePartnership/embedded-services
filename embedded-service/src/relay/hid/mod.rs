@@ -3,10 +3,6 @@
 use generic_array::ArrayLength;
 use num_enum::TryFromPrimitive;
 
-pub mod reports;
-
-pub use crate::hid_report;
-
 /// Errors that a HID device operation can fail with.
 ///
 /// Reporting failure triggers a device-initiated reset, so callers must handle these errors explicitly

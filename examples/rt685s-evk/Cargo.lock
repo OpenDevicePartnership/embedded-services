@@ -1267,6 +1267,7 @@ dependencies = [
 name = "time-alarm-service-relay"
 version = "0.1.0"
 dependencies = [
+ "bitfield 0.17.0",
  "defmt 0.3.100",
  "embedded-mcu-hal",
  "embedded-services",
