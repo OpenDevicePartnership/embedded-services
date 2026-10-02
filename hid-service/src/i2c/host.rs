@@ -227,7 +227,7 @@ impl<B: I2cSlaveAsync> Host<B> {
 
         // Create command
         let report_type = hid::ReportType::try_from(cmd).ok();
-        let command = hid::Command::new(cmd, opcode, report_type, report_id, buffer);
+        let command = hid::Command::new(cmd, opcode, report_type, report_id, buffer, None);
         match command {
             Ok(command) => Ok(command),
             Err(e) => {
