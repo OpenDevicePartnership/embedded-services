@@ -117,28 +117,19 @@ async fn test_lpm(
     info!("Testing LPM commands for port {port_id:?}");
 
     // GetConnectorCapability is served from the config override, so no mock response is needed.
-    let expected_capability = LpmResponseData::GetConnectorCapability(
-        *UcsiConnectorCapability::default()
-            .set_operation_mode(
-                *OperationModeFlags::default()
-                    .set_drp(true)
-                    .set_usb2(true)
-                    .set_usb3(true),
-            )
-            .set_consumer(true)
-            .set_provider(true)
-            .set_swap_to_dfp(true)
-            .set_swap_to_snk(true)
-            .set_swap_to_src(true),
-    );
+    let expected_capability = LpmResponseData::GetConnectorCapability(port_capability());
     execute_and_assert(
         service,
-        GlobalCommand::LpmCommand(lpm::GlobalCommand::new(
-            port_id,
-            lpm::CommandData::GetConnectorCapability,
-        )),
+        GlobalCommand::LpmCommand(lpm::GlobalCommand::new(lpm::CommandData::GetConnectorCapability(
+            lpm::get_connector_capability::Args {
+                connector_number: port_id,
+            },
+        ))),
         true,
-        *GlobalCci::default().set_cmd_complete(true),
+        GlobalCci {
+            cmd_complete: true,
+            ..Default::default()
+        },
         Ok(Some(UcsiResponseData::Lpm(expected_capability))),
     )
     .await;
@@ -147,10 +138,16 @@ async fn test_lpm(
     execute_and_assert(
         service,
         GlobalCommand::PpmCommand(ppm::Command::AckCcCi(ppm::ack_cc_ci::Args {
-            ack: *Ack::default().set_command_complete(true),
+            ack: Ack {
+                command_complete: true,
+                ..Default::default()
+            },
         })),
         true,
-        *GlobalCci::default().set_ack_command(true),
+        GlobalCci {
+            ack_command: true,
+            ..Default::default()
+        },
         Ok(None),
     )
     .await;
@@ -162,9 +159,11 @@ async fn test_lpm(
 
     // GetConnectorStatus while connected.
     info!("Testing GetConnectorStatus for connected port {}", port_id.0);
-    let mut status_change = ConnectorStatusChange::default();
-    status_change.set_connect_change(true);
-    status_change.set_battery_charging_status_change(true);
+    let status_change = ConnectorStatusChange {
+        connect_change: true,
+        battery_charging_status_change: true,
+        ..Default::default()
+    };
     let connected_status = ConnectedStatus {
         battery_charging_status: Some(BatteryChargingCapabilityStatus::Nominal),
         ..Default::default()
@@ -187,28 +186,21 @@ async fn test_lpm(
     }
     execute_and_assert(
         service,
-        GlobalCommand::LpmCommand(lpm::GlobalCommand::new(port_id, lpm::CommandData::GetConnectorStatus)),
+        get_connector_status_command(port_id),
         true,
-        *GlobalCci::default()
-            .set_cmd_complete(true)
+        GlobalCci {
+            cmd_complete: true,
             // UCSI connector numbers are 1-based.
-            .set_connector_change(GlobalPortId(port_id.0 + 1)),
+            connector_change: GlobalPortId(port_id.0 + 1),
+            ..Default::default()
+        },
         Ok(Some(UcsiResponseData::Lpm(connected_response))),
     )
     .await;
 
     // Acknowledge the connector change.
     info!("Acknowledging CCI for port {}", port_id.0);
-    execute_and_assert(
-        service,
-        GlobalCommand::PpmCommand(ppm::Command::AckCcCi(ppm::ack_cc_ci::Args {
-            ack: *Ack::default().set_command_complete(true).set_connector_change(true),
-        })),
-        true,
-        *GlobalCci::default().set_ack_command(true),
-        Ok(None),
-    )
-    .await;
+    ack_command_and_connector_change(service).await;
 
     // Disconnect and verify the UCSI connector-change notification.
     info!("Disconnecting port {}", port_id.0);
@@ -228,27 +220,64 @@ async fn test_lpm(
         .push_back(Ok(Some(disconnected_response)));
     execute_and_assert(
         service,
-        GlobalCommand::LpmCommand(lpm::GlobalCommand::new(port_id, lpm::CommandData::GetConnectorStatus)),
+        get_connector_status_command(port_id),
         true,
-        *GlobalCci::default()
-            .set_cmd_complete(true)
-            .set_connector_change(GlobalPortId(port_id.0 + 1)),
+        GlobalCci {
+            cmd_complete: true,
+            connector_change: GlobalPortId(port_id.0 + 1),
+            ..Default::default()
+        },
         Ok(Some(UcsiResponseData::Lpm(disconnected_response))),
     )
     .await;
 
     // Acknowledge the connector change.
     info!("Acknowledging CCI for port {}", port_id.0);
+    ack_command_and_connector_change(service).await;
+}
+
+fn get_connector_status_command(port_id: GlobalPortId) -> GlobalCommand {
+    GlobalCommand::LpmCommand(lpm::GlobalCommand::new(lpm::CommandData::GetConnectorStatus(
+        lpm::get_connector_status::Args {
+            connector_number: port_id,
+        },
+    )))
+}
+
+async fn ack_command_and_connector_change(service: &TypeCServiceMutexType<'_, '_>) {
     execute_and_assert(
         service,
         GlobalCommand::PpmCommand(ppm::Command::AckCcCi(ppm::ack_cc_ci::Args {
-            ack: *Ack::default().set_command_complete(true).set_connector_change(true),
+            ack: Ack {
+                command_complete: true,
+                connector_change: true,
+            },
         })),
         true,
-        *GlobalCci::default().set_ack_command(true),
+        GlobalCci {
+            ack_command: true,
+            ..Default::default()
+        },
         Ok(None),
     )
     .await;
+}
+
+fn port_capability() -> UcsiConnectorCapability {
+    UcsiConnectorCapability {
+        operation_mode: OperationModeFlags {
+            drp: true,
+            usb2: true,
+            usb3: true,
+            ..Default::default()
+        },
+        consumer: true,
+        provider: true,
+        swap_to_dfp: true,
+        swap_to_snk: true,
+        swap_to_src: true,
+        ..Default::default()
+    }
 }
 
 struct TestUcsi;
@@ -270,16 +299,21 @@ impl Test for TestUcsi {
             GlobalCommand::PpmCommand(ppm::Command::PpmReset),
             // OPM is expected to poll for the reset complete flag.
             false,
-            *GlobalCci::default().set_reset_complete(true),
+            GlobalCci {
+                reset_complete: true,
+                ..Default::default()
+            },
             Ok(None),
         )
         .await;
 
         // Enable notifications.
         info!("Enabling notifications");
-        let mut notifications = NotificationEnable::default();
-        notifications.set_cmd_complete(true);
-        notifications.set_connect_change(true);
+        let notifications = NotificationEnable {
+            cmd_complete: true,
+            connect_change: true,
+            ..Default::default()
+        };
         execute_and_assert(
             service,
             GlobalCommand::PpmCommand(ppm::Command::SetNotificationEnable(
@@ -288,7 +322,10 @@ impl Test for TestUcsi {
                 },
             )),
             true,
-            *GlobalCci::default().set_cmd_complete(true),
+            GlobalCci {
+                cmd_complete: true,
+                ..Default::default()
+            },
             Ok(None),
         )
         .await;
@@ -297,10 +334,16 @@ impl Test for TestUcsi {
         execute_and_assert(
             service,
             GlobalCommand::PpmCommand(ppm::Command::AckCcCi(ppm::ack_cc_ci::Args {
-                ack: *Ack::default().set_command_complete(true),
+                ack: Ack {
+                    command_complete: true,
+                    ..Default::default()
+                },
             })),
             true,
-            *GlobalCci::default().set_ack_command(true),
+            GlobalCci {
+                ack_command: true,
+                ..Default::default()
+            },
             Ok(None),
         )
         .await;
@@ -323,20 +366,7 @@ async fn ucsi() {
                 bcd_battery_charging_spec: 0x0120,
                 ..Default::default()
             },
-            ucsi_port_capabilities: Some(
-                *UcsiConnectorCapability::default()
-                    .set_operation_mode(
-                        *OperationModeFlags::default()
-                            .set_drp(true)
-                            .set_usb2(true)
-                            .set_usb3(true),
-                    )
-                    .set_consumer(true)
-                    .set_provider(true)
-                    .set_swap_to_dfp(true)
-                    .set_swap_to_snk(true)
-                    .set_swap_to_src(true),
-            ),
+            ucsi_port_capabilities: Some(port_capability()),
             ..Default::default()
         },
         Default::default(),

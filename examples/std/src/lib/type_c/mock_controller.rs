@@ -320,9 +320,12 @@ impl tcpm_interface::controller::type_c::StateMachine for Controller<'_> {
 
 impl tcpm_interface::ucsi::Lpm for Controller<'_> {
     async fn execute_lpm_command(&mut self, command: lpm::LocalCommand) -> Result<Option<lpm::ResponseData>, PdError> {
-        debug!("Execute UCSI command for port {:?}: {command:?}", command.port());
+        debug!(
+            "Execute UCSI command for port {:?}: {command:?}",
+            command.connector_number()
+        );
         match command.operation() {
-            lpm::CommandData::GetConnectorStatus => Ok(Some(lpm::ResponseData::GetConnectorStatus(
+            lpm::CommandData::GetConnectorStatus(_) => Ok(Some(lpm::ResponseData::GetConnectorStatus(
                 lpm::get_connector_status::ResponseData::default(),
             ))),
             _ => Err(PdError::UnrecognizedCommand),
