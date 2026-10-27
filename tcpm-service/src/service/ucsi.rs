@@ -1,5 +1,6 @@
 use embedded_services::sync::Lockable;
 use embedded_services::warn;
+use embedded_usb_pd::ucsi::ConnectorNumber as _;
 use embedded_usb_pd::ucsi::MapPort as _;
 use embedded_usb_pd::ucsi::v1_2::cci::{Cci, GlobalCci};
 use embedded_usb_pd::ucsi::v1_2::lpm::get_connector_status::{BatteryChargingCapabilityStatus, ConnectorStatusChange};
@@ -75,6 +76,7 @@ impl<'port, Reg: Registration<'port>> Service<'port, Reg> {
                 Ok(None)
             }
             ppm::Command::GetCapability => Ok(Some(self.process_get_capabilities())),
+            // TODO(https://github.com/OpenDevicePartnership/embedded-services/issues/977): Implement `GET_ERROR_STATUS` PPM command
             _ => Ok(None), // Other commands are currently no-ops
         }
     }
@@ -206,7 +208,7 @@ impl<'port, Reg: Registration<'port>> Service<'port, Reg> {
                 error!("Unexpected end of state machine processing");
                 return UcsiResponse {
                     notify_opm: true,
-                    cci: Cci::new_error(),
+                    cci: Cci::new_command_error(),
                     data: Err(PdError::InvalidMode),
                 };
             };
@@ -217,7 +219,7 @@ impl<'port, Reg: Registration<'port>> Service<'port, Reg> {
                     error!("PPM state machine transition failed: {:#?}", e);
                     return UcsiResponse {
                         notify_opm: true,
-                        cci: Cci::new_error(),
+                        cci: Cci::new_command_error(),
                         data: Err(PdError::Failed),
                     };
                 }

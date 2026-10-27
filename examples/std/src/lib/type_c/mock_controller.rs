@@ -10,6 +10,7 @@ use embedded_usb_pd::{PowerRole, type_c::Current};
 use embedded_usb_pd::{type_c::ConnectionState, ucsi::v1_2::lpm};
 use log::{debug, info};
 
+use embedded_usb_pd::ucsi::ConnectorNumber;
 use power_policy_interface::capability::PowerCapability;
 use tcpm_interface::control::dp::{DpConfig, DpPinConfig, DpStatus};
 use tcpm_interface::control::pd::{

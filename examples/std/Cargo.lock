@@ -623,7 +623,7 @@ dependencies = [
 [[package]]
 name = "embedded-usb-pd"
 version = "0.1.0"
-source = "git+https://github.com/OpenDevicePartnership/embedded-usb-pd#87a012b36fec7257d915a9896b5633f3aa070d79"
+source = "git+https://github.com/OpenDevicePartnership/embedded-usb-pd#a9088fc8549068c033cb4587b604b2573682dbf1"
 dependencies = [
  "bitfield 0.19.4",
  "bytemuck",
