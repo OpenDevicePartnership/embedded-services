@@ -161,15 +161,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "bincode"
-version = "2.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "36eaf5d7b090263e8150820482d5d93cd964a81e4019913c972f4edcc6edb740"
-dependencies = [
- "unty",
-]
-
-[[package]]
 name = "bit-register"
 version = "0.1.0"
 source = "git+https://github.com/OpenDevicePartnership/odp-utilities?tag=v0.1.0#583015c08ad9855f310bdb25d5cf9abff77b5e08"
@@ -260,6 +251,20 @@ name = "bytemuck"
 version = "1.25.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c8efb64bd706a16a1bdde310ae86b351e4d21550d98d056f22f8a7f7a2183fec"
+dependencies = [
+ "bytemuck_derive",
+]
+
+[[package]]
+name = "bytemuck_derive"
+version = "1.10.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f9abbd1bc6865053c427f7198e6af43bfdedc55ab791faed4fbd361d789575ff"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
+]
 
 [[package]]
 name = "byteorder"
@@ -818,12 +823,13 @@ dependencies = [
 [[package]]
 name = "embedded-usb-pd"
 version = "0.1.0"
-source = "git+https://github.com/OpenDevicePartnership/embedded-usb-pd#071f163395e3eaea3094b817e3d943ab7265be3d"
+source = "git+https://github.com/OpenDevicePartnership/embedded-usb-pd#a9088fc8549068c033cb4587b604b2573682dbf1"
 dependencies = [
- "bincode",
  "bitfield 0.19.4",
+ "bytemuck",
  "defmt 0.3.100",
  "embedded-hal-async",
+ "pack1",
 ]
 
 [[package]]
@@ -1381,6 +1387,15 @@ name = "once_cell_polyfill"
 version = "1.70.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
+
+[[package]]
+name = "pack1"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e3b7bb0ecf2e447b1f20ee94ee79ef6eed1e9d4b3c36ce1903b9dea3bf205523"
+dependencies = [
+ "bytemuck",
+]
 
 [[package]]
 name = "partition-manager"
@@ -2229,12 +2244,6 @@ name = "unicode-ident"
 version = "1.0.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e6e4313cd5fcd3dad5cafa179702e2b244f760991f45397d14d4ebf38247da75"
-
-[[package]]
-name = "unty"
-version = "0.0.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6d49784317cd0d1ee7ec5c716dd598ec5b4483ea832a2dced265471cc0f690ae"
 
 [[package]]
 name = "usb-device"

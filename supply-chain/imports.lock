@@ -151,6 +151,16 @@ criteria = "safe-to-deploy"
 version = "0.13.2"
 aggregated-from = "https://raw.githubusercontent.com/OpenDevicePartnership/mcxa-pac/refs/heads/main/supply-chain/audits.toml"
 
+[[audits.OpenDevicePartnership.audits.bytemuck_derive]]
+who = "Robert Zieba <robertzieba@microsoft.com>"
+criteria = "safe-to-deploy"
+version = "1.10.2"
+notes = "Changes support more types of structs and enums, no unsafe changes to the generated code."
+aggregated-from = [
+    "https://raw.githubusercontent.com/OpenDevicePartnership/tps6699x/refs/heads/main/supply-chain/audits.toml",
+    "https://raw.githubusercontent.com/OpenDevicePartnership/embedded-usb-pd/refs/heads/main/supply-chain/audits.toml",
+]
+
 [[audits.OpenDevicePartnership.audits.cortex-m]]
 who = "Felipe Balbi <felipe.balbi@microsoft.com>"
 criteria = "safe-to-deploy"
@@ -231,6 +241,16 @@ who = "Jerry Xie <jerryxie@microsoft.com>"
 criteria = "safe-to-deploy"
 delta = "0.2.1 -> 0.2.2"
 aggregated-from = "https://raw.githubusercontent.com/OpenDevicePartnership/embassy-imxrt/refs/heads/main/supply-chain/audits.toml"
+
+[[audits.OpenDevicePartnership.audits.pack1]]
+who = "Robert Zieba <robertzieba@microsoft.com>"
+criteria = "safe-to-deploy"
+version = "1.1.0"
+notes = "No unsafe code, only wrapper types around byte arrays, endianness conversion are handled by the built-in `from_*_bytes` functions."
+aggregated-from = [
+    "https://raw.githubusercontent.com/OpenDevicePartnership/tps6699x/refs/heads/main/supply-chain/audits.toml",
+    "https://raw.githubusercontent.com/OpenDevicePartnership/embedded-usb-pd/refs/heads/main/supply-chain/audits.toml",
+]
 
 [[audits.OpenDevicePartnership.audits.proc-macro-error-attr2]]
 who = "Felipe Balbi <felipe.balbi@microsoft.com>"
@@ -392,24 +412,6 @@ who = "Alex Crichton <alex@alexcrichton.com>"
 criteria = "safe-to-deploy"
 delta = "0.4.1 -> 0.5.0"
 notes = "Minor changes for a `no_std` upgrade but otherwise everything looks as expected."
-
-[[audits.bytecode-alliance.audits.itertools]]
-who = "Nick Fitzgerald <fitzgen@gmail.com>"
-criteria = "safe-to-deploy"
-delta = "0.10.5 -> 0.12.1"
-notes = """
-Minimal `unsafe` usage. Few blocks that existed looked reasonable. Does what it
-says on the tin: lots of iterators.
-"""
-
-[[audits.bytecode-alliance.audits.itertools]]
-who = "Alex Crichton <alex@alexcrichton.com>"
-criteria = "safe-to-deploy"
-delta = "0.12.1 -> 0.14.0"
-notes = """
-Lots of new iterators and shuffling some things around. Some new unsafe code but
-it's well-documented and well-tested. Nothing suspicious.
-"""
 
 [[audits.bytecode-alliance.audits.matchers]]
 who = "Pat Hickey <phickey@fastly.com>"
