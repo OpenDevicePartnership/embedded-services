@@ -4,6 +4,7 @@ mod acpi_timestamp;
 pub use acpi_timestamp::{AcpiDaylightSavingsTimeStatus, AcpiTimeZone, AcpiTimeZoneOffset, AcpiTimestamp};
 
 use bitfield::bitfield;
+use embassy_sync::watch::DynReceiver;
 use embedded_mcu_hal::time::DatetimeClockError;
 
 /// The number of seconds before a timer will expire.
@@ -130,4 +131,14 @@ pub trait TimeAlarmService {
 
     /// Query the expiry time for the given timer.  Analogous to ACPI TAD's _TIV method.
     fn get_timer_value(&self, timer_id: AcpiTimerId) -> Result<AlarmTimerSeconds, DatetimeClockError>;
+
+    /// Selects the active power source synchronously, preserving every transition.
+    /// Boards with source information should call this before running the service.
+    fn set_power_source(&self, power_source: AcpiTimerId);
+
+    /// Returns a receiver for the wake-request level, which is true while either timer's
+    /// triggered-wake latch is set. Each receiver observes level changes independently;
+    /// returns `None` once all receivers are allocated. Receiving a level neither clears
+    /// wake status nor acknowledges a host resume.
+    fn wake_requested_receiver(&self) -> Option<DynReceiver<'_, bool>>;
 }

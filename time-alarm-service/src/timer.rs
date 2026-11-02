@@ -6,6 +6,9 @@ use embedded_mcu_hal::nvram::NvramStorage;
 use embedded_mcu_hal::time::{Datetime, DatetimeClockError};
 use embedded_services::{GlobalRawMutex, error};
 
+#[cfg(test)]
+mod tests;
+
 /// Represents where in the timer lifecycle the current timer is
 #[derive(Copy, Clone, Debug, PartialEq)]
 enum WakeState {
@@ -274,7 +277,7 @@ impl<'hw> Timer<'hw> {
         });
     }
 
-    pub(crate) async fn wait_until_wake(&self, clock_state: &Mutex<GlobalRawMutex, RefCell<ClockState<'hw>>>) {
+    pub(crate) async fn wait_for_expiry(&self) {
         loop {
             let mut wait_duration: Option<u32> = self.timer_signal.wait().await;
             'waiting_for_timer: loop {
@@ -286,11 +289,7 @@ impl<'hw> Timer<'hw> {
                         )
                         .await
                         {
-                            Either::First(()) => {
-                                if self.process_expired_timer(clock_state) {
-                                    return;
-                                }
-                            }
+                            Either::First(()) => return,
                             Either::Second(new_wait_duration) => {
                                 wait_duration = new_wait_duration;
                             }
@@ -307,8 +306,12 @@ impl<'hw> Timer<'hw> {
 
     /// Handles state changes for when the timer expires (figuring out what to do based on the current power source, etc).
     /// Returns true if the timer's expiry indicates that a wake event should be signaled to the host.
-    fn process_expired_timer(&self, clock_state: &Mutex<GlobalRawMutex, RefCell<ClockState<'hw>>>) -> bool {
+    pub(crate) fn process_expired_timer(&self, clock_state: &Mutex<GlobalRawMutex, RefCell<ClockState<'hw>>>) -> bool {
         self.timer_state.lock(|timer_state| {
+            // A pending command supersedes the deadline that just completed.
+            if self.timer_signal.signaled() {
+                return false;
+            }
             let mut timer_state = timer_state.borrow_mut();
 
             match timer_state.wake_state {
