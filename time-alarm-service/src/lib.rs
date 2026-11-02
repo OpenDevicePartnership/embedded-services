@@ -2,7 +2,7 @@
 
 use core::cell::RefCell;
 use embassy_sync::blocking_mutex::Mutex;
-use embassy_sync::signal::Signal;
+use embassy_sync::watch::{DynReceiver, Watch};
 use embedded_mcu_hal::nvram::NvramStorage;
 use embedded_mcu_hal::time::{Datetime, DatetimeClock, DatetimeClockError};
 use embedded_services::GlobalRawMutex;
@@ -106,10 +106,12 @@ impl<'hw> Timers<'hw> {
 
 /// The main service implementation.  Users will interact with this via the Service struct, which is a thin wrapper around this that allows
 /// the client to provide storage for the service.
+const WAKE_REQUESTED_RECEIVERS: usize = 4;
+
 struct ServiceInner<'hw> {
     clock_state: Mutex<GlobalRawMutex, RefCell<ClockState<'hw>>>,
 
-    wake_signal: Signal<GlobalRawMutex, bool>,
+    wake_requested: Watch<GlobalRawMutex, bool, WAKE_REQUESTED_RECEIVERS>,
 
     timers: Timers<'hw>,
     // Keep both timers' updates and publication of their combined wake level atomic.
@@ -127,14 +129,12 @@ impl<'hw> ServiceInner<'hw> {
         dc_expiration_storage: &'hw mut dyn NvramStorage<'hw, u32>,
         dc_policy_storage: &'hw mut dyn NvramStorage<'hw, u32>,
     ) -> Self {
-        let wake_signal = Signal::new();
-        wake_signal.signal(false);
         Self {
             clock_state: Mutex::new(RefCell::new(ClockState {
                 datetime_clock: backing_clock,
                 tz_data: TimeZoneData::new(tz_storage),
             })),
-            wake_signal,
+            wake_requested: Watch::new_with(false),
             timers: Timers::new(
                 ac_expiration_storage,
                 ac_policy_storage,
@@ -197,7 +197,7 @@ impl<'hw> ServiceInner<'hw> {
     fn clear_wake_status(&self, timer_id: AcpiTimerId) {
         self.timer_update_lock.lock(|_| {
             self.timers.get_timer(timer_id).clear_wake_status();
-            self.publish_wake_signal();
+            self.publish_wake_requested();
         });
     }
 
@@ -238,7 +238,7 @@ impl<'hw> ServiceInner<'hw> {
                 .timers
                 .get_timer(timer_id)
                 .set_expiration_time(&self.clock_state, new_expiration_time);
-            self.publish_wake_signal();
+            self.publish_wake_requested();
             result
         })
     }
@@ -274,11 +274,14 @@ impl<'hw> ServiceInner<'hw> {
     }
 
     // Called with timer_update_lock held, after releasing individual TimerState borrows.
-    fn publish_wake_signal(&self) {
-        self.wake_signal.signal(
-            self.timers.ac_timer.get_wake_status().timer_triggered_wake()
-                || self.timers.dc_timer.get_wake_status().timer_triggered_wake(),
-        );
+    fn publish_wake_requested(&self) {
+        let requested = self.timers.ac_timer.get_wake_status().timer_triggered_wake()
+            || self.timers.dc_timer.get_wake_status().timer_triggered_wake();
+        self.wake_requested.sender().send_if_modified(|level| {
+            let changed = *level != Some(requested);
+            *level = Some(requested);
+            changed
+        });
     }
 
     async fn handle_timer(&'hw self, timer_id: AcpiTimerId) -> ! {
@@ -296,7 +299,7 @@ impl<'hw> ServiceInner<'hw> {
                                 e
                             );
                         });
-                    self.publish_wake_signal();
+                    self.publish_wake_requested();
                     info!("[Time/Alarm] Timer {:?} requested a wake", timer_id);
                 }
             });
@@ -382,6 +385,14 @@ impl<'hw> TimeAlarmService for Service<'hw> {
     fn get_timer_value(&self, timer_id: AcpiTimerId) -> Result<AlarmTimerSeconds, DatetimeClockError> {
         self.inner.get_timer_value(timer_id)
     }
+
+    fn set_power_source(&self, power_source: AcpiTimerId) {
+        self.inner.set_power_source(power_source);
+    }
+
+    fn wake_requested_receiver(&self) -> Option<DynReceiver<'_, bool>> {
+        self.inner.wake_requested.dyn_receiver()
+    }
 }
 
 impl<'hw> odp_service_common::runnable_service::Service<'hw> for Service<'hw> {
@@ -390,21 +401,8 @@ impl<'hw> odp_service_common::runnable_service::Service<'hw> for Service<'hw> {
 }
 
 impl<'hw> Service<'hw> {
-    /// Selects the active power source synchronously, preserving every transition.
-    /// Boards with source information should call this before running the runner.
-    pub fn set_power_source(&self, power_source: AcpiTimerId) {
-        self.inner.set_power_source(power_source);
-    }
-
-    /// Waits for the latest wake-request level, initially false, for one board consumer.
-    /// The level is the OR of both triggered-wake latches; pending updates coalesce.
-    /// Consuming a level neither clears status nor acknowledges a physical host resume.
-    pub async fn wait_for_wake_signal(&self) -> bool {
-        self.inner.wake_signal.wait().await
-    }
-
     /// Initializes an instance of the time-alarm service.
-    /// AC is initially active; use [`Self::set_power_source`] to select another source.
+    /// AC is initially active; use [`TimeAlarmService::set_power_source`] to select another source.
     pub async fn new(
         service_storage: &'hw mut Resources<'hw>,
         backing_clock: &'hw mut dyn DatetimeClock,

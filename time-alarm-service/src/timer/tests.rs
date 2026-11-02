@@ -47,10 +47,6 @@ fn poll_runner(mut runner: Pin<&mut impl Future>) {
     assert!(poll_once(runner).is_pending());
 }
 
-fn wake_level(service: Service<'_>) -> Poll<bool> {
-    poll_once(pin!(service.wait_for_wake_signal()))
-}
-
 fn advance_clock(service: Service<'_>, seconds: u64) {
     let mut timestamp = service.get_real_time().unwrap();
     timestamp.datetime = Datetime::from_unix_timestamp(timestamp.datetime.unix_timestamp() + seconds);
@@ -72,26 +68,33 @@ fn latch_both(service: Service<'_>, mut runner: Pin<&mut impl Future>) {
     }
 }
 
+/// Boards drive the wake line from startup, so the level must start deasserted with AC active;
+/// every receiver observes each level change.
 #[test]
 fn initial_level_is_false_and_default_source_is_ac() {
     with_service(|service, runner| {
-        assert_eq!(wake_level(service), Poll::Ready(false));
-        assert_eq!(wake_level(service), Poll::Pending);
+        let mut wake = service.wake_requested_receiver().unwrap();
+        let mut other = service.wake_requested_receiver().unwrap();
+        assert_eq!(wake.try_get(), Some(false));
+        assert_eq!(wake.try_changed(), None);
         service
             .set_timer_value(AcpiTimerId::AcPower, AlarmTimerSeconds(0))
             .unwrap();
         let mut runner = pin!(runner.run());
         poll_runner(runner.as_mut());
-        assert_eq!(wake_level(service), Poll::Ready(true));
-        assert_eq!(wake_level(service), Poll::Pending);
+        assert_eq!(wake.try_changed(), Some(true));
+        assert_eq!(wake.try_changed(), None);
+        assert_eq!(other.try_changed(), Some(true));
         assert!(service.get_wake_status(AcpiTimerId::AcPower).timer_triggered_wake());
     });
 }
 
+/// A source selected before the runner starts must govern the first expiry.
 #[test]
 fn either_source_can_be_selected_before_running() {
     for source in SOURCES {
         with_service(|service, runner| {
+            let mut wake = service.wake_requested_receiver().unwrap();
             service.set_power_source(source);
             for timer_id in SOURCES {
                 service
@@ -99,10 +102,10 @@ fn either_source_can_be_selected_before_running() {
                     .unwrap();
             }
             service.set_timer_value(source, AlarmTimerSeconds(0)).unwrap();
-            assert_eq!(wake_level(service), Poll::Ready(false));
+            assert_eq!(wake.try_changed(), None);
             let mut runner = pin!(runner.run());
             poll_runner(runner.as_mut());
-            assert_eq!(wake_level(service), Poll::Ready(true));
+            assert_eq!(wake.try_changed(), Some(true));
             let status = service.get_wake_status(source);
             assert!(status.timer_expired());
             assert!(status.timer_triggered_wake());
@@ -117,35 +120,37 @@ fn either_source_can_be_selected_before_running() {
     }
 }
 
+/// An expiry on the inactive source must not request a wake until that source becomes active.
 #[test]
 fn inactive_expiry_waits_for_matching_source() {
     for source in SOURCES {
         with_service(|service, runner| {
+            let mut wake = service.wake_requested_receiver().unwrap();
             service.set_power_source(source.get_other_timer_id());
             service
                 .set_expired_timer_policy(source, AlarmExpiredWakePolicy::INSTANTLY)
                 .unwrap();
             service.set_timer_value(source, AlarmTimerSeconds(0)).unwrap();
-            assert_eq!(wake_level(service), Poll::Ready(false));
             let mut runner = pin!(runner.run());
             poll_runner(runner.as_mut());
             assert!(service.get_wake_status(source).timer_expired());
             assert!(!service.get_wake_status(source).timer_triggered_wake());
-            assert_eq!(wake_level(service), Poll::Pending);
+            assert_eq!(wake.try_changed(), None);
             service.set_power_source(source);
             poll_runner(runner.as_mut());
-            assert_eq!(wake_level(service), Poll::Ready(true));
+            assert_eq!(wake.try_changed(), Some(true));
         });
     }
 }
 
+/// NEVER must orphan an inactive expiry permanently, but not suppress an active-source expiry.
 #[test]
 fn never_orphans_only_an_inactive_expiry() {
     for source in SOURCES {
         with_service(|service, runner| {
+            let mut wake = service.wake_requested_receiver().unwrap();
             service.set_power_source(source.get_other_timer_id());
             service.set_timer_value(source, AlarmTimerSeconds(0)).unwrap();
-            assert_eq!(wake_level(service), Poll::Ready(false));
             let mut runner = pin!(runner.run());
             poll_runner(runner.as_mut());
             assert!(service.get_wake_status(source).timer_expired());
@@ -153,34 +158,35 @@ fn never_orphans_only_an_inactive_expiry() {
             service.set_power_source(source);
             advance_clock(service, 100);
             poll_runner(runner.as_mut());
-            assert_eq!(wake_level(service), Poll::Pending);
+            assert_eq!(wake.try_changed(), None);
             service
                 .set_expired_timer_policy(source, AlarmExpiredWakePolicy::INSTANTLY)
                 .unwrap();
             poll_runner(runner.as_mut());
-            assert_eq!(wake_level(service), Poll::Pending);
+            assert_eq!(wake.try_changed(), None);
 
             service
                 .set_expired_timer_policy(source, AlarmExpiredWakePolicy::NEVER)
                 .unwrap();
             service.set_timer_value(source, AlarmTimerSeconds(0)).unwrap();
             poll_runner(runner.as_mut());
-            assert_eq!(wake_level(service), Poll::Ready(true));
+            assert_eq!(wake.try_changed(), Some(true));
         });
     }
 }
 
+/// Source changes made between runner polls must each pause and resume the policy delay.
 #[test]
 fn policy_delay_preserves_every_unpolled_source_transition() {
     for source in SOURCES {
         with_service(|service, runner| {
+            let mut wake = service.wake_requested_receiver().unwrap();
             let other = source.get_other_timer_id();
             service.set_power_source(other);
             service
                 .set_expired_timer_policy(source, AlarmExpiredWakePolicy(10))
                 .unwrap();
             service.set_timer_value(source, AlarmTimerSeconds(0)).unwrap();
-            assert_eq!(wake_level(service), Poll::Ready(false));
             let mut runner = pin!(runner.run());
             poll_runner(runner.as_mut());
 
@@ -197,25 +203,26 @@ fn policy_delay_preserves_every_unpolled_source_transition() {
             assert_eq!(signal.try_take(), Some(Some(5)));
             signal.signal(Some(5));
             poll_runner(runner.as_mut());
-            assert_eq!(wake_level(service), Poll::Pending);
+            assert_eq!(wake.try_changed(), None);
             assert!(!service.get_wake_status(source).timer_triggered_wake());
 
             advance_clock(service, 5);
             deliver_deadline(service, source, runner.as_mut());
-            assert_eq!(wake_level(service), Poll::Ready(true));
+            assert_eq!(wake.try_changed(), Some(true));
         });
     }
 }
 
+/// A deadline that completed before a source change must not cut short the restarted delay.
 #[test]
 fn stale_expiry_does_not_skip_a_restarted_policy_delay() {
     with_service(|service, runner| {
+        let mut wake = service.wake_requested_receiver().unwrap();
         let source = AcpiTimerId::DcPower;
         service
             .set_expired_timer_policy(source, AlarmExpiredWakePolicy(10))
             .unwrap();
         service.set_timer_value(source, AlarmTimerSeconds(0)).unwrap();
-        assert_eq!(wake_level(service), Poll::Ready(false));
         let mut runner = pin!(runner.run());
         poll_runner(runner.as_mut());
         service.set_power_source(source);
@@ -229,100 +236,110 @@ fn stale_expiry_does_not_skip_a_restarted_policy_delay() {
         assert!(!timer.process_expired_timer(&service.inner.clock_state));
         assert_eq!(timer.timer_signal.try_take(), Some(Some(7)));
         assert!(!service.get_wake_status(source).timer_triggered_wake());
-        assert_eq!(wake_level(service), Poll::Pending);
+        assert_eq!(wake.try_changed(), None);
         advance_clock(service, 7);
         deliver_deadline(service, source, runner.as_mut());
-        assert_eq!(wake_level(service), Poll::Ready(true));
+        assert_eq!(wake.try_changed(), Some(true));
     });
 }
 
+/// The level stays asserted until both latches clear; selecting a source is not an acknowledgment.
 #[test]
 fn both_latches_are_ored_and_source_changes_do_not_acknowledge() {
     for first in SOURCES {
         with_service(|service, runner| {
+            let mut wake = service.wake_requested_receiver().unwrap();
             let mut runner = pin!(runner.run());
             latch_both(service, runner.as_mut());
-            assert_eq!(wake_level(service), Poll::Ready(true));
+            assert_eq!(wake.try_changed(), Some(true));
             for source in SOURCES {
                 service.set_power_source(source);
                 assert!(service.get_wake_status(source).timer_triggered_wake());
             }
-            assert_eq!(wake_level(service), Poll::Pending);
+            assert_eq!(wake.try_changed(), None);
             service.clear_wake_status(first);
-            assert_eq!(wake_level(service), Poll::Ready(true));
+            assert_eq!(wake.try_changed(), None);
             service.clear_wake_status(first.get_other_timer_id());
-            assert_eq!(wake_level(service), Poll::Ready(false));
+            assert_eq!(wake.try_changed(), Some(false));
         });
     }
 }
 
+/// Clearing, or reprogramming per ACPI 6.4 section 9.18.1, resets the latch and must deassert the level.
 #[test]
 fn clear_rearm_reprogram_and_disable_update_the_level() {
     for source in SOURCES {
         with_service(|service, runner| {
+            let mut wake = service.wake_requested_receiver().unwrap();
             service.set_power_source(source);
             let mut runner = pin!(runner.run());
             for _ in 0..2 {
                 service.set_timer_value(source, AlarmTimerSeconds(0)).unwrap();
-                assert_eq!(wake_level(service), Poll::Ready(false));
+                assert_eq!(wake.try_changed(), None);
                 poll_runner(runner.as_mut());
-                assert_eq!(wake_level(service), Poll::Ready(true));
+                assert_eq!(wake.try_changed(), Some(true));
                 service.clear_wake_status(source);
-                assert_eq!(wake_level(service), Poll::Ready(false));
+                assert_eq!(wake.try_changed(), Some(false));
                 assert_eq!(service.get_wake_status(source), Default::default());
             }
             for new_value in [AlarmTimerSeconds(30), AlarmTimerSeconds::DISABLED] {
                 service.set_timer_value(source, AlarmTimerSeconds(0)).unwrap();
                 poll_runner(runner.as_mut());
-                assert_eq!(wake_level(service), Poll::Ready(true));
+                assert_eq!(wake.try_changed(), Some(true));
                 service.set_timer_value(source, new_value).unwrap();
-                assert_eq!(wake_level(service), Poll::Ready(false));
+                assert_eq!(wake.try_changed(), Some(false));
                 assert_eq!(service.get_wake_status(source), Default::default());
                 assert_eq!(service.get_timer_value(source).unwrap(), new_value);
                 poll_runner(runner.as_mut());
-                assert_eq!(wake_level(service), Poll::Pending);
+                assert_eq!(wake.try_changed(), None);
             }
         });
     }
 }
 
+/// Resetting one timer's latch must not deassert a wake still requested by the other timer.
 #[test]
 fn reprogram_and_disable_preserve_the_other_latch() {
     with_service(|service, runner| {
+        let mut wake = service.wake_requested_receiver().unwrap();
         let mut runner = pin!(runner.run());
         latch_both(service, runner.as_mut());
+        assert_eq!(wake.try_changed(), Some(true));
         service
             .set_timer_value(AcpiTimerId::AcPower, AlarmTimerSeconds(30))
             .unwrap();
-        assert_eq!(wake_level(service), Poll::Ready(true));
+        assert_eq!(wake.try_changed(), None);
         service
             .set_timer_value(AcpiTimerId::DcPower, AlarmTimerSeconds::DISABLED)
             .unwrap();
-        assert_eq!(wake_level(service), Poll::Ready(false));
+        assert_eq!(wake.try_changed(), Some(false));
     });
 }
 
+/// A slow consumer sees only the latest level, so it can never act on a stale one.
 #[test]
 fn pending_publications_coalesce_to_the_latest_level() {
     with_service(|service, runner| {
+        let mut wake = service.wake_requested_receiver().unwrap();
         let source = AcpiTimerId::AcPower;
         let mut runner = pin!(runner.run());
         service.set_timer_value(source, AlarmTimerSeconds(0)).unwrap();
         poll_runner(runner.as_mut());
         service.clear_wake_status(source);
-        assert_eq!(wake_level(service), Poll::Ready(false));
-        assert_eq!(wake_level(service), Poll::Pending);
+        assert_eq!(wake.try_changed(), Some(false));
+        assert_eq!(wake.try_changed(), None);
 
         service.set_timer_value(source, AlarmTimerSeconds(0)).unwrap();
         poll_runner(runner.as_mut());
         service.clear_wake_status(source);
         service.set_timer_value(source, AlarmTimerSeconds(0)).unwrap();
         poll_runner(runner.as_mut());
-        assert_eq!(wake_level(service), Poll::Ready(true));
+        assert_eq!(wake.try_changed(), Some(true));
         assert!(service.get_wake_status(source).timer_triggered_wake());
     });
 }
 
+/// Racing clears of both timers must leave the published level consistent with the latches.
 #[test]
 fn concurrent_clears_cannot_leave_a_stale_asserted_level() {
     struct SharedService<'hw>(Service<'hw>);
@@ -337,6 +354,7 @@ fn concurrent_clears_cannot_leave_a_stale_asserted_level() {
     }
 
     with_service(|service, runner| {
+        let mut wake = service.wake_requested_receiver().unwrap();
         let shared = SharedService(service);
         let barrier = Barrier::new(2);
         let mut runner = pin!(runner.run());
@@ -355,7 +373,7 @@ fn concurrent_clears_cannot_leave_a_stale_asserted_level() {
             for source in SOURCES {
                 assert_eq!(service.get_wake_status(source), Default::default());
             }
-            assert_eq!(wake_level(service), Poll::Ready(false));
+            assert_eq!(wake.try_changed(), Some(false));
         }
     });
 }
