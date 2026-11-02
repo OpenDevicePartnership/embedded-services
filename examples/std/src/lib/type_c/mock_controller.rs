@@ -10,6 +10,7 @@ use embedded_usb_pd::{PowerRole, type_c::Current};
 use embedded_usb_pd::{type_c::ConnectionState, ucsi::v1_2::lpm};
 use log::{debug, info};
 
+use embedded_usb_pd::ucsi::ConnectorNumber;
 use power_policy_interface::capability::PowerCapability;
 use tcpm_interface::control::dp::{DpConfig, DpPinConfig, DpStatus};
 use tcpm_interface::control::pd::{
@@ -320,9 +321,12 @@ impl tcpm_interface::controller::type_c::StateMachine for Controller<'_> {
 
 impl tcpm_interface::ucsi::Lpm for Controller<'_> {
     async fn execute_lpm_command(&mut self, command: lpm::LocalCommand) -> Result<Option<lpm::ResponseData>, PdError> {
-        debug!("Execute UCSI command for port {:?}: {command:?}", command.port());
+        debug!(
+            "Execute UCSI command for port {:?}: {command:?}",
+            command.connector_number()
+        );
         match command.operation() {
-            lpm::CommandData::GetConnectorStatus => Ok(Some(lpm::ResponseData::GetConnectorStatus(
+            lpm::CommandData::GetConnectorStatus(_) => Ok(Some(lpm::ResponseData::GetConnectorStatus(
                 lpm::get_connector_status::ResponseData::default(),
             ))),
             _ => Err(PdError::UnrecognizedCommand),

@@ -1,5 +1,7 @@
 use embedded_services::sync::Lockable;
 use embedded_services::warn;
+use embedded_usb_pd::ucsi::ConnectorNumber as _;
+use embedded_usb_pd::ucsi::MapPort as _;
 use embedded_usb_pd::ucsi::v1_2::cci::{Cci, GlobalCci};
 use embedded_usb_pd::ucsi::v1_2::lpm::get_connector_status::{BatteryChargingCapabilityStatus, ConnectorStatusChange};
 use embedded_usb_pd::ucsi::v1_2::ppm::set_notification_enable::NotificationEnable;
@@ -74,6 +76,7 @@ impl<'port, Reg: Registration<'port>> Service<'port, Reg> {
                 Ok(None)
             }
             ppm::Command::GetCapability => Ok(Some(self.process_get_capabilities())),
+            // TODO(https://github.com/OpenDevicePartnership/embedded-services/issues/977): Implement `GET_ERROR_STATUS` PPM command
             _ => Ok(None), // Other commands are currently no-ops
         }
     }
@@ -109,15 +112,16 @@ impl<'port, Reg: Registration<'port>> Service<'port, Reg> {
         command: &ucsi::lpm::GlobalCommand,
     ) -> Result<Option<lpm::ResponseData>, PdError> {
         debug!("Processing LPM command: {:?}", command);
-        let mut port = self.lookup_port(command.port())?.lock().await;
+        let global_port_id = command.connector_number();
+        let mut port = self.lookup_port(global_port_id)?.lock().await;
         let local_port_id = self
             .registration
-            .ucsi_local_port_id(command.port())
+            .ucsi_local_port_id(global_port_id)
             .ok_or(PdError::InvalidPort)?;
-        let local_command = ucsi::lpm::LocalCommand::new(local_port_id, command.operation());
+        let local_command = command.map_port(|_| local_port_id);
 
         match command.operation() {
-            lpm::CommandData::GetConnectorCapability => {
+            lpm::CommandData::GetConnectorCapability(_) => {
                 // Override the capabilities if present in the config
                 if let Some(capabilities) = &self.config.ucsi_port_capabilities {
                     Ok(Some(lpm::ResponseData::GetConnectorCapability(*capabilities)))
@@ -125,7 +129,7 @@ impl<'port, Reg: Registration<'port>> Service<'port, Reg> {
                     port.execute_lpm_command(local_command).await
                 }
             }
-            lpm::CommandData::GetConnectorStatus => {
+            lpm::CommandData::GetConnectorStatus(_) => {
                 let mut response = port.execute_lpm_command(local_command).await;
                 if let Ok(Some(lpm::ResponseData::GetConnectorStatus(lpm::get_connector_status::ResponseData {
                     status_change: ref mut states_change,
@@ -139,8 +143,8 @@ impl<'port, Reg: Registration<'port>> Service<'port, Reg> {
                 {
                     let port_status = port.get_port_status().await?;
                     *battery_charging_status =
-                        self.determine_battery_charging_capability_status(command.port(), &port_status);
-                    states_change.set_battery_charging_status_change(battery_charging_status.is_some());
+                        self.determine_battery_charging_capability_status(global_port_id, &port_status);
+                    states_change.battery_charging_status_change = battery_charging_status.is_some();
                 }
 
                 response
@@ -153,10 +157,10 @@ impl<'port, Reg: Registration<'port>> Service<'port, Reg> {
     fn set_cci_connector_change(&self, cci: &mut GlobalCci) {
         if let Some(current_port) = self.ucsi.pending_ports.front() {
             // UCSI connector numbers are 1-based
-            cci.set_connector_change(GlobalPortId(current_port.0 + 1));
+            cci.connector_change = GlobalPortId(current_port.0 + 1);
         } else {
             // 0 is used to indicate no pending connector changes
-            cci.set_connector_change(GlobalPortId(0));
+            cci.connector_change = GlobalPortId(0);
         }
     }
 
@@ -204,7 +208,7 @@ impl<'port, Reg: Registration<'port>> Service<'port, Reg> {
                 error!("Unexpected end of state machine processing");
                 return UcsiResponse {
                     notify_opm: true,
-                    cci: Cci::new_error(),
+                    cci: Cci::new_command_error(),
                     data: Err(PdError::InvalidMode),
                 };
             };
@@ -215,7 +219,7 @@ impl<'port, Reg: Registration<'port>> Service<'port, Reg> {
                     error!("PPM state machine transition failed: {:#?}", e);
                     return UcsiResponse {
                         notify_opm: true,
-                        cci: Cci::new_error(),
+                        cci: Cci::new_command_error(),
                         data: Err(PdError::Failed),
                     };
                 }
@@ -243,19 +247,19 @@ impl<'port, Reg: Registration<'port>> Service<'port, Reg> {
                         // Don't return yet, need to inform state machine that command is complete
                     }
                     PpmOutput::OpmNotifyCommandComplete => {
-                        response.notify_opm = self.ucsi.notifications_enabled.cmd_complete();
-                        response.cci.set_cmd_complete(true);
-                        response.cci.set_error(response.data.is_err());
+                        response.notify_opm = self.ucsi.notifications_enabled.cmd_complete;
+                        response.cci.cmd_complete = true;
+                        response.cci.error = response.data.is_err();
                         self.set_cci_connector_change(&mut response.cci);
                         return response;
                     }
                     PpmOutput::AckComplete(ack) => {
-                        response.notify_opm = self.ucsi.notifications_enabled.cmd_complete();
-                        if ack.command_complete() {
-                            response.cci.set_ack_command(true);
+                        response.notify_opm = self.ucsi.notifications_enabled.cmd_complete;
+                        if ack.command_complete {
+                            response.cci.ack_command = true;
                         }
 
-                        if ack.connector_change() {
+                        if ack.connector_change {
                             self.ack_connector_change(&mut response.cci).await;
                         }
 
@@ -274,7 +278,7 @@ impl<'port, Reg: Registration<'port>> Service<'port, Reg> {
                     PpmOutput::OpmNotifyBusy => {
                         // Notify if notifications are enabled in general
                         response.notify_opm = !self.ucsi.notifications_enabled.is_empty();
-                        response.cci.set_busy(true);
+                        response.cci.busy = true;
                         self.set_cci_connector_change(&mut response.cci);
                         return response;
                     }
@@ -299,25 +303,26 @@ impl<'port, Reg: Registration<'port>> Service<'port, Reg> {
         port_event: PortStatusEventBitfield,
         port_status: &PortStatus,
     ) {
-        let mut ucsi_event = ConnectorStatusChange::default();
-
-        ucsi_event.set_connect_change(port_event.plug_inserted_or_removed());
-        ucsi_event.set_power_direction_changed(port_event.power_swap_completed());
-        ucsi_event.set_pd_reset_complete(port_event.pd_hard_reset());
+        let mut ucsi_event = ConnectorStatusChange {
+            connect_change: port_event.plug_inserted_or_removed(),
+            power_direction_changed: port_event.power_swap_completed(),
+            pd_reset_complete: port_event.pd_hard_reset(),
+            ..Default::default()
+        };
 
         if port_event.data_swap_completed() || port_event.alt_mode_entered() {
-            ucsi_event.set_connector_partner_changed(true);
+            ucsi_event.connector_partner_changed = true;
         }
 
         if port_event.new_power_contract_as_consumer()
             || port_event.new_power_contract_as_provider()
             || port_event.sink_ready()
         {
-            ucsi_event.set_negotiated_power_level_change(true);
-            ucsi_event.set_power_op_mode_change(true);
-            ucsi_event.set_external_supply_change(true);
-            ucsi_event.set_power_direction_changed(true);
-            ucsi_event.set_battery_charging_status_change(true);
+            ucsi_event.negotiated_power_level_change = true;
+            ucsi_event.power_op_mode_change = true;
+            ucsi_event.external_supply_change = true;
+            ucsi_event.power_direction_changed = true;
+            ucsi_event.battery_charging_status_change = true;
 
             // Power negotiation completed, battery charging capability status is now valid
             if self.ucsi.valid_battery_charging_capability.insert(port_id).is_err() {
