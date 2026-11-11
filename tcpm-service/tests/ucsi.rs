@@ -176,7 +176,7 @@ async fn test_lpm(
     {
         let mut mock = port.mock.lock().await;
         mock.next_result_execute_lpm_command
-            .push_back(Ok(Some(connected_response)));
+            .push_back(Ok(Some(connected_response.clone())));
         // Filling in the battery charging capability re-reads the port status.
         mock.next_result_get_port_status.push_back(Ok(PortStatus {
             connection_state: Some(ConnectionState::Attached),
@@ -217,7 +217,7 @@ async fn test_lpm(
         .lock()
         .await
         .next_result_execute_lpm_command
-        .push_back(Ok(Some(disconnected_response)));
+        .push_back(Ok(Some(disconnected_response.clone())));
     execute_and_assert(
         service,
         get_connector_status_command(port_id),
