@@ -128,6 +128,7 @@ async fn test_lpm(
         true,
         GlobalCci {
             cmd_complete: true,
+            data_len: 2,
             ..Default::default()
         },
         Ok(Some(UcsiResponseData::Lpm(expected_capability))),
@@ -190,6 +191,7 @@ async fn test_lpm(
         true,
         GlobalCci {
             cmd_complete: true,
+            data_len: 11,
             // UCSI connector numbers are 1-based.
             connector_change: GlobalPortId(port_id.0 + 1),
             ..Default::default()
@@ -224,6 +226,7 @@ async fn test_lpm(
         true,
         GlobalCci {
             cmd_complete: true,
+            data_len: 11,
             connector_change: GlobalPortId(port_id.0 + 1),
             ..Default::default()
         },
