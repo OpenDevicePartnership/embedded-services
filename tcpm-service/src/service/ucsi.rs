@@ -1,5 +1,6 @@
 use embedded_services::sync::Lockable;
 use embedded_services::warn;
+use embedded_usb_pd::LocalPortId;
 use embedded_usb_pd::ucsi::ConnectorNumber as _;
 use embedded_usb_pd::ucsi::MapPort as _;
 use embedded_usb_pd::ucsi::v1_2::cci::{Cci, GlobalCci};
@@ -17,7 +18,7 @@ use super::*;
 const MAX_SUPPORTED_PORTS: usize = 4;
 
 /// UCSI command response
-#[derive(Copy, Clone, Debug)]
+#[derive(Clone, Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct UcsiResponse {
     /// Notify the OPM, the function call
@@ -26,6 +27,23 @@ pub struct UcsiResponse {
     pub cci: GlobalCci,
     /// UCSI response data
     pub data: Result<Option<ucsi::ResponseData>, PdError>,
+}
+
+/// LPM command response
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct LpmResponse {
+    pub data: Option<lpm::ResponseData>,
+    pub data_len_override: Option<usize>,
+}
+
+impl LpmResponse {
+    pub fn from_data(data: Option<lpm::ResponseData>) -> Self {
+        Self {
+            data,
+            data_len_override: None,
+        }
+    }
 }
 
 /// UCSI state
@@ -107,10 +125,42 @@ impl<'port, Reg: Registration<'port>> Service<'port, Reg> {
         }
     }
 
-    async fn process_lpm_command(
+    async fn get_alternate_modes_count(
         &mut self,
-        command: &ucsi::lpm::GlobalCommand,
-    ) -> Result<Option<lpm::ResponseData>, PdError> {
+        local_id: LocalPortId,
+        port: &mut <Reg::Port as Lockable>::Inner,
+    ) -> Result<usize, PdError> {
+        let mut offset = 0;
+        let mut total = 0;
+        loop {
+            let Some(lpm::ResponseData::GetAlternateModes(response)) = port
+                .execute_lpm_command(lpm::Command::new(lpm::CommandData::GetAlternateModes(
+                    lpm::get_alternate_modes::Args {
+                        connector_number: local_id,
+                        recipient: lpm::Recipient::Connector,
+                        mode_offset: offset,
+                        num_modes: 2,
+                    },
+                )))
+                .await?
+            else {
+                error!("({}): Received invalid response for GET_ALTERNATE_MODES", port.name());
+                return Err(PdError::InvalidResponse);
+            };
+
+            total += response.alt_modes.len();
+            offset += response.alt_modes.len() as u8;
+
+            // No more alt modes to fetch
+            if response.alt_modes.len() < lpm::get_alternate_modes::MAX_ALT_MODES {
+                break;
+            }
+        }
+
+        Ok(total)
+    }
+
+    async fn process_lpm_command(&mut self, command: &ucsi::lpm::GlobalCommand) -> Result<LpmResponse, PdError> {
         debug!("Processing LPM command: {:?}", command);
         let global_port_id = command.connector_number();
         let mut port = self.lookup_port(global_port_id)?.lock().await;
@@ -124,9 +174,13 @@ impl<'port, Reg: Registration<'port>> Service<'port, Reg> {
             lpm::CommandData::GetConnectorCapability(_) => {
                 // Override the capabilities if present in the config
                 if let Some(capabilities) = &self.config.ucsi_port_capabilities {
-                    Ok(Some(lpm::ResponseData::GetConnectorCapability(*capabilities)))
+                    Ok(LpmResponse::from_data(Some(lpm::ResponseData::GetConnectorCapability(
+                        *capabilities,
+                    ))))
                 } else {
-                    port.execute_lpm_command(local_command).await
+                    port.execute_lpm_command(local_command)
+                        .await
+                        .map(LpmResponse::from_data)
                 }
             }
             lpm::CommandData::GetConnectorStatus(_) => {
@@ -147,9 +201,24 @@ impl<'port, Reg: Registration<'port>> Service<'port, Reg> {
                     states_change.battery_charging_status_change = battery_charging_status.is_some();
                 }
 
-                response
+                response.map(LpmResponse::from_data)
             }
-            _ => port.execute_lpm_command(local_command).await,
+            lpm::CommandData::GetCamSupported(_) => {
+                let alt_modes_count = self.get_alternate_modes_count(local_port_id, &mut port).await?;
+
+                port.execute_lpm_command(local_command).await.map(|data| LpmResponse {
+                    data,
+                    // Calculation from UCSI spec 4.5.12
+                    // The spec contradicts itself, saying that the PPM shall return floor((Number of Alternate Modes + 7)/8) bytes.
+                    // But then says that data length is ((Number of Alternate Modes Mod 8) + 1). For 7, this would result in 8 bytes,
+                    // but every multiple of 8 would result in 1 byte, which is clearly wrong.
+                    data_len_override: Some(alt_modes_count.div_ceil(8)),
+                })
+            }
+            _ => port
+                .execute_lpm_command(local_command)
+                .await
+                .map(LpmResponse::from_data),
         }
     }
 
@@ -237,10 +306,13 @@ impl<'port, Reg: Registration<'port>> Service<'port, Reg> {
                                     .map(|inner| inner.map(ResponseData::Ppm));
                             }
                             ucsi::GlobalCommand::LpmCommand(lpm_command) => {
-                                response.data = self
-                                    .process_lpm_command(lpm_command)
-                                    .await
-                                    .map(|inner| inner.map(ResponseData::Lpm));
+                                response.data = self.process_lpm_command(lpm_command).await.map(|inner| {
+                                    response.cci.data_len = inner
+                                        .data_len_override
+                                        .unwrap_or_else(|| inner.data.as_ref().map_or(0, lpm::ResponseData::data_len))
+                                        as u8;
+                                    inner.data.map(ResponseData::Lpm)
+                                });
                             }
                         }
 

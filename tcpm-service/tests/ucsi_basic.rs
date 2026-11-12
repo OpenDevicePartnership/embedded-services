@@ -128,6 +128,7 @@ async fn test_lpm(
         true,
         GlobalCci {
             cmd_complete: true,
+            data_len: 2,
             ..Default::default()
         },
         Ok(Some(UcsiResponseData::Lpm(expected_capability))),
@@ -176,7 +177,7 @@ async fn test_lpm(
     {
         let mut mock = port.mock.lock().await;
         mock.next_result_execute_lpm_command
-            .push_back(Ok(Some(connected_response)));
+            .push_back(Ok(Some(connected_response.clone())));
         // Filling in the battery charging capability re-reads the port status.
         mock.next_result_get_port_status.push_back(Ok(PortStatus {
             connection_state: Some(ConnectionState::Attached),
@@ -190,6 +191,7 @@ async fn test_lpm(
         true,
         GlobalCci {
             cmd_complete: true,
+            data_len: 11,
             // UCSI connector numbers are 1-based.
             connector_change: GlobalPortId(port_id.0 + 1),
             ..Default::default()
@@ -217,13 +219,14 @@ async fn test_lpm(
         .lock()
         .await
         .next_result_execute_lpm_command
-        .push_back(Ok(Some(disconnected_response)));
+        .push_back(Ok(Some(disconnected_response.clone())));
     execute_and_assert(
         service,
         get_connector_status_command(port_id),
         true,
         GlobalCci {
             cmd_complete: true,
+            data_len: 11,
             connector_change: GlobalPortId(port_id.0 + 1),
             ..Default::default()
         },
