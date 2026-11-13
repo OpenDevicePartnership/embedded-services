@@ -57,12 +57,6 @@ impl<A: AddressMode + Copy, B: I2c<A>> Device<A, B> {
     }
 
     async fn get_hid_descriptor(&self) -> Result<hid::Descriptor, Error<B::Error>> {
-        {
-            let descriptor = self.descriptor.lock().await;
-            if descriptor.is_some() {
-                return Ok(descriptor.unwrap());
-            }
-        }
         let mut bus = self.bus.lock().await;
         let mut borrow = self.buffer.borrow_mut().map_err(Error::Buffer)?;
         let mut reg = [0u8; 2];
