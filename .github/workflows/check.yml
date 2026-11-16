@@ -179,8 +179,8 @@ jobs:
         uses: taiki-e/install-action@grcov
       - name: Generate test coverage report
         run: |
-          grcov . --binary-path ./target/debug/deps -s . --branch --ignore-not-existing --ignore "/home/runner/*" -t html -o ./target/debug/coverage
-          grcov . --binary-path ./target/debug/deps -s . --branch --ignore-not-existing --ignore "/home/runner/*" -t markdown >> $GITHUB_STEP_SUMMARY
+          grcov . --binary-path ./target/debug -s . --branch --ignore-not-existing --ignore "/home/runner/*" -t html -o ./target/debug/coverage
+          grcov . --binary-path ./target/debug -s . --branch --ignore-not-existing --ignore "/home/runner/*" -t markdown >> $GITHUB_STEP_SUMMARY
       - name: Upload test coverage report
         uses: actions/upload-artifact@v4
         with:
