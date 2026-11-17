@@ -297,8 +297,6 @@ impl<'port, Reg: Registration<'port>> Service<'port, Reg> {
             match output {
                 Some(ppm_output) => match ppm_output {
                     PpmOutput::ExecuteCommand(command) => {
-                        // Queue up the next input to complete the command execution flow
-                        next_input = Some(PpmInput::CommandComplete);
                         match command {
                             ucsi::GlobalCommand::PpmCommand(ppm_command) => {
                                 response.data = self
@@ -316,17 +314,24 @@ impl<'port, Reg: Registration<'port>> Service<'port, Reg> {
                             }
                         }
 
+                        // Queue up the next input to complete the command execution flow
+                        if response.data.is_err() {
+                            next_input = Some(PpmInput::CommandError);
+                        } else {
+                            next_input = Some(PpmInput::CommandComplete);
+                        }
+
                         // Don't return yet, need to inform state machine that command is complete
                     }
                     PpmOutput::OpmNotifyCommandComplete => {
                         response.notify_opm = self.ucsi.notifications_enabled.cmd_complete;
                         response.cci.cmd_complete = true;
-                        response.cci.error = false;
                         self.set_cci_connector_change(&mut response.cci);
                         return response;
                     }
                     PpmOutput::OpmNotifyCommandError => {
                         response.notify_opm = self.ucsi.notifications_enabled.cmd_complete;
+                        response.cci.cmd_complete = true;
                         response.cci.error = true;
                         self.set_cci_connector_change(&mut response.cci);
                         return response;

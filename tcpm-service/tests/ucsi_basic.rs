@@ -204,6 +204,26 @@ async fn test_lpm(
     info!("Acknowledging CCI for port {}", port_id.0);
     ack_command_and_connector_change(service).await;
 
+    // GetConnectorStatus returning an error.
+    info!("Testing error for connected port {}", port_id.0);
+    {
+        let mut mock = port.mock.lock().await;
+        mock.next_result_execute_lpm_command
+            .push_back(Err(PdError::IncompatiblePartner));
+    }
+    execute_and_assert(
+        service,
+        get_connector_status_command(port_id),
+        true,
+        GlobalCci {
+            cmd_complete: true,
+            error: true,
+            ..Default::default()
+        },
+        Err(PdError::IncompatiblePartner),
+    )
+    .await;
+
     // Disconnect and verify the UCSI connector-change notification.
     info!("Disconnecting port {}", port_id.0);
     disconnect_port(port).await;
