@@ -99,8 +99,18 @@ impl<A: AddressMode + Copy, B: I2c<A>> Device<A, B> {
         }
     }
 
+    async fn get_cached_hid_descriptor(&self) -> Result<hid::Descriptor, Error<B::Error>> {
+        {
+            let descriptor = self.descriptor.lock().await;
+            if descriptor.is_some() {
+                return Ok(descriptor.unwrap());
+            }
+        }
+        self.get_hid_descriptor().await
+    }
+
     pub async fn read_hid_descriptor(&self) -> Result<SharedRef<'static, u8>, Error<B::Error>> {
-        let desc = self.get_hid_descriptor().await?;
+        let desc = self.get_cached_hid_descriptor().await?;
 
         let mut borrow = self.buffer.borrow_mut().map_err(Error::Buffer)?;
         let buf: &mut [u8] = borrow.borrow_mut();
@@ -148,7 +158,7 @@ impl<A: AddressMode + Copy, B: I2c<A>> Device<A, B> {
 
     pub async fn handle_input_report(&self) -> Result<SharedRef<'static, u8>, Error<B::Error>> {
         info!("Handling input report");
-        let desc = self.get_hid_descriptor().await?;
+        let desc = self.get_cached_hid_descriptor().await?;
 
         let mut borrow = self.buffer.borrow_mut().map_err(Error::Buffer)?;
         let buf: &mut [u8] = borrow.borrow_mut();
@@ -184,7 +194,7 @@ impl<A: AddressMode + Copy, B: I2c<A>> Device<A, B> {
     ) -> Result<Option<Response<'static>>, Error<B::Error>> {
         info!("Handling command");
 
-        let desc = self.get_hid_descriptor().await?;
+        let desc = self.get_cached_hid_descriptor().await?;
         let (command_reg, data_reg) = (desc.w_command_register, desc.w_data_register);
 
         let mut borrow = self.buffer.borrow_mut().map_err(Error::Buffer)?;
