@@ -334,9 +334,7 @@ impl<A: AddressMode + Copy, B: I2c<A>> Device<A, B> {
         }
     }
 
-    pub async fn process_request(&self) -> Result<(), Error<B::Error>> {
-        let req = self.device.wait_request().await;
-
+    async fn handle_request(&self, req: hid::Request<'static>) -> Result<Option<Response<'static>>, Error<B::Error>> {
         let response = match req {
             hid::Request::Descriptor => {
                 let desc = self.read_hid_descriptor().await?;
@@ -357,10 +355,40 @@ impl<A: AddressMode + Copy, B: I2c<A>> Device<A, B> {
             }
         };
 
-        self.device
-            .send_response(response)
-            .await
-            .map_err(|_| Error::Hid(hid::Error::Transport))
+        Ok(response)
+    }
+
+    /// Process one request and report either success or a returned error.
+    ///
+    /// Run this future to completion. Cancelling it does not send a failure
+    /// notification or abort the underlying controller transaction.
+    pub async fn process_request(&self) -> Result<(), Error<B::Error>> {
+        let req = self.device.wait_request().await;
+
+        match self.handle_request(req).await {
+            Ok(response) => self
+                .device
+                .send_response(response)
+                .await
+                .map_err(|_| Error::Hid(hid::Error::Transport)),
+
+            Err(error) => {
+                // HAL/buffer error types are local to this device. Notify the
+                // host with a portable category, retaining the original error
+                // for the device task's logging and recovery policy.
+                let failure = match &error {
+                    Error::Hid(error) => *error,
+                    Error::Bus(_) | Error::Buffer(_) => hid::Error::Transport,
+                };
+
+                self.device
+                    .send_failure(failure)
+                    .await
+                    .map_err(|_| Error::Hid(hid::Error::Transport))?;
+
+                Err(error)
+            }
+        }
     }
 }
 
@@ -383,11 +411,20 @@ mod tests {
     use core::pin::pin;
     use core::task::{Context, Poll, Waker};
 
+    use embassy_futures::select::{Either, select};
     use embassy_futures::{block_on, join::join};
     use embedded_hal::i2c::{ErrorKind, ErrorType};
     use embedded_hal_async::i2c::Operation;
     use embedded_services::comms;
-    use std::{boxed::Box, cell::RefCell, collections::VecDeque, rc::Rc, vec, vec::Vec};
+    use std::{
+        boxed::Box,
+        cell::RefCell,
+        collections::VecDeque,
+        rc::Rc,
+        sync::{Arc, Mutex as StdMutex},
+        vec,
+        vec::Vec,
+    };
 
     use super::*;
     use crate::i2c::{Command as SlaveCommand, Host, HostConfig, I2cSlaveAsync};
@@ -439,7 +476,7 @@ mod tests {
     #[derive(Clone)]
     struct Bus {
         address: u8,
-        transfers: Rc<RefCell<VecDeque<Transfer>>>,
+        transfers: Arc<StdMutex<VecDeque<Transfer>>>,
     }
 
     impl Bus {
@@ -450,13 +487,13 @@ mod tests {
         fn at_address(address: u8, transfers: impl IntoIterator<Item = Transfer>) -> Self {
             Self {
                 address,
-                transfers: Rc::new(RefCell::new(transfers.into_iter().collect())),
+                transfers: Arc::new(StdMutex::new(transfers.into_iter().collect())),
             }
         }
 
         fn assert_finished(&self) {
             assert!(
-                self.transfers.as_ref().borrow().is_empty(),
+                self.transfers.lock().unwrap().is_empty(),
                 "expected I2C transactions were skipped"
             );
         }
@@ -471,8 +508,8 @@ mod tests {
             assert_eq!(address, self.address);
             let transfer = self
                 .transfers
-                .as_ref()
-                .borrow_mut()
+                .lock()
+                .unwrap()
                 .pop_front()
                 .expect("unexpected I2C transaction");
             match (transfer, operations) {
@@ -1062,7 +1099,202 @@ mod tests {
             assert_eq!(responses.len(), response_count);
         }
 
+        // A consumed request must complete with an explicit failure, not leave
+        // Host waiting or disguise the failure as a no-response command.
+        // The script models an upstream transaction being aborted before retry;
+        // it does not establish a physical slave controller's abort behavior.
+        enum Failure {
+            Bus,
+            Malformed,
+            Timeout,
+            TooLarge,
+        }
+
+        for failure in [Failure::Bus, Failure::Malformed, Failure::Timeout, Failure::TooLarge] {
+            let (register, reply) = match failure {
+                Failure::Bus => ([1, 0], Reply::Error(vec![])),
+                Failure::Malformed => {
+                    let mut descriptor = ELAN_DESCRIPTOR;
+                    descriptor[26] = 1;
+
+                    ([1, 0], Reply::Data(descriptor.to_vec()))
+                }
+                Failure::Timeout => ([1, 0], Reply::Pending),
+                Failure::TooLarge => {
+                    let mut descriptor = ELAN_DESCRIPTOR;
+                    descriptor[4] = 0x6a; // 1130 report bytes, 1129 storage bytes.
+
+                    ([2, 0], Reply::Data(descriptor.to_vec()))
+                }
+            };
+
+            downstream.transfers.lock().unwrap().push_back(Transfer::WriteRead {
+                write: vec![1, 0],
+                reply,
+            });
+            upstream.transfers.as_ref().borrow_mut().extend([
+                HostTransfer::Listen(SlaveCommand::Write),
+                HostTransfer::FromHost(register.to_vec()),
+            ]);
+
+            let (host_result, device_result) = block_on(with_timeout(
+                Duration::from_secs(2),
+                join(host.process(), device.process_request()),
+            ))
+            .expect("device failure left the host waiting for completion");
+            let (Err(Error::Hid(host_error)), Err(device_error)) = (host_result, device_result) else {
+                panic!("a failed device request must report failure on both sides");
+            };
+
+            match failure {
+                Failure::Bus => {
+                    assert!(matches!(host_error, hid::Error::Transport));
+                    assert!(matches!(device_error, Error::Bus(ErrorKind::Other)));
+                }
+                Failure::Malformed => {
+                    assert!(matches!(host_error, hid::Error::Serialize));
+                    assert!(matches!(device_error, Error::Hid(hid::Error::Serialize)));
+                }
+                Failure::Timeout => {
+                    assert!(matches!(host_error, hid::Error::Timeout));
+                    assert!(matches!(device_error, Error::Hid(hid::Error::Timeout)));
+                }
+                Failure::TooLarge => {
+                    assert!(matches!(
+                        host_error,
+                        hid::Error::InvalidSize(InvalidSizeError {
+                            expected: 1130,
+                            actual: 1129,
+                        })
+                    ));
+                    assert!(matches!(
+                        device_error,
+                        Error::Hid(hid::Error::InvalidSize(InvalidSizeError {
+                            expected: 1130,
+                            actual: 1129,
+                        }))
+                    ));
+                }
+            }
+
+            assert_eq!(upstream.responses.as_ref().borrow().len(), response_count);
+
+            downstream
+                .transfers
+                .lock()
+                .unwrap()
+                .push_back(descriptor(ELAN_DESCRIPTOR));
+            upstream.transfers.as_ref().borrow_mut().extend([
+                HostTransfer::Listen(SlaveCommand::Write),
+                HostTransfer::FromHost(vec![1, 0]),
+                HostTransfer::Listen(SlaveCommand::Read),
+                HostTransfer::ToHost,
+            ]);
+
+            let (host_result, device_result) = block_on(with_timeout(
+                Duration::from_secs(2),
+                join(host.process(), device.process_request()),
+            ))
+            .expect("the request following a device failure could not complete");
+            host_result.unwrap();
+            device_result.unwrap();
+
+            response_count += 1;
+            let responses = upstream.responses.as_ref().borrow();
+            assert_eq!(responses.len(), response_count);
+            assert_eq!(responses.last().unwrap(), &ELAN_DESCRIPTOR);
+        }
+
         assert!(upstream.transfers.as_ref().borrow().is_empty());
         downstream.assert_finished();
+
+        // Use the real allocation in the generated tasks, not a copied buffer
+        // size in a Device fixture. Only one registered task is polled at once.
+        #[allow(private_interfaces)]
+        mod configured_task {
+            use super::Bus;
+
+            crate::define_i2c_passthrough_device_task!(Bus, buffer_size = 1129);
+        }
+
+        #[allow(private_interfaces)]
+        mod legacy_task {
+            use super::Bus;
+
+            crate::define_i2c_passthrough_device_task!(Bus);
+        }
+
+        fn run_task<F: Future<Output = ()>>(
+            task: F,
+            id: hid::DeviceId,
+            expect_report: bool,
+        ) -> (Result<(), Error<ErrorKind>>, Vec<Vec<u8>>) {
+            let mut transfers = vec![
+                HostTransfer::Listen(SlaveCommand::Write),
+                HostTransfer::FromHost(vec![2, 0]),
+            ];
+
+            if expect_report {
+                transfers.extend([HostTransfer::Listen(SlaveCommand::Read), HostTransfer::ToHost]);
+            }
+
+            let upstream = HostBus::new(transfers);
+            let host: &'static Host<HostBus> = Box::leak(Box::new(Host::new(
+                id,
+                upstream.clone(),
+                buffer(128),
+                HostConfig::default(),
+            )));
+            block_on(comms::register_endpoint(host, &host.tp)).unwrap();
+
+            let mut task = pin!(task);
+            let mut context = Context::from_waker(Waker::noop());
+            assert!(matches!(task.as_mut().poll(&mut context), Poll::Pending));
+
+            let result = match block_on(with_timeout(
+                Duration::from_secs(2),
+                select(host.process(), task.as_mut()),
+            ))
+            .expect("generated device task did not complete the request")
+            {
+                Either::First(result) => result,
+                Either::Second(()) => panic!("device task exited unexpectedly"),
+            };
+
+            if result.is_ok() || !expect_report {
+                assert!(upstream.transfers.as_ref().borrow().is_empty());
+            }
+
+            let responses = upstream.responses.as_ref().borrow().clone();
+            (result, responses)
+        }
+
+        let report = vec![0x5a; 1129];
+        let configured = Bus::at_address(0x15, [descriptor(ELAN_DESCRIPTOR), write_read(&[2, 0], &report)]);
+
+        let (result, responses) = run_task(
+            configured_task::device_task(configured.clone(), hid::DeviceId(1), 0x15),
+            hid::DeviceId(1),
+            true,
+        );
+        result.expect("configured task must accommodate the documented report descriptor");
+        assert_eq!(responses, [report]);
+        configured.assert_finished();
+
+        let legacy = Bus::at_address(0x15, [descriptor(ELAN_DESCRIPTOR)]);
+        let (result, responses) = run_task(
+            legacy_task::device_task(legacy.clone(), hid::DeviceId(2), 0x15),
+            hid::DeviceId(2),
+            false,
+        );
+        assert!(matches!(
+            result,
+            Err(Error::Hid(hid::Error::InvalidSize(InvalidSizeError {
+                expected: 1129,
+                actual: 512,
+            })))
+        ));
+        assert!(responses.is_empty());
+        legacy.assert_finished();
     }
 }
