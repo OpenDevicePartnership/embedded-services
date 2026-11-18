@@ -46,9 +46,17 @@ macro_rules! define_i2c_passthrough_device_task {
     };
 }
 
+/// Define the host task with a compile-time command receive-buffer capacity.
+///
+/// The legacy form keeps its 128-byte allocation. Supply `buffer_size = N` for
+/// larger framed host commands, independently of device response storage.
 #[macro_export]
 macro_rules! define_i2c_passthrough_host_task {
     ($bus:ty, $int_in:ty, $int_out:ty) => {
+        $crate::define_i2c_passthrough_host_task!($bus, $int_in, $int_out, buffer_size = 128);
+    };
+
+    ($bus:ty, $int_in:ty, $int_out:ty, buffer_size = $buffer_size:expr $(,)?) => {
         pub async fn host_task(
             bus: $bus,
             int_signal: &'static $crate::i2c::passthrough::InterruptSignal<$int_in, $int_out>,
@@ -58,7 +66,7 @@ macro_rules! define_i2c_passthrough_host_task {
             use $crate::i2c::{Host, HostConfig};
 
             info!("Creating HIDI2C Host");
-            define_static_buffer!(host_buffer, u8, [0; 128]);
+            define_static_buffer!(host_buffer, u8, [0; $buffer_size]);
             static HOST: OnceLock<Host<$bus>> = OnceLock::new();
             let host = HOST.get_or_init(|| {
                 Host::new(
@@ -119,13 +127,13 @@ macro_rules! define_i2c_passthrough_interrupt_task {
     };
 }
 
-/// Define the bridge tasks, optionally selecting the physical-device buffer size.
+/// Define the bridge tasks, optionally selecting independent buffer capacities.
 ///
-/// Append `device_buffer_size = N` to forward a compile-time capacity to the
-/// device task. Omitting it preserves the existing 512-byte device allocation.
+/// Append `device_buffer_size = N`, `host_buffer_size = M`, or both in that order
+/// to select response and command storage. Defaults remain 512 and 128 bytes.
 #[macro_export]
 macro_rules! define_i2c_passthrough_task {
-    ($host_bus:ty, $device_bus:ty, $int_in:ty, $int_out:ty $(, device_buffer_size = $buffer_size:expr)?) => {
+    ($host_bus:ty, $device_bus:ty, $int_in:ty, $int_out:ty $(, device_buffer_size = $device_buffer_size:expr)? $(, host_buffer_size = $host_buffer_size:expr)?) => {
         mod task {
             use $crate::{
                 define_i2c_passthrough_device_task, define_i2c_passthrough_host_task,
@@ -134,15 +142,15 @@ macro_rules! define_i2c_passthrough_task {
 
             use super::*;
             // Spawn these 3 tasks using the executor of your choice
-            define_i2c_passthrough_device_task!($device_bus $(, buffer_size = $buffer_size)?);
-            define_i2c_passthrough_host_task!($host_bus, $int_in, $int_out);
+            define_i2c_passthrough_device_task!($device_bus $(, buffer_size = $device_buffer_size)?);
+            define_i2c_passthrough_host_task!($host_bus, $int_in, $int_out $(, buffer_size = $host_buffer_size)?);
             define_i2c_passthrough_interrupt_task!($int_in, $int_out);
         }
     };
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     // Compile both composite forms, including the host/interrupt task bodies.
     // Pending pin/bus implementations are type fixtures, not hardware models;
     // device-task allocation and bridge behavior are exercised in device.rs.
@@ -238,5 +246,17 @@ mod tests {
         use super::*;
 
         crate::define_i2c_passthrough_task!(Slave, Bus, Pin, Pin, device_buffer_size = 1129);
+    }
+
+    mod host_configured {
+        use super::*;
+
+        crate::define_i2c_passthrough_task!(Slave, Bus, Pin, Pin, host_buffer_size = 131);
+    }
+
+    mod independently_configured {
+        use super::*;
+
+        crate::define_i2c_passthrough_task!(Slave, Bus, Pin, Pin, device_buffer_size = 1129, host_buffer_size = 131);
     }
 }

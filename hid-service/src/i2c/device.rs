@@ -418,16 +418,15 @@ mod tests {
     use embedded_services::comms;
     use std::{
         boxed::Box,
-        cell::RefCell,
         collections::VecDeque,
-        rc::Rc,
         sync::{Arc, Mutex as StdMutex},
         vec,
         vec::Vec,
     };
 
     use super::*;
-    use crate::i2c::{Command as SlaveCommand, Host, HostConfig, I2cSlaveAsync};
+    use crate::i2c::passthrough::{InterruptSignal, tests::Pin as TestPin};
+    use crate::i2c::{Access, Command as SlaveCommand, Host, HostConfig, I2cSlaveAsync};
 
     // Synthetic modes, not captured ELAN bootloader/application descriptors.
     // Report register/length, input length, command/data registers, and version
@@ -968,22 +967,22 @@ mod tests {
 
     #[derive(Clone)]
     struct HostBus {
-        transfers: Rc<RefCell<VecDeque<HostTransfer>>>,
-        responses: Rc<RefCell<Vec<Vec<u8>>>>,
+        transfers: Arc<StdMutex<VecDeque<HostTransfer>>>,
+        responses: Arc<StdMutex<Vec<Vec<u8>>>>,
     }
 
     impl HostBus {
         fn new(transfers: impl IntoIterator<Item = HostTransfer>) -> Self {
             Self {
-                transfers: Rc::new(RefCell::new(transfers.into_iter().collect())),
-                responses: Rc::new(RefCell::new(Vec::new())),
+                transfers: Arc::new(StdMutex::new(transfers.into_iter().collect())),
+                responses: Arc::new(StdMutex::new(Vec::new())),
             }
         }
 
         fn next(&self) -> HostTransfer {
             self.transfers
-                .as_ref()
-                .borrow_mut()
+                .lock()
+                .unwrap()
                 .pop_front()
                 .expect("unexpected upstream I2C operation")
         }
@@ -993,9 +992,21 @@ mod tests {
         type Error = ErrorKind;
 
         async fn listen(&mut self) -> Result<SlaveCommand, Self::Error> {
-            match self.next() {
-                HostTransfer::Listen(command) => Ok(command),
-                _ => panic!("expected upstream listen"),
+            let next = {
+                let mut transfers = self.transfers.lock().unwrap();
+
+                if matches!(transfers.front(), Some(HostTransfer::Listen(_))) {
+                    transfers.pop_front()
+                } else {
+                    None
+                }
+            };
+
+            match next {
+                Some(HostTransfer::Listen(command)) => Ok(command),
+                // No new address phase has arrived. In particular, unconsumed
+                // payload after parser rejection is not a new transaction.
+                _ => pending().await,
             }
         }
 
@@ -1009,7 +1020,7 @@ mod tests {
 
         async fn respond_to_read(&mut self, buffer: &[u8]) -> Result<(), Self::Error> {
             assert!(matches!(self.next(), HostTransfer::ToHost));
-            self.responses.as_ref().borrow_mut().push(buffer.to_vec());
+            self.responses.lock().unwrap().push(buffer.to_vec());
             Ok(())
         }
     }
@@ -1091,7 +1102,7 @@ mod tests {
 
             // Observe actual bytes leaving Host before another request can
             // overwrite the shared buffer or hide an earlier stale response.
-            let responses = upstream.responses.as_ref().borrow();
+            let responses = upstream.responses.lock().unwrap();
             if let Some(response) = expected {
                 response_count += 1;
                 assert_eq!(responses.last(), Some(&response));
@@ -1132,7 +1143,7 @@ mod tests {
                 write: vec![1, 0],
                 reply,
             });
-            upstream.transfers.as_ref().borrow_mut().extend([
+            upstream.transfers.lock().unwrap().extend([
                 HostTransfer::Listen(SlaveCommand::Write),
                 HostTransfer::FromHost(register.to_vec()),
             ]);
@@ -1177,14 +1188,14 @@ mod tests {
                 }
             }
 
-            assert_eq!(upstream.responses.as_ref().borrow().len(), response_count);
+            assert_eq!(upstream.responses.lock().unwrap().len(), response_count);
 
             downstream
                 .transfers
                 .lock()
                 .unwrap()
                 .push_back(descriptor(ELAN_DESCRIPTOR));
-            upstream.transfers.as_ref().borrow_mut().extend([
+            upstream.transfers.lock().unwrap().extend([
                 HostTransfer::Listen(SlaveCommand::Write),
                 HostTransfer::FromHost(vec![1, 0]),
                 HostTransfer::Listen(SlaveCommand::Read),
@@ -1200,12 +1211,12 @@ mod tests {
             device_result.unwrap();
 
             response_count += 1;
-            let responses = upstream.responses.as_ref().borrow();
+            let responses = upstream.responses.lock().unwrap();
             assert_eq!(responses.len(), response_count);
             assert_eq!(responses.last().unwrap(), &ELAN_DESCRIPTOR);
         }
 
-        assert!(upstream.transfers.as_ref().borrow().is_empty());
+        assert!(upstream.transfers.lock().unwrap().is_empty());
         downstream.assert_finished();
 
         // Use the real allocation in the generated tasks, not a copied buffer
@@ -1262,10 +1273,10 @@ mod tests {
             };
 
             if result.is_ok() || !expect_report {
-                assert!(upstream.transfers.as_ref().borrow().is_empty());
+                assert!(upstream.transfers.lock().unwrap().is_empty());
             }
 
-            let responses = upstream.responses.as_ref().borrow().clone();
+            let responses = upstream.responses.lock().unwrap().clone();
             (result, responses)
         }
 
@@ -1296,5 +1307,102 @@ mod tests {
         ));
         assert!(responses.is_empty());
         legacy.assert_finished();
+
+        block_on(check_iap_ingress_capacity());
+    }
+
+    // Called only by the global bridge scenario above. Keep endpoint
+    // registrations together because this comms registry has no unregister.
+    async fn check_iap_ingress_capacity() {
+        let id = hid::DeviceId(3);
+        let sink: &'static hid::Device = Box::leak(Box::new(hid::Device::new(id, hid::RegisterFile::default())));
+        hid::register_device(sink).await.unwrap();
+
+        // Guide v1.0 §3.5.5, Figure 12: 0x0083 total bytes, including the
+        // two-byte length and report ID. Payload contents are synthetic.
+        let mut payload = vec![0x0b];
+        payload.extend(0u8..128);
+
+        for capacity in [128, 130] {
+            let upstream = HostBus::new([
+                HostTransfer::FromHost(vec![5, 0]),
+                HostTransfer::FromHost(vec![0x3b, 3]),
+                HostTransfer::FromHost(vec![6, 0]),
+                HostTransfer::FromHost(vec![0x83, 0]),
+            ]);
+            let host = Host::new(id, upstream.clone(), buffer(capacity), HostConfig::default());
+
+            assert!(matches!(
+                host.process_request(Access::Write).await,
+                Err(Error::Hid(hid::Error::InvalidSize(InvalidSizeError {
+                    expected: 131, actual,
+                }))) if actual == capacity
+            ));
+            assert!(upstream.transfers.lock().unwrap().is_empty());
+            assert!(upstream.responses.lock().unwrap().is_empty());
+        }
+
+        #[allow(dead_code, private_interfaces)]
+        mod configured_host {
+            use super::*;
+
+            const HID_ID0: hid::DeviceId = hid::DeviceId(3);
+
+            crate::define_i2c_passthrough_task!(HostBus, Bus, TestPin, TestPin, host_buffer_size = 131);
+
+            pub use task::host_task;
+        }
+
+        let upstream = HostBus::new([
+            HostTransfer::Listen(SlaveCommand::Write),
+            HostTransfer::FromHost(vec![5, 0]),
+            HostTransfer::FromHost(vec![0x3b, 3]),
+            HostTransfer::FromHost(vec![6, 0]),
+            HostTransfer::FromHost(vec![0x83, 0]),
+            HostTransfer::FromHost(payload.clone()),
+            HostTransfer::Listen(SlaveCommand::Write),
+            HostTransfer::FromHost(vec![5, 0]),
+            HostTransfer::FromHost(vec![0, 8]),
+        ]);
+        static INTERRUPT: InterruptSignal<TestPin, TestPin> = InterruptSignal::new(TestPin, TestPin);
+
+        let receiver = async {
+            let hid::Request::Command(hid::Command::SetReport(hid::ReportType::Feature, hid::ReportId(0x0b), data)) =
+                sink.wait_request().await
+            else {
+                panic!("expected the forwarded IAP feature request");
+            };
+
+            {
+                let borrow = data.borrow().unwrap();
+                let received: &[u8] = borrow.borrow();
+                assert_eq!(received, payload);
+            }
+            sink.send_response(None).await.unwrap();
+
+            assert!(matches!(
+                sink.wait_request().await,
+                hid::Request::Command(hid::Command::SetPower(hid::PowerState::On))
+            ));
+            sink.send_response(None).await.unwrap();
+
+            // Let the generated task consume the final successful completion
+            // and return to listening before the test cancels its idle loop.
+            embassy_futures::yield_now().await;
+        };
+
+        match with_timeout(
+            Duration::from_secs(5),
+            select(receiver, configured_host::host_task(upstream.clone(), &INTERRUPT)),
+        )
+        .await
+        .expect("configured host task did not forward the documented IAP packet")
+        {
+            Either::First(()) => {}
+            Either::Second(()) => panic!("host task exited unexpectedly"),
+        }
+
+        assert!(upstream.transfers.lock().unwrap().is_empty());
+        assert!(upstream.responses.lock().unwrap().is_empty());
     }
 }
