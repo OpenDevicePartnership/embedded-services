@@ -22,6 +22,11 @@ embedded-hal.workspace = true
 embedded-services.workspace = true
 log = { workspace = true, optional = true }
 
+[dev-dependencies]
+critical-section = { workspace = true, features = ["std"] }
+embassy-futures.workspace = true
+embassy-time = { workspace = true, features = ["std", "generic-queue-8"] }
+
 [features]
 default = []
 defmt = [

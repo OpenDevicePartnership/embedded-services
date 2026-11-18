@@ -982,7 +982,9 @@ checksum = "95505c38b4572b2d910cecb0281560f54b440a19336cbbcb27bf6ce6adc6f5a8"
 name = "hid-service"
 version = "0.1.0"
 dependencies = [
+ "critical-section",
  "defmt 0.3.100",
+ "embassy-futures",
  "embassy-sync",
  "embassy-time",
  "embedded-hal 1.0.0",
