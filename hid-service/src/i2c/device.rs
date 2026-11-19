@@ -1309,6 +1309,209 @@ mod tests {
         legacy.assert_finished();
 
         block_on(check_iap_ingress_capacity());
+        block_on(interrupt_ordering::check());
+    }
+
+    // Keep this scenario in the single global endpoint-registration scope.
+    // Only the GPIO and upstream bus are doubled: the generated host task,
+    // Host, comms routing, and InterruptSignal are real.
+    mod interrupt_ordering {
+        use super::*;
+        use core::convert::Infallible;
+        use embedded_hal::digital::{ErrorType as DigitalErrorType, OutputPin};
+        use embedded_hal_async::digital::Wait;
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        struct Input;
+
+        impl DigitalErrorType for Input {
+            type Error = Infallible;
+        }
+
+        impl Wait for Input {
+            async fn wait_for_low(&mut self) -> Result<(), Self::Error> {
+                Ok(())
+            }
+            async fn wait_for_high(&mut self) -> Result<(), Self::Error> {
+                pending().await
+            }
+            async fn wait_for_rising_edge(&mut self) -> Result<(), Self::Error> {
+                pending().await
+            }
+            async fn wait_for_falling_edge(&mut self) -> Result<(), Self::Error> {
+                pending().await
+            }
+            async fn wait_for_any_edge(&mut self) -> Result<(), Self::Error> {
+                pending().await
+            }
+        }
+
+        struct Output {
+            high: Arc<AtomicBool>,
+            fail_high: bool,
+        }
+
+        impl DigitalErrorType for Output {
+            type Error = embedded_hal::digital::ErrorKind;
+        }
+
+        impl OutputPin for Output {
+            fn set_low(&mut self) -> Result<(), Self::Error> {
+                self.high.store(false, Ordering::SeqCst);
+                Ok(())
+            }
+
+            fn set_high(&mut self) -> Result<(), Self::Error> {
+                if self.fail_high {
+                    return Err(embedded_hal::digital::ErrorKind::Other);
+                }
+                self.high.store(true, Ordering::SeqCst);
+                Ok(())
+            }
+        }
+
+        #[derive(Clone)]
+        struct CheckedBus {
+            bus: HostBus,
+            pin_high: Arc<AtomicBool>,
+        }
+
+        impl I2cSlaveAsync for CheckedBus {
+            type Error = ErrorKind;
+
+            async fn listen(&mut self) -> Result<SlaveCommand, Self::Error> {
+                self.bus.listen().await
+            }
+
+            async fn respond_to_write(&mut self, data: &mut [u8]) -> Result<(), Self::Error> {
+                self.bus.respond_to_write(data).await
+            }
+
+            async fn respond_to_read(&mut self, data: &[u8]) -> Result<(), Self::Error> {
+                assert!(
+                    self.pin_high.load(Ordering::SeqCst),
+                    "host started its response before physically deasserting the interrupt"
+                );
+                self.bus.respond_to_read(data).await
+            }
+        }
+
+        #[allow(dead_code, private_interfaces)]
+        mod generated {
+            use super::*;
+
+            const HID_ID0: hid::DeviceId = hid::DeviceId(4);
+
+            crate::define_i2c_passthrough_host_task!(CheckedBus, Input, Output);
+        }
+
+        #[allow(dead_code, private_interfaces)]
+        mod failing_generated {
+            use super::*;
+
+            const HID_ID0: hid::DeviceId = hid::DeviceId(5);
+
+            crate::define_i2c_passthrough_host_task!(CheckedBus, Input, Output);
+        }
+
+        pub async fn check() {
+            let upstream = HostBus::new([HostTransfer::Listen(SlaveCommand::Read), HostTransfer::ToHost]);
+            let pin_high = Arc::new(AtomicBool::new(true));
+            let interrupt = &*Box::leak(Box::new(InterruptSignal::new(
+                Input,
+                Output {
+                    high: pin_high.clone(),
+                    fail_high: false,
+                },
+            )));
+            let mut processing = pin!(interrupt.process());
+            assert!(matches!(
+                processing.as_mut().poll(&mut Context::from_waker(Waker::noop())),
+                Poll::Pending
+            ));
+            assert!(!pin_high.load(Ordering::SeqCst));
+            let sink: &'static hid::Device = Box::leak(Box::new(hid::Device::new(
+                hid::DeviceId(4),
+                hid::RegisterFile::default(),
+            )));
+            hid::register_device(sink).await.unwrap();
+            let input = buffer(3);
+            {
+                let mut borrow = input.borrow_mut().unwrap();
+                let bytes: &mut [u8] = borrow.borrow_mut();
+                bytes.copy_from_slice(&[3, 0, 0x52]);
+            }
+
+            // Model the output of an already-asserted interrupt, then leave the
+            // interrupt task unpolled throughout the host/device exchange. A mere
+            // notification cannot make the observed pin high in this schedule.
+            let receiver = async {
+                assert!(matches!(sink.wait_request().await, hid::Request::InputReport));
+                sink.send_response(Some(hid::Response::InputReport(input.reference())))
+                    .await
+                    .unwrap();
+                embassy_futures::yield_now().await;
+            };
+            match with_timeout(
+                Duration::from_secs(2),
+                select(
+                    receiver,
+                    generated::host_task(
+                        CheckedBus {
+                            bus: upstream.clone(),
+                            pin_high: pin_high.clone(),
+                        },
+                        interrupt,
+                    ),
+                ),
+            )
+            .await
+            .expect("host could not complete without rescheduling the interrupt task")
+            {
+                Either::First(()) => {}
+                Either::Second(()) => panic!("generated host task exited"),
+            }
+
+            assert_eq!(*upstream.responses.lock().unwrap(), [vec![3, 0, 0x52]]);
+            assert!(upstream.transfers.lock().unwrap().is_empty());
+            assert!(matches!(
+                processing.as_mut().poll(&mut Context::from_waker(Waker::noop())),
+                Poll::Ready(Ok(()))
+            ));
+
+            // A GPIO error must stop this request before even forwarding it.
+            // Do not model upstream abort/recovery here: the unserved read
+            // stays in the script, and the task is cancelled while waiting.
+            let upstream = HostBus::new([HostTransfer::Listen(SlaveCommand::Read), HostTransfer::ToHost]);
+            let pin_high = Arc::new(AtomicBool::new(true));
+            let interrupt = &*Box::leak(Box::new(InterruptSignal::new(
+                Input,
+                Output {
+                    high: pin_high.clone(),
+                    fail_high: true,
+                },
+            )));
+            let sink: &'static hid::Device = Box::leak(Box::new(hid::Device::new(
+                hid::DeviceId(5),
+                hid::RegisterFile::default(),
+            )));
+            hid::register_device(sink).await.unwrap();
+            let mut processing = pin!(interrupt.process());
+            let mut context = Context::from_waker(Waker::noop());
+            assert!(matches!(processing.as_mut().poll(&mut context), Poll::Pending));
+            let mut host = pin!(failing_generated::host_task(
+                CheckedBus {
+                    bus: upstream.clone(),
+                    pin_high: pin_high.clone()
+                },
+                interrupt,
+            ));
+            assert!(matches!(host.as_mut().poll(&mut context), Poll::Pending));
+            let mut request = pin!(sink.wait_request());
+            assert!(matches!(request.as_mut().poll(&mut context), Poll::Pending));
+            assert!(upstream.responses.lock().unwrap().is_empty());
+            assert!(!pin_high.load(Ordering::SeqCst));
+        }
     }
 
     // Called only by the global bridge scenario above. Keep endpoint
