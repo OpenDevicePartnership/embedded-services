@@ -87,10 +87,14 @@ macro_rules! define_i2c_passthrough_host_task {
                     continue;
                 }
 
-                // Deassert the interrupt signal
-                // This should happen before we finish processing the request
-                // to avoid triggering a spurious interrupt to the host
-                int_signal.deassert().await;
+                // Confirm physical pin deassertion before proceeding. A
+                // notification alone does not order the pin write before a
+                // fast response on a cooperative executor.
+                if let Err(e) = int_signal.deassert_and_wait().await {
+                    error!("Interrupt error {:?}", e);
+                    int_signal.reset().await;
+                    continue;
+                }
 
                 let access = res.unwrap();
                 if let Err(e) = host.process_request(access).await {
