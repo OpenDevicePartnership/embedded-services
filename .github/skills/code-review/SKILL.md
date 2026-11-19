@@ -5,11 +5,22 @@ description: AI-assisted code review that produces a structured summary for huma
 
 You are reviewing a pull request in the embedded-services repository. Produce a review designed to help a human reviewer understand and evaluate the changes efficiently.
 
+## Stable-branch backports
+
+Check the PR's target branch from its metadata. For PRs targeting `stable-*`:
+
+- Require cherry-picks or backports of changes from PRs **already merged into `main`**. A stable-branch fix must not leave the same bug unfixed on `main`.
+- Find the original PR(s), verify that they were merged into `main`, and confirm that the corresponding fixes are still present on current `main`. Compare the changes, allowing necessary stable-branch adaptations; matching commit hashes are not required.
+- Report a **High** issue if any fix lacks an integrated `main` counterpart. An open or draft PR, a fix on another branch, or a promise to fix `main` later does not satisfy this requirement, even for an urgent release. Request merging the fix into `main` first, then backporting it with links to the original PR(s) and commit(s).
+- If metadata or source history is unavailable, state that main-first integration could not be verified and require evidence before approval. Do not invent a source PR or treat missing evidence as proof that no fix exists.
+
 ## Output format
 
 ### 1. Summary of changes
 
 Write a concise summary (3–5 sentences) of what the PR does and why.
+
+For `stable-*` targets, include the original `main` PR/commit references and whether main-first integration was verified, missing, or unverifiable.
 
 ### 2. Step-by-step review guide
 
