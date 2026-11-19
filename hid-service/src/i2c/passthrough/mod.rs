@@ -135,16 +135,11 @@ macro_rules! define_i2c_passthrough_interrupt_task {
 macro_rules! define_i2c_passthrough_task {
     ($host_bus:ty, $device_bus:ty, $int_in:ty, $int_out:ty $(, device_buffer_size = $device_buffer_size:expr)? $(, host_buffer_size = $host_buffer_size:expr)?) => {
         mod task {
-            use $crate::{
-                define_i2c_passthrough_device_task, define_i2c_passthrough_host_task,
-                define_i2c_passthrough_interrupt_task,
-            };
-
             use super::*;
             // Spawn these 3 tasks using the executor of your choice
-            define_i2c_passthrough_device_task!($device_bus $(, buffer_size = $device_buffer_size)?);
-            define_i2c_passthrough_host_task!($host_bus, $int_in, $int_out $(, buffer_size = $host_buffer_size)?);
-            define_i2c_passthrough_interrupt_task!($int_in, $int_out);
+            $crate::define_i2c_passthrough_device_task!($device_bus $(, buffer_size = $device_buffer_size)?);
+            $crate::define_i2c_passthrough_host_task!($host_bus, $int_in, $int_out $(, buffer_size = $host_buffer_size)?);
+            $crate::define_i2c_passthrough_interrupt_task!($int_in, $int_out);
         }
     };
 }
