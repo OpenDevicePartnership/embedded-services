@@ -823,12 +823,13 @@ dependencies = [
 [[package]]
 name = "embedded-usb-pd"
 version = "0.1.0"
-source = "git+https://github.com/OpenDevicePartnership/embedded-usb-pd#a9088fc8549068c033cb4587b604b2573682dbf1"
+source = "git+https://github.com/OpenDevicePartnership/embedded-usb-pd#c1bc3378b0260c5196b00ff5f7baf6297d9002c8"
 dependencies = [
  "bitfield 0.19.4",
  "bytemuck",
  "defmt 0.3.100",
  "embedded-hal-async",
+ "heapless 0.9.3",
  "pack1",
 ]
 
