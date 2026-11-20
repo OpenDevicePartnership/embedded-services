@@ -72,6 +72,10 @@ impl<IN: Wait, OUT: OutputPin> InterruptSignal<IN, OUT> {
     ///
     /// Updates state and notifies [`Self::process`]; the output pin changes when
     /// that task runs, not necessarily before this future returns.
+    ///
+    /// Retained for one more release cycle to let existing callers migrate to
+    /// [`Self::deassert_and_wait`], which confirms the pin transition and reports
+    /// GPIO errors. This compatibility API keeps its notification-only behavior.
     #[deprecated(note = "Use deassert_and_wait() to confirm pin deassertion and handle GPIO errors")]
     pub async fn deassert(&self) {
         let mut state = self.state.lock().await;
@@ -278,6 +282,7 @@ mod tests {
 
         for _ in 0..2 {
             let mut processing = pin!(signal.process());
+            // Assert LOW, then stop at the first self.signal.wait().
             assert!(matches!(poll(processing.as_mut()), Poll::Pending));
             assert_eq!(edges.as_ref().borrow().last(), Some(&false));
 
@@ -285,6 +290,7 @@ mod tests {
             assert_eq!(edges.as_ref().borrow().last(), Some(&true));
 
             block_on(signal.release());
+            // Consume the coalesced notifications; Idle skips the second wait.
             assert!(matches!(poll(processing.as_mut()), Poll::Ready(Ok(()))));
         }
     }
@@ -314,6 +320,7 @@ mod tests {
         let high = Rc::new(Cell::new(true));
         let signal = InterruptSignal::new(Input, FailAfterFirstHigh(high.clone()));
         let mut processing = pin!(signal.process());
+        // Assert LOW, then stop at the first self.signal.wait().
         assert!(matches!(poll(processing.as_mut()), Poll::Pending));
         block_on(signal.deassert_and_wait()).unwrap();
         assert!(high.get());
@@ -321,9 +328,11 @@ mod tests {
         // The host may be waiting for its response while the interrupt task
         // resumes. A redundant, fallible HIGH write must not restart this
         // exchange and reassert LOW underneath that pending response.
+        // Consume deassertion, skip the confirmed HIGH write, and reach the second wait.
         assert!(matches!(poll(processing.as_mut()), Poll::Pending));
         assert!(high.get());
         block_on(signal.release());
+        // Consume release at the second self.signal.wait() and complete.
         assert!(matches!(poll(processing.as_mut()), Poll::Ready(Ok(()))));
     }
 
@@ -334,13 +343,16 @@ mod tests {
         assert_eq!(edges.as_ref().borrow().last(), Some(&true));
 
         let mut processing = pin!(signal.process());
+        // Assert LOW and reach the first wait; idle deassertion left no notification.
         assert!(matches!(poll(processing.as_mut()), Poll::Pending));
         assert_eq!(edges.as_ref().borrow().last(), Some(&false));
 
         block_on(signal.deassert_and_wait()).unwrap();
         assert_eq!(edges.as_ref().borrow().last(), Some(&true));
+        // Consume deassertion, skip the confirmed HIGH write, and reach the second wait.
         assert!(matches!(poll(processing.as_mut()), Poll::Pending));
         block_on(signal.release());
+        // Consume release at the second self.signal.wait() and complete.
         assert!(matches!(poll(processing.as_mut()), Poll::Ready(Ok(()))));
     }
 
@@ -380,18 +392,22 @@ mod tests {
             },
         );
         let mut processing = pin!(signal.process());
+        // Assert LOW, then stop at the first self.signal.wait().
         assert!(matches!(poll(processing.as_mut()), Poll::Pending));
         assert!(!high.get());
 
         assert_eq!(block_on(signal.deassert_and_wait()), Err(Error::IoSet));
         assert!(!high.get());
+        // The failed GPIO write did not notify process; stay at the first wait.
         assert!(matches!(poll(processing.as_mut()), Poll::Pending));
 
         fail.set(false);
         block_on(signal.deassert_and_wait()).unwrap();
         assert!(high.get());
+        // Consume deassertion, skip the confirmed HIGH write, and reach the second wait.
         assert!(matches!(poll(processing.as_mut()), Poll::Pending));
         block_on(signal.release());
+        // Consume release at the second self.signal.wait() and complete.
         assert!(matches!(poll(processing.as_mut()), Poll::Ready(Ok(()))));
     }
 
@@ -401,6 +417,7 @@ mod tests {
 
         for _ in 0..2 {
             let mut processing = pin!(signal.process());
+            // Assert LOW, then stop at the first self.signal.wait().
             assert!(matches!(poll(processing.as_mut()), Poll::Pending));
 
             // A fast command can deassert and finish before the interrupt task
@@ -408,6 +425,7 @@ mod tests {
             block_on(signal.deassert());
             block_on(signal.release());
 
+            // Consume the coalesced notification, drive HIGH, and skip the second wait (Idle).
             assert!(matches!(poll(processing.as_mut()), Poll::Ready(Ok(()))));
         }
 
@@ -434,20 +452,26 @@ mod tests {
 
             {
                 let mut processing = pin!(signal.process());
+                // Assert LOW, then stop at the first self.signal.wait().
                 assert!(matches!(poll(processing.as_mut()), Poll::Pending));
 
                 block_on(signal.deassert());
+                // Consume deassertion and drive HIGH, invoking the hook. Idle/Reset
+                // then skips the second wait and clears the hook's notification.
                 assert!(matches!(poll(processing.as_mut()), Poll::Ready(Ok(()))));
             }
 
             let mut next = pin!(signal.process());
+            // Assert LOW and reach the first wait, with no stale notification.
             assert!(matches!(poll(next.as_mut()), Poll::Pending));
             assert_eq!(*edges.as_ref().borrow(), [false, true, false]);
 
             block_on(signal.deassert());
+            // Consume deassertion, drive HIGH, and stop at the second wait.
             assert!(matches!(poll(next.as_mut()), Poll::Pending));
 
             block_on(signal.release());
+            // Consume release at the second self.signal.wait() and complete.
             assert!(matches!(poll(next.as_mut()), Poll::Ready(Ok(()))));
             assert_eq!(*edges.as_ref().borrow(), [false, true, false, true]);
         }
@@ -459,13 +483,16 @@ mod tests {
         block_on(signal.reset());
 
         let mut next = pin!(signal.process());
+        // Assert LOW and reach the first wait; idle reset left no notification.
         assert!(matches!(poll(next.as_mut()), Poll::Pending));
         assert_eq!(*edges.as_ref().borrow(), [false]);
 
         block_on(signal.deassert());
+        // Consume deassertion, drive HIGH, and stop at the second wait.
         assert!(matches!(poll(next.as_mut()), Poll::Pending));
 
         block_on(signal.release());
+        // Consume release at the second self.signal.wait() and complete.
         assert!(matches!(poll(next.as_mut()), Poll::Ready(Ok(()))));
         assert_eq!(*edges.as_ref().borrow(), [false, true]);
     }
@@ -477,6 +504,7 @@ mod tests {
 
             {
                 let mut processing = pin!(signal.process());
+                // Assert LOW, then stop at the first self.signal.wait().
                 assert!(matches!(poll(processing.as_mut()), Poll::Pending));
 
                 if phase >= 1 {
@@ -484,20 +512,26 @@ mod tests {
                 }
 
                 if phase == 2 {
+                    // Consume deassertion, drive HIGH, and stop at the second wait.
                     assert!(matches!(poll(processing.as_mut()), Poll::Pending));
                 }
 
                 block_on(signal.reset());
+                // Phases 0/1 consume reset at the first wait, drive HIGH, and
+                // skip the second wait. Phase 2 consumes reset at the second wait.
                 assert!(matches!(poll(processing.as_mut()), Poll::Ready(Ok(()))));
             }
 
             let mut next = pin!(signal.process());
+            // Assert LOW and reach the first wait, with no stale reset notification.
             assert!(matches!(poll(next.as_mut()), Poll::Pending));
 
             block_on(signal.deassert());
+            // Consume deassertion, drive HIGH, and stop at the second wait.
             assert!(matches!(poll(next.as_mut()), Poll::Pending));
 
             block_on(signal.release());
+            // Consume release at the second self.signal.wait() and complete.
             assert!(matches!(poll(next.as_mut()), Poll::Ready(Ok(()))));
             assert_eq!(*edges.as_ref().borrow(), [false, true, false, true]);
         }
