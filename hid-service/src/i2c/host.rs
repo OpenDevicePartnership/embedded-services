@@ -39,7 +39,7 @@ pub enum Access {
 pub struct Host<B: I2cSlaveAsync> {
     id: DeviceId,
     pub tp: Endpoint,
-    response: Signal<GlobalRawMutex, Option<hid::Response<'static>>>,
+    response: Signal<GlobalRawMutex, Result<Option<hid::Response<'static>>, hid::Error>>,
     buffer: OwnedRef<'static, u8>,
     bus: Mutex<GlobalRawMutex, B>,
     timeout_config: Config,
@@ -307,8 +307,12 @@ impl<B: I2cSlaveAsync> Host<B> {
         }
     }
 
+    /// Send response data or return the device's terminal failure.
+    ///
+    /// A failure notification does not synthesize HID wire data or abort the
+    /// controller transaction; the caller/HAL owns bus resynchronization.
     pub async fn send_response(&self) -> Result<(), Error<B::Error>> {
-        if let Some(response) = self.response.wait().await {
+        if let Some(response) = self.response.wait().await.map_err(Error::Hid)? {
             match response {
                 hid::Response::Descriptor(_) => trace!("Sending descriptor"),
                 hid::Response::ReportDescriptor(_) => trace!("Sending report descriptor"),
@@ -381,16 +385,149 @@ impl<B: I2cSlaveAsync> MailboxDelegate for Host<B> {
             .get::<hid::Message>()
             .ok_or(comms::MailboxDelegateError::MessageNotFound)?;
 
+        // A completion must belong to this host/device before it can wake the
+        // waiter, whether it contains response data or a terminal failure.
+        if message.to != EndpointID::External(External::Host) {
+            return Err(comms::MailboxDelegateError::InvalidDestination);
+        }
+
+        if hid_msg.id != self.id {
+            return Err(comms::MailboxDelegateError::InvalidData);
+        }
+
         match hid_msg.data {
             hid::MessageData::Response(ref response) => {
-                self.response.signal(response.clone());
+                self.response.signal(Ok(response.clone()));
                 Ok(())
             }
-            _ if message.to != EndpointID::External(External::Host) => {
-                Err(comms::MailboxDelegateError::InvalidDestination)
+
+            hid::MessageData::Failure(error) => {
+                self.response.signal(Err(error));
+                Ok(())
             }
-            _ if hid_msg.id != self.id => Err(comms::MailboxDelegateError::InvalidData),
+
             _ => Err(comms::MailboxDelegateError::Other),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::panic, clippy::unwrap_used)]
+
+    extern crate std;
+
+    use core::future::Future;
+    use core::pin::pin;
+    use core::task::{Context, Poll, Waker};
+
+    use embassy_futures::block_on;
+    use embedded_services::buffer::Buffer;
+    use std::{boxed::Box, vec};
+
+    use super::*;
+
+    struct NoBus;
+
+    impl I2cSlaveAsync for NoBus {
+        type Error = core::convert::Infallible;
+
+        async fn listen(&mut self) -> Result<I2cCommand, Self::Error> {
+            panic!("a no-payload completion must not access the I2C bus");
+        }
+
+        async fn respond_to_write(&mut self, _: &mut [u8]) -> Result<(), Self::Error> {
+            panic!("a no-payload completion must not access the I2C bus");
+        }
+
+        async fn respond_to_read(&mut self, _: &[u8]) -> Result<(), Self::Error> {
+            panic!("a no-payload completion must not access the I2C bus");
+        }
+    }
+
+    fn host() -> Host<NoBus> {
+        let bytes = Box::leak(vec![0; 8].into_boxed_slice());
+
+        // SAFETY: Leaked storage is inaccessible elsewhere; create exactly one
+        // owner and use the real buffer's borrow guards for subsequent access.
+        let storage = Box::leak(Box::new(unsafe { Buffer::new(bytes) }));
+        let buffer = unsafe { storage.as_owned() };
+
+        Host::new(hid::DeviceId(7), NoBus, buffer, Config::default())
+    }
+
+    fn complete(
+        host: &Host<NoBus>,
+        id: hid::DeviceId,
+        destination: EndpointID,
+        data: hid::MessageData<'static>,
+    ) -> Result<(), comms::MailboxDelegateError> {
+        let completion = hid::Message { id, data };
+
+        host.receive(&comms::Message {
+            from: comms::Internal::Hid.into(),
+            to: destination,
+            data: comms::Data::new(&completion),
+        })
+    }
+
+    #[test]
+    fn failure_is_distinct_from_a_successful_no_response_command() {
+        let host = host();
+        let destination = EndpointID::External(External::Host);
+
+        assert!(
+            complete(
+                &host,
+                hid::DeviceId(7),
+                destination,
+                hid::MessageData::Failure(hid::Error::Timeout),
+            )
+            .is_ok()
+        );
+        assert!(matches!(
+            block_on(host.send_response()),
+            Err(Error::Hid(hid::Error::Timeout))
+        ));
+
+        assert!(complete(&host, hid::DeviceId(7), destination, hid::MessageData::Response(None),).is_ok());
+        assert!(block_on(host.send_response()).is_ok());
+    }
+
+    #[test]
+    fn misrouted_completions_cannot_wake_the_host() {
+        for data in [
+            hid::MessageData::Failure(hid::Error::Timeout),
+            hid::MessageData::Response(None),
+        ] {
+            for (id, destination) in [
+                (hid::DeviceId(8), EndpointID::External(External::Host)),
+                (hid::DeviceId(7), EndpointID::External(External::Debug)),
+            ] {
+                let host = host();
+                let rejected = complete(&host, id, destination, data.clone());
+
+                if id != hid::DeviceId(7) {
+                    assert!(matches!(rejected, Err(comms::MailboxDelegateError::InvalidData)));
+                } else {
+                    assert!(matches!(rejected, Err(comms::MailboxDelegateError::InvalidDestination)));
+                }
+
+                let mut waiting = pin!(host.send_response());
+                let mut context = Context::from_waker(Waker::noop());
+                assert!(matches!(waiting.as_mut().poll(&mut context), Poll::Pending));
+
+                assert!(
+                    complete(
+                        &host,
+                        hid::DeviceId(7),
+                        EndpointID::External(External::Host),
+                        hid::MessageData::Failure(hid::Error::Serialize),
+                    )
+                    .is_ok()
+                );
+                assert!(matches!(block_on(waiting), Err(Error::Hid(hid::Error::Serialize))));
+            }
         }
     }
 }

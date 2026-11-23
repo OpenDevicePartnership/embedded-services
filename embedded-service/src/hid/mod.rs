@@ -223,6 +223,18 @@ impl Device {
         };
         self.tp.send(EndpointID::External(External::Host), &message).await
     }
+
+    /// Complete a consumed request with an error instead of a response.
+    ///
+    /// This is an internal completion notification, not a HID wire response or
+    /// a request to abort the underlying controller transaction.
+    pub async fn send_failure(&self, error: Error) -> Result<(), Infallible> {
+        let message = Message {
+            id: self.id,
+            data: MessageData::Failure(error),
+        };
+        self.tp.send(EndpointID::External(External::Host), &message).await
+    }
 }
 
 impl DeviceContainer for Device {
@@ -296,6 +308,9 @@ pub enum MessageData<'a> {
     Request(Request<'a>),
     /// HID response, some commands may not produce a response
     Response(Option<Response<'a>>),
+    /// Terminal failure of a consumed request, distinct from a successful
+    /// command that produces no response.
+    Failure(Error),
 }
 
 /// Top-level struct for HID communication
